@@ -175,7 +175,6 @@ const TestSuite suite([] static noexcept {
                 "unknown"
             );
             check("fn value() -> i32 => 1;", {module, module}, "duplicate");
-            check("struct Box<T> { value: T }", {module}, "generic");
             check("fn main() {}", {module}, "entry point");
         };
 

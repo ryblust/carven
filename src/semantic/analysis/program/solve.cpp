@@ -4,8 +4,124 @@ import :semantic.analysis.body.resolve;
 import :semantic.analysis.program;
 import :semantic.semir.children;
 import :semantic.semir.evaluation;
+import :semantic.semir.traversal;
 import :support.invariant;
+import :support.visit;
 import std;
+
+namespace {
+
+auto generic_implementation_dependencies(
+    const GenericAnalysisSnapshot& generics,
+    GenericDeclarationID definition,
+    const FailureSetStore& failures
+) noexcept -> GenericImplementationDependencies {
+    auto types = std::flat_set<TypeID>();
+    auto callables = std::flat_set<CallableID>();
+    auto definitions = std::flat_set<GenericDeclarationID>();
+    auto visited = std::flat_set<ConstructionTypeRef>();
+    const auto collect_failures = [&](ConstructionFailureRef reference) noexcept {
+        if (const auto* concrete = std::get_if<FailureSetID>(&reference)) {
+            types.insert_range(failures.failure_set(*concrete).members);
+        }
+    };
+    const auto collect_type = [&](this const auto& self,
+                                  ConstructionTypeRef type) noexcept -> void {
+        if (!visited.insert(type).second) {
+            return;
+        }
+        if (const auto* concrete = std::get_if<TypeID>(&type)) {
+            types.insert(*concrete);
+            return;
+        }
+        const auto* generic = std::get_if<GenericTypeID>(&type);
+        if (!generic) {
+            invariant_violation("generic dependency publication contains an unresolved type term");
+        }
+        const auto& shape = generics.generic_type(*generic);
+        if (const auto* concrete = std::get_if<TypeID>(&shape)) {
+            self(*concrete);
+        } else if (const auto* application = std::get_if<GenericNominalApplication>(&shape)) {
+            definitions.insert(application->definition);
+            for (const auto& argument : application->arguments) {
+                visit_generic_argument_failures(argument, collect_failures);
+            }
+        } else if (const auto* operation = std::get_if<GenericOperationType>(&shape)) {
+            collect_failures(operation->failures);
+        }
+        visit_generic_type_children(shape, self);
+    };
+    generics.definition(definition).visit([&](const auto& source) noexcept {
+        using Source = std::remove_cvref_t<decltype(source)>;
+        if constexpr (std::same_as<Source, GenericFunctionDefinition>) {
+            for (const auto& parameter : source.signature.parameters) {
+                collect_type(parameter.type);
+            }
+            collect_type(source.signature.result);
+            collect_failures(source.signature.failures);
+        } else if constexpr (std::same_as<Source, GenericRecordDefinition>) {
+            for (const auto& field : source.fields) {
+                collect_type(field.type);
+            }
+        } else {
+            for (const auto& item : source.cases) {
+                for (const auto type : item.payload_types) {
+                    collect_type(type);
+                }
+            }
+        }
+    });
+    if (const auto found = generics.bodies.find(definition); found != generics.bodies.end()) {
+        const auto& body = *found->second;
+        for (const auto binding : body.bindings.entries()) {
+            collect_type(binding.value.type);
+        }
+        for (const auto pattern : body.patterns.entries()) {
+            collect_type(pattern.value.type);
+            if (const auto* constraint =
+                    std::get_if<ElaboratedTypeConstraintPattern>(&pattern.value.value)) {
+                collect_type(constraint->type);
+            }
+        }
+        const auto observe = Overloaded {
+            [&](const SemanticExpression& expression) noexcept {
+                collect_type(expression.type.construction());
+                collect_failures(expression.failures.reference());
+                if (const auto* call = std::get_if<SemGenericCall>(&expression.value)) {
+                    definitions.insert(call->definition);
+                    for (const auto& argument : call->environment) {
+                        visit_generic_argument_types(argument, collect_type);
+                        visit_generic_argument_failures(argument, collect_failures);
+                    }
+                } else if (const auto* call = std::get_if<SemCall>(&expression.value)) {
+                    if (call->target) {
+                        callables.insert(*call->target);
+                    }
+                } else if (const auto* cold = std::get_if<SemColdCall>(&expression.value)) {
+                    callables.insert(cold->target);
+                } else if (const auto* callable = std::get_if<SemCallable>(&expression.value)) {
+                    callables.insert(callable->callable);
+                }
+            },
+            [&](const SemanticStatement& statement) noexcept {
+                if (const auto* failure = std::get_if<SemThrow>(&statement.value)) {
+                    types.insert(failure->failure_type);
+                }
+            },
+        };
+        visit_semantic_nodes(body.region, observe);
+        if (body.residual) {
+            visit_semantic_nodes(*body.residual, observe);
+        }
+    }
+    return {
+        .types = {types.begin(), types.end()},
+        .callables = {callables.begin(), callables.end()},
+        .definitions = {definitions.begin(), definitions.end()},
+    };
+}
+
+} // namespace
 
 auto ProgramDraft::solve_test_stops(
     const CanonicalTypeStore& types,
@@ -287,14 +403,35 @@ auto ProgramDraft::resolve() && noexcept -> AnalysisResult<ResolvedAnalysisProgr
         static_instances.push_back(std::move(slot.instance));
     }
     auto generic_declarations = std::vector<GenericDeclarationContract>();
-    for (auto& definition : input.generic_definitions) {
+    for (const auto [index, definition] : std::views::enumerate(input.generic_definitions)) {
         definition->visit([&](auto& source) noexcept {
+            source.contract.implementation_dependencies = generic_implementation_dependencies(
+                generics,
+                GenericDeclarationID(program_identity, static_cast<std::uint32_t>(index)),
+                failure_sets
+            );
             generic_declarations.push_back(std::move(source.contract));
         });
     }
     auto generic_instances = std::vector<GenericNominalInstance>();
     for (auto& slot : input.generic_instances) {
         generic_instances.push_back(std::move(slot.instance));
+    }
+    auto generic_functions = std::vector<GenericFunctionInstance>();
+    for (auto& slot : input.generic_function_instances) {
+        const auto* progress =
+            std::get_if<ConstructionStorage::GenericFunctionInstanceSlot::Progress>(&slot.state);
+        if (!progress
+            || *progress != ConstructionStorage::GenericFunctionInstanceSlot::Progress::Complete) {
+            invariant_violation(
+                "construction solving began with an incomplete generic function instance"
+            );
+        }
+        generic_functions.push_back(
+            {.definition = slot.definition,
+             .arguments = std::move(slot.arguments),
+             .callable = slot.callable}
+        );
     }
     auto final_bodies = BodyStore(std::move(bodies).seal());
     auto final_tests = TestStore(std::move(input.test_slots).seal());
@@ -312,6 +449,7 @@ auto ProgramDraft::resolve() && noexcept -> AnalysisResult<ResolvedAnalysisProgr
             std::move(static_instances),
             std::move(generic_declarations),
             std::move(generic_instances),
+            std::move(generic_functions),
             std::move(test_stops)
         ),
         std::move(generics)
@@ -324,7 +462,7 @@ auto ProgramDraft::finalize_callable_signatures(
 ) noexcept -> void {
     const auto view = storage.declarations.construction_view();
     for (const auto callable_id : view.callable_ids()) {
-        const auto contract = view.callable_contract(callable_id);
+        const auto& contract = view.callable_contract(callable_id);
         auto parameters = std::vector<CallableParameter>();
         parameters.reserve(contract.parameters.size());
         for (const auto& parameter : contract.parameters) {

@@ -16,9 +16,16 @@ import :support.visit;
 import std;
 
 auto BodyElaborator::is_cpp_type(ConstructionTypeRef type) const noexcept -> bool {
-    const auto* concrete = std::get_if<TypeID>(&type);
-    return concrete != nullptr
-        && std::holds_alternative<CppTypeValue>(draft().type_copy(*concrete).value);
+    type = unwrap_type_alias(draft(), type);
+    if (const auto* concrete = std::get_if<TypeID>(&type)) {
+        return std::holds_alternative<CppTypeValue>(draft().type_copy(*concrete).value);
+    }
+    if (const auto* generic = std::get_if<GenericTypeID>(&type)) {
+        const auto shape = draft().generic_type_copy(*generic);
+        return std::holds_alternative<GenericCppNamedType>(shape)
+            || std::holds_alternative<GenericCppQueryType>(shape);
+    }
+    return false;
 }
 
 auto BodyElaborator::select_cpp_name(const ASTCppNameExpr& name, Span span) noexcept
@@ -37,13 +44,26 @@ auto BodyElaborator::select_cpp_name(const ASTCppNameExpr& name, Span span) noex
     return CppSelection {.target = std::move(**reference), .span = span};
 }
 
+auto BodyElaborator::cpp_query_result_type(GenericCppQueryType query) noexcept
+    -> ConstructionTypeRef {
+    auto symbolic = false;
+    visit_cpp_query_types(query, [&](ConstructionTypeRef type) noexcept {
+        symbolic |= !std::holds_alternative<TypeID>(unwrap_type_alias(draft(), type));
+    });
+    if (symbolic) {
+        return draft().intern_generic_type(std::move(query));
+    }
+    const auto concrete = map_cpp_query_types(query, [&](ConstructionTypeRef type) noexcept {
+        return std::get<TypeID>(unwrap_type_alias(draft(), type));
+    });
+    return draft().intern_type({.value = CppTypeValue {.form = concrete}});
+}
+
 auto BodyElaborator::cpp_result_type(
     const CppOperation& operation,
-    std::span<const CppTypeOperand> operands
-) noexcept -> TypeID {
-    return draft().intern_type(
-        {.value = CppTypeValue {.form = cpp_query_type(operation, operands)}}
-    );
+    std::span<const BasicCppTypeOperand<ConstructionTypeRef>> operands
+) noexcept -> ConstructionTypeRef {
+    return cpp_query_result_type(cpp_query_type(operation, operands));
 }
 
 auto BodyElaborator::materialize_selection(
@@ -89,6 +109,13 @@ auto BodyElaborator::materialize_selection(
     if (auto* name = std::get_if<CppNameReference>(&selection.target)) {
         return cpp_expression(CppNameOperation {.name = std::move(*name)}, {}, selection.span);
     }
+    if (auto* member = std::get_if<CppStaticMemberCallee<ConstructionTypeRef>>(&selection.target)) {
+        return cpp_expression(
+            CppStaticMemberOperation {.type = member->type, .member = std::move(member->member)},
+            {},
+            selection.span
+        );
+    }
     auto& member = std::get<CppMemberSelection>(selection.target);
     return cpp_projection(
         std::move(member.receiver),
@@ -104,25 +131,15 @@ auto BodyElaborator::cpp_projection(
     std::vector<SemCallArgument> operands,
     Span span
 ) noexcept -> AnalysisResult<BuiltExpression> {
-    auto inputs = std::vector<CppTypeOperand>();
-    const auto* concrete = std::get_if<TypeID>(&receiver.type());
-    if (concrete == nullptr) {
-        invariant_violation("external projection requires a concrete receiver type");
-    }
+    auto inputs = std::vector<BasicCppTypeOperand<ConstructionTypeRef>>();
     auto* place = std::get_if<PlaceExpression>(&*receiver.storage);
     inputs.push_back(
-        {.type = *concrete, .access = place != nullptr ? place->access : AccessMode::Read}
+        {.type = receiver.type(), .access = place != nullptr ? place->access : AccessMode::Read}
     );
     for (const auto& operand : operands) {
-        const auto* type = std::get_if<TypeID>(&operand.expression.type.construction());
-        if (type == nullptr) {
-            return std::unexpected(fail(
-                span,
-                DiagnosticCode::TypeMismatch,
-                "C++ type queries require concrete argument types"
-            ));
-        }
-        inputs.push_back({.type = *type, .access = operand.access});
+        inputs.push_back(
+            {.type = operand.expression.type.construction(), .access = operand.access}
+        );
     }
     const auto type = cpp_result_type(operation, inputs);
     if (place != nullptr) {
@@ -177,26 +194,39 @@ auto BodyElaborator::cpp_expression(
     const auto location = origin(span);
     auto result_type = type;
     if (!result_type.has_value()) {
-        auto inputs = std::vector<CppTypeOperand>();
+        auto inputs = std::vector<BasicCppTypeOperand<ConstructionTypeRef>>();
         for (const auto& operand : operands) {
-            const auto* concrete = std::get_if<TypeID>(&operand.expression.type.construction());
-            if (concrete == nullptr) {
-                return std::unexpected(fail(
-                    span,
-                    DiagnosticCode::TypeMismatch,
-                    "C++ type queries require concrete argument types"
-                ));
-            }
-            inputs.push_back({.type = *concrete, .access = operand.access});
+            inputs.push_back(
+                {.type = operand.expression.type.construction(), .access = operand.access}
+            );
         }
         if (const auto* construction = std::get_if<CppConstructOperation>(&operation)) {
-            result_type = draft().intern_type(
-                {.value = CppTypeValue {
-                     .form = cpp_construct_query(
-                         construction->target,
-                         operands,
-                         [&](TypeID type) noexcept { return draft().type_copy(type); }
-                     )
+            auto arguments = std::vector<BasicCppConstructArgument<ConstructionTypeRef>>();
+            for (const auto& operand : operands) {
+                auto constant = std::optional<ConstantID>();
+                if (const auto* concrete =
+                        std::get_if<TypeID>(&operand.expression.type.construction())) {
+                    const auto shape = draft().type_copy(*concrete);
+                    const auto* builtin = std::get_if<BuiltinTypeValue>(&shape.value);
+                    if (builtin
+                        && (builtin_is_numeric(builtin->kind)
+                            || builtin->kind == BuiltinType::Bool
+                            || builtin->kind == BuiltinType::Char)
+                        && operand.access == AccessMode::Read
+                        && !operand.expression.selects_storage()) {
+                        constant = operand.expression.constant;
+                    }
+                }
+                arguments.push_back(
+                    {.operand =
+                         {.type = operand.expression.type.construction(), .access = operand.access},
+                     .constant = constant}
+                );
+            }
+            result_type = cpp_query_result_type(
+                {.expression = BasicCppConstructQuery<ConstructionTypeRef> {
+                     .target = construction->target,
+                     .arguments = std::move(arguments)
                  }}
             );
         } else {
@@ -286,12 +316,8 @@ auto BodyElaborator::cpp_construct(
             "named initializers require a Carven structure"
         ));
     }
-    const auto* concrete = std::get_if<TypeID>(&target);
-    if (concrete == nullptr) {
-        invariant_violation("C++ construction requires a concrete target description");
-    }
     auto result =
-        cpp_expression(CppConstructOperation {.target = *concrete}, std::move(operands), span);
+        cpp_expression(CppConstructOperation {.target = target}, std::move(operands), span);
     if (result) {
         result->completes = completes;
     }
@@ -333,6 +359,10 @@ auto BodyElaborator::cpp_call(
             if (auto* name = std::get_if<CppNameReference>(&selection->target)) {
                 return std::move(*name);
             }
+            if (auto* member =
+                    std::get_if<CppStaticMemberCallee<ConstructionTypeRef>>(&selection->target)) {
+                return std::move(*member);
+            }
             auto& member = std::get<CppMemberSelection>(selection->target);
             auto value = (receiver(member.receiver, selection->span));
             if (!value.has_value()) {
@@ -368,21 +398,9 @@ auto BodyElaborator::cpp_call(
     }
 
     auto call = SemCppCall {.callee = std::move(*callee), .arguments = std::move(arguments)};
-    auto concrete = true;
-    visit_cpp_operands(call, [&](AccessMode, const SemanticExpression& operand) noexcept {
-        concrete &= std::holds_alternative<TypeID>(operand.type.construction());
-    });
-    if (!concrete) {
-        co_return std::unexpected(fail(
-            span,
-            DiagnosticCode::TypeMismatch,
-            "C++ type queries require concrete argument types"
-        ));
-    }
-    const auto query = cpp_call_query(call, [](ConstructionTypeRef type) static noexcept {
-        return std::get<TypeID>(type);
-    });
-    const auto type = draft().intern_type({.value = CppTypeValue {.form = query}});
+    const auto query =
+        cpp_call_query(call, [](ConstructionTypeRef type) static noexcept { return type; });
+    const auto type = cpp_query_result_type(query);
     auto value =
         active_builder()
             .make_expression(type, active_builder().lifetime(), origin(span), std::move(call));

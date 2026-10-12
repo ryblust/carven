@@ -31,9 +31,9 @@ const test "Tuple patterns: constant products preserve correlated coverage and p
     check(classify((true, false)) == 1);
     check(classify((false, true)) == 1);
     check(classify((false, false)) == 0);
-    check(nested((Choice::Number(7), (true, ()))) == 7);
-    check(nested((Choice::Number(7), (false, ()))) == -7);
-    check(nested((Choice::Empty, (false, ()))) == 0);
+    check(nested((.Number(7), (true, ()))) == 7);
+    check(nested((.Number(7), (false, ()))) == -7);
+    check(nested((.Empty, (false, ()))) == 0);
     check(select_slot((2, 5, true)) == 2);
     check(select_slot((2, 5, false)) == 5);
     check(singleton((13,)) == 13);
@@ -67,7 +67,7 @@ test "Tuple patterns: source runs once and rejected guards preserve later bindin
     check(sources == 1);
     check(guards == 1);
     check(select_slot((2, 5, false)) == 5);
-    check(nested((Choice::Number(7), (false, ()))) == -7);
+    check(nested((.Number(7), (false, ()))) == -7);
     check(singleton((13,)) == 13);
     check(empty(()) == 17);
 }

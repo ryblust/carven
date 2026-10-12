@@ -1,0 +1,31 @@
+import "scalars/generic.hpp";
+
+private fn native_box<T>(&&value: T) -> ::generic_native::Box<T> {
+    return ::generic_native::Box<T> { &&value };
+}
+
+private fn native_value<T>(box: ::generic_native::Box<T>) -> T => box.get() as T;
+
+private fn static_identity<T>(&&value: T) -> T => ::generic_native::Box<T>::identity(&&value) as T;
+
+private fn static_add<T>(&&value: T, &&increment: T) -> T => ::generic_native::Box<T>::identity(
+        &&value,
+        &&increment
+    )
+    as T;
+
+private fn static_size<T>() -> usize => ::generic_native::Box<T>::size as usize;
+
+private fn through_native<T>(&&value: T) -> T {
+    let box = native_box<T>(&&value);
+    return native_value(box);
+}
+
+test "Interop: native type applications retain generic arguments through construction and calls" {
+    check(through_native<i8>(&&-12) == -12i8);
+    check(through_native<u16>(&&65535) == 65535u16);
+    check(through_native<f32>(&&1.25) == 1.25f32);
+    check(static_identity<i16>(&&123) == 123i16);
+    check(static_add<u32>(&&21, &&21) == 42u32);
+    check(static_size<u16>() == 2usize);
+}

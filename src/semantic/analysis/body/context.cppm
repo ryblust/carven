@@ -82,7 +82,8 @@ struct CppMemberSelection final {
 };
 
 struct CppSelection final {
-    std::variant<CppNameReference, CppMemberSelection> target;
+    std::variant<CppNameReference, CppStaticMemberCallee<ConstructionTypeRef>, CppMemberSelection>
+        target;
     Span span;
 };
 
@@ -533,8 +534,10 @@ private:
 
     auto cpp_result_type(
         const CppOperation& operation,
-        std::span<const CppTypeOperand> operands
-    ) noexcept -> TypeID;
+        std::span<const BasicCppTypeOperand<ConstructionTypeRef>> operands
+    ) noexcept -> ConstructionTypeRef;
+
+    auto cpp_query_result_type(GenericCppQueryType query) noexcept -> ConstructionTypeRef;
 
     auto is_cpp_type(ConstructionTypeRef type) const noexcept -> bool;
 

@@ -1,0 +1,33 @@
+import .analysis using { analyze, to_json };
+import std::json.error using ValueError;
+import std::io using IOError;
+
+enum AnalyzerError {
+    Input(IOError),
+    Report(ValueError)
+}
+
+const demo = """
+    INFO 12 collector connected
+    WARN 37 mixer token=demo clipped=2
+    ERROR 42 upstream timed out
+    INFO nope malformed
+""";
+
+async fn main(args) throw AnalyzerError {
+    var from_stdin = false;
+    for argument in args {
+        if argument == "--stdin" { from_stdin = true; }
+    }
+    try {
+        if from_stdin {
+            let bytes = await stdin().read_all(16 * 1024 * 1024)?;
+            println(to_json(analyze(bytes))?);
+        } else {
+            println(to_json(analyze(demo.bytes))?);
+        }
+    } catch {
+        IOError(error) => throw AnalyzerError::Input(error),
+        ValueError(error) => throw AnalyzerError::Report(error),
+    }
+}

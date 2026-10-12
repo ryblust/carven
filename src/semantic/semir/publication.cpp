@@ -334,11 +334,11 @@ auto validate_publication_facts(
                             invariant_violation("C++ type has an unpublished environment");
                         }
                     }
-                    for (const auto argument : cpp_type_references(value)) {
+                    visit_cpp_type_references(value, [&](TypeID argument) noexcept {
                         if (!types.contains(argument)) {
                             invariant_violation("C++ type has an unpublished operand type");
                         }
-                    }
+                    });
                 },
                 [](const BuiltinTypeValue&) static noexcept {},
                 [&](const StructTypeValue& value) noexcept {

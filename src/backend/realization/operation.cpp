@@ -179,6 +179,12 @@ auto native_call(
             [&](const CppNameReference& name) noexcept -> TargetExpr {
                 return name_expression(context.cpp_name(name));
             },
+            [&](const CppStaticMemberCallee<ConstructionTypeRef>& value) noexcept -> TargetExpr {
+                return static_member_expression(
+                    context.lower_type(std::get<TypeID>(value.type)),
+                    TargetIdentifier::from_spelling(value.member)
+                );
+            },
             [&](const CppMemberCallee<SemCppOperand>& member) noexcept -> TargetExpr {
                 auto receiver = std::move(values.front());
                 values.erase(values.begin());
@@ -227,6 +233,12 @@ auto native_operation(
             [&](const CppNameOperation& name) noexcept -> TargetExpr {
                 return name_expression(context.cpp_name(name.name));
             },
+            [&](const CppStaticMemberOperation& value) noexcept -> TargetExpr {
+                return static_member_expression(
+                    context.lower_type(std::get<TypeID>(value.type)),
+                    TargetIdentifier::from_spelling(value.member)
+                );
+            },
             [&](const CppConstructOperation& construction) noexcept -> TargetExpr {
                 const auto* plan = std::get_if<PreparedNativeConstruction>(preparation);
                 if (plan == nullptr) {
@@ -247,7 +259,7 @@ auto native_operation(
                 }
                 return {
                     .value = TargetConstructionExpr {
-                        .type = context.lower_type(construction.target),
+                        .type = context.lower_type(std::get<TypeID>(construction.target)),
                         .initializer = std::move(delivered)
                     }
                 };
@@ -639,9 +651,9 @@ auto realize_operation(
                                 return call_member(std::move(receiver), name, std::move(operands));
                             };
                             switch (family.intrinsic) {
-                                case SliceIntrinsic::FromOwner:
+                                case SliceIntrinsic::View:
                                     return call_expression(
-                                        intrinsic_expression(TargetSymbol::RuntimeAsSlice),
+                                        intrinsic_expression(TargetSymbol::RuntimeSliceView),
                                         std::move(operands)
                                     );
                                 case SliceIntrinsic::Length:  return method("size");

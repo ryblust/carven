@@ -157,6 +157,30 @@ constexpr auto exports = std::array {
         .default_available = true
     },
     ProvidedExportInfo {
+        .identity = ProvidedExport::Stdin,
+        .module = ProvidedModule::Io,
+        .name = "stdin",
+        .default_available = true
+    },
+    ProvidedExportInfo {
+        .identity = ProvidedExport::StdinType,
+        .module = ProvidedModule::Io,
+        .name = "Stdin",
+        .default_available = false
+    },
+    ProvidedExportInfo {
+        .identity = ProvidedExport::InputRead,
+        .module = ProvidedModule::Io,
+        .name = "Read",
+        .default_available = false
+    },
+    ProvidedExportInfo {
+        .identity = ProvidedExport::IOError,
+        .module = ProvidedModule::Io,
+        .name = "IOError",
+        .default_available = false
+    },
+    ProvidedExportInfo {
         .identity = ProvidedExport::Check,
         .module = ProvidedModule::Testing,
         .name = "check",
@@ -319,6 +343,20 @@ auto provided_exports() noexcept -> std::span<const ProvidedExportInfo> {
 
 auto provided_export(ProvidedExport identity) noexcept -> const ProvidedExportInfo& {
     return exports[static_cast<std::size_t>(identity)];
+}
+
+auto provided_source_key(ProvidedExport identity) noexcept -> std::optional<StandardRecordKey> {
+    switch (identity) {
+        case ProvidedExport::Stdin:
+            return StandardRecordKey {"crafts.carven.std.io.stream", "stdin"};
+        case ProvidedExport::StdinType:
+            return StandardRecordKey {"crafts.carven.std.io.stream", "Stdin"};
+        case ProvidedExport::InputRead:
+            return StandardRecordKey {"crafts.carven.std.io.stream", "Read"};
+        case ProvidedExport::IOError:
+            return StandardRecordKey {"crafts.carven.std.io.stream", "IOError"};
+        default: return std::nullopt;
+    }
 }
 
 auto standard_record_key(StandardRecord record) noexcept -> StandardRecordKey {

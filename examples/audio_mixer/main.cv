@@ -1,0 +1,45 @@
+import .mix using { gains, mix, rms, MixError };
+import std::number.parse using { parse, ParseError };
+import std::utf.text using { split_once, TextError };
+
+enum MixerError {
+    UnknownArgument(String),
+    InvalidGain(ParseError),
+    InvalidOption(TextError),
+    Mixing(MixError)
+}
+
+const voice: [f32; 10] = [0.5, -0.5, 1.0, -1.0, 0.0, 0.25, -0.25, 0.5, 0.75, -0.75];
+const music: [f32; 10] = [0.0, 0.0, 0.5, -0.5, 0.5, 0.5, -0.5, -0.5, 0.0, 0.0];
+
+fn main(args) throw MixerError {
+    try {
+        var requested = gains;
+        var logs = false;
+        for argument in args {
+            if argument == "--logs" {
+                logs = true;
+                continue;
+            }
+            let option = split_once(argument, "=")?;
+            match option.before {
+                "--voice" if option.found => { requested.voice = parse<f32>(option.after)?; },
+                "--music" if option.found => { requested.music = parse<f32>(option.after)?; },
+                _ => throw MixerError::UnknownArgument(argument as String),
+            }
+        }
+        let output = mix(voice, music, requested)?;
+        if logs {
+            println(f"WARN 37 mixer clipped={output.clipped} samples={output.samples.length()}");
+            println(f"INFO 12 mixer peak={output.peak:.2f} rms={rms(output):.3f}");
+        } else {
+            println(f"Mixed {output.samples.length()} samples; clipped: {output.clipped}");
+            println(f"Peak: {output.peak:.2f}; RMS: {rms(output):.3f}");
+            println(output.samples);
+        }
+    } catch {
+        ParseError(error) => throw MixerError::InvalidGain(error),
+        TextError(error) => throw MixerError::InvalidOption(error),
+        MixError(error) => throw MixerError::Mixing(error),
+    }
+}

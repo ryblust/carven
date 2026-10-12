@@ -23,7 +23,7 @@ spelling and parsing. Topic references define the rules for each language featur
 | Evaluate constants, execute `const fn` or `const` blocks, or freeze a result | [Values and constants](constants.md) |
 | Construct, borrow, mutate, or format Unicode text | [Text and interpolation](text.md) |
 | Use native names and types, C strings, source fragments, or C++ function boundaries | [C++ interoperation](interop.md) |
-| Print values, define an entry or test, or interpret an assertion or diagnostic | [Printing, entry points, and tests](execution.md) |
+| Read input, print values, define an entry or test, or interpret an assertion or diagnostic | [Input, output, entry points, and tests](execution.md) |
 
 ## Reading across topics
 

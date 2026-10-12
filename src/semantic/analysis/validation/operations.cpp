@@ -11,7 +11,7 @@ import std;
 
 auto BodyContractVerifier::verify_expression(
     const SemanticExpression& source,
-    bool residual
+    bool rewritten
 ) const noexcept -> void {
     static_cast<void>(require_type(source.type.resolved()));
     static_cast<void>(require_failure_set(source.failures.resolved()));
@@ -70,11 +70,13 @@ auto BodyContractVerifier::verify_expression(
                         value.left->type.resolved(),
                         value.right->type.resolved(),
                         true,
-                        type_supports_equality(
-                            program.types(),
-                            program.declarations(),
-                            value.left->type.resolved()
-                        )
+                        (value.operation != BinaryOperator::Equal
+                         && value.operation != BinaryOperator::NotEqual)
+                            || type_supports_equality(
+                                program.types(),
+                                program.declarations(),
+                                value.left->type.resolved()
+                            )
                     ),
                     value.left->type.resolved()
                 );
@@ -139,17 +141,20 @@ auto BodyContractVerifier::verify_expression(
                     auto expected = CppTypeValue {
                         .form = construction
                             ? cpp_construct_query(
-                                  construction->target,
+                                  std::get<TypeID>(construction->target),
                                   value.operands,
                                   [&](TypeID type) noexcept { return require_type(type); }
                               )
-                            : cpp_query_type(value.operation, operands)
+                            : cpp_query_type(
+                                  value.operation,
+                                  std::span<const CppTypeOperand>(operands)
+                              )
                     };
                     const auto* actual =
                         std::get_if<CppTypeValue>(&require_type(source.type.resolved()).value);
                     // Specialization can establish additional operand values. The
                     // checked query keeps its original type identity and value witnesses.
-                    if (residual && construction && actual) {
+                    if (rewritten && construction && actual) {
                         const auto* checked_query = std::get_if<CppQueryType>(&actual->form);
                         const auto* checked = checked_query
                             ? std::get_if<CppConstructQuery>(&checked_query->expression)
@@ -184,7 +189,9 @@ auto BodyContractVerifier::verify_expression(
                     invariant_violation("C++ call cannot denote storage");
                 }
                 const auto expected = CppTypeValue {
-                    .form = cpp_call_query(value, [](TypeID type) static noexcept { return type; })
+                    .form = cpp_call_query(value, [](ConstructionTypeRef type) static noexcept {
+                        return std::get<TypeID>(type);
+                    })
                 };
                 const auto* actual =
                     std::get_if<CppTypeValue>(&require_type(source.type.resolved()).value);
@@ -525,9 +532,7 @@ auto BodyContractVerifier::verify_expression(
                         &require_type(operand.expression.type.resolved()).value
                     );
                     if (operand.access != AccessMode::Read
-                        || (type != nullptr
-                            && (type->kind == BuiltinType::EntryArgs
-                                || type->kind == BuiltinType::StrCharsView))) {
+                        || (type != nullptr && type->kind == BuiltinType::StrCharsView)) {
                         invariant_violation("invalid printing operand");
                     }
                 }
@@ -618,7 +623,7 @@ auto BodyContractVerifier::verify_expression(
                                 )) {
                                 invariant_violation("slice intrinsic receiver mismatch");
                             }
-                            if (family.intrinsic == SliceIntrinsic::FromOwner
+                            if (family.intrinsic == SliceIntrinsic::View
                                 && array
                                 && family.result_extent != array->extent) {
                                 invariant_violation(

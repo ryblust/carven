@@ -12,13 +12,14 @@ namespace {
 
 namespace async = carven::runtime::execution;
 namespace api = carven::api::tests::interop::async::bridge;
+
 using async_bridge::Context;
 using async_bridge::Observations;
 using async_bridge::TrivialContext;
 using async_interop::PipeQueue;
-using IoError = decltype(api::make_io_error(0));
-using ReadResult = async::Completion<std::int32_t, IoError>;
-using ReadOperation = async::AsyncOperation<std::int32_t, IoError>;
+using IOError = decltype(api::make_io_error(0));
+using ReadResult = async::Completion<std::int32_t, IOError>;
+using ReadOperation = async::AsyncOperation<std::int32_t, IOError>;
 
 auto check(bool condition, const char* message) noexcept -> void {
     if (!condition) {
@@ -83,7 +84,7 @@ auto bridge_read_byte(const Context& context) noexcept -> ReadOperation {
 }
 
 auto bridge_write_byte(const Context& context, std::int32_t value) noexcept
-    -> async::AsyncOperation<void, IoError> {
+    -> async::AsyncOperation<void, IOError> {
     check(
         &context == context.host_address && value >= 0 && value <= 255,
         "valid write context and byte"
@@ -92,7 +93,7 @@ auto bridge_write_byte(const Context& context, std::int32_t value) noexcept
     const auto buffer = std::array {static_cast<std::byte>(value)};
     auto result = co_await context.queue.write_some(context.fd, buffer);
     ++context.observed.finished;
-    using Result = async::Completion<void, IoError>;
+    using Result = async::Completion<void, IOError>;
     if (result.is_cancelled()) {
         ++context.observed.cancelled;
         co_return Result::cancelled();
@@ -131,8 +132,8 @@ auto bridge_note(const Context& context, std::int32_t stage) noexcept -> void {
 }
 
 auto bridge_native_character(std::int32_t value, bool fail) noexcept
-    -> async::AsyncOperation<char32_t, IoError> {
-    using Result = async::Completion<char32_t, IoError>;
+    -> async::AsyncOperation<char32_t, IOError> {
+    using Result = async::Completion<char32_t, IOError>;
     if (async::cancel_requested()) {
         co_return Result::cancelled();
     }

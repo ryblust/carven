@@ -11,3 +11,4 @@ import std;
 // grow the native traversal stack.
 auto type_content_key(const SemIRProgram& program, TypeID type) noexcept -> std::string;
 auto constant_content_key(const SemIRProgram& program, ConstantID constant) noexcept -> std::string;
+auto callable_content_key(const SemIRProgram& program, CallableID callable) noexcept -> std::string;

@@ -15,6 +15,9 @@ and payload relationships; loop transfers distinguish break from continue.
 
 An ownership batch prepares local object descriptions, relative temporary
 positions, lifetime membership, and pattern acceptance once for each final body.
+Static binding and storage contracts read the resolved model and body directly.
+Flow evaluation borrows the storage topology owned by its call query; checking a
+static contract does not construct flow state.
 Type contents are read from the completed semantic program, without borrowing
 construction state. Coverage borrows pattern tables and stage
 type facts; exhaustive queries and full diagnostics share its algorithm. Catch

@@ -1,0 +1,21 @@
+import .cross_model using { Payload, Token, Failure };
+import "providers/cross_consumer.hpp";
+
+private import(cpp) fn cross_api_consumer() -> bool;
+
+export(cpp) fn make() -> Payload => { text: "native" };
+
+export(cpp) fn take(&&token: Token) -> usize => token.text.byte_length();
+
+export(cpp) fn fail() throw Failure {
+    throw Failure::Denied("failed");
+}
+
+export(cpp) async fn complete(fail: bool) -> Payload throw Failure {
+    if fail { throw Failure::Denied("failed"); }
+    return { text: "async" };
+}
+
+test "C++ API: one public header supplies cross-module owning payloads" {
+    check(cross_api_consumer());
+}

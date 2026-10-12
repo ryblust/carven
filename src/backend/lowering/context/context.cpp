@@ -175,11 +175,13 @@ auto ModuleLowering::enumeration_name(EnumID id, TypeNameScope scope) noexcept -
 
 auto ModuleLowering::callable_name(CallableID id) noexcept -> TargetName {
     const auto provider = names().callable_owner(id);
-    if (provider == module_id
-        || target_definition_placement(semantic(), id) == TargetDefinitionPlacement::Use) {
+    const auto placement = target_definition_placement(semantic(), id);
+    if (provider == module_id || placement == TargetDefinitionPlacement::Use) {
         require_callable(id);
     }
-    artifact_lowering.require_interface(provider);
+    if (placement != TargetDefinitionPlacement::Use) {
+        artifact_lowering.require_interface(provider);
+    }
     return names().callable_name(module_id, id);
 }
 

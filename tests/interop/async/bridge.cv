@@ -1,46 +1,46 @@
 import std::async using { yield_once, wait_ready, close, when_all, when_any, first_successful };
 import "async/bridge.hpp" using async_bridge::{ Context, TrivialContext };
 
-export struct IoError {
+export struct IOError {
     code: i32
 }
 
-export(cpp) fn make_io_error(code: i32) -> IoError => IoError { code: code };
+export(cpp) fn make_io_error(code: i32) -> IOError => { code: code };
 
 #[cpp] ---
 #include <carven/api/tests/interop/async/bridge.hpp>
-using BridgeIoError = decltype(carven::api::tests::interop::async::bridge::make_io_error(0));
+using BridgeIOError = decltype(carven::api::tests::interop::async::bridge::make_io_error(0));
 auto bridge_read_byte(const async_bridge::Context&) noexcept
-    -> carven::runtime::execution::AsyncOperation<std::int32_t, BridgeIoError>;
+    -> carven::runtime::execution::AsyncOperation<std::int32_t, BridgeIOError>;
 auto bridge_write_byte(const async_bridge::Context&, std::int32_t) noexcept
-    -> carven::runtime::execution::AsyncOperation<void, BridgeIoError>;
+    -> carven::runtime::execution::AsyncOperation<void, BridgeIOError>;
 auto bridge_trivial_byte(const async_bridge::TrivialContext&, std::int32_t) noexcept
-    -> carven::runtime::execution::AsyncOperation<std::int32_t, BridgeIoError>;
+    -> carven::runtime::execution::AsyncOperation<std::int32_t, BridgeIOError>;
 auto bridge_note(const async_bridge::Context&, std::int32_t) noexcept -> void;
 auto bridge_native_character(std::int32_t, bool) noexcept
-    -> carven::runtime::execution::AsyncOperation<char32_t, BridgeIoError>;
+    -> carven::runtime::execution::AsyncOperation<char32_t, BridgeIOError>;
 ---
 
-import(cpp) async fn bridge_read_byte(context: Context) -> i32 throw IoError;
-import(cpp) async fn bridge_write_byte(context: Context, value: i32) throw IoError;
-import(cpp) async fn bridge_trivial_byte(context: TrivialContext, marker: i32) -> i32 throw IoError;
-import(cpp) async fn bridge_native_character(value: i32, fail: bool) -> char throw IoError;
+import(cpp) async fn bridge_read_byte(context: Context) -> i32 throw IOError;
+import(cpp) async fn bridge_write_byte(context: Context, value: i32) throw IOError;
+import(cpp) async fn bridge_trivial_byte(context: TrivialContext, marker: i32) -> i32 throw IOError;
+import(cpp) async fn bridge_native_character(value: i32, fail: bool) -> char throw IOError;
 import(cpp) fn bridge_note(context: Context, stage: i32);
 
-export(cpp) async fn source_read(context: Context) -> i32 throw IoError {
-    return await bridge_read_byte(context)?;
-}
+export(cpp) async fn source_read(context: Context) -> i32 throw IOError => await bridge_read_byte(
+    context
+)?;
 
 export(cpp) async fn source_exchange(
     reader: Context,
     writer: Context,
     value: i32
-) -> i32 throw IoError {
+) -> i32 throw IOError {
     await bridge_write_byte(writer, value)?;
     return await bridge_read_byte(reader)?;
 }
 
-export(cpp) async fn source_stored(context: Context) -> i32 throw IoError {
+export(cpp) async fn source_stored(context: Context) -> i32 throw IOError {
     bridge_note(context, 1);
     let operation = bridge_read_byte(context);
     bridge_note(context, 2);
@@ -54,7 +54,7 @@ export(cpp) async fn source_recover(context: Context) -> i32 {
     try {
         return await bridge_read_byte(context)?;
     } catch {
-        IoError(error) => { return error.code; },
+        IOError(error) => { return error.code; },
     }
 }
 
@@ -90,37 +90,41 @@ private async fn later_marker() -> i32 {
     return 23;
 }
 
-private fn trivial_factory(const offset: i32, context: TrivialContext, marker: i32) {
-    return bridge_trivial_byte(context, marker + offset);
-}
+private fn trivial_factory(
+    const offset: i32,
+    context: TrivialContext,
+    marker: i32
+) => bridge_trivial_byte(context, marker + offset);
 
-private fn trivial_outer_factory(context: TrivialContext, const offset: i32, marker: i32) {
-    return trivial_factory(offset, context, marker);
-}
+private fn trivial_outer_factory(
+    context: TrivialContext,
+    const offset: i32,
+    marker: i32
+) => trivial_factory(offset, context, marker);
 
-export(cpp) async fn source_trivial(context: TrivialContext) -> i32 throw IoError {
+export(cpp) async fn source_trivial(context: TrivialContext) -> i32 throw IOError {
     let operation = trivial_outer_factory(context, 0, await later_marker());
     await yield_once();
     return await operation?;
 }
 
-export(cpp) async fn source_character(value: i32, fail: bool) -> char throw IoError {
+export(cpp) async fn source_character(value: i32, fail: bool) -> char throw IOError {
     return await bridge_native_character(value, fail)?;
 }
 
-export(cpp) async fn source_discard_character(value: i32, fail: bool) throw IoError {
+export(cpp) async fn source_discard_character(value: i32, fail: bool) throw IOError {
     await bridge_native_character(value, fail)?;
 }
 
-export(cpp) async fn source_join_characters(value: i32, fail: bool) throw IoError {
+export(cpp) async fn source_join_characters(value: i32, fail: bool) throw IOError {
     await when_all(bridge_native_character(value, fail), bridge_native_character(90, false))?;
 }
 
-export(cpp) async fn source_race_characters(value: i32, fail: bool) throw IoError {
+export(cpp) async fn source_race_characters(value: i32, fail: bool) throw IOError {
     await when_any(bridge_native_character(value, fail), bridge_native_character(90, false))?;
 }
 
-export(cpp) async fn source_first_character(value: i32, fail: bool) throw IoError {
+export(cpp) async fn source_first_character(value: i32, fail: bool) throw IOError {
     await first_successful(
         bridge_native_character(value, fail),
         bridge_native_character(90, false)
@@ -128,6 +132,6 @@ export(cpp) async fn source_first_character(value: i32, fail: bool) throw IoErro
 }
 
 // A consumed success must be checked even when a later input fails the join.
-export(cpp) async fn source_join_character_then_failure(value: i32) throw IoError {
+export(cpp) async fn source_join_character_then_failure(value: i32) throw IOError {
     await when_all(bridge_native_character(value, false), bridge_native_character(0xd800, true))?;
 }

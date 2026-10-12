@@ -124,7 +124,7 @@ const fn read_returned_slice_element() -> i32 {
         [1, 2],
         [3, 4]
     ];
-    return observe_array_alias(retain_rows(rows.as_slice())[0], addressof(&rows[0][0]));
+    return observe_array_alias(retain_rows(rows.slice())[0], addressof(&rows[0][0]));
 }
 
 const fn write_same_target_twice(&first: i32, &second: i32) -> i32 {

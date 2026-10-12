@@ -1,4 +1,4 @@
-function main(target, description)
+function main(target, description, stdout_suffix)
     local program = path.absolute(target:targetfile(), os.projectdir())
     local stdout_file, stderr_file = os.tmpfile(), os.tmpfile()
     local status, run_error = os.execv(program, {}, {
@@ -15,5 +15,10 @@ function main(target, description)
     local passed = stderr:match("carven: tests: (%d+) passed; 0 failed\n$")
     assert(passed and tonumber(passed) > 0,
         "generated runner executed no passing tests or omitted its summary: " .. context)
+    if stdout_suffix then
+        local normalized = stdout:gsub("\r\n", "\n")
+        assert(normalized:sub(-#stdout_suffix) == stdout_suffix,
+            "generated behavior output differs: " .. context)
+    end
     return true
 end

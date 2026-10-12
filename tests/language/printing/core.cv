@@ -119,7 +119,7 @@ fn main() {
     println(PrintedState::Done(42, "ok"), PrintedState::Pending, PrintedCode::Bad);
     println(PrintedEmpty {}, [1, 2, 3]);
     let values = [4, 5];
-    println(values.as_slice());
+    println(values.slice());
     println(order, replace_order(&order));
     let structural: fn(PrintedOrder) -> void = println;
     structural(order);

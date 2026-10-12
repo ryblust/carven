@@ -103,7 +103,7 @@ public:
     auto is_staged(FunctionID function) const noexcept -> bool;
 
     auto generic_declaration_contracts() const noexcept
-        -> std::span<const GenericDeclarationContract>;
+        -> IDTableEntries<GenericDeclarationID, GenericDeclarationContract, ProgramIdentity>;
 
     auto generic_declaration_contract(GenericDeclarationID id) const noexcept
         -> const GenericDeclarationContract&;
@@ -112,6 +112,10 @@ public:
 
     auto generic_nominal_instance(NominalDeclarationRef declaration) const noexcept
         -> const GenericNominalInstance*;
+
+    auto generic_function_instances() const noexcept -> std::span<const GenericFunctionInstance>;
+    auto generic_function_instance(CallableID callable) const noexcept
+        -> const GenericFunctionInstance*;
 
     auto static_instances() const noexcept -> std::span<const StaticInstance>;
     // The function a callable implements: its declaration, or the function
@@ -165,6 +169,7 @@ private:
         std::vector<StaticInstance> static_instances,
         std::vector<GenericDeclarationContract> generic_declarations,
         std::vector<GenericNominalInstance> generic_instances,
+        std::vector<GenericFunctionInstance> generic_functions,
         std::vector<bool> test_stops
     ) noexcept;
 
@@ -178,8 +183,11 @@ private:
     BodyStore body_store;
     TestStore test_store;
     std::vector<StaticInstance> static_instance_store;
-    std::vector<GenericDeclarationContract> generic_declaration_store;
+    ImmutableProgramTable<GenericDeclarationContract, GenericDeclarationID>
+        generic_declaration_store;
     std::vector<GenericNominalInstance> generic_instance_store;
+    std::vector<GenericFunctionInstance> generic_function_store;
+    std::map<CallableID, std::size_t> generic_instance_functions;
     std::map<NominalDeclarationRef, std::size_t> generic_instance_nominals;
     std::map<std::pair<FunctionID, std::vector<ConstantID>>, CallableID> static_instance_index;
     std::map<CallableID, std::size_t> instance_callables;

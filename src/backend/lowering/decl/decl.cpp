@@ -475,20 +475,32 @@ auto lower_entry_wrapper(ModuleLowering& context, FunctionID function_id) noexce
     const auto with_arguments = *function.entry_point == EntryPointKind::WithArguments;
     auto process_arguments = std::optional<std::array<TargetLocalID, 2>>();
     auto arguments = std::vector<TargetExpr>();
+    auto body = std::vector<TargetStmt>();
     if (with_arguments) {
         process_arguments = std::array {
             context.target().add_local(process_argument_count_identifier()),
             context.target().add_local(process_argument_vector_identifier())
         };
-        arguments.push_back(call_expression(
-            intrinsic_expression(TargetSymbol::RuntimeEntryArgs),
-            target_expressions(
-                name_expression((*process_arguments)[0]),
-                name_expression((*process_arguments)[1])
-            )
+        auto names = context.make_callable_name_allocator();
+        const auto storage =
+            context.target().add_local(names.fresh(TargetTemporaryNameKind::Operand));
+        body.push_back(generated_statement(
+            TargetVariableStmt {
+                .binding = TargetVariableBinding::ConstValue,
+                .maybe_unused = false,
+                .local = storage,
+                .type = context.intrinsic_type(TargetSymbol::Auto),
+                .initializer = call_expression(
+                    intrinsic_expression(TargetSymbol::RuntimeEntryArgs),
+                    target_expressions(
+                        name_expression((*process_arguments)[0]),
+                        name_expression((*process_arguments)[1])
+                    )
+                )
+            }
         ));
+        arguments.push_back(name_expression(storage));
     }
-    auto body = std::vector<TargetStmt>();
     auto call = call_expression(
         name_expression(context.global_function_name(function_id)),
         std::move(arguments)
@@ -499,9 +511,6 @@ auto lower_entry_wrapper(ModuleLowering& context, FunctionID function_id) noexce
     const auto may_complete_cancelled =
         asynchronous && context.semantic().may_complete_cancelled(function.callable);
     if (asynchronous) {
-        if (with_arguments) {
-            invariant_violation("async entry retained process arguments");
-        }
         call = call_expression(
             intrinsic_expression(TargetSymbol::RuntimeAsyncDriveRoot),
             target_expressions(std::move(call))

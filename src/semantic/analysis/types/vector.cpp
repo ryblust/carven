@@ -16,9 +16,6 @@ auto unsupported_vector_element_shape(const Shape& value) noexcept
         if (value.kind == BuiltinType::Str || value.kind == BuiltinType::StrCharsView) {
             return "Vector elements cannot contain borrowed text";
         }
-        if (value.kind == BuiltinType::EntryArgs) {
-            return "Vector element is not an owning value type";
-        }
     } else if constexpr (std::same_as<Shape, SliceTypeValue>
                          || std::same_as<Shape, GenericSliceType>
                          || std::same_as<Shape, ConstructionSliceTypeValue>) {
@@ -27,7 +24,9 @@ auto unsupported_vector_element_shape(const Shape& value) noexcept
                          || std::same_as<Shape, GenericOperationType>
                          || std::same_as<Shape, ConstructionOperationTypeValue>) {
         return "Vector elements cannot contain async operations";
-    } else if constexpr (std::same_as<Shape, CppTypeValue>) {
+    } else if constexpr (std::same_as<Shape, CppTypeValue>
+                         || std::same_as<Shape, GenericCppNamedType>
+                         || std::same_as<Shape, GenericCppQueryType>) {
         return "Vector elements require Carven-defined value semantics";
     } else if constexpr (std::same_as<Shape, ClosureTypeValue>
                          || std::same_as<Shape, FunctionTypeValue>

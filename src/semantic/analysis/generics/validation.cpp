@@ -207,6 +207,16 @@ auto ProgramDraft::validate_generic_definitions(std::optional<GenericDeclaration
                     [&](const GenericOperationType& operation) noexcept {
                         self(self, operation.success, true, result);
                     },
+                    [&](const GenericCppNamedType& native) noexcept {
+                        for (const auto argument : native.arguments) {
+                            self(self, argument, true, result);
+                        }
+                    },
+                    [&](const GenericCppQueryType& query) noexcept {
+                        visit_cpp_query_types(query, [&](ConstructionTypeRef type) noexcept {
+                            self(self, type, true, result);
+                        });
+                    },
                     [&](const GenericNominalApplication& application) noexcept {
                         for (const auto& argument : application.arguments) {
                             visit_generic_argument_types(
@@ -252,6 +262,16 @@ auto ProgramDraft::validate_generic_definitions(std::optional<GenericDeclaration
                     [&](const GenericPointerType& pointer) noexcept { self(self, pointer.target); },
                     [&](const GenericOperationType& operation) noexcept {
                         self(self, operation.success);
+                    },
+                    [&](const GenericCppNamedType& native) noexcept {
+                        for (const auto argument : native.arguments) {
+                            self(self, argument);
+                        }
+                    },
+                    [&](const GenericCppQueryType& query) noexcept {
+                        visit_cpp_query_types(query, [&](ConstructionTypeRef type) noexcept {
+                            self(self, type);
+                        });
                     },
                     [&](const GenericNominalApplication& application) noexcept {
                         const auto target = generic_declaration_copy(application.definition);
@@ -447,6 +467,16 @@ auto ProgramDraft::validate_generic_definitions(std::optional<GenericDeclaration
                 },
                 [&](const GenericOperationType& operation) noexcept {
                     self(self, operation.success, false, origin);
+                },
+                [&](const GenericCppNamedType& native) noexcept {
+                    for (const auto argument : native.arguments) {
+                        self(self, argument, false, origin);
+                    }
+                },
+                [&](const GenericCppQueryType& query) noexcept {
+                    visit_cpp_query_types(query, [&](ConstructionTypeRef type) noexcept {
+                        self(self, type, false, origin);
+                    });
                 },
                 [&](const GenericNominalApplication& application) noexcept {
                     const auto key =

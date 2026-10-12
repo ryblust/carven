@@ -170,8 +170,8 @@ auto evaluation_rule(const SemIRProgram& semantic, const SemanticExpression& exp
                     Overloaded {
                         [&](const SliceIntrinsicOperation& family) noexcept {
                             switch (family.intrinsic) {
-                                case SliceIntrinsic::Slice:     return required;
-                                case SliceIntrinsic::FromOwner:
+                                case SliceIntrinsic::Slice:  return required;
+                                case SliceIntrinsic::View:
                                 case SliceIntrinsic::Length:
                                 case SliceIntrinsic::IsEmpty:
                                     return operands(value.operands.front().expression);

@@ -115,9 +115,13 @@ workspace share the lower-level source, parsing, and analysis owners.
 
 `SourceLibrary` assigns a closed source library a generated linkage identity.
 Its owning build emits library implementations; consumers emit their own
-interfaces and requested inline static instances. Every compilation analyzes the
-full source batch. `carven-xmake-repo` owns source selection, native configuration,
-object reuse, artifact materialization, and toolchain invocation.
+interfaces and requested inline static and generic function instances. Generic
+nominal instances join those interfaces with names derived from their canonical
+arguments. Source templates are analyzed in each batch; their checked dependency
+summaries establish the library interface before consumers request instances.
+Every compilation analyzes the full source batch. `carven-xmake-repo` owns source
+selection, native configuration, object reuse, artifact materialization, and
+toolchain invocation.
 
 ## Design considerations
 
@@ -241,9 +245,10 @@ ownership, and local pointer nullability, in that order. Ownership publishes the
 Read parameter passing facts. The shared model's borrows end before publication
 releases checked source bodies.
 
-Before returning the program, publication records callable/type surfaces and
-closure reference order, then releases checked source regions and static-only
-bodies. Surviving bodies keep their IDs and contain one executable region.
+Before returning the program, publication records callable/type surfaces,
+generic implementation dependencies, and closure reference order, then releases
+checked source regions and static-only bodies. Surviving bodies keep their IDs
+and contain one executable region.
 Source-template callables and completed static tests retain declarations and
 provenance without a body reference. No source tree is available to downstream
 planning or execution.

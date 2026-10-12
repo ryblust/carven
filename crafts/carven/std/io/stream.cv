@@ -1,0 +1,85 @@
+import std::async using Operation;
+import std::utf.text using to_string;
+import std::utf.error using UTF8Error;
+import <carven/std/io/native.hpp>;
+
+export enum IOError {
+    System(i32),
+    InputTooLarge(usize),
+    InvalidUTF8(UTF8Error)
+}
+
+export enum Read<T> {
+    Data(T),
+    End
+}
+
+private import(cpp) fn carven_io_unlimited() -> usize;
+private import(cpp) async fn carven_io_read(mode: u8, limit: usize) -> ::carven::io::ReadResult;
+
+private async fn bytes(mode: u8, limit: usize) -> Vector<u8> throw IOError {
+    var result = await carven_io_read(mode, limit);
+    if result.error != 0 { throw IOError::System(result.error as i32); }
+    if result.limited { throw IOError::InputTooLarge(limit); }
+    return (&result).take_bytes() as Vector<u8>;
+}
+
+private fn decode(data: [u8]) -> String throw IOError => try {
+    to_string(data)?
+} catch {
+    UTF8Error(error) => throw IOError::InvalidUTF8(error)
+};
+
+private async fn line(limit: usize) -> Read<String> throw IOError {
+    let data = await bytes(1, limit)?;
+    if data.is_empty() { return .End; }
+    var length = data.length();
+    if data[length - 1] == 0x0a {
+        --length;
+        if length != 0 && data[length - 1] == 0x0d { --length; }
+    }
+    return .Data(decode(data.slice(0, length))?);
+}
+
+private async fn text(limit: usize) -> String throw IOError {
+    let data = await bytes(2, limit)?;
+    return decode(data)?;
+}
+
+private async fn chunk(max_bytes: usize) -> Read<Vector<u8>> throw IOError {
+    var result = await carven_io_read(0, max_bytes);
+    if result.error != 0 { throw IOError::System(result.error as i32); }
+    if result.end { return .End; }
+    return .Data((&result).take_bytes() as Vector<u8>);
+}
+
+export class Stdin {
+    line_limit: usize,
+
+    fn new() -> Stdin => { line_limit: carven_io_unlimited() };
+
+    fn with_line_limit(self, limit: usize) -> Stdin {
+        var configured = self;
+        configured.line_limit = limit;
+        return configured;
+    }
+
+    fn read(self, max_bytes: usize) -> Operation<Read<Vector<u8>>, throw IOError> {
+        let _ = self;
+        return chunk(max_bytes);
+    }
+
+    fn read_all(self, limit: usize) -> Operation<Vector<u8>, throw IOError> {
+        let _ = self;
+        return bytes(2, limit);
+    }
+
+    fn read_text(self, limit: usize) -> Operation<String, throw IOError> {
+        let _ = self;
+        return text(limit);
+    }
+
+    fn read_line(self) -> Operation<Read<String>, throw IOError> => line(self.line_limit);
+}
+
+export fn stdin() -> Stdin => Stdin::new();

@@ -166,14 +166,12 @@ const async fn ambient_cancellation() -> bool {
     return cancellation;
 }
 
-const async fn exercise() -> bool {
-    return await products()
-        && await cold_drop(false)
-        && await construction_failure()
-        && await races()
-        && await failure_cleanup()
-        && await ambient_cancellation();
-}
+const async fn exercise() => await products()
+    && await cold_drop(false)
+    && await construction_failure()
+    && await races()
+    && await failure_cleanup()
+    && await ambient_cancellation();
 
 const result = await exercise();
 

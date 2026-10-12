@@ -11,7 +11,7 @@
 namespace async_interop {
 
 // A single-thread provider fixture. An unlinked timer has no external callback.
-class TimerQueue final {
+class TimerQueue final : public carven::runtime::execution::EventSource {
 public:
     using Clock = std::chrono::steady_clock;
 
@@ -67,9 +67,6 @@ public:
 private:
     Awaiter* first = nullptr;
     Awaiter* last = nullptr;
-    std::size_t registrations = 0;
-    std::size_t completions = 0;
-    std::size_t waits = 0;
 
     auto register_timer(Awaiter& timer) noexcept -> void {
         if (last != nullptr) {
@@ -78,7 +75,6 @@ private:
             first = &timer;
         }
         last = &timer;
-        ++registrations;
     }
 
 public:
@@ -88,14 +84,14 @@ public:
     auto operator=(const TimerQueue&) -> TimerQueue& = delete;
     auto operator=(TimerQueue&&) -> TimerQueue& = delete;
 
-    ~TimerQueue() noexcept { assert(first == nullptr); }
+    ~TimerQueue() noexcept override { assert(first == nullptr); }
 
     // A positive delay must produce a representable steady-clock deadline.
     // An existing cancel request wins; otherwise a nonpositive delay succeeds immediately.
     auto wait_for(Clock::duration delay) noexcept -> Awaiter { return Awaiter(*this, delay); }
 
     // Commit each outcome before enqueueing; callbacks never resume a frame here.
-    auto poll(carven::runtime::execution::Driver& driver) noexcept -> void {
+    auto poll(carven::runtime::execution::Driver& driver) noexcept -> void override {
         const auto now = Clock::now();
         auto** link = &first;
         auto* previous = static_cast<Awaiter*>(nullptr);
@@ -113,7 +109,6 @@ public:
             }
             timer->next = nullptr;
             timer->outcome = cancelled ? Awaiter::Outcome::Cancelled : Awaiter::Outcome::Success;
-            ++completions;
             timer->resume.enqueue(driver);
         }
     }
@@ -128,12 +123,19 @@ public:
         return result;
     }
 
-    auto wait() noexcept -> bool {
-        const auto deadline = next_deadline();
+    auto wait(std::optional<std::int64_t> limit) noexcept -> bool override {
+        auto deadline = next_deadline();
         if (!deadline) {
             return false;
         }
-        ++waits;
+        if (limit) {
+            const auto external = Clock::time_point(
+                std::chrono::ceil<Clock::duration>(std::chrono::nanoseconds(*limit))
+            );
+            if (external < *deadline) {
+                deadline = external;
+            }
+        }
         std::this_thread::sleep_until(*deadline);
         return true;
     }
@@ -145,12 +147,6 @@ public:
         }
         return count;
     }
-
-    auto registration_count() const noexcept -> std::size_t { return registrations; }
-
-    auto completion_count() const noexcept -> std::size_t { return completions; }
-
-    auto wait_count() const noexcept -> std::size_t { return waits; }
 };
 
 } // namespace async_interop

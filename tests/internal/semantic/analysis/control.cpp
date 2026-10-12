@@ -181,13 +181,13 @@ const TestSuite suite([] static noexcept {
         [] static noexcept {
             const auto program = analyze_test_program(R"(
                 fn select(values: [i32; 2], const index: usize) -> i32 => values[index];
-                fn view(values: [i32; 2], const index: usize) -> i32 => values.as_slice()[index];
+                fn view(values: [i32; 2], const index: usize) -> i32 => values.slice()[index];
                 fn use(values: [i32; 2], index: usize) -> i32 {
                     return select(values, 0) + select(values, 1) + select(values, 4) + values[index]
-                        + view(values, 0) + view(values, 4) + values.as_slice()[index];
+                        + view(values, 0) + view(values, 4) + values.slice()[index];
                 }
                 fn mutable_view(values: [i32; 2], replacement: [i32]) -> i32 {
-                    var selected = values.as_slice();
+                    var selected = values.slice();
                     selected = replacement;
                     return selected[1];
                 }
@@ -250,7 +250,7 @@ const TestSuite suite([] static noexcept {
                 std::format(
                     R"(
                 fn count(values: [i32; 2], replacement: [i32]) -> usize {{
-                    {} view = values.as_slice();
+                    {} view = values.slice();
                     {}
                     return view.length();
                 }}
@@ -293,7 +293,7 @@ const TestSuite suite([] static noexcept {
                         R"(
                     const fn invalid() -> usize {{
                         let values = [3, 7];
-                        return values.as_slice().slice(0, 3){};
+                        return values.slice(0, 3){};
                     }}
                     const result = invalid();
                 )",

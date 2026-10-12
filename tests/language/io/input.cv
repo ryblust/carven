@@ -1,0 +1,172 @@
+import std::io using { Read, IOError };
+import std::io using stdin as input;
+import std::async using close;
+import "io/pipe.hpp";
+
+private import(cpp) fn io_test_open_pipe();
+private import(cpp) fn io_test_invalidate_input();
+private import(cpp) fn io_test_write(bytes: [u8]);
+private import(cpp) fn io_test_close_pipe();
+private import(cpp) async fn io_test_wait_consumed();
+
+private fn expect_bytes(result: Read<Vector<u8>>, expected: [u8]) {
+    match result {
+        .Data(bytes) => {
+            assert(bytes.length() == expected.length());
+            for index in 0..expected.length() {
+                assert(bytes[index] == expected[index]);
+            }
+        },
+        .End => assert(false),
+    }
+}
+
+private fn expect_end(result: Read<Vector<u8>>) {
+    match result {
+        .End => {},
+        .Data(_) => assert(false)
+    }
+}
+
+export async fn run_input(&&name: String) throw IOError {
+    match name.as_str() {
+        "lines" => {
+            let reader = input();
+            assert(await reader.read_line()? == .Data("a"));
+            assert(await reader.read_line()? == .Data(""));
+            assert(await reader.read_line()? == .Data("世界"));
+            assert(await reader.read_line()? == .Data("last"));
+            assert(await reader.read_line()? == .End);
+            assert(await reader.read_line()? == .End);
+        },
+        "empty" => {
+            assert(await stdin().read_line()? == .End);
+            assert((await stdin().read_all(0)?).is_empty());
+            assert(await stdin().read_text(0)? == "");
+        },
+        "bytes" => {
+            expect_bytes(await stdin().read(0)?, []);
+            expect_bytes(await stdin().read(2)?, [0u8, 255]);
+            expect_bytes(await stdin().read(2)?, [97u8]);
+            expect_end(await stdin().read(2)?);
+        },
+        "text" => {
+            assert(await stdin().read_text(8)? == "a\0世界");
+        },
+        "limit" => {
+            let rejected = try {
+                let _ = await stdin().read_all(3)?;
+                false
+            } catch {
+                IOError(error) => match error {
+                    .InputTooLarge(limit) => limit == 3,
+                    _ => false
+                },
+            };
+            assert(rejected);
+            assert(await stdin().read_text(8)? == "abcd\n");
+        },
+        "line-limit" => {
+            let input = stdin().with_line_limit(3);
+            let rejected = try {
+                let _ = await input.read_line()?;
+                false
+            } catch {
+                IOError(error) => match error {
+                    .InputTooLarge(limit) => limit == 3,
+                    _ => false
+                },
+            };
+            assert(rejected);
+            assert(await stdin().with_line_limit(4).read_line()? == .Data("abcd"));
+            assert(await stdin().read_line()? == .Data("rest"));
+        },
+        "invalid" => {
+            let rejected = try {
+                let _ = await stdin().read_line()?;
+                false
+            } catch {
+                IOError(error) => match error {
+                    .InvalidUTF8(detail) => detail.kind == .InvalidLead,
+                    _ => false
+                },
+            };
+            assert(rejected);
+            assert(await stdin().read_line()? == .Data("valid"));
+        },
+        "invalid-text" => {
+            let rejected = try {
+                let _ = await stdin().read_text(8)?;
+                false
+            } catch {
+                IOError(error) => match error {
+                    .InvalidUTF8(detail) => detail.kind
+                        == .Truncated
+                        && detail.offset == 2
+                        && detail.sequence_start == 1,
+                    _ => false
+                },
+            };
+            assert(rejected);
+            assert(await stdin().read_text(8)? == "");
+        },
+        "io-error" => {
+            io_test_invalidate_input();
+            let failed = try {
+                let _ = await stdin().read_all(8)?;
+                false
+            } catch {
+                IOError(error) => match error {
+                    .System(code) => code != 0,
+                    _ => false
+                },
+            };
+            assert(failed);
+        },
+        "cold-fifo" => {
+            let _ = stdin().read_line();
+            async let first = stdin().read_line();
+            async let second = stdin().read_line();
+            assert(await second? == .Data("two"));
+            assert(await first? == .Data("one"));
+            expect_bytes(await stdin().read(2)?, [120u8, 121]);
+            expect_end(await stdin().read(2)?);
+        },
+        "partial-cancel" => {
+            io_test_open_pipe();
+            async let reading = stdin().read_line();
+            io_test_write("abc".bytes);
+            await io_test_wait_consumed();
+            cancel reading;
+            await close(reading);
+            io_test_write("\nrest\n".bytes);
+            io_test_close_pipe();
+            assert(await stdin().read_line()? == .Data("abc"));
+            assert(await stdin().read_line()? == .Data("rest"));
+            assert(await stdin().read_line()? == .End);
+        },
+        "fragmented-crlf" => {
+            io_test_open_pipe();
+            async let reading = stdin().with_line_limit(4).read_line();
+            io_test_write("abcd\r".bytes);
+            await io_test_wait_consumed();
+            io_test_write("\nrest\n".bytes);
+            io_test_close_pipe();
+            assert(await reading? == .Data("abcd"));
+            assert(await stdin().read_line()? == .Data("rest"));
+            assert(await stdin().read_line()? == .End);
+        },
+        "fragmented-utf8" => {
+            io_test_open_pipe();
+            async let reading = stdin().read_line();
+            io_test_write([0xe4u8]);
+            await io_test_wait_consumed();
+            io_test_write([0xb8u8, 0x96, 0xe7, 0x95, 0x8c, 0x0a]);
+            io_test_close_pipe();
+            assert(await reading? == .Data("世界"));
+            assert(await stdin().read_line()? == .End);
+        },
+        _ => assert(false),
+    }
+    println("ok");
+}

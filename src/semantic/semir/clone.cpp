@@ -2,36 +2,53 @@ module carven:semantic.semir.clone.impl;
 
 import :semantic.semir.children;
 import :semantic.semir.structured;
-import :semantic.semir.traversal;
 import std;
 
 namespace {
 
-// Children are copied before their parent. Owning edges never recurse through
-// the native stack, and every copied node is transferred into exactly one parent.
+// First construct each parent's child storage, then fill its children in place.
+// Pending source/target pairs borrow stable owning storage without native recursion.
 class SemanticClone final {
 public:
     template<typename Value>
     auto tree(const Value& value) noexcept -> Value {
-        auto observer = Observer {.clone = *this};
-        visit_semantic_children(value, [&](const auto& child) noexcept {
-            visit_semantic_nodes(child, observer);
-        });
-        return operation(value);
+        auto result = operation(value);
+        append_children(value, result);
+        while (!pending.empty()) {
+            const auto next = pending.back();
+            pending.pop_back();
+            next.visit([&](const auto& pair) noexcept {
+                if constexpr (std::same_as<
+                                  std::remove_cvref_t<decltype(*pair.source)>,
+                                  SemanticRegion>) {
+                    append_children(*pair.source, *pair.target);
+                } else {
+                    pair.target->value = operation(pair.source->value);
+                    append_children(pair.source->value, pair.target->value);
+                }
+            });
+        }
+        return result;
     }
 
 private:
-    struct Observer final {
-        SemanticClone& clone;
-        auto leave(const SemanticExpression& value) noexcept -> void;
-        auto leave(const SemanticStatement& value) noexcept -> void;
-        auto leave(const SemanticRegion& value) noexcept -> void;
+    template<typename Node>
+    struct NodePair final {
+        const Node* source;
+        Node* target;
     };
 
-    template<typename T>
-    auto take(std::map<const T*, T>& nodes, const T& source) noexcept -> T {
-        const auto node = nodes.extract(&source);
-        return std::move(node.mapped());
+    template<typename Value>
+    auto append_children(const Value& source, Value& target) noexcept -> void {
+        auto index = pending.size();
+        visit_semantic_children(source, [&](const auto& child) noexcept {
+            using Node = std::remove_cvref_t<decltype(child)>;
+            pending.push_back(NodePair<Node> {.source = &child, .target = nullptr});
+        });
+        visit_semantic_children(target, [&](auto& child) noexcept {
+            using Node = std::remove_cvref_t<decltype(child)>;
+            std::get<NodePair<Node>>(pending[index++]).target = &child;
+        });
     }
 
     auto copy(const SemanticExpression& value) noexcept -> SemanticExpression;
@@ -132,7 +149,10 @@ private:
                 auto callee =
                     node.callee.visit([&](const auto& callee) noexcept -> CppCallee<SemCppOperand> {
                         using Callee = std::remove_cvref_t<decltype(callee)>;
-                        if constexpr (std::same_as<Callee, CppNameReference>) {
+                        if constexpr (std::same_as<Callee, CppNameReference>
+                                      || std::same_as<
+                                          Callee,
+                                          CppStaticMemberCallee<ConstructionTypeRef>>) {
                             return callee;
                         } else if constexpr (std::same_as<Callee, SemCppOperand>) {
                             return copy(callee);
@@ -266,68 +286,46 @@ private:
         });
     }
 
-    std::map<const SemanticExpression*, SemanticExpression> expressions;
-    std::map<const SemanticStatement*, SemanticStatement> statements;
-    std::map<const SemanticRegion*, SemanticRegion> regions;
+    std::vector<std::variant<
+        NodePair<SemanticExpression>,
+        NodePair<SemanticStatement>,
+        NodePair<SemanticRegion>>>
+        pending;
 };
 
-auto SemanticClone::Observer::leave(const SemanticExpression& value) noexcept -> void {
-    clone.expressions.emplace(
-        &value,
-        SemanticExpression {
-            .type = value.type,
-            .lifetime = value.lifetime,
-            .origin = value.origin,
-            .constant = value.constant,
-            .failures = value.failures,
-            .exits_test = value.exits_test,
-            .operation_reachable = value.operation_reachable,
-            .category = value.category,
-            .value = clone.operation(value.value),
-
-        }
-    );
-}
-
-auto SemanticClone::Observer::leave(const SemanticStatement& value) noexcept -> void {
-    clone.statements.emplace(
-        &value,
-        SemanticStatement {
-            .origin = value.origin,
-            .lifetime = value.lifetime,
-            .reachable = value.reachable,
-            .value = clone.operation(value.value),
-
-        }
-    );
-}
-
-auto SemanticClone::Observer::leave(const SemanticRegion& value) noexcept -> void {
-    clone.regions.emplace(
-        &value,
-        SemanticRegion {
-            .lifetime = value.lifetime,
-            .origin = value.origin,
-            .statements = clone.copy(value.statements),
-            .result = clone.copy(value.result),
-            .result_reachable = value.result_reachable,
-            .failures = value.failures,
-            .exits_test = value.exits_test,
-
-        }
-    );
-}
-
 auto SemanticClone::copy(const SemanticExpression& value) noexcept -> SemanticExpression {
-    return take(expressions, value);
+    return {
+        .type = value.type,
+        .lifetime = value.lifetime,
+        .origin = value.origin,
+        .constant = value.constant,
+        .failures = value.failures,
+        .exits_test = value.exits_test,
+        .operation_reachable = value.operation_reachable,
+        .category = value.category,
+        .value = SemDefault {},
+    };
 }
 
 auto SemanticClone::copy(const SemanticStatement& value) noexcept -> SemanticStatement {
-    return take(statements, value);
+    return {
+        .origin = value.origin,
+        .lifetime = value.lifetime,
+        .reachable = value.reachable,
+        .value = SemBreak {},
+    };
 }
 
 auto SemanticClone::copy(const SemanticRegion& value) noexcept -> SemanticRegion {
-    return take(regions, value);
+    return {
+        .lifetime = value.lifetime,
+        .origin = value.origin,
+        .statements = copy(value.statements),
+        .result = copy(value.result),
+        .result_reachable = value.result_reachable,
+        .failures = value.failures,
+        .exits_test = value.exits_test,
+    };
 }
 
 auto SemanticClone::copy(const OwnedSemanticExpression& value) noexcept -> OwnedSemanticExpression {

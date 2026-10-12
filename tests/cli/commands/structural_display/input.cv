@@ -87,10 +87,10 @@ println(encoded_fields);
 
 // Both modules display the same nominal type inside arrays and slices.
 let rows = [[DisplayCell { 9 }]];
-show_cells(rows.as_slice());
+show_cells(rows.slice());
 println(rows);
 let ranges = [1..=2, 3..4];
-println(ranges.as_slice());
+println(ranges.slice());
 
 enum Single {
     Only

@@ -39,7 +39,7 @@ the public compilation boundary instead of reproducing semantic helper decisions
 | `language` | Compiled and executed Carven programs | Values, access, ownership, control, failure, modules, closures, and testing behavior |
 | `crafts` | Public source-package APIs | Library behavior through C++20 consumer builds |
 | `interop` | C++ providers and consumers | Boundary signatures, native calls, and source fragments |
-| `examples` | User-facing programs | Documented output from actual example executables |
+| `examples` | User-facing programs | Documented output, application behavior, and connected example workflows |
 | `cli` | Compiler processes and interpreted execution | Arguments, reports, exit status, source selection, and emitted files |
 | `format` | Source formatting and file operations | Source preservation, layout, errors, batch results, and replacement |
 | `workspace` | Source snapshots and analysis queries | Versioned locations, complete selection reuse, invalidation, and navigation |
@@ -49,6 +49,29 @@ assertions across applicable configurations. Merge cases that repeat the same
 input class, execution path, and observation. Prefer one behavioral case at
 the owning boundary over assertions on intermediate node kinds, temporary storage,
 helper names, or enumeration-to-enumeration mappings.
+
+Group behavior in one executable per native configuration and runner contract.
+Register fresh process scenarios on that executable when input state or
+termination requires isolation. Separate targets express different compiler
+settings or entry contracts. Preserve values, effects, cleanup, and exit status
+when merging sources.
+
+Choose execution partitions independently of build targets: long suites can run
+disjoint selections in parallel without compiling and linking separate binaries.
+Measure both individual duration and queue delay under a fixed test job limit.
+Keep partitions coarse enough that process startup and repeated fixture setup
+remain small relative to the work. A short group need not be partitioned.
+
+Standard-input scenarios share the language executable but use fresh processes:
+EOF, errors, and buffered bytes persist within one process. Printing backend
+branches, escaped entry failures, and deliberately failing runners have distinct
+native configurations or entry contracts. Independent stream inputs use separate
+processes; pipeline steps run sequentially because each consumes the preceding
+program's output.
+
+Do not add cases merely to prove that an obsolete API name stays unavailable.
+Test the current API's behavior and meaningful failure contracts at its owning
+boundary.
 
 Internal C++ tests use the shared harness and compiler configuration. Crafts,
 generated-source, and consumer tests use the C++20 baseline, with additional
@@ -92,6 +115,11 @@ Test names identify the owning component and observed behavior. Name independent
 inputs and preserve their identity in failure context. Scoped observations and
 ordinary traversal can remain within one case. Case tables contain inputs; empty
 values remain valid where the tested contract permits.
+
+Independent compilations can use separate ordinary cases with captured inputs.
+Each case owns its callback and any source text it needs, so process shards can
+select those inputs independently. Use `each` within one case when observations
+share state, source identity, or a dependent sequence of operations.
 
 Use comparison assertions for printable values and predicates with context for
 opaque values. Compare text contents and retain explicit lengths for binary data.
@@ -143,6 +171,9 @@ including conditional paths and failure cleanup. Cover interactions among copyin
 mutation, scope exit, and calls for captures and views. Compile-time checks or
 diagnostic cases establish static restrictions; compiled uses of runtime helpers
 exercise the native capabilities required by the operation.
+Async fixtures establish ordering through observable progress at the tested
+boundary. Fixed sleeps do not establish that an input was consumed or an operation
+suspended; timeouts guard stalled tests.
 
 Performance comparisons use equal results, effects, and output contracts. Define
 measurement boundaries, workloads, configuration, and sampling conditions before
@@ -225,16 +256,14 @@ Formatting tasks require a built `carven-format`. Applying formatting changes so
 subsequent builds and tests use those changes. A clean followed by a build recreates
 module build state.
 
-Measure compiler build, generated-source preparation and native compilation,
-warm incremental checks, and test execution separately. Xmake's test report
-records execution time per registered case; CLI native-run cases include their
-own compiler subprocesses in that time. Repeated warm runs retain those native
-compilations and expected native rejections. A no-op build is a separate
-measurement, not a test result.
+Measure compiler build, generated-source preparation, native compilation,
+incremental checks, and test execution separately. Xmake records execution time
+per registered case. Harness-driven native compilation and rejection checks run
+on each test invocation and contribute to that time; ordinary consumer targets
+reuse their build outputs.
 
-For internal case costs, build a domain target,
-for example `./xmakew build carven-test-analysis`, then run
-`./xmakew run carven-test-analysis --timings`.
+For internal case costs, build `carven-test-internal`, then run
+`./xmakew run carven-test-internal --timings`.
 The report lists case execution durations from slowest to fastest.
 Combine it with `--filter`, `--exclude`, or
 `--test` to reproduce a selected workload; `--list-tests` lists names without
@@ -242,27 +271,17 @@ running them. These timings include each case's fixtures and assertions but
 exclude process startup, test registration, and reporting. Normal runs do not
 collect timings. Keep machine-specific timing logs outside reference documents.
 
-The `internal` group uses six ordinary executable targets. Their source directories
-define their coverage; each executable registers and runs its complete domain.
+`--shard INDEX/COUNT` selects an interleaved part of the sorted cases after name
+filtering, with indices starting at 1. The six internal registrations partition
+the complete selection; Xmake's test job limit controls their concurrency.
+Use `./xmakew run carven-test-internal --shard 1/6 --timings` to measure one part.
 
-| Target | Source directories under `tests/internal` |
-| --- | --- |
-| `carven-test-analysis` | `semantic/analysis` |
-| `carven-test-compiler` | `compiler` |
-| `carven-test-semir` | `semantic/semir`, `semantic/visibility` |
-| `carven-test-backend` | `backend`, `artifacts` |
-| `carven-test-execution` | `semantic/evaluation`, `semantic/format`, `interpreter` |
-| `carven-test-foundation` | `frontend`, `source`, `driver`, `diagnostics`, `support`, harness assertions |
-
-Each domain owns its cases and links a separate executable. The targets share
-fixture modules through `carven-test-fixtures` and the entry object through
-`carven-test-runner`. `carven-test-support` supplies the framework, diagnostics,
-temporary directories, and termination checks.
-
-Use `./xmakew build -g tests/internal` to build the domains and
-`./xmakew test -g internal` to run them. Xmake's test job limit controls their
-independent processes. Workspace scenarios use `carven-test-workspace` in
-`tools/workspace/xmake.lua`; run them with `./xmakew test -g workspace`.
+`carven-test-internal` selects all cases under `tests/internal`. Fixture modules
+belong to `carven-test-fixtures`; `carven-test-runner` supplies the entry object.
+`carven-test-support` owns assertions, diagnostics, temporary directories, and
+termination checks. Run the suite with `./xmakew test -g internal`.
+Workspace scenarios use `carven-test-workspace`; run them with
+`./xmakew test -g workspace`.
 
 Static analysis is available through `./xmakew check clang.tidy` for handwritten
 and generated C++. `.clang-tidy` configures handwritten checks;

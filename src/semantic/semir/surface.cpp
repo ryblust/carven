@@ -218,10 +218,11 @@ auto body_closure_references(const SemIRProgram& semantic, const SemIRBody& body
                         signature_types(value.signature);
                     },
                     [&](const CppTypeValue& value) noexcept {
-                        const auto arguments = cpp_type_references(value);
-                        for (const auto argument : std::views::reverse(arguments)) {
+                        const auto first_argument = pending.size();
+                        visit_cpp_type_references(value, [&](TypeID argument) noexcept {
                             pending.push_back(argument);
-                        }
+                        });
+                        std::ranges::reverse(std::span(pending).subspan(first_argument));
                     },
                 }
             );

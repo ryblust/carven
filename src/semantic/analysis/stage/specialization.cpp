@@ -90,21 +90,17 @@ auto Specializer::completion_patterns() const noexcept -> CompletionPatterns {
 
 template<typename Tree>
 auto Specializer::substitute(Tree& source) noexcept -> void {
-    auto expressions = std::vector<SemanticExpression*>();
     visit_semantic_nodes(source, [&](SemanticExpression& expression) noexcept {
-        expressions.push_back(&expression);
-    });
-    for (auto* expression : expressions) {
-        const auto* binding = std::get_if<SemBinding>(&expression->value);
+        const auto* binding = std::get_if<SemBinding>(&expression.value);
         if (!binding) {
-            continue;
+            return;
         }
         if (const auto found = environment.find(binding->binding); found != environment.end()) {
-            expression->constant = found->second;
-            expression->category = SemanticValueCategory::Value;
-            expression->value = constant_operation(draft, found->second);
+            expression.constant = found->second;
+            expression.category = SemanticValueCategory::Value;
+            expression.value = constant_operation(draft, found->second);
         }
-    }
+    });
 }
 
 auto Specializer::evaluate(
@@ -749,9 +745,10 @@ auto Specializer::statement(SemanticStatement& source) noexcept -> AnalysisTask<
 auto Specializer::region(SemanticRegion& source, bool retain_bindings) noexcept
     -> AnalysisTask<void> {
     const auto saved = environment;
-    auto statements = std::vector<SemanticStatement>();
+    auto kept = 0uz;
     auto completes = true;
-    for (auto& item : source.statements) {
+    for (auto index = 0uz; index < source.statements.size(); ++index) {
+        auto& item = source.statements[index];
         if (!item.reachable) {
             rewritten = true;
             continue;
@@ -768,16 +765,22 @@ auto Specializer::region(SemanticRegion& source, bool retain_bindings) noexcept
             continue;
         }
         completes = exits(item, completion_patterns()).contains(Exit::Normal);
-        statements.push_back(std::move(item));
+        if (kept != index) {
+            source.statements[kept] = std::move(item);
+        }
+        ++kept;
         // Control never enters what follows a statement that does not complete.
         if (!completes) {
             break;
         }
     }
-    if (!completes && (statements.size() != source.statements.size() || source.result)) {
+    if (!completes && (kept != source.statements.size() || source.result)) {
         rewritten = true;
     }
-    source.statements = std::move(statements);
+    source.statements.erase(
+        source.statements.begin() + static_cast<std::ptrdiff_t>(kept),
+        source.statements.end()
+    );
     if (!completes || (source.result && !source.result_reachable)) {
         rewritten |= source.result.has_value();
         source.result.reset();

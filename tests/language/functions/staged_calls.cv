@@ -345,12 +345,12 @@ const fn frozen_slice_call(&trace: i32, const values: [i32], amount: i32) -> i32
 const test "Static calls: frozen inputs are values and Write arguments retain caller storage" {
     var values = [1, 2];
     var trace = 0;
-    check(frozen_slice_call(&trace, values.as_slice(), 3) == 3);
+    check(frozen_slice_call(&trace, values.slice(), 3) == 3);
     values[0] = 7;
-    check(frozen_slice_call(&trace, values.as_slice(), 4) == 9);
+    check(frozen_slice_call(&trace, values.slice(), 4) == 9);
     check(trace == 7);
     values[0] = 1;
-    check(frozen_slice_call(&trace, values.as_slice(), 5) == 3);
+    check(frozen_slice_call(&trace, values.slice(), 5) == 3);
     check(trace == 12);
 }
 

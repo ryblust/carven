@@ -1,5 +1,5 @@
 import std::simd using { f32x8, mask8 };
-import std::simd.floats using { block_count, load_block, extract, swizzle, store, store_partial };
+import std::simd.floats using { block_count, load_block, swizzle, store, store_partial };
 
 const frozen = f32x8::from_array([1.0, -2.0, 0.5, 4.0, 1.0, -2.0, 0.5, 4.0]);
 const frozen_mask = frozen < 1.0;
@@ -28,7 +28,7 @@ test "SIMD: proven controls preserve operand effects and lane values" {
     check(trace == 1234);
 }
 
-const fn verify_floats() -> bool {
+export const fn verify_floats() -> bool {
     let v = frozen;
     let empty: f32x8 = {};
     let inactive: mask8 = {};
@@ -75,7 +75,7 @@ const fn verify_floats() -> bool {
     assert((swizzle(v, [1, 1, 1, 1, 1, 1, 1, 1]) == -2.0).all());
     let ordered = f32x8::from_array([0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]);
     const for offset in 0usize..=8 {
-        let mixed = extract(ordered, ordered + 8.0, offset);
+        let mixed = ordered.extract(ordered + 8.0, offset);
         assert(mixed.lane(0) == (offset as f32));
         assert(mixed.lane(7) == ((offset + 7) as f32));
     }
@@ -87,7 +87,7 @@ const fn verify_floats() -> bool {
     assert(output[0] == 2.0);
     let data: [f32; 9] = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
     for size in 0usize..=9 {
-        let view = data.as_slice().slice(0, size);
+        let view = data.slice(0, size);
         var visited: usize = 0;
         for index in 0..block_count(view) {
             let block = load_block(view, index * 8);
@@ -121,10 +121,6 @@ const fn verify_floats() -> bool {
     assert((f32x8::splat(1.0) / zero > 100.0).all());
     assert((f32x8::splat(1.0) / negative_zero < -100.0).all());
     return true;
-}
-
-const test "SIMD: floating lanes and masks execute in the static stage" {
-    check(verify_floats());
 }
 
 test "SIMD: floating lanes and masks execute natively" {

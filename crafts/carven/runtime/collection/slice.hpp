@@ -52,8 +52,13 @@ constexpr auto checked_slice_index(Slice<Element> slice, Index index, SourceSite
     return slice.data()[checked_index_offset(index, slice.size(), site)];
 }
 
+template<typename Element>
+constexpr auto slice(Slice<Element> input) noexcept -> Slice<Element> {
+    return input;
+}
+
 template<typename Element, std::size_t Size>
-constexpr auto as_slice(const std::array<Element, Size>& input) noexcept -> Slice<Element> {
+constexpr auto slice(const std::array<Element, Size>& input) noexcept -> Slice<Element> {
     if constexpr (Size == 0) {
         return {};
     } else {

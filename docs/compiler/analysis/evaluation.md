@@ -298,7 +298,7 @@ String constants distinguish owning and borrowed text by their canonical type.
 The same recursive publication checks apply inside products and enum payloads.
 Capacity intrinsics update logical capacity in both static and interpreted modes.
 
-At a constant initializer, an explicit slice destination or `as_slice()` can
+At a constant initializer, an explicit slice destination or `slice()` can
 produce an execution-local slice and retain it through `analysis.constant.freeze`.
 The selected freeze preserves each element's type. `SliceConstant` records ordered
 canonical element IDs under a `SliceTypeValue`; it contains no host address,

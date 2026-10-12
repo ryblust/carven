@@ -300,7 +300,7 @@ slices require `Vector<T>::from_slice(values)` to copy their elements into an ow
 | `v.push(value)` / `v.push(&&value)` | Write; copy or transfer an element into the end |
 | `v.remove(index)` | Write; return the removed owner and preserve remaining order |
 | `v.clear()` | Write; destroy all elements and retain capacity |
-| `v.as_slice()` | Read; borrowed `[T]` |
+| `v.slice()` | Read; borrowed `[T]` |
 | `v.slice(start: usize, end: usize)` | Read; borrowed half-open subrange |
 
 `Vector<T> {}` and contextual empty construction also produce the empty default;

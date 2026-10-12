@@ -351,7 +351,7 @@ async fn typed_owners() {
     let selected = sequence_text(&&texts);
     assert(selected == "kept");
     let originals: [String; 1] = ["unchanged"];
-    var copied = slice_text(&&originals.as_slice());
+    var copied = slice_text(&&originals.slice());
     copied.clear();
     assert(originals[0] == "unchanged");
     let pending: Operation<i32> = typed_relay(&&leaf(31));

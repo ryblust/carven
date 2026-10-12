@@ -39,7 +39,7 @@ auto validate_global_semantic_contracts(
     }
     for (const auto [enumeration, declaration] : program.declarations().enumerations()) {
         for (const auto enum_case : declaration.cases) {
-            const auto case_declaration = program.declarations().enum_case(enum_case);
+            const auto& case_declaration = program.declarations().enum_case(enum_case);
             if (case_declaration.owner != enumeration) {
                 invariant_violation("enum declaration lists a case owned by another enum");
             }

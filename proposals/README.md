@@ -3,9 +3,8 @@
 This directory holds unfinished designs and accepted work awaiting implementation.
 Current contracts belong in `docs/`.
 
-The inventory below was checked against the repository on 2026-10-12. Existing
-foundations do not mark an extension complete; the remaining contract determines
-whether its proposal stays here.
+The remaining source contract determines each proposal's scope. Implemented
+foundations are listed separately.
 
 ## Contents
 
@@ -20,6 +19,7 @@ whether its proposal stays here.
 | Proposal | Decision owned here |
 | --- | --- |
 | [Generic extensions](generic-extensions.md) | Static capabilities, associated types, parameterized class operations, and finite boundary extensions |
+| [Sequence views and pipeline calls](sequence-pipelines.md) | Pipeline call composition, bounded lazy Read sequence APIs, traversal, and static execution |
 | [Operator capabilities](operator-capabilities.md) | Mapping existing tokens to checked operations; consumes generic evidence |
 | [Dynamic values](dynamic-values.md) | Erased holding forms, nominal conformance, and dispatch |
 | [Dynamic ownership](dynamic-ownership.md) | Unique/shared object owners, allocator policy, and factory construction in owned storage |
@@ -40,7 +40,8 @@ developed representation and validation criteria.
 
 | Domain | Implemented boundary | Remaining scope |
 | --- | --- | --- |
-| Generic extensions | [Type/failure-set parameters](../docs/language/types.md#nominal-type-parameters), checked named generic functions, static inputs, finite first-order formation | Capability evidence, associated types, parameterized class operations, and generic native boundaries |
+| Generic extensions | [Type/failure-set parameters](../docs/language/types.md#nominal-type-parameters), checked named generic functions, static inputs, finite first-order formation, and parameterized native type applications | Capability evidence, associated types, parameterized class operations, and generic `import(cpp)` / `export(cpp)` declarations |
+| Sequence views and pipeline calls | Integer ranges, Read slices, concrete closures, fixed iterable families, and inferred function results | Pipeline syntax, five sequence builtins, lazy views including Vector elements, traversal checking, and execution |
 | Operator capabilities | Builtin operators and compiler-selected equality | User-defined token hooks and their identity/signature/evidence rules |
 | Dynamic values | [Closures and callable views](../docs/language/functions.md), fixed-signature indirect calls, operation values | Nominal erased holding, conformance, existential packaging, and dispatch |
 | Dynamic ownership | [String](../docs/language/text.md), [Vector](../docs/language/aggregates.md#owning-vectors), and async owners | General Unique/Shared owners, allocation policy, and factory construction |

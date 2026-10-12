@@ -3,6 +3,7 @@
 #if defined(__unix__) || defined(__APPLE__)
 
 #include <carven/runtime/execution/execution.hpp>
+#include <carven/runtime/execution/time.hpp>
 
 #include <cassert>
 #include <cerrno>
@@ -25,7 +26,7 @@ struct PipeError final {
 };
 
 // Single-thread POSIX readiness fixture; it owns no fd or borrowed buffer.
-class PipeQueue final {
+class PipeQueue final : public carven::runtime::execution::EventSource {
 public:
     using Completion = carven::runtime::execution::Completion<std::size_t, PipeError>;
 
@@ -115,9 +116,6 @@ public:
 private:
     Awaiter* first = nullptr;
     Awaiter* last = nullptr;
-    std::size_t registrations = 0;
-    std::size_t completions = 0;
-    std::size_t waits = 0;
 
     auto register_request(Awaiter& request) noexcept -> void {
         if (last != nullptr) {
@@ -126,7 +124,6 @@ private:
             first = &request;
         }
         last = &request;
-        ++registrations;
     }
 
     auto snapshot() const noexcept -> std::vector<::pollfd> {
@@ -158,7 +155,7 @@ public:
     auto operator=(const PipeQueue&) -> PipeQueue& = delete;
     auto operator=(PipeQueue&&) -> PipeQueue& = delete;
 
-    ~PipeQueue() noexcept { assert(first == nullptr); }
+    ~PipeQueue() noexcept override { assert(first == nullptr); }
 
     // fd must be nonblocking and remain open without reuse; the nonempty buffer
     // stays valid and stable until terminal delivery or lexical close completes.
@@ -171,7 +168,7 @@ public:
         return Awaiter(*this, fd, buffer, Awaiter::Direction::Write);
     }
 
-    auto poll(carven::runtime::execution::Driver& driver) noexcept -> void {
+    auto poll(carven::runtime::execution::Driver& driver) noexcept -> void override {
         if (first == nullptr) {
             return;
         }
@@ -205,33 +202,26 @@ public:
             }
             request->next = nullptr;
             request->completion.emplace(std::move(*ready));
-            ++completions;
             request->resume.enqueue(driver);
         }
     }
 
-    auto wait() noexcept -> bool {
+    auto wait(std::optional<std::int64_t> deadline) noexcept -> bool override {
         if (first == nullptr) {
             return false;
         }
         auto descriptors = snapshot();
-        ++waits;
-        poll_descriptors(descriptors, -1);
-        return true;
-    }
-
-    // One OS wait handles fd readiness and the driver's nearest timer. Rounding
-    // upward prevents a sub-millisecond remainder from becoming a busy poll.
-    auto wait_until(std::int64_t deadline) noexcept -> bool {
-        auto descriptors = snapshot();
-        ++waits;
+        if (!deadline) {
+            poll_descriptors(descriptors, -1);
+            return true;
+        }
         for (;;) {
             const auto now = carven::runtime::execution::now();
-            if (deadline <= now) {
+            if (*deadline <= now) {
                 return true;
             }
             const auto remaining =
-                static_cast<std::uint64_t>(deadline) - static_cast<std::uint64_t>(now);
+                static_cast<std::uint64_t>(*deadline) - static_cast<std::uint64_t>(now);
             const auto milliseconds = remaining / 1000000 + (remaining % 1000000 != 0);
             constexpr auto maximum = static_cast<std::uint64_t>(std::numeric_limits<int>::max());
             const auto timeout = static_cast<int>(milliseconds < maximum ? milliseconds : maximum);
@@ -252,12 +242,6 @@ public:
         }
         return count;
     }
-
-    auto registration_count() const noexcept -> std::size_t { return registrations; }
-
-    auto completion_count() const noexcept -> std::size_t { return completions; }
-
-    auto wait_count() const noexcept -> std::size_t { return waits; }
 };
 
 } // namespace async_interop

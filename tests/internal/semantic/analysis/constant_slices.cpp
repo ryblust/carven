@@ -21,7 +21,7 @@ const TestSuite suite([] static noexcept {
             return row;
         }
         const table: [i32] = build(3);
-        const explicit_view = build(3).as_slice();
+        const explicit_view = build(3).slice();
         const empty: [u8] = [];
         const rows: [[i32; 2]] = [[1, 2], [3, 4]];
         const text: [str] = ["first", "second"];
@@ -31,7 +31,7 @@ const TestSuite suite([] static noexcept {
         const length = table.length();
         const ending = table.slice(4, 4);
         const is_empty = ending.is_empty();
-        const skipped = false && (build(8).as_slice()[0] == 8);
+        const skipped = false && (build(8).slice()[0] == 8);
     )");
             auto checked = 0uz;
             auto table = std::optional<ConstantID>();
@@ -140,31 +140,31 @@ const TestSuite suite([] static noexcept {
                     .code = DiagnosticCode::TypeMismatch
                 },
                 Case {
-                    .source = "const value = [1, 2].as_slice()[2];",
+                    .source = "const value = [1, 2].slice()[2];",
                     .code = DiagnosticCode::ConstIndexBounds
                 },
                 Case {
-                    .source = "const value = [1, 2].as_slice()[-1];",
+                    .source = "const value = [1, 2].slice()[-1];",
                     .code = DiagnosticCode::ConstIndexBounds
                 },
                 Case {
-                    .source = "const value = [1, 2].as_slice()[true];",
+                    .source = "const value = [1, 2].slice()[true];",
                     .code = DiagnosticCode::TypeIndexInteger
                 },
                 Case {
-                    .source = "const value = [1, 2].as_slice().slice(2, 1);",
+                    .source = "const value = [1, 2].slice(2, 1);",
                     .code = DiagnosticCode::ConstIndexBounds
                 },
                 Case {
-                    .source = "const value = [1, 2].as_slice().slice(0, 3);",
+                    .source = "const value = [1, 2].slice(0, 3);",
                     .code = DiagnosticCode::ConstIndexBounds
                 },
                 Case {
-                    .source = "const value = [1, 2].as_slice().slice(true, 1);",
+                    .source = "const value = [1, 2].slice(true, 1);",
                     .code = DiagnosticCode::TypeMismatch
                 },
                 Case {
-                    .source = "const value = [1, 2].as_slice().length(0);",
+                    .source = "const value = [1, 2].slice().length(0);",
                     .code = DiagnosticCode::TypeMethodCallArity
                 },
                 Case {
@@ -174,10 +174,6 @@ const TestSuite suite([] static noexcept {
                 Case {
                     .source = "const value = [1, 2].is_empty(0);",
                     .code = DiagnosticCode::TypeMethodCallArity
-                },
-                Case {
-                    .source = "const value = [1, 2].as_slice().as_slice();",
-                    .code = DiagnosticCode::TypeMethodCall
                 },
                 Case {
                     .source = "const a: [i32] = [1]; const equal = a == a;",
@@ -193,8 +189,8 @@ const TestSuite suite([] static noexcept {
     "Constant slices: frozen storage does not extend ordinary local array borrows"_test =
         [] static noexcept {
             constexpr auto cases = std::array {
-                "fn bad() { let view = [1, 2].as_slice(); }",
-                "const source: [i32; 2] = [1, 2]; fn bad() { var copy = source; let view = copy.as_slice(); copy[0] = 9; }",
+                "fn bad() { let view = [1, 2].slice(); }",
+                "const source: [i32; 2] = [1, 2]; fn bad() { var copy = source; let view = copy.slice(); copy[0] = 9; }",
             };
             each(cases, std::identity {}, [&](const auto& source) noexcept {
                 expect_diagnostic(
@@ -211,7 +207,7 @@ const TestSuite suite([] static noexcept {
             for (auto index = 0uz; index < 2048uz; ++index) {
                 source += index == 0uz ? "0" : ",0";
             }
-            source += "]; const values = array.as_slice(); const count = values.length()";
+            source += "]; const values = array.slice(); const count = values.length()";
             for (auto index = 0uz; index < 256uz; ++index) {
                 source += "+values.length()";
             }

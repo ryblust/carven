@@ -3,8 +3,28 @@ module carven:semantic.analysis.ownership.contracts.impl;
 import :semantic.analysis.ownership.context;
 import std;
 
-auto OwnershipBodyAnalyzer::check_contracts() noexcept
-    -> std::unique_ptr<OwnershipDiagnosisRecord> {
+auto check_ownership_contracts(
+    const AnalysisModelView& model,
+    const AnalysisBodyView& body
+) noexcept -> std::optional<OwnershipRecordedError> {
+    auto error = std::optional<OwnershipRecordedError>();
+    const auto diagnose = [&](DiagnosticCode code,
+                              std::string message,
+                              ProgramOriginID origin,
+                              std::optional<ProgramOriginID> related = std::nullopt,
+                              std::string related_label = "related storage or access",
+                              std::string help = {}) noexcept {
+        if (!error) {
+            error = OwnershipRecordedError {
+                .code = code,
+                .message = std::move(message),
+                .origin = origin,
+                .related = related,
+                .related_label = std::move(related_label),
+                .help = std::move(help)
+            };
+        }
+    };
     const auto root =
         [&](this const auto& self,
             const SemanticExpression& source) noexcept -> std::optional<LocalBindingID> {
@@ -30,7 +50,7 @@ auto OwnershipBodyAnalyzer::check_contracts() noexcept
                               const SemanticExpression& source) noexcept -> bool {
         if (const auto* dereference = std::get_if<SemDereference>(&source.value)) {
             const auto* pointer = std::get_if<AnalysisPointerType>(
-                &analysis.model.shape(dereference->source->type.construction())
+                &model.shape(dereference->source->type.construction())
             );
             return pointer != nullptr && pointer->access == PointerAccess::Write;
         }
@@ -42,7 +62,7 @@ auto OwnershipBodyAnalyzer::check_contracts() noexcept
         }
         if (const auto* index = std::get_if<SemIndex>(&source.value)) {
             if (std::holds_alternative<ConstructionSliceTypeValue>(
-                    analysis.model.shape(index->source->type.construction())
+                    model.shape(index->source->type.construction())
                 )) {
                 return false;
             }
@@ -53,10 +73,25 @@ auto OwnershipBodyAnalyzer::check_contracts() noexcept
             return self(cpp->operands.front().expression);
         }
         const auto id = root(source);
-        return id && is_writable(*id);
+        return id
+            && body.binding(*id).storage.visit(
+                Overloaded {
+                    [](const OwnerBindingStorage& value) static noexcept { return value.writable; },
+                    [](const ParameterBindingStorage& value) static noexcept {
+                        return value.access == AccessMode::Write;
+                    },
+                    [](const AsyncChildBindingStorage&) static noexcept { return false; },
+                    [](const CaptureBindingStorage& value) static noexcept {
+                        return value.mode == CaptureMode::Write;
+                    },
+                    [](const AccessBindingStorage& value) static noexcept {
+                        return value.access == AccessMode::Write;
+                    },
+                }
+            );
     };
     const auto write = [&](const SemanticExpression& source) noexcept {
-        if (!root(source) && analysis.contents(source.type.construction()).contains_callable_view) {
+        if (!root(source) && model.contents(source.type.construction()).contains_callable_view) {
             diagnose(
                 DiagnosticCode::TypeCallableViewEscape,
                 "indirect storage cannot carry a tracked Carven callable borrow",
@@ -74,7 +109,7 @@ auto OwnershipBodyAnalyzer::check_contracts() noexcept
                 return;
             }
             const auto& declaration = body.binding(*binding);
-            const auto name = program.provenance().spelling(declaration.name);
+            const auto name = model.program.provenance().spelling(declaration.name);
             const auto parameter =
                 std::holds_alternative<ParameterBindingStorage>(declaration.storage);
             diagnose(
@@ -198,8 +233,7 @@ auto OwnershipBodyAnalyzer::check_contracts() noexcept
                 }
                 if (const auto* value = std::get_if<SemReturn>(&source.value); value != nullptr
                     && value->value.has_value()
-                    && analysis.contents(value->value->type.construction())
-                           .contains_callable_view) {
+                    && model.contents(value->value->type.construction()).contains_callable_view) {
                     diagnose(
                         DiagnosticCode::TypeCallableViewEscape,
                         "callable view cannot be returned",
@@ -209,5 +243,5 @@ auto OwnershipBodyAnalyzer::check_contracts() noexcept
             },
         }
     );
-    return std::move(diagnosis);
+    return error;
 }

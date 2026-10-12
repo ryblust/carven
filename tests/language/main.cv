@@ -1,0 +1,24 @@
+import .async.behavior using run_behavior;
+import .async.core using run_core;
+import .io.input using run_input;
+import <carven/generated/carven-test-runner.hpp>;
+
+async fn main(args) -> i32 {
+    if !args.is_empty() {
+        assert(args.length() == 3);
+        try {
+            await run_input(&&args[0] as String)?;
+        } catch {
+            _ => assert(false, "unexpected standard input failure"),
+        }
+        assert(args.length() == 3);
+        assert(args[1] == "世界" && args[2].is_empty());
+        return 0;
+    }
+    assert(::carven::runtime::run_generated_tests() == 0);
+    await run_behavior();
+    let result = await run_core();
+    assert(result == 19);
+    // The entry result is discarded; the host still observes exit status zero.
+    return result;
+}

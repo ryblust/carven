@@ -113,15 +113,10 @@ auto StaticExecutionContext::bind_call(
     ProgramOriginID origin
 ) noexcept -> ContinuationTask<std::expected<CallableID, ExecutionCallFailure>> {
     const auto function = draft.function_for_callable(callable);
-    if (!function) {
+    if (!function || !draft.staged_function(*function)) {
         co_return callable;
     }
     const auto contract = draft.construction_callable_contract_copy(callable);
-    if (!std::ranges::any_of(contract.parameters, [](const auto& parameter) static noexcept {
-            return parameter.stage == ParameterStage::Static;
-        })) {
-        co_return callable;
-    }
     if (arguments.size() != contract.parameters.size()) {
         invariant_violation("a checked call has the wrong number of arguments");
     }

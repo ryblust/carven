@@ -161,6 +161,17 @@ auto ProgramDraft::intern_generic_type(GenericTypeExpression expression) noexcep
                     invariant_violation("generic operation used a foreign failure expression");
                 }
             },
+            [&](const GenericCppNamedType& native) noexcept {
+                if (!valid_cpp_name(native.name)) {
+                    invariant_violation("invalid generic native type name");
+                }
+                for (const auto argument : native.arguments) {
+                    validate_child(argument);
+                }
+            },
+            [&](const GenericCppQueryType& query) noexcept {
+                visit_cpp_query_types(query, validate_child);
+            },
             [&](const GenericNominalApplication& application) noexcept {
                 if (application.definition.owner() != program_identity
                     || application.definition.index() >= storage.generic_definitions.size()) {
@@ -309,6 +320,15 @@ auto ProgramDraft::substitute_generic_type(
         } else if constexpr (std::same_as<Shape, GenericOperationType>) {
             child(value.success);
             value.failures = effects->substitute(value.failures);
+        } else if constexpr (std::same_as<Shape, GenericCppNamedType>) {
+            for (auto& argument : value.arguments) {
+                child(argument);
+            }
+        } else if constexpr (std::same_as<Shape, GenericCppQueryType>) {
+            value = map_cpp_query_types(value, [&](ConstructionTypeRef type) noexcept {
+                child(type);
+                return type;
+            });
         } else if constexpr (std::same_as<Shape, GenericNominalApplication>) {
             value.arguments =
                 substitute_generic_environment(value.arguments, definition, arguments, effects);
@@ -440,6 +460,42 @@ auto ProgramDraft::resolve_generic_type(
                     }
                     return intern_type({.value = OperationTypeValue {*success, *failures}});
                 },
+                [&](const GenericCppNamedType& native) noexcept -> AnalysisResult<TypeID> {
+                    auto types = std::vector<TypeID>();
+                    for (const auto argument : native.arguments) {
+                        auto resolved =
+                            resolve_generic_type(argument, definition, arguments, origin, effects);
+                        if (!resolved) {
+                            return std::unexpected(resolved.error());
+                        }
+                        types.push_back(*resolved);
+                    }
+                    return intern_type(
+                        {.value = CppTypeValue {
+                             .form =
+                                 CppNamedType {.name = native.name, .arguments = std::move(types)}
+                         }}
+                    );
+                },
+                [&](const GenericCppQueryType& query) noexcept -> AnalysisResult<TypeID> {
+                    auto error = std::optional<AnalysisFailure>();
+                    auto concrete = map_cpp_query_types(
+                        query,
+                        [&](ConstructionTypeRef type) noexcept -> TypeID {
+                            auto resolved =
+                                resolve_generic_type(type, definition, arguments, origin, effects);
+                            if (!resolved) {
+                                error = resolved.error();
+                                return builtin_type(BuiltinType::Void);
+                            }
+                            return *resolved;
+                        }
+                    );
+                    if (error) {
+                        return std::unexpected(*error);
+                    }
+                    return intern_type({.value = CppTypeValue {.form = std::move(concrete)}});
+                },
                 [&](const GenericNominalApplication& application) noexcept
                     -> AnalysisResult<TypeID> {
                     auto resolved_arguments = CanonicalGenericEnvironment();
@@ -534,9 +590,7 @@ auto ProgramDraft::instantiate_generic_nominal(
         diagnostic.related(source_span(contract.origin), "generic declaration");
         return std::unexpected(diagnostics().error(diagnostic.build()));
     }
-    const auto application_source = source_origin(origin);
     for (const auto [index, argument] : std::views::enumerate(arguments)) {
-        const auto type = std::get_if<TypeID>(&argument);
         if (!generic_argument_matches(contract.parameter_kinds[index], argument)) {
             return std::unexpected(
                 diagnostics().error(DiagnosticBuilder(
@@ -548,25 +602,13 @@ auto ProgramDraft::instantiate_generic_nominal(
             );
         }
 
-        if (!type && std::holds_alternative<FailureSetID>(argument)) {
-            for (const auto member : failure_set_copy(std::get<FailureSetID>(argument)).members) {
+        if (const auto* failures = std::get_if<FailureSetID>(&argument)) {
+            for (const auto member : failure_set_copy(*failures).members) {
                 auto admitted = require_failure_member(member, origin);
                 if (!admitted) {
                     return std::unexpected(admitted.error());
                 }
             }
-            continue;
-        }
-
-        const auto admitted = require_source_value_type(
-            *this,
-            *type,
-            source_module(application_source.source_id),
-            application_source.span,
-            "generic type argument"
-        );
-        if (!admitted) {
-            return std::unexpected(admitted.error());
         }
     }
     const auto key =

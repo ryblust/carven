@@ -138,11 +138,11 @@ test "Const arrays: literals and function results retain element types and fixed
     check(first == 5);
     let empty_copy = empty;
     let literal_empty_copy = array_empty;
-    check(empty_copy.as_slice().is_empty());
-    check(literal_empty_copy.as_slice().length() == 0usize);
+    check(empty_copy.is_empty());
+    check(literal_empty_copy.length() == 0usize);
 
     let copy: [i32; 4] = array_table;
-    let view = copy.as_slice();
+    let view = copy.slice();
     check(view.length() == 4usize);
     var index = 3;
     check(view[index] == 12);

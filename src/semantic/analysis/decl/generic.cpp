@@ -145,6 +145,16 @@ auto DeclResolver::resolve_generic_declaration(
                             }
                         }
                     },
+                    [&](const GenericCppNamedType& native) noexcept {
+                        for (const auto argument : native.arguments) {
+                            self(self, argument, origin);
+                        }
+                    },
+                    [&](const GenericCppQueryType& query) noexcept {
+                        visit_cpp_query_types(query, [&](ConstructionTypeRef type) noexcept {
+                            self(self, type, origin);
+                        });
+                    },
                     [&](const GenericNominalApplication& application) noexcept {
                         contract.audience_dependencies.push_back(
                             {.reference = application.definition, .origin = origin}
@@ -235,7 +245,6 @@ auto DeclResolver::resolve_generic_declaration(
                 *parameter.type,
                 context,
                 extent,
-                false,
                 &requests,
                 draft.source_analysis() ? &draft.source_analysis()->declarations() : nullptr
             );
@@ -264,7 +273,6 @@ auto DeclResolver::resolve_generic_declaration(
                 *function->result_type,
                 context,
                 extent,
-                false,
                 &requests,
                 draft.source_analysis() ? &draft.source_analysis()->declarations() : nullptr
             );
@@ -356,7 +364,6 @@ auto DeclResolver::resolve_generic_declaration(
                 field.type,
                 context,
                 extent,
-                true,
                 &requests,
                 draft.source_analysis() ? &draft.source_analysis()->declarations() : nullptr
             ));
@@ -456,7 +463,6 @@ auto DeclResolver::resolve_generic_declaration(
                 source_type,
                 context,
                 extent,
-                true,
                 &requests,
                 draft.source_analysis() ? &draft.source_analysis()->declarations() : nullptr
             ));

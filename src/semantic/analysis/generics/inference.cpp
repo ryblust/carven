@@ -177,6 +177,45 @@ auto ProgramDraft::infer_generic_argument(
             && shape->access == pointer->access
             && infer_generic_argument(pointer->target, shape->target, definition, inferred, origin);
     }
+    if (const auto* native = std::get_if<GenericCppNamedType>(&description)) {
+        auto arguments = std::vector<ConstructionTypeRef>();
+        actual = unwrap_type_alias(*this, actual);
+        if (const auto* generic = std::get_if<GenericTypeID>(&actual)) {
+            const auto shape = generic_type_copy(*generic);
+            const auto* named = std::get_if<GenericCppNamedType>(&shape);
+            if (!named || named->name != native->name) {
+                return false;
+            }
+            arguments = named->arguments;
+        } else if (const auto* concrete = std::get_if<TypeID>(&actual)) {
+            const auto shape = type_copy(*concrete);
+            const auto* value = std::get_if<CppTypeValue>(&shape.value);
+            const auto* named = value ? std::get_if<CppNamedType>(&value->form) : nullptr;
+            if (!named || named->name != native->name) {
+                return false;
+            }
+            for (const auto argument : named->arguments) {
+                arguments.push_back(argument);
+            }
+        } else {
+            return false;
+        }
+        if (arguments.size() != native->arguments.size()) {
+            return false;
+        }
+        for (auto index = 0uz; index < arguments.size(); ++index) {
+            if (!infer_generic_argument(
+                    native->arguments[index],
+                    arguments[index],
+                    definition,
+                    inferred,
+                    origin
+                )) {
+                return false;
+            }
+        }
+        return true;
+    }
     if (const auto* operation = std::get_if<GenericOperationType>(&description)) {
         const auto shape = operation_shape(*this, actual);
         return shape

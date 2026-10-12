@@ -12,7 +12,7 @@ private const fn release<T>(&&owner: Box<T>) -> T => (&&owner).value;
 
 private const fn pass_slice<T>(values: [T]) -> [T] => values;
 
-private const fn pass_array<T>(values: [T; 2]) -> [T] => values.as_slice();
+private const fn pass_array<T>(values: [T; 2]) -> [T] => values.slice();
 
 private const fn empty_slice<T>() -> [T] {
     let values: [T] = [];
@@ -49,7 +49,7 @@ const test "Generic functions: empty slices do not retain temporary array backin
 test "Generic functions: empty slice delivery has no element storage" {
     check(empty_slice<String>().is_empty());
     let values: [String; 0] = [];
-    let view = values.as_slice();
+    let view = values.slice();
     let moved = &&values;
     check(view.is_empty());
     check(moved.length() == 0);
@@ -85,7 +85,7 @@ test "Generic functions: owned values transfer through ordinary aggregate fields
 
 test "Generic functions: slice forwarding retains its backing and element type" {
     let data = [20, 22];
-    let forwarded = pass_slice<i32>(data.as_slice());
+    let forwarded = pass_slice<i32>(data.slice());
     check(forwarded.length() == 2);
     check(forwarded[0] + forwarded[1] == 42);
     let boxed = hold<[i32]>(&&forwarded);

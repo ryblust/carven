@@ -300,7 +300,7 @@ and destroying temporary values. Discarding the result still executes formatting
 Direct interpolation and interpolation in functions executed in the static stage use the same
 [supported builtin formatting subset](constants.md#static-execution-of-functions)
 in static roots. For example,
-`const title = f"build-{42:04}";` produces static `str` text, and
+`const title = f"build-{42:04}";` retains an owning `String` constant, and
 `const bytes = f"{'我'}".byte_length();` produces `3usize`. Nested calls, `String {}`,
 `String::from_str(...)`, `.as_str()`, `.byte_length()` and `.is_empty()` compose before
 initializer completion. Each constant interpolation is limited to 1 MiB of

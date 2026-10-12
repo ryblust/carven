@@ -54,8 +54,7 @@ auto DeclResolver::resolve_struct(
             );
             co_return std::unexpected(draft.diagnostics().error(diagnostic.build()));
         }
-        auto type =
-            (co_await resolve_value_type(symbol.module_id, syntax, field.type, "structure field"));
+        auto type = (co_await resolve_type(symbol.module_id, syntax, field.type));
         if (!type.has_value()) {
             co_return std::unexpected(type.error());
         }
@@ -145,12 +144,7 @@ auto DeclResolver::resolve_enum(
         auto payload = std::vector<ConstructionTypeRef>();
         payload.reserve(source_case.payload_types.size());
         for (const auto source_type : source_case.payload_types) {
-            auto type = (co_await resolve_value_type(
-                symbol.module_id,
-                syntax,
-                source_type,
-                "enum payload"
-            ));
+            auto type = (co_await resolve_type(symbol.module_id, syntax, source_type));
             if (!type.has_value()) {
                 co_return std::unexpected(type.error());
             }

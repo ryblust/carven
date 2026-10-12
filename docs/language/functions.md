@@ -87,8 +87,12 @@ operations. Array extents and nominal failure payload types must be independent
 of type parameters. A failure-set parameter represents a set of those payload
 types, including the empty set; see
 [Failure-set parameters](failures.md#failure-set-parameters).
+Named external C++ types may depend on type parameters. Their native
+construction, calls, and conversions are checked by C++ after concrete
+substitution.
 Parameterized closures, callable-view signatures that depend on rigid type or
-failure parameters, and C++ boundary functions are not supported.
+failure parameters, and `import(cpp)` or `export(cpp)` parameterized function
+declarations are not supported.
 
 Operations can retain type formation requirements. Dereferencing `ptr<T>`, for
 example, requires a non-void target. The requirement follows generic forwarding

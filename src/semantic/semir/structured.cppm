@@ -204,6 +204,7 @@ struct SemCpp final {
 };
 
 struct SemCppOperand final {
+    using TypeReference = ConstructionTypeRef;
     AccessMode access;
     OwnedSemanticExpression expression;
 };
@@ -626,34 +627,43 @@ auto cpp_construct_query(
 }
 
 template<typename TypeReader>
-auto cpp_call_query(const SemCppCall& call, TypeReader type) noexcept -> CppQueryType {
+auto cpp_call_query(const SemCppCall& call, TypeReader type) noexcept
+    -> BasicCppQueryType<std::invoke_result_t<TypeReader, ConstructionTypeRef>> {
+    using Type = std::invoke_result_t<TypeReader, ConstructionTypeRef>;
     const auto operand_type = [&](const SemCppOperand& operand) noexcept {
-        return CppTypeOperand {
-            .type = type(operand.expression->type.resolved()),
+        return BasicCppTypeOperand<Type> {
+            .type = type(operand.expression->type.construction()),
             .access = operand.access
         };
     };
-    auto callee = call.callee.visit([&](const auto& value) noexcept -> CppCallee<CppTypeOperand> {
-        using Value = std::remove_cvref_t<decltype(value)>;
-        if constexpr (std::same_as<Value, CppNameReference>) {
-            return value;
-        } else if constexpr (std::same_as<Value, CppMemberCallee<SemCppOperand>>) {
-            return CppMemberCallee<CppTypeOperand> {
-                .receiver = operand_type(value.receiver),
-                .member = value.member
-            };
-        } else {
-            return operand_type(value);
-        }
-    });
-    auto arguments = std::vector<CppTypeOperand>();
+    auto callee =
+        call.callee.visit([&](const auto& value) noexcept -> CppCallee<BasicCppTypeOperand<Type>> {
+            using Value = std::remove_cvref_t<decltype(value)>;
+            if constexpr (std::same_as<Value, CppNameReference>) {
+                return value;
+            } else if constexpr (std::same_as<Value, CppStaticMemberCallee<ConstructionTypeRef>>) {
+                return CppStaticMemberCallee<Type> {
+                    .type = type(value.type),
+                    .member = value.member
+                };
+            } else if constexpr (std::same_as<Value, CppMemberCallee<SemCppOperand>>) {
+                return CppMemberCallee<BasicCppTypeOperand<Type>> {
+                    .receiver = operand_type(value.receiver),
+                    .member = value.member
+                };
+            } else {
+                return operand_type(value);
+            }
+        });
+    auto arguments = std::vector<BasicCppTypeOperand<Type>>();
     for (const auto& argument : call.arguments) {
         arguments.push_back(
-            {.type = type(argument.expression.type.resolved()), .access = argument.access}
+            {.type = type(argument.expression.type.construction()), .access = argument.access}
         );
     }
     return {
-        .expression = CppCallQuery {.callee = std::move(callee), .arguments = std::move(arguments)}
+        .expression =
+            BasicCppCallQuery<Type> {.callee = std::move(callee), .arguments = std::move(arguments)}
     };
 }
 

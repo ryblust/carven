@@ -405,7 +405,7 @@ async fn run() {
                 .source = R"(import std::async using Operation;
 
 async fn leaf() -> i32 => 7;
-fn inspect(values: [Operation<i32>; 1]) -> usize => values.as_slice().length();
+fn inspect(values: [Operation<i32>; 1]) -> usize => values.slice().length();
 fn inspect_slice(values: [Operation<i32>]) -> usize => values.length();
 async fn run() {
     let values = [leaf()]; print(inspect(values), inspect(values), inspect_slice(values));
@@ -432,7 +432,7 @@ async fn run() {
                 .source = R"(import std::async using Operation;
 
 async fn leaf() -> i32 => 7;
-fn inspect<T>(values: [T; 1]) -> usize => values.as_slice().length();
+fn inspect<T>(values: [T; 1]) -> usize => values.slice().length();
 async fn run() {
     let values: [Operation<i32>; 1] = [leaf()];
     print(inspect(values)); print(await (&&values)[0]);
@@ -458,7 +458,7 @@ fn run() {
                 .source = R"(
 async fn leaf() -> i32 => 7;
 async fn run() {
-    let values = [leaf()]; let view = values.as_slice();
+    let values = [leaf()]; let view = values.slice();
     print(await (&&view)[0]);
 }
 )",

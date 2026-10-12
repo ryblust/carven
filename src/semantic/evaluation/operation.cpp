@@ -971,7 +971,7 @@ auto evaluate_slice_intrinsic_constant_value(
         || bounds.size() != contract.arguments.size()) {
         return std::unexpected(ConstantEvaluationFailure::InvalidOperation);
     }
-    if (intrinsic == SliceIntrinsic::FromOwner) {
+    if (intrinsic == SliceIntrinsic::View) {
         return std::unexpected(ConstantEvaluationFailure::UnsupportedOperation);
     }
     const auto& elements = array ? array->elements : slice->elements;

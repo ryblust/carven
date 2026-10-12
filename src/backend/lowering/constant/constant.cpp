@@ -53,8 +53,7 @@ auto integer_suffix(const SemIRProgram& semantic, TypeID type) noexcept -> Targe
         case BuiltinType::Mask4:
         case BuiltinType::Mask16:
         case BuiltinType::StrCharsView:
-        case BuiltinType::Void:
-        case BuiltinType::EntryArgs:    return TargetIntegerSuffix::None;
+        case BuiltinType::Void:         return TargetIntegerSuffix::None;
     }
     std::unreachable();
 }
@@ -502,7 +501,7 @@ auto constant_initializer(
                     );
                 }
                 auto view = call_expression(
-                    intrinsic_expression(TargetSymbol::RuntimeAsSlice),
+                    intrinsic_expression(TargetSymbol::RuntimeSliceView),
                     target_expressions(name_expression(std::move(*storage)))
                 );
                 if constexpr (owning) {

@@ -31,6 +31,14 @@ Nominal declarations and definitions use the same module namespace, including
 source-only definitions. Completeness determines the artifact that owns a
 definition; it does not change the type's C++ identity or Carven source visibility.
 
+C++ export signatures require complete return types, Take payloads, and declared
+failure members, including asynchronous completion payloads. Their provider
+interfaces join the ordinary completeness graph, so the public API header
+transitively supplies the definitions a native caller needs to construct and
+destroy values. Ordinary source-only function signatures keep declaration-only
+result and Take dependencies; source implementation lowering records the
+additional providers its emitted value operations require.
+
 Owning sequence elements require complete definitions for their operations,
 but only declarations for the carrier layout. These deferred complete requirements
 participate in interface closure without imposing layout order. Both interface
@@ -41,6 +49,8 @@ copy, move, and destruction; source construction and access remain checked by Ca
 Concrete generic nominal instances seed the internal interface schedule. Their
 private layout dependencies use the same completeness closure and module ordering.
 Source audience remains a semantic check on the definition and its type arguments.
+Consumer headers contain requested concrete generic nominal layouts; fixed linkage
+domains and published dependencies keep ordinary library implementations shared.
 
 Schedules own interface definitions, C++ façades, source nominal and closure
 ordering, and selected tests. Module lowering starts with externally visible
@@ -69,6 +79,14 @@ arm and excludes static conditions, ranges, initializers, and arguments.
 Everything else private stays internal to its implementation. The selection
 depends only on the owner's source, never on its callers; the backend does not
 traverse source templates.
+
+Ordinary type-parameterized definitions publish a dependency summary from their
+checked rigid bodies: concrete types, ordinary callables, and referenced generic
+definitions. Planning follows this graph from visible generic declarations,
+including private generic helpers. Concrete dependencies join the same interface
+closure before consumer instantiation. The fixed library emits ordinary helpers
+called by those instances. Carven visibility governs source imports independently
+of this native interface closure.
 
 Each artifact collects requested definitions through one work queue. Every module
 has one artifact-owned lowering context, including the artifact's own module.

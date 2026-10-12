@@ -814,27 +814,28 @@ const TestSuite suite([] static noexcept {
             );
         };
 
-    "Vector ownership: repeated finite helpers preserve exact backing and sibling separation"_test =
-        [] static noexcept {
-            const auto prelude = std::string(R"(
+    {
+        const auto prelude = std::string(R"(
             struct Node { text: String, other: String, children: Vector<[Node; 1]> }
             fn children(node: Node) -> [Node] => node.children[0];
             fn other_children(node: Node) -> [Node] => node.children[0];
         )");
-            for (const auto depth : {1uz, 2uz, 4uz, 8uz}) {
-                for (const auto style : {0, 1, 2, 3}) {
-                    auto steps = std::string();
-                    auto exact = std::string("root[0]");
-                    for (auto index = 0uz; index < depth; ++index) {
-                        const auto helper = style == 1 ? "other_children" : "children";
-                        steps += style == 2 || (style == 3 && index % 2 == 0)
-                            ? "current = current[0].children[0];"
-                            : std::format("current = {}(current[0]);", helper);
-                        exact += ".children[0][0]";
-                    }
-                    for (const auto same_field : {false, true}) {
-                        const auto source = prelude
-                            + std::format(R"(
+        constexpr auto styles =
+            std::array {"same helper", "other helper", "field access", "mixed access"};
+        for (const auto depth : {1uz, 2uz, 4uz, 8uz}) {
+            for (const auto style : {0uz, 1uz, 2uz, 3uz}) {
+                auto steps = std::string();
+                auto exact = std::string("root[0]");
+                for (auto index = 0uz; index < depth; ++index) {
+                    const auto helper = style == 1 ? "other_children" : "children";
+                    steps += style == 2 || (style == 3 && index % 2 == 0)
+                        ? "current = current[0].children[0];"
+                        : std::format("current = {}(current[0]);", helper);
+                    exact += ".children[0][0]";
+                }
+                for (const auto same_field : {false, true}) {
+                    const auto source = prelude
+                        + std::format(R"(
                         fn probe(&root: [Node; 1]) -> usize {{
                             let empty: [Node; 0] = [];
                             var current: [Node] = root;
@@ -845,9 +846,17 @@ const TestSuite suite([] static noexcept {
                             return view.byte_length();
                         }}
                     )",
-                                          steps,
-                                          exact,
-                                          same_field ? "text" : "other");
+                                      steps,
+                                      exact,
+                                      same_field ? "text" : "other");
+                    TestRegistration(
+                        std::format(
+                            "Vector ownership: repeated finite helpers preserve exact backing and sibling separation / depth {} / {} / {}",
+                            depth,
+                            styles[style],
+                            same_field ? "same field" : "sibling field"
+                        )
+                    ) = [source, same_field]() noexcept {
                         if (same_field) {
                             expect_diagnostic(
                                 analyze_test_errors(source),
@@ -856,10 +865,12 @@ const TestSuite suite([] static noexcept {
                         } else {
                             static_cast<void>(analyze_test_program(source));
                         }
-                    }
+                    };
                 }
             }
-            static_cast<void>(analyze_test_program(prelude + R"(
+        }
+        "Vector ownership: repeated finite helpers preserve copies and independent siblings"_test =
+            [source = prelude + R"(
             fn copied(&root: [Node; 1]) -> usize {
                 var copy = root;
                 let view = children(children(copy[0])[0])[0].text.as_str();
@@ -871,8 +882,10 @@ const TestSuite suite([] static noexcept {
                 root[0].children[1][0].text.clear();
                 return view.byte_length();
             }
-        )"));
-        };
+        )"]() noexcept {
+                static_cast<void>(analyze_test_program(source));
+            };
+    }
 
     "Vector ownership: function effects retain caller readers and alias roles"_test =
         [] static noexcept {
@@ -1526,9 +1539,8 @@ const TestSuite suite([] static noexcept {
             );
         };
 
-    "Vector execution: dynamic storage bounds cover Take construction and nested Write"_test =
-        [] static noexcept {
-            const auto prelude = std::string(R"(
+    {
+        const auto prelude = std::string(R"(
                 import std::async using when_all;
                 struct Node { children: Vector<Node> }
                 const fn build(depth: i32) -> Node {
@@ -1541,11 +1553,23 @@ const TestSuite suite([] static noexcept {
                     return &&node;
                 }
             )");
-            static_cast<void>(analyze_test_program(prelude + R"(
+        "Vector execution: dynamic storage bounds accept finite Take construction"_test =
+            [source = prelude + R"(
                 const count = build(8).children.length();
-            )"));
-            constexpr auto cases = std::array {
+            )"]() noexcept {
+                static_cast<void>(analyze_test_program(source));
+            };
+        struct Input final {
+            std::string_view name;
+            std::string_view source;
+        };
+        constexpr auto cases = std::array {
+            Input {
+                "deep Take construction",
                 R"(const count = build(40).children.length();)",
+            },
+            Input {
+                "element replacement",
                 R"(const fn grow() -> usize {
                     var root = Node {};
                     root.children.push(Node {});
@@ -1553,6 +1577,9 @@ const TestSuite suite([] static noexcept {
                     return root.children.length();
                 }
                 const count = grow();)",
+            },
+            Input {
+                "nested Write growth",
                 R"(const fn grow() -> usize {
                     var root = Node {};
                     root.children.push(Node {});
@@ -1561,6 +1588,9 @@ const TestSuite suite([] static noexcept {
                     return root.children.length();
                 }
                 const count = grow();)",
+            },
+            Input {
+                "enum payload growth",
                 R"(enum Tree { Leaf, Branch(Vector<Tree>) }
                 const fn grow() -> usize {
                     var leaves = Vector<Tree> {};
@@ -1568,26 +1598,37 @@ const TestSuite suite([] static noexcept {
                     return leaves.length();
                 }
                 const count = grow();)",
+            },
+            Input {
+                "concurrent Take results",
                 R"(const async fn rows() -> Vector<[i32; 1024]> {
                     var values = Vector<[i32; 1024]> {};
                     for _ in 0..32 { values.push([0; 1024]); }
                     return &&values;
                 }
                 const count = (await when_all(rows(), rows())).0.length();)",
+            },
+            Input {
+                "wide element growth",
                 R"(const fn grow() -> usize {
                     var rows = Vector<[i32; 1024]> {};
                     for _ in 0..64 { rows.push([0; 1024]); }
                     return rows.length();
                 }
                 const count = grow();)",
-            };
-            each(cases, std::identity {}, [&](const auto& source) noexcept {
-                expect_diagnostic(
-                    analyze_test_errors(prelude + source),
-                    DiagnosticCode::ConstLimit
-                );
-            });
+            },
         };
+        for (const auto input : cases) {
+            TestRegistration(
+                std::format(
+                    "Vector execution: dynamic storage bounds cover Take construction and nested Write / {}",
+                    input.name
+                )
+            ) = [source = prelude + std::string(input.source)]() noexcept {
+                expect_diagnostic(analyze_test_errors(source), DiagnosticCode::ConstLimit);
+            };
+        }
+    }
 });
 
 } // namespace

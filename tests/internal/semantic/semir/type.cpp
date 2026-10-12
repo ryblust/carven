@@ -144,7 +144,9 @@ const TestSuite suite([] static noexcept {
         [] static noexcept {
             const auto type = CppTypeValue {.form = CppConstCharPointerType {}};
             expect(valid_cpp_type(type));
-            expect(cpp_type_references(type).empty());
+            auto has_reference = false;
+            visit_cpp_type_references(type, [&](TypeID) noexcept { has_reference = true; });
+            expect(!has_reference);
             expect(cpp_type_name(type) == nullptr);
             expect(valid_cstring_bytes("abc"));
             expect(valid_cstring_bytes(""));

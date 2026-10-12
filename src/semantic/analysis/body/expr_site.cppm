@@ -52,6 +52,8 @@ public:
 
     auto representation_access(StructID owner, Span span) noexcept -> AnalysisResult<void>;
     auto associated_reference(StructID owner, Span name_span) noexcept -> ExpressionTask<Value>;
+    auto native_associated_reference(ConstructionTypeRef type, Span name_span, Span span) noexcept
+        -> Selection;
 
     auto associated_call(
         const ASTCallExpr& source,

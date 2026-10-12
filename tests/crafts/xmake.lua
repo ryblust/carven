@@ -13,8 +13,9 @@ for _, variant in ipairs({
         end
         add_rules("@carven/carven", {tests = variant.portable and "main" or "runner"})
         if variant.portable then
-            add_files("carven/std/utf/validation.cv", "carven/std/simd/*.cv",
-                "carven/std/json/validation.cv")
+            add_files("carven/std/utf/cases.cv", "carven/std/utf/blocks.cv", "carven/std/json/runs.cv")
+            add_files("carven/std/simd/bytes.cv", "carven/std/simd/floats.cv",
+                "carven/std/simd/primitives.cv", "carven/std/simd/scan.cv")
         else
             add_files("carven/**.cv", "main.cv")
         end

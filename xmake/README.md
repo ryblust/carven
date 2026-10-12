@@ -57,6 +57,8 @@ Put include paths needed only by an implementation in
 generated C++. Put requirements used by other translation units through headers
 on the target or its dependencies. Target-wide settings participate in
 installed-library producer selection.
+Native header imports that appear in generated public headers are requirements
+of every including translation unit; use `add_includedirs(...)` on their target.
 
 The Xmake project directory is the workspace root. Targets select sources; the
 compiler manifest lists inputs and generated artifacts. Xmake's C++ rules own
@@ -69,5 +71,17 @@ use `add_deps` to reuse its outputs. Compiler, formatter, workspace, test suppor
 and internal fixture modules use `moduleonly` targets.
 
 Internal, formatter, and workspace test executables share the entry object from
-`carven-test-runner`. Each executable owns its cases. The six internal domain
-targets run in independent processes.
+`carven-test-runner`. `carven-test-internal` collects the internal compiler cases
+in one executable and registers six disjoint process selections for parallel
+execution. Source directories organize cases without splitting linkage.
+
+`target` defines the compilation and linking boundary. Multiple `add_tests`
+registrations normally reuse that target's executable; supplying per-test
+`files` clones a target and adds a separate build. Register ordinary behavior
+on a shared target, and use arguments or a harness to run isolated process
+scenarios. Different language standards, backend flags, and entry/runner
+contracts define separate targets.
+
+Choose process partitions by execution cost independently of build target count.
+The test job limit controls their concurrency. Measure preparation, compilation,
+linking, execution, and queue delay separately under the same job limit.

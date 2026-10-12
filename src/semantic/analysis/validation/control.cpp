@@ -10,8 +10,12 @@ import :support.invariant;
 import :support.visit;
 import std;
 
-auto BodyContractVerifier::verify_region(const SemanticRegion& source, bool residual) const noexcept
-    -> void {
+auto BodyContractVerifier::verify_region(
+    const SemanticRegion& source,
+    bool executable
+) const noexcept -> void {
+    const auto rewritten = executable
+        && (body.specialized() || std::addressof(source) != std::addressof(body.region()));
     const auto callable = body_callable();
     const auto result = callable.has_value()
         ? std::optional(program.callable_signatures()
@@ -34,8 +38,8 @@ auto BodyContractVerifier::verify_region(const SemanticRegion& source, bool resi
         source,
         Overloaded {
             [&](const SemanticExpression& expression) noexcept {
-                verify_expression(expression, residual);
-                if (residual) {
+                verify_expression(expression, rewritten);
+                if (executable) {
                     if (const auto* call = std::get_if<SemCall>(&expression.value);
                         call && call->target) {
                         if (program.callable_signatures()
@@ -155,11 +159,7 @@ auto BodyContractVerifier::verify_region(const SemanticRegion& source, bool resi
                                     value.target.type.resolved(),
                                     value.value.type.resolved(),
                                     compatible,
-                                    type_supports_equality(
-                                        program.types(),
-                                        program.declarations(),
-                                        value.target.type.resolved()
-                                    )
+                                    true
                                 );
                                 compatible = decision
                                     && (*decision == OperatorResult::Operand
@@ -182,7 +182,7 @@ auto BodyContractVerifier::verify_region(const SemanticRegion& source, bool resi
                         [](const auto&) static noexcept {},
                     }
                 );
-                if (residual) {
+                if (executable) {
                     if (std::holds_alternative<SemStaticBinding>(statement.value)) {
                         invariant_violation("realized body retains a static local");
                     }
@@ -206,13 +206,15 @@ auto BodyContractVerifier::verify() noexcept -> void {
     require_top_level_owners();
     verify_lifetimes();
     verify_rows();
-    // An instance body has only its executable region.
-    if (!body.specialized()) {
+    const auto executes = program.executes(body.id());
+    const auto& realized = body.realized_region();
+    // An unchanged region is checked once with its executable constraints.
+    if (!body.specialized()
+        && (!executes || std::addressof(body.region()) != std::addressof(realized))) {
         verify_region(body.region());
     }
-    if (program.executes(body.id())) {
-        const auto& residual = body.realized_region();
-        verify_region(residual, true);
+    if (executes) {
+        verify_region(realized, true);
     }
     if (!require_failure_set(body.region().failures.resolved()).members.empty()) {
         require_body_failure_set(body.region().failures.resolved());

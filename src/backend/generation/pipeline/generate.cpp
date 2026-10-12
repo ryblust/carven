@@ -38,12 +38,6 @@ auto library_modules(const SemIRProgram& semantic, const TargetPlanningRequest& 
     if (!paths.empty()) {
         return std::unexpected(std::format("unknown library module '{}'", paths.begin()->value()));
     }
-    // Generic instance names are local to a complete semantic program.
-    for (const auto& generic : semantic.generic_declaration_contracts()) {
-        if (modules.contains(generic.module_id)) {
-            return std::unexpected("library modules cannot declare generic types or functions");
-        }
-    }
     for (const auto function : semantic.declarations().functions()) {
         if (modules.contains(function.value.module_id) && function.value.entry_point) {
             return std::unexpected("library modules cannot declare a program entry point");

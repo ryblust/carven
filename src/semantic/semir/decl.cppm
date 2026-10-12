@@ -272,7 +272,8 @@ public:
     auto enum_cases(EnumID id) const noexcept -> std::span<const EnumCaseID>;
     auto enum_case(EnumCaseID id) const noexcept -> ConstructionEnumCaseDeclaration;
     auto module_constant(ModuleConstantID id) const noexcept -> ModuleConstantDeclaration;
-    auto callable_contract(CallableID id) const noexcept -> ConstructionCallableContract;
+    // Borrowed until the next callable reservation.
+    auto callable_contract(CallableID id) const noexcept -> const ConstructionCallableContract&;
     auto callable_signature(CallableID id) const noexcept -> CallableSignatureID;
     auto callable_implementation(CallableID id) const noexcept -> CallableImplementation;
     auto module_count() const noexcept -> std::size_t;

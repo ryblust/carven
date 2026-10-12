@@ -281,7 +281,7 @@ auto OwnershipBodyAnalyzer::call(
     if (!target_id.has_value()) {
         auto result =
             OwnershipFlow {.normal = OwnershipNormal {std::move(state), {}, {}}, .exits = {}};
-        const auto contract = program.callable_signatures().signature(
+        const auto& contract = program.callable_signatures().signature(
             program.declarations().callable(callable).signature
         );
         // Native Write may replace its selected backing. The provider owns
@@ -914,7 +914,7 @@ auto OwnershipBodyAnalyzer::call_body(
         | std::views::transform([](const auto& object) static noexcept { return object.many; })
         | std::ranges::to<std::vector>();
     auto result = OwnershipFlow {};
-    const auto& answers = analysis.query(std::move(call_input), recursive_call);
+    const auto& answers = analysis.query(std::move(call_input), recursive_call).answer;
     restored_sources.resize(input_objects + answers.referents.size());
     // New callee descendants retain their referent identity. Restore the
     // reachable graph once; never flatten owns edges back into a long path.

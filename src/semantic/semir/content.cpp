@@ -19,6 +19,7 @@ public:
     auto type(TypeID id) noexcept -> ContentTask;
     auto query(const CppQueryType& value) noexcept -> ContentTask;
     auto constant(ConstantID id) noexcept -> ContentTask;
+    auto callable(CallableID id) noexcept -> ContentTask;
     auto finish() && noexcept -> std::string;
 
 private:
@@ -26,11 +27,12 @@ private:
     auto number(std::uint64_t value) noexcept -> void;
     auto integer(IntegerConstant value) noexcept -> void;
     auto module_path(ModuleID id) noexcept -> void;
-    auto callable(CallableID id) noexcept -> ContentTask;
     auto nominal(NominalDeclarationRef declaration) noexcept -> ContentTask;
     auto signature(CallableSignatureID id) noexcept -> ContentTask;
     auto name(const CppNameReference& value) noexcept -> void;
     auto operand(const CppTypeOperand& value) noexcept -> ContentTask;
+    template<typename Value>
+    auto query_expression(const Value& value, std::uint64_t index) noexcept -> ContentTask;
 
     const SemIRProgram& program;
     CompilationProvenanceView provenance;
@@ -41,8 +43,13 @@ private:
     std::map<TypeID, std::uint64_t> type_nodes;
     std::map<ConstantID, std::uint64_t> constant_nodes;
 
-    template<typename Write>
-    auto node(Write write) noexcept -> ContinuationTask<std::uint64_t> {
+    template<typename ID, typename Write>
+    auto node(ID id, std::map<ID, std::uint64_t>& identities, Write write) noexcept -> ContentTask {
+        if (const auto found = identities.find(id); found != identities.end()) {
+            token("node");
+            number(found->second);
+            co_return {};
+        }
         auto outer = std::exchange(contents, {});
         co_await write();
         auto descriptor = std::move(contents);
@@ -50,10 +57,11 @@ private:
         if (inserted) {
             definitions.push_back(std::addressof(entry->first));
         }
+        identities.emplace(id, entry->second);
         contents = std::move(outer);
         token("node");
         number(entry->second);
-        co_return entry->second;
+        co_return {};
     }
 };
 
@@ -62,12 +70,17 @@ ContentWriter::ContentWriter(const SemIRProgram& program) noexcept
       provenance(program.provenance()) {}
 
 auto ContentWriter::token(std::string_view value) noexcept -> void {
-    contents += std::format("{}:", value.size());
+    auto length = std::array<char, std::numeric_limits<std::uint64_t>::digits10 + 1>();
+    const auto end = std::to_chars(length.data(), length.data() + length.size(), value.size()).ptr;
+    contents.append(length.data(), end);
+    contents += ':';
     contents += value;
 }
 
 auto ContentWriter::number(std::uint64_t value) noexcept -> void {
-    token(std::format("{}", value));
+    auto digits = std::array<char, std::numeric_limits<std::uint64_t>::digits10 + 1>();
+    const auto end = std::to_chars(digits.data(), digits.data() + digits.size(), value).ptr;
+    token(std::string_view(digits.data(), end));
 }
 
 auto ContentWriter::integer(IntegerConstant value) noexcept -> void {
@@ -119,15 +132,40 @@ auto ContentWriter::nominal(NominalDeclarationRef reference) noexcept -> Content
 
 auto ContentWriter::callable(CallableID id) noexcept -> ContentTask {
     const auto& declarations = program.declarations();
+    if (const auto* instance = program.generic_function_instance(id)) {
+        const auto& definition = program.generic_declaration_contract(instance->definition);
+        token("generic instance");
+        module_path(definition.module_id);
+        token(provenance.spelling(definition.name));
+        number(instance->arguments.size());
+        for (const auto& argument : instance->arguments) {
+            number(argument.index());
+            if (const auto* target = std::get_if<TypeID>(&argument)) {
+                co_await type(*target);
+            } else {
+                auto keys = std::vector<std::string>();
+                for (const auto member :
+                     program.failure_sets().failure_set(std::get<FailureSetID>(argument)).members) {
+                    auto writer = ContentWriter(program);
+                    co_await writer.type(member);
+                    keys.push_back(std::move(writer).finish());
+                }
+                std::ranges::sort(keys);
+                number(keys.size());
+                for (const auto& key : keys) {
+                    token(key);
+                }
+            }
+        }
+        co_return {};
+    }
     if (const auto function = declarations.function_for_callable(id)) {
         const auto& declaration = declarations.function(*function);
         module_path(declaration.module_id);
         token(provenance.spelling(declaration.name));
         co_return {};
     }
-    const auto instance =
-        std::ranges::find(program.static_instances(), id, &StaticInstance::callable);
-    if (instance != program.static_instances().end()) {
+    if (const auto* instance = program.static_instance(id)) {
         token("instance");
         co_await callable(declarations.function(instance->function).callable);
         number(instance->arguments.size());
@@ -190,68 +228,73 @@ auto ContentWriter::operand(const CppTypeOperand& value) noexcept -> ContentTask
 }
 
 auto ContentWriter::query(const CppQueryType& value) noexcept -> ContentTask {
-    number(value.expression.index());
-    co_await value.expression.visit([&](const auto& value) noexcept -> ContentTask {
-        using Value = std::remove_cvref_t<decltype(value)>;
-        if constexpr (std::same_as<Value, CppNameReference>) {
-            name(value);
-        } else if constexpr (std::same_as<Value, CppCallQuery>) {
-            number(value.callee.index());
-            co_await value.callee.visit([&](const auto& callee) noexcept -> ContentTask {
-                using Callee = std::remove_cvref_t<decltype(callee)>;
-                if constexpr (std::same_as<Callee, CppNameReference>) {
-                    name(callee);
-                } else if constexpr (std::same_as<Callee, CppMemberCallee<CppTypeOperand>>) {
-                    co_await operand(callee.receiver);
-                    token(callee.member);
-                } else {
-                    static_assert(std::same_as<Callee, CppTypeOperand>);
-                    co_await operand(callee);
-                }
-                co_return {};
-            });
-            number(value.arguments.size());
-            for (const auto& argument : value.arguments) {
-                co_await operand(argument);
+    return value.expression.visit([this, index = value.expression.index()](
+                                      const auto& expression
+                                  ) noexcept { return query_expression(expression, index); });
+}
+
+template<typename Value>
+auto ContentWriter::query_expression(const Value& value, std::uint64_t index) noexcept
+    -> ContentTask {
+    number(index);
+    if constexpr (std::same_as<Value, CppNameReference>) {
+        name(value);
+    } else if constexpr (std::same_as<Value, CppCallQuery>) {
+        number(value.callee.index());
+        co_await value.callee.visit([&](const auto& callee) noexcept -> ContentTask {
+            using Callee = std::remove_cvref_t<decltype(callee)>;
+            if constexpr (std::same_as<Callee, CppNameReference>) {
+                name(callee);
+            } else if constexpr (std::same_as<Callee, CppStaticMemberCallee<TypeID>>) {
+                co_await type(callee.type);
+                token(callee.member);
+            } else if constexpr (std::same_as<Callee, CppMemberCallee<CppTypeOperand>>) {
+                co_await operand(callee.receiver);
+                token(callee.member);
+            } else {
+                static_assert(std::same_as<Callee, CppTypeOperand>);
+                co_await operand(callee);
             }
-        } else if constexpr (std::same_as<Value, CppConstructQuery>) {
-            co_await type(value.target);
-            number(value.arguments.size());
-            for (const auto& argument : value.arguments) {
-                co_await operand(argument.operand);
-                number(argument.constant.has_value());
-                if (argument.constant) {
-                    co_await constant(*argument.constant);
-                }
-            }
-        } else if constexpr (std::same_as<Value, CppMemberQuery>) {
-            co_await operand(value.receiver);
-            token(value.member);
-        } else if constexpr (std::same_as<Value, CppIndexQuery>) {
-            co_await operand(value.receiver);
-            co_await operand(value.index);
-        } else if constexpr (std::same_as<Value, CppUnaryQuery>) {
-            number(static_cast<std::uint64_t>(value.operation));
-            co_await operand(value.operand);
-        } else if constexpr (std::same_as<Value, CppBinaryQuery>) {
-            number(static_cast<std::uint64_t>(value.operation));
-            co_await operand(value.left);
-            co_await operand(value.right);
-        } else {
-            static_assert(std::same_as<Value, CppBinaryQuery>);
+            co_return {};
+        });
+        number(value.arguments.size());
+        for (const auto& argument : value.arguments) {
+            co_await operand(argument);
         }
-        co_return {};
-    });
+    } else if constexpr (std::same_as<Value, CppConstructQuery>) {
+        co_await type(value.target);
+        number(value.arguments.size());
+        for (const auto& argument : value.arguments) {
+            co_await operand(argument.operand);
+            number(argument.constant.has_value());
+            if (argument.constant) {
+                co_await constant(*argument.constant);
+            }
+        }
+    } else if constexpr (std::same_as<Value, CppStaticMemberQuery>) {
+        co_await type(value.type);
+        token(value.member);
+    } else if constexpr (std::same_as<Value, CppMemberQuery>) {
+        co_await operand(value.receiver);
+        token(value.member);
+    } else if constexpr (std::same_as<Value, CppIndexQuery>) {
+        co_await operand(value.receiver);
+        co_await operand(value.index);
+    } else if constexpr (std::same_as<Value, CppUnaryQuery>) {
+        number(static_cast<std::uint64_t>(value.operation));
+        co_await operand(value.operand);
+    } else if constexpr (std::same_as<Value, CppBinaryQuery>) {
+        number(static_cast<std::uint64_t>(value.operation));
+        co_await operand(value.left);
+        co_await operand(value.right);
+    } else {
+        static_assert(std::same_as<Value, CppBinaryQuery>);
+    }
     co_return {};
 }
 
 auto ContentWriter::type(TypeID id) noexcept -> ContentTask {
-    if (const auto found = type_nodes.find(id); found != type_nodes.end()) {
-        token("node");
-        number(found->second);
-        co_return {};
-    }
-    const auto index = co_await node([&]() noexcept -> ContentTask {
+    return node(id, type_nodes, [this, id]() noexcept -> ContentTask {
         token("type");
         const auto& value = program.types().type(id).value;
         number(value.index());
@@ -292,21 +335,15 @@ auto ContentWriter::type(TypeID id) noexcept -> ContentTask {
                 co_await signature(value.signature);
             } else if constexpr (std::same_as<Value, CppTypeValue>) {
                 number(value.form.index());
-                co_await value.form.visit([&](const auto& form) noexcept -> ContentTask {
-                    using Form = std::remove_cvref_t<decltype(form)>;
-                    if constexpr (std::same_as<Form, CppNamedType>) {
-                        name(form.name);
-                        number(form.arguments.size());
-                        for (const auto argument : form.arguments) {
-                            co_await type(argument);
-                        }
-                    } else if constexpr (std::same_as<Form, CppQueryType>) {
-                        co_await query(form);
-                    } else {
-                        static_assert(std::same_as<Form, CppConstCharPointerType>);
+                if (const auto* named = std::get_if<CppNamedType>(&value.form)) {
+                    name(named->name);
+                    number(named->arguments.size());
+                    for (const auto argument : named->arguments) {
+                        co_await type(argument);
                     }
-                    co_return {};
-                });
+                } else if (const auto* query_value = std::get_if<CppQueryType>(&value.form)) {
+                    co_await query(*query_value);
+                }
             } else {
                 static_assert(std::same_as<Value, CppTypeValue>);
             }
@@ -314,17 +351,10 @@ auto ContentWriter::type(TypeID id) noexcept -> ContentTask {
         });
         co_return {};
     });
-    type_nodes.emplace(id, index);
-    co_return {};
 }
 
 auto ContentWriter::constant(ConstantID id) noexcept -> ContentTask {
-    if (const auto found = constant_nodes.find(id); found != constant_nodes.end()) {
-        token("node");
-        number(found->second);
-        co_return {};
-    }
-    const auto index = co_await node([&]() noexcept -> ContentTask {
+    return node(id, constant_nodes, [this, id]() noexcept -> ContentTask {
         token("constant");
         const auto& fact = program.constants().constant(id);
         co_await type(fact.type);
@@ -371,8 +401,6 @@ auto ContentWriter::constant(ConstantID id) noexcept -> ContentTask {
         }
         co_return {};
     });
-    constant_nodes.emplace(id, index);
-    co_return {};
 }
 
 auto ContentWriter::finish() && noexcept -> std::string {
@@ -397,5 +425,12 @@ auto constant_content_key(const SemIRProgram& program, ConstantID constant) noex
     -> std::string {
     auto writer = ContentWriter(program);
     writer.constant(constant).run();
+    return std::move(writer).finish();
+}
+
+auto callable_content_key(const SemIRProgram& program, CallableID callable) noexcept
+    -> std::string {
+    auto writer = ContentWriter(program);
+    writer.callable(callable).run();
     return std::move(writer).finish();
 }

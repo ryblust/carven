@@ -253,12 +253,14 @@ auto fold_constant_expression(
                         evaluate_text_intrinsic_constant_value(draft, intrinsic, receiver, *type)
                     );
                 } else if constexpr (std::same_as<Intrinsic, SliceIntrinsicOperation>) {
-                    if (intrinsic.intrinsic == SliceIntrinsic::FromOwner) {
+                    if (intrinsic.intrinsic == SliceIntrinsic::View) {
                         if (const auto* array = std::get_if<ArrayConstant>(&receiver.value)) {
                             folded = ConstantFact {
                                 .type = *type,
                                 .value = SliceConstant {.elements = array->elements},
                             };
+                        } else if (std::holds_alternative<SliceConstant>(receiver.value)) {
+                            folded = receiver;
                         }
                         return;
                     }

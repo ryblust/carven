@@ -80,6 +80,40 @@ auto ProgramDraft::normalize_generic_environment(
                 elements.push_back(*concrete);
             }
             return intern_type({.value = TupleTypeValue {.elements = std::move(elements)}});
+        } else if (const auto* native = std::get_if<GenericCppNamedType>(&shape)) {
+            auto arguments = std::vector<TypeID>();
+            for (const auto argument : native->arguments) {
+                const auto concrete = self(self, argument);
+                if (!concrete) {
+                    return std::nullopt;
+                }
+                arguments.push_back(*concrete);
+            }
+            return intern_type(
+                {.value = CppTypeValue {
+                     .form = CppNamedType {.name = native->name, .arguments = std::move(arguments)}
+                 }}
+            );
+        } else if (const auto* query = std::get_if<GenericCppQueryType>(&shape)) {
+            auto closed = true;
+            auto normalized = map_cpp_query_types(
+                *query,
+                [&](ConstructionTypeRef type) noexcept -> ConstructionTypeRef {
+                    const auto resolved = self(self, type);
+                    if (!resolved) {
+                        closed = false;
+                        return type;
+                    }
+                    return *resolved;
+                }
+            );
+            if (closed) {
+                auto concrete =
+                    map_cpp_query_types(normalized, [](ConstructionTypeRef type) static noexcept {
+                        return std::get<TypeID>(type);
+                    });
+                return intern_type({.value = CppTypeValue {.form = std::move(concrete)}});
+            }
         } else if (const auto* nominal = std::get_if<GenericNominalApplication>(&shape)) {
             const auto environment = normalize_generic_environment(nominal->arguments, failures);
             if (environment) {
@@ -220,6 +254,45 @@ auto ProgramDraft::normalize_construction_types(const FailureSolution& failures)
                     return intern_type({.value = VectorTypeValue {*concrete}});
                 }
                 return intern_generic_type(GenericVectorType {element});
+            } else if constexpr (std::same_as<Shape, GenericCppNamedType>) {
+                auto native = shape;
+                auto concrete = std::vector<TypeID>();
+                auto closed = true;
+                for (auto& argument : native.arguments) {
+                    argument = child(argument);
+                    if (const auto* type = std::get_if<TypeID>(&argument)) {
+                        concrete.push_back(*type);
+                    } else {
+                        closed = false;
+                    }
+                }
+                if (closed) {
+                    return intern_type(
+                        {.value = CppTypeValue {
+                             .form = CppNamedType {
+                                 .name = native.name,
+                                 .arguments = std::move(concrete)
+                             }
+                         }}
+                    );
+                }
+                return intern_generic_type(std::move(native));
+            } else if constexpr (std::same_as<Shape, GenericCppQueryType>) {
+                auto normalized = map_cpp_query_types(shape, child);
+                auto closed = true;
+                visit_cpp_query_types(normalized, [&](ConstructionTypeRef type) noexcept {
+                    closed &= std::holds_alternative<TypeID>(type);
+                });
+                if (closed) {
+                    auto concrete = map_cpp_query_types(
+                        normalized,
+                        [](ConstructionTypeRef type) static noexcept {
+                            return std::get<TypeID>(type);
+                        }
+                    );
+                    return intern_type({.value = CppTypeValue {.form = std::move(concrete)}});
+                }
+                return intern_generic_type(std::move(normalized));
             } else if constexpr (std::same_as<Shape, GenericNominalApplication>) {
                 auto environment = CanonicalGenericEnvironment();
                 for (const auto& argument : shape.arguments) {

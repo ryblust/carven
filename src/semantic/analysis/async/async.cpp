@@ -222,7 +222,8 @@ auto analyze_async_contracts(
         };
     const auto check_signature = [&](const auto& signature,
                                      ProgramOriginID origin,
-                                     bool allow_dependent) noexcept {
+                                     bool allow_dependent,
+                                     bool entry_arguments = false) noexcept {
         const auto rejected = [&](ValueAdmission admission) noexcept {
             if (admission == ValueAdmission::Dependent && !allow_dependent) {
                 invariant_violation(
@@ -233,6 +234,12 @@ auto analyze_async_contracts(
         };
         for (const auto& parameter : signature.parameters) {
             if (parameter.stage == ParameterStage::Static) {
+                continue;
+            }
+            // The entry wrapper owns its argument Vector until the root and
+            // children close. Its one compiler-supplied Read parameter borrows
+            // this stable storage; ordinary async parameter admission is unchanged.
+            if (entry_arguments) {
                 continue;
             }
             if (rejected(
@@ -290,7 +297,11 @@ auto analyze_async_contracts(
                 "async fn cannot execute a transitive test-stop effect"
             );
         }
-        check_signature(signature, origin, false);
+        const auto function = program.source_function(entry.id);
+        const auto entry_arguments = function
+            && program.declarations().function(*function).entry_point
+                == EntryPointKind::WithArguments;
+        check_signature(signature, origin, false, entry_arguments);
     }
     for (const auto& definition : generics.definitions) {
         if (const auto* function = std::get_if<GenericFunctionDefinition>(&definition);

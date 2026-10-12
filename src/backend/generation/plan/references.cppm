@@ -13,9 +13,9 @@ enum class TargetTypeCompleteness {
     CompleteDefinition,
 };
 
-// A function with static parameters is instantiated by the modules that call it,
-// so its body belongs to its owner's surface: the facts include every type,
-// closure and same-module function that body reaches.
+// Parameterized definitions are instantiated by their callers, so concrete
+// dependencies in their checked bodies belong to their owner's target surface.
+// Private source declarations retain their original source visibility.
 struct TargetReferenceFacts final {
     std::vector<std::flat_map<NominalDeclarationRef, TargetTypeCompleteness>> surface_requirements;
     std::vector<std::flat_set<CallableID>> surface_callables;

@@ -1263,18 +1263,19 @@ const table = u8x32::splat(5);
             R"(
             fn direct() -> bool {
                 var values = [10, 20, 30];
-                let view = values.as_slice();
+                let view = values.slice();
                 return addressof(view[0]) == addressof(values[0]);
             }
             fn copied() -> bool {
                 var values = [10, 20, 30];
-                let original = values.as_slice();
+                let original = values.slice();
                 let copy = original;
                 return addressof(copy[1]) == addressof(values[1]);
             }
             fn nested() -> bool {
                 var values = [10, 20, 30];
-                let view = values.as_slice().slice(1usize, 3usize).slice(1usize, 2usize);
+                let original = values.slice(1usize, 3usize);
+                let view = original.slice(1usize, 2usize);
                 return addressof(view[0]) == addressof(values[2]);
             }
         )",
@@ -1301,7 +1302,7 @@ const table = u8x32::splat(5);
         with_execution(
             R"(const fn run() -> bool {
             let values = [1, 2];
-            let view = values.as_slice();
+            let view = values.slice();
             println(view);
             return view[0] == 1;
         })",

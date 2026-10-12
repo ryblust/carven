@@ -81,8 +81,16 @@ namespace selections do not.
 
 ## External types and construction
 
-Type arguments are accepted only for external C++ names and must be types;
-nested external type applications are supported. External construction uses
+External C++ type arguments must be types; nested external type applications
+are supported. A parameterized Carven function may use its type parameters in
+named native applications, such as `::vendor::Box<T>`. Static members use
+`::vendor::Box<T>::member`, including overloaded static functions. Construction,
+member access, calls, and conversions retain their type and access descriptions
+until the Carven function is instantiated. C++ then checks each concrete native
+application and operation. Source operations on `T`, including copying and
+arithmetic, require capabilities known in the parameterized Carven body.
+
+External construction uses
 `T { ... }` with positional initializers, which may be empty. External types in
 function signatures and field declarations must be named explicitly; local
 owners may infer their type from an external expression. Such results are

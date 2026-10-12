@@ -71,14 +71,15 @@ auto type_key(const CanonicalType& type, ProgramIdentity owner) noexcept -> std:
                     text(component);
                 }
             }
-            for (const auto reference : cpp_type_references(value)) {
+            visit_cpp_type_references(value, [&](TypeID reference) noexcept {
                 child(reference, "C++ type used a foreign argument");
-            }
+            });
             if (const auto* query = std::get_if<CppQueryType>(&value.form)) {
                 mix(query->expression.index());
                 query->expression.visit([&](const auto& expression) noexcept {
                     using Expression = std::remove_cvref_t<decltype(expression)>;
-                    if constexpr (std::same_as<Expression, CppMemberQuery>) {
+                    if constexpr (std::same_as<Expression, CppMemberQuery>
+                                  || std::same_as<Expression, CppStaticMemberQuery>) {
                         text(expression.member);
                     } else if constexpr (std::same_as<Expression, CppUnaryQuery>
                                          || std::same_as<Expression, CppBinaryQuery>) {
@@ -95,6 +96,10 @@ auto type_key(const CanonicalType& type, ProgramIdentity owner) noexcept -> std:
                         }
                     } else if constexpr (std::same_as<Expression, CppCallQuery>) {
                         mix(expression.callee.index());
+                        if (const auto* member =
+                                std::get_if<CppStaticMemberCallee<TypeID>>(&expression.callee)) {
+                            text(member->member);
+                        }
                         if (const auto* member =
                                 std::get_if<CppMemberCallee<CppTypeOperand>>(&expression.callee)) {
                             text(member->member);
@@ -155,8 +160,7 @@ auto builtin_is_integer(BuiltinType type) noexcept -> bool {
         case BuiltinType::Mask4:
         case BuiltinType::Mask16:
         case BuiltinType::StrCharsView:
-        case BuiltinType::Void:
-        case BuiltinType::EntryArgs:    return false;
+        case BuiltinType::Void:         return false;
     }
     std::unreachable();
 }
@@ -188,8 +192,7 @@ auto builtin_is_signed_integer(BuiltinType type) noexcept -> bool {
         case BuiltinType::Mask4:
         case BuiltinType::Mask16:
         case BuiltinType::StrCharsView:
-        case BuiltinType::Void:
-        case BuiltinType::EntryArgs:    return false;
+        case BuiltinType::Void:         return false;
     }
     std::unreachable();
 }
@@ -225,8 +228,7 @@ auto builtin_integer_width(BuiltinType type) noexcept -> std::optional<std::uint
         case BuiltinType::Mask4:
         case BuiltinType::Mask16:
         case BuiltinType::StrCharsView:
-        case BuiltinType::Void:
-        case BuiltinType::EntryArgs:    return std::nullopt;
+        case BuiltinType::Void:         return std::nullopt;
     }
     std::unreachable();
 }

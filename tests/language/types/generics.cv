@@ -114,7 +114,7 @@ test "Generics: concrete fields and pointer targets retain their ordinary contra
     check(callback_pointer.value != nullptr);
     check(callback(41) == 42);
     let data = [10, 20, 30];
-    let view = ViewBox<i32> { values: data.as_slice() };
+    let view = ViewBox<i32> { values: data.slice() };
     check(view.values[1] == 20);
     let number = 42;
     let pointer = PointerBox<i32> { value: addressof(number) };

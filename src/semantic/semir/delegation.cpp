@@ -2,8 +2,6 @@ module carven:semantic.semir.delegation.impl;
 
 import :semantic.semir.delegation;
 import :source.cpp.identifier;
-import :support.invariant;
-import :support.visit;
 import std;
 
 auto valid_cpp_name(const CppNameReference& name) noexcept -> bool {
@@ -18,6 +16,8 @@ auto cpp_operation_accepts_arity(const CppOperation& operation, std::size_t arit
         using Value = std::remove_cvref_t<decltype(value)>;
         if constexpr (std::same_as<Value, CppNameOperation>) {
             return arity == 0uz && valid_cpp_name(value.name);
+        } else if constexpr (std::same_as<Value, CppStaticMemberOperation>) {
+            return arity == 0uz && is_supported_cpp_identifier(value.member);
         } else if constexpr (std::same_as<Value, CppConstructOperation>) {
             return true;
         } else if constexpr (std::same_as<Value, CppMemberOperation>) {
@@ -62,68 +62,6 @@ auto visit_query_operands(const CppQueryType& query, Visitor visit) noexcept -> 
 
 } // namespace
 
-auto cpp_query_type(
-    const CppOperation& operation,
-    std::span<const CppTypeOperand> operands
-) noexcept -> CppQueryType {
-    if (!cpp_operation_accepts_arity(operation, operands.size())) {
-        invariant_violation("C++ query operands disagree with the operation");
-    }
-    return operation.visit(
-        Overloaded {
-            [&](const CppNameOperation& value) noexcept -> CppQueryType {
-                return {.expression = value.name};
-            },
-            [&](const CppMemberOperation& value) noexcept -> CppQueryType {
-                return {
-                    .expression = CppMemberQuery {.receiver = operands[0], .member = value.name}
-                };
-            },
-            [&](const CppIndexOperation&) noexcept -> CppQueryType {
-                return {
-                    .expression = CppIndexQuery {.receiver = operands[0], .index = operands[1]}
-                };
-            },
-            [&](const CppUnaryOperation& value) noexcept -> CppQueryType {
-                return {
-                    .expression =
-                        CppUnaryQuery {.operation = value.operation, .operand = operands[0]}
-                };
-            },
-            [&](const CppBinaryOperation& value) noexcept -> CppQueryType {
-                return {
-                    .expression = CppBinaryQuery {
-                        .operation = value.operation,
-                        .left = operands[0],
-                        .right = operands[1]
-                    }
-                };
-            },
-            [](const auto&) static noexcept -> CppQueryType {
-                invariant_violation("operation requires an explicit result type");
-            }
-        }
-    );
-}
-
-auto cpp_type_references(const CppTypeValue& type) noexcept -> std::vector<TypeID> {
-    if (const auto* named = std::get_if<CppNamedType>(&type.form)) {
-        return named->arguments;
-    }
-    auto result = std::vector<TypeID>();
-    if (std::holds_alternative<CppConstCharPointerType>(type.form)) {
-        return result;
-    }
-    const auto& query = std::get<CppQueryType>(type.form);
-    if (const auto* construction = std::get_if<CppConstructQuery>(&query.expression)) {
-        result.push_back(construction->target);
-    }
-    visit_query_operands(query, [&](const CppTypeOperand& operand) noexcept {
-        result.push_back(operand.type);
-    });
-    return result;
-}
-
 auto cpp_type_name(const CppTypeValue& type) noexcept -> const CppNameReference* {
     if (const auto* named = std::get_if<CppNamedType>(&type.form)) {
         return std::addressof(named->name);
@@ -159,7 +97,8 @@ auto valid_cpp_type(const CppTypeValue& type) noexcept -> bool {
     });
     return valid && query->expression.visit([](const auto& value) static noexcept {
         using Value = std::remove_cvref_t<decltype(value)>;
-        if constexpr (std::same_as<Value, CppMemberQuery>) {
+        if constexpr (std::same_as<Value, CppMemberQuery>
+                      || std::same_as<Value, CppStaticMemberQuery>) {
             return is_supported_cpp_identifier(value.member);
         } else if constexpr (std::same_as<Value, CppConstructQuery>) {
             return std::ranges::all_of(
@@ -169,6 +108,9 @@ auto valid_cpp_type(const CppTypeValue& type) noexcept -> bool {
                 }
             );
         } else if constexpr (std::same_as<Value, CppCallQuery>) {
+            if (const auto* member = std::get_if<CppStaticMemberCallee<TypeID>>(&value.callee)) {
+                return is_supported_cpp_identifier(member->member);
+            }
             const auto* member = std::get_if<CppMemberCallee<CppTypeOperand>>(&value.callee);
             return member == nullptr || is_supported_cpp_identifier(member->member);
         } else {

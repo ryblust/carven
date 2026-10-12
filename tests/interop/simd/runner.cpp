@@ -137,31 +137,17 @@ auto main(int argc, char** argv) noexcept -> int {
     }
     std::signal(SIGABRT, aborted);
     const auto operation = std::string_view(argv[1]);
-    if (operation == "wide-short-load") {
-        constexpr auto data = std::array<std::uint8_t, 31> {};
-        static_cast<void>(simd::U8x32::load(rt::as_slice(data), 0, site));
-    } else if (operation == "wide-prefix") {
-        static_cast<void>(simd::Mask32::prefix(33, site));
-    } else if (operation == "short-load") {
+    if (operation == "load") {
         constexpr auto data = std::array<std::uint8_t, 15> {};
-        static_cast<void>(simd::U8x16::load(rt::as_slice(data), 0, site));
-    } else if (operation == "partial-offset") {
+        static_cast<void>(simd::U8x16::load(rt::slice(data), 0, site));
+    } else if (operation == "load-partial") {
         static_cast<void>(simd::U8x16::load_partial(rt::Slice<std::uint8_t>(), 1, 0, site));
     } else if (operation == "lane") {
         static_cast<void>(simd::U8x16::splat(0).lane(16, site));
-    } else if (operation == "mask-prefix") {
+    } else if (operation == "with-lane") {
+        static_cast<void>(simd::U8x16::splat(0).with_lane(16, 1, site));
+    } else if (operation == "prefix") {
         static_cast<void>(simd::Mask16::prefix(17, site));
-    } else if (operation == "float-short-load") {
-        constexpr auto data = std::array<float, 3> {};
-        static_cast<void>(simd::F32x4::load(rt::as_slice(data), 0, site));
-    } else if (operation == "float-partial-offset") {
-        static_cast<void>(simd::F32x4::load_partial(rt::Slice<float>(), 1, 0.0f, site));
-    } else if (operation == "float-lane") {
-        static_cast<void>(simd::F32x4 {}.lane(4, site));
-    } else if (operation == "float-update") {
-        static_cast<void>(simd::F32x4 {}.with_lane(4, 1.0f, site));
-    } else if (operation == "float-prefix") {
-        static_cast<void>(simd::Mask4::prefix(5, site));
     }
     return 1;
 }

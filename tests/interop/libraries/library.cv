@@ -1,0 +1,24 @@
+private struct Hidden {
+    value: i32
+}
+
+private fn baseline() -> Hidden => { value: 41 };
+
+private fn stage<T>(_value: T) -> i32 {
+    let extra = Hidden { value: 1 };
+    return baseline().value + extra.value;
+}
+
+export fn score<T>(value: T) -> i32 => stage(value);
+
+export struct Box<T> {
+    value: T
+}
+
+export fn box<T>(&&value: T) -> Box<T> => { value: &&value };
+
+export struct Observation {
+    first: i16,
+    second: i32,
+    score: i32
+}

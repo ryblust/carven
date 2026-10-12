@@ -276,8 +276,8 @@ auto DeclarationConstructionView::module_constant(ModuleConstantID id) const noe
 }
 
 auto DeclarationConstructionView::callable_contract(CallableID id) const noexcept
-    -> ConstructionCallableContract {
-    return declaration_builder->callable_contracts.copy_defined(id);
+    -> const ConstructionCallableContract& {
+    return declaration_builder->callable_contracts.get_defined(id);
 }
 
 auto DeclarationConstructionView::callable_signature(CallableID id) const noexcept

@@ -110,9 +110,7 @@ const TestSuite suite([] static noexcept {
             )"),
             DiagnosticCode::AccessTakeOperand
         );
-        static_cast<void>(
-            analyze_test_program("fn f() { var s: Vector<i32> = {}; s.as_slice(); }")
-        );
+        static_cast<void>(analyze_test_program("fn f() { var s: Vector<i32> = {}; s.slice(); }"));
     };
 });
 

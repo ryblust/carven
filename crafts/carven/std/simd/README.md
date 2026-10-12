@@ -95,7 +95,8 @@ empty input. Float offsets count elements rather than bytes.
 
 `std::simd.bytes` uses 32-byte blocks (`u8x32`, `mask32`). `std::simd.floats`
 uses eight-float blocks (`f32x8`, `mask8`). Both provide `block_count`, `load_block`,
-`store`, `store_partial`, static `extract`, and static `swizzle`.
+`store`, `store_partial`, and static `swizzle`. Primitive extraction, lane shifts,
+and mask queries use the methods on SIMD values.
 
 `block_count` divides without overflowing a rounded-up length. `load_block`
 returns an owning block with `value`, `active`, `offset`, and `length`. Tail lanes
@@ -118,14 +119,14 @@ const fn count_spaces(bytes: [u8]) -> usize {
 ```
 
 Byte helpers also provide `count_byte`, `find_byte` (input length when absent),
-`first_or`, `ascii_digit`, `json_whitespace`, and `ascii_lower`.
+`ascii_digit`, `json_whitespace`, and `ascii_lower`.
 `json_whitespace` matches only space, tab, LF, and CR.
 `ascii_prefix` checks 64-byte groups, then one 32-byte block and a bounded scalar
 tail. The [UTF craft](../utf/README.md) shares these vector operations.
 
-Static helper controls are ordinary `const` parameters. `extract` accepts
-`0..=N`; byte `shift_in(previous, current, const count)` prepends the last
-`count` previous bytes, in `0..=32`. Byte shift counts are below eight.
+Static helper controls are ordinary `const` parameters. Byte
+`shift_in(previous, current, const count)` prepends the last `count` previous
+bytes, in `0..=32`.
 `swizzle` requires a constant `[u8; N]` whose entries are below `N`. Controls
 may be computed by `const fn`, explicit constants, or `const for` indices.
 Ordinary `let` bindings and `for` indices are not promoted; wrappers retain `const`.
@@ -157,14 +158,16 @@ const fn count_punctuation(text: str) -> usize => count_where(text.bytes, punctu
 const fn first_punctuation(text: str) => find_where(text.bytes, punctuation);
 ```
 
-All operations are `const fn`. Matching compares the contiguous run counts of a
-set and its complement. A strictly smaller complement with at most four runs
-uses inverted comparisons; otherwise the original set is selected. Selected
-sets with at most four runs use direct byte or range comparisons. Other sets
-use 16-entry nibble lookup tables over 32 input bytes. Each high nibble defines
-a row of accepted low nibbles. Up to eight distinct nonempty rows share byte
-flags in two tables; their lookup intersection determines membership. Sets
-with more rows use three lookup tables to encode all 256 byte values.
+All operations are `const fn`. Contiguous runs alternate between a set and its
+complement. When both byte endpoints belong to the set, its complement has one
+fewer run; otherwise the original set has no more runs. Matching selects that
+representation and collects up to four runs by shifting through its four words.
+Selected sets with at most four runs use direct byte or range comparisons. Other
+sets use 16-entry nibble lookup tables over 32 input bytes. Each high nibble defines
+a row of accepted low nibbles, extracted directly from a 16-bit word segment.
+Up to eight distinct nonempty rows share byte flags in two tables; their lookup
+intersection determines membership. Sets with more rows use three lookup tables
+to encode all 256 byte values.
 Empty and complete sets produce constant masks. Matching plans are derived from
 the set during compilation. Whole-slice queries read complete 32-byte blocks and
 check the remaining bytes individually; input padding is unnecessary.

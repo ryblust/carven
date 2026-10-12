@@ -30,6 +30,10 @@ enum class ProvidedExport {
     Println,
     Eprint,
     Eprintln,
+    Stdin,
+    StdinType,
+    InputRead,
+    IOError,
     Check,
     Require,
     Fail,
@@ -71,6 +75,8 @@ struct StandardRecordKey final {
     std::string_view module;
     std::string_view name;
 };
+
+auto provided_source_key(ProvidedExport identity) noexcept -> std::optional<StandardRecordKey>;
 
 auto standard_record_key(StandardRecord record) noexcept -> StandardRecordKey;
 auto provided_contract_dependencies(ProvidedExport identity) noexcept

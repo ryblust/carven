@@ -1,5 +1,8 @@
 #pragma once
 
+#include <carven/runtime/execution/composition.hpp>
+#include <carven/runtime/execution/time.hpp>
+
 #include <cstdint>
 #include <limits>
 #include <utility>

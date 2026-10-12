@@ -844,42 +844,60 @@ const TestSuite suite([] static noexcept {
             expect(errors.empty());
         };
 
-    "Compiler: const blocks diagnose stage boundaries and execution failures"_test =
-        [] static noexcept {
-            struct Case final {
-                std::string_view source;
-                DiagnosticCode code;
-            };
+    {
+        struct Case final {
+            std::string_view name;
+            std::string_view source;
+            DiagnosticCode code;
+        };
 
-            constexpr auto cases = std::array {
-                Case {
-                    "fn f(value: i32) { const { println(value); } }",
-                    DiagnosticCode::ConstAdmission
-                },
-                Case {"const { check(true); }", DiagnosticCode::ConstTest},
-                Case {"const { while true {} }", DiagnosticCode::ConstLimit},
-                Case {"struct Error {} const { throw Error {}; }", DiagnosticCode::ConstEvaluation},
-                Case {
-                    R"(const { let value = c"x"; println(f"{value:p}"); })",
-                    DiagnosticCode::ConstEvaluation
-                },
-                Case {
-                    R"(const { let value = c"x"; println(value == value); })",
-                    DiagnosticCode::ConstAdmission
-                },
-                Case {"const equal = c\"x\" == c\"x\";", DiagnosticCode::ConstInitializer},
-            };
-            each(cases, &Case::source, [&](const auto& scenario) noexcept {
+        constexpr auto cases = std::array {
+            Case {
+                "runtime input",
+                "fn f(value: i32) { const { println(value); } }",
+                DiagnosticCode::ConstAdmission
+            },
+            Case {"test-only check", "const { check(true); }", DiagnosticCode::ConstTest},
+            Case {"execution limit", "const { while true {} }", DiagnosticCode::ConstLimit},
+            Case {
+                "uncaught failure",
+                "struct Error {} const { throw Error {}; }",
+                DiagnosticCode::ConstEvaluation
+            },
+            Case {
+                "opaque pointer formatting",
+                R"(const { let value = c"x"; println(f"{value:p}"); })",
+                DiagnosticCode::ConstEvaluation
+            },
+            Case {
+                "opaque pointer comparison",
+                R"(const { let value = c"x"; println(value == value); })",
+                DiagnosticCode::ConstAdmission
+            },
+            Case {
+                "opaque pointer initializer",
+                "const equal = c\"x\" == c\"x\";",
+                DiagnosticCode::ConstInitializer
+            },
+        };
+        for (const auto input : cases) {
+            TestRegistration(
+                std::format(
+                    "Compiler: const blocks diagnose stage boundaries and execution failures / {}",
+                    input.name
+                )
+            ) = [input]() noexcept {
                 auto output = std::string();
                 auto errors = std::string();
                 const auto result =
-                    compile_constant_program(std::string(scenario.source), output, errors);
+                    compile_constant_program(std::string(input.source), output, errors);
                 if (!(expect(!result.has_value()))) {
                     return;
                 }
-                expect_diagnostic(result.error(), scenario.code);
-            });
-        };
+                expect_diagnostic(result.error(), input.code);
+            };
+        }
+    }
 
     "Compiler: const blocks enforce lexical loans and stage isolation"_test = [] static noexcept {
         constexpr auto cases = std::to_array<CompilerErrorExpectation>({
@@ -1156,7 +1174,7 @@ const TestSuite suite([] static noexcept {
             expect(errors.empty());
         };
 
-    "Compiler: static roots execute once per live instance identity"_test = [] static noexcept {
+    {
         struct Input final {
             std::string_view name;
             std::string_view source;
@@ -1340,22 +1358,29 @@ const TestSuite suite([] static noexcept {
                  R"(const fn use(const count: i32, const amount: i32) { const for index in 0..count { if false && (if true { const value = provider(amount + index); true } else { false }) {} } } const test { use(3, 7); })",
              .output = "root\nroot\nroot\n"},
         });
-        each(cases, &Input::name, [](const auto& input) static noexcept {
-            auto output = std::string();
-            auto errors = std::string();
-            const auto result = compile_constant_program(
-                std::string(R"(
+        for (const auto input : cases) {
+            TestRegistration(
+                std::format(
+                    "Compiler: static roots execute once per live instance identity / {}",
+                    input.name
+                )
+            ) = [input]() noexcept {
+                auto output = std::string();
+                auto errors = std::string();
+                const auto result = compile_constant_program(
+                    std::string(R"(
             const fn provider(amount: i32) -> i32 { println("root"); return amount; }
             const fn lane(const index: i32) -> i32 => index;
         )") + std::string(input.source),
-                output,
-                errors
-            );
-            expect(result.has_value());
-            expect_equal(output, std::string(input.output));
-            expect(errors.empty());
-        });
-    };
+                    output,
+                    errors
+                );
+                expect(result.has_value());
+                expect_equal(output, std::string(input.output));
+                expect(errors.empty());
+            };
+        }
+    }
 });
 
 } // namespace

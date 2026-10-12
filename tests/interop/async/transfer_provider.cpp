@@ -10,9 +10,10 @@
 namespace {
 
 namespace async = carven::runtime::execution;
+
 using async_transfer::Context;
-using IoError = decltype(carven::api::tests::interop::async::bridge::make_io_error(0));
-using Result = async::Completion<std::int32_t, IoError>;
+using IOError = decltype(carven::api::tests::interop::async::bridge::make_io_error(0));
+using Result = async::Completion<std::int32_t, IOError>;
 
 auto check(bool valid, const char* message) noexcept -> void {
     if (!valid) {
@@ -89,7 +90,7 @@ async_transfer::Context::~Context() noexcept {
 }
 
 auto transfer_read(const Context& context) noexcept
-    -> async::AsyncOperation<std::int32_t, IoError> {
+    -> async::AsyncOperation<std::int32_t, IOError> {
     check(&context == context.host_address, "read borrows host holder");
     auto loan = BufferLoan(context.observed);
     auto result = co_await context.queue.read_some(context.fd, context.buffer);
@@ -97,7 +98,7 @@ auto transfer_read(const Context& context) noexcept
 }
 
 auto transfer_write(const Context& context, std::int32_t offset, std::int32_t count) noexcept
-    -> async::AsyncOperation<std::int32_t, IoError> {
+    -> async::AsyncOperation<std::int32_t, IOError> {
     check(
         &context == context.host_address
             && offset >= 0

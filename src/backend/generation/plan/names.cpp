@@ -207,9 +207,9 @@ auto plan_closures(const SemIRProgram& semantic) noexcept -> TargetClosureCatalo
                 },
                 [](const CallableViewTypeValue&) static noexcept {},
                 [&](const CppTypeValue& value) noexcept {
-                    for (const auto argument : cpp_type_references(value)) {
+                    visit_cpp_type_references(value, [&](TypeID argument) noexcept {
                         self(argument, destination, active_types);
-                    }
+                    });
                 },
             }
         );
@@ -401,7 +401,8 @@ auto plan_names(
 
     for (const auto function : declarations.functions()) {
         const auto callable = function.value.callable;
-        if (!callable_names[callable.index()].has_value()) {
+        if (!callable_names[callable.index()].has_value()
+            && semantic.generic_function_instance(callable) == nullptr) {
             claim_entity(function.value.module_id, function.value.name, callable, callable_names);
         }
     }
@@ -659,6 +660,32 @@ auto plan_names(
         *destinations[index] = identifier;
     }
     for (const auto module_record : declarations.modules()) {
+        auto generic_functions = std::vector<const GenericFunctionInstance*>();
+        auto generic_requests = std::vector<TargetContentName>();
+        for (const auto& instance : semantic.generic_function_instances()) {
+            const auto& definition = semantic.generic_declaration_contract(instance.definition);
+            if (definition.module_id != module_record.id) {
+                continue;
+            }
+            auto content = callable_content_key(semantic, instance.callable);
+            const auto spelling = source_target_identifier(provenance.spelling(definition.name));
+            generic_requests.push_back(
+                {.preferred =
+                     std::format("{}_{}", spelling.spelling(), content_name_digest(content)),
+                 .content = std::move(content)}
+            );
+            generic_functions.push_back(std::addressof(instance));
+        }
+        const auto generic_names = claim_content_identifiers(
+            generic_requests,
+            modules[module_record.id.index()]->reserved_identifiers
+        );
+        for (const auto [instance, name] : std::views::zip(generic_functions, generic_names)) {
+            callable_names[instance->callable.index()] = TargetEntityName {
+                .owner_module = module_record.id,
+                .relative_name = TargetName {name}
+            };
+        }
         auto instances = std::vector<const StaticInstance*>();
         auto instance_requests = std::vector<TargetContentName>();
         for (const auto& instance : semantic.static_instances()) {

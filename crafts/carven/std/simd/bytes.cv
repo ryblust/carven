@@ -36,13 +36,11 @@ export const fn count_byte(bytes: [u8], needle: u8) -> usize {
     return count;
 }
 
-export const fn first_or(mask: mask32, fallback: usize) -> usize => mask.first_or(fallback);
-
 export const fn find_byte(bytes: [u8], needle: u8) -> usize {
     for index in 0..block_count(bytes) {
         let block = load_block(bytes, index * 32);
         let matched = (block.value == needle) & block.active;
-        if matched.any() { return block.offset + first_or(matched, 32); }
+        if matched.any() { return block.offset + matched.first_or(32); }
     }
     return bytes.length();
 }
@@ -59,22 +57,8 @@ export const fn ascii_lower(bytes: u8x32) -> u8x32 => ((bytes >= 0x41) & (bytes 
     bytes
 );
 
-// The static contract is ordinary Carven syntax and is retained by wrappers.
-export const fn extract(left: u8x32, right: u8x32, const offset: usize) -> u8x32 {
-    return left.extract(right, offset);
-}
-
 export const fn shift_in(previous: u8x32, current: u8x32, const count: usize) -> u8x32 {
-    return extract(previous, current, 32 - count);
-}
-
-// Logical lane-wise shifts: zero fill, discard shifted-out bits, accept 0..7.
-export const fn shift_left(value: u8x32, const count: usize) -> u8x32 {
-    return value.shift_left(count);
-}
-
-export const fn shift_right(value: u8x32, const count: usize) -> u8x32 {
-    return value.shift_right(count);
+    return previous.extract(current, 32 - count);
 }
 
 private const fn checked_pattern(indices: [u8; 32]) -> [u8; 32] {
@@ -110,14 +94,14 @@ export const fn ascii_prefix(bytes: [u8]) -> usize {
         let second = u8x32::load(bytes, offset + 32);
         if ((first | second) >= 0x80).any() {
             let first_non_ascii = first >= 0x80;
-            if first_non_ascii.any() { return offset + first_or(first_non_ascii, 32); }
-            return offset + 32 + first_or(second >= 0x80, 32);
+            if first_non_ascii.any() { return offset + first_non_ascii.first_or(32); }
+            return offset + 32 + (second >= 0x80).first_or(32);
         }
         offset += 64;
     }
     while bytes.length() - offset >= 32 {
         let non_ascii = u8x32::load(bytes, offset) >= 0x80;
-        if non_ascii.any() { return offset + first_or(non_ascii, 32); }
+        if non_ascii.any() { return offset + non_ascii.first_or(32); }
         offset += 32;
     }
     while offset < bytes.length() {

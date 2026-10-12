@@ -67,7 +67,7 @@ public:
     }
 
     constexpr Vector(const Vector& other) noexcept
-        : Vector(from_slice(as_slice(other))) {}
+        : Vector(from_slice(slice(other))) {}
 
     constexpr Vector(Vector&& other) noexcept
         : storage(std::exchange(other.storage, nullptr)),
@@ -194,7 +194,7 @@ public:
 };
 
 template<typename Element>
-constexpr auto as_slice(const Vector<Element>& values) noexcept -> Slice<Element> {
+constexpr auto slice(const Vector<Element>& values) noexcept -> Slice<Element> {
     return Slice<Element>(std::span<const Element>(values.begin(), values.size()));
 }
 

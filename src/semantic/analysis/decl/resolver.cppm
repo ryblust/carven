@@ -126,13 +126,6 @@ private:
     auto resolve_type(ProgramModuleID module_id, ASTView syntax, ASTTypeID type) noexcept
         -> AnalysisTask<ConstructionTypeRef>;
 
-    auto resolve_value_type(
-        ProgramModuleID module_id,
-        ASTView syntax,
-        ASTTypeID type,
-        std::string_view role
-    ) noexcept -> AnalysisTask<ConstructionTypeRef>;
-
     auto resolve_failures(
         ProgramModuleID module_id,
         ASTView syntax,

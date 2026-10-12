@@ -773,6 +773,21 @@ auto BodyExprSite::associated_reference(StructID owner, Span name_span) noexcept
     co_return (co_await body.class_operation(owner, spelling(name_span), false, name_span));
 }
 
+auto BodyExprSite::native_associated_reference(
+    ConstructionTypeRef type,
+    Span name_span,
+    Span span
+) noexcept -> Selection {
+    return CppSelection {
+        .target =
+            CppStaticMemberCallee<ConstructionTypeRef> {
+                .type = type,
+                .member = spelling(name_span)
+            },
+        .span = span
+    };
+}
+
 // Initial source operations retain exact delayed failure terms until canonicalization.
 auto BodyElaborator::operation_shape(ConstructionTypeRef type) const noexcept
     -> std::optional<ConstructionOperationTypeValue> {

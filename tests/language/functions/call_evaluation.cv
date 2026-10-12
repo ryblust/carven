@@ -176,7 +176,7 @@ test "Evaluation: Read value snapshots preserve observations through pointers an
     check(observe_read_record(record, addressof(&record.first)) == 19);
     check(record.first == 9);
     var values = [1, 2];
-    check(observe_read_slice(values.as_slice(), addressof(&values[0])) == 19);
+    check(observe_read_slice(values.slice(), addressof(&values[0])) == 19);
     check(values[0] == 9);
     var value = 1;
     check(observe_read_pointer(addressof(&value)) == 19);

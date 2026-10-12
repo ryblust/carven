@@ -130,12 +130,11 @@ const TestSuite suite([] static noexcept {
                  .code = DiagnosticCode::ConstEvaluation,
                  .primary_text = "str::from_utf8_unchecked(bytes)"},
                 {.name = "incomplete scalar at selected range end",
-                 .source =
-                     "const fn invalid() -> String { let bytes = [0x61u8, 0xe2, 0x82, 0xac]; "
-                     "return str::from_utf8_unchecked(bytes.as_slice().slice(1, 3)) as String; } "
-                     "const text = invalid();",
+                 .source = "const fn invalid() -> String { let bytes = [0x61u8, 0xe2, 0x82, 0xac]; "
+                           "return str::from_utf8_unchecked(bytes.slice(1, 3)) as String; } "
+                           "const text = invalid();",
                  .code = DiagnosticCode::ConstEvaluation,
-                 .primary_text = "str::from_utf8_unchecked(bytes.as_slice().slice(1, 3))"},
+                 .primary_text = "str::from_utf8_unchecked(bytes.slice(1, 3))"},
             });
             check_compiler_errors(cases);
         };

@@ -14,18 +14,18 @@ class TestBody final {
 public:
     // The literal assignment protocol needs implicit conversion to capture the caller's location.
     template<typename Function>
-        requires std::convertible_to<Function, TestFunction>
+        requires std::is_nothrow_invocable_r_v<void, Function&>
     TestBody(
         Function body,
         std::source_location location = std::source_location::current()
     ) noexcept
-        : body(body),
+        : body(std::move(body)),
           location(location) {}
 
 private:
     friend class TestRegistration;
 
-    TestFunction body;
+    std::function<void()> body;
     std::source_location location;
 };
 

@@ -31,27 +31,27 @@ export(cpp) fn unicode() {
 
 export(cpp) fn slice_index(value: i32) {
     let array = [1];
-    let _ = array.as_slice()[value];
+    let _ = array.slice()[value];
 }
 
 export(cpp) fn slice_range(start: usize, end: usize) {
     let array = [1];
-    let _ = array.as_slice().slice(start, end);
+    let _ = array.slice(start, end);
 }
 
 export(cpp) fn slice_known_length() {
     let array = [1];
-    let _ = array.as_slice().slice(0, 2).length();
+    let _ = array.slice(0, 2).length();
 }
 
 export(cpp) fn slice_known_empty() {
     let array = [1];
-    let _ = array.as_slice().slice(2, 2).is_empty();
+    let _ = array.slice(2, 2).is_empty();
 }
 
 export(cpp) fn slice_known_format() {
     let array = [1];
-    let _ = f"{array.as_slice().slice(0, 2).length()}";
+    let _ = f"{array.slice(0, 2).length()}";
 }
 
 private fn native_result() => result();

@@ -100,18 +100,16 @@ const async fn discarded_failure() -> bool {
     return true;
 }
 
-const async fn exercise() -> bool {
-    return await pending()
-        && await committed(true)
-        && await committed(false)
-        && await ready()
-        && await cancelled_child()
-        && await failed_child()
-        && await release()
-        && await conditional(true)
-        && await conditional(false)
-        && await discarded_failure();
-}
+const async fn exercise() => await pending()
+    && await committed(true)
+    && await committed(false)
+    && await ready()
+    && await cancelled_child()
+    && await failed_child()
+    && await release()
+    && await conditional(true)
+    && await conditional(false)
+    && await discarded_failure();
 
 const result = await exercise();
 

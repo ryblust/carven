@@ -135,6 +135,11 @@ auto interpret_member(Site& site, const ASTMemberExpr& source, Span span) noexce
         if (!type->has_value()) {
             co_return site.invalid_type_qualifier(site.syntax().expression(source.operand_id).span);
         }
+        if constexpr (Site::mode == ExpressionMode::Body) {
+            if (site.external(**type)) {
+                co_return site.native_associated_reference(**type, source.name_span, span);
+            }
+        }
         const auto concrete = site.draft().try_canonicalize_declared_type(**type);
         if (!concrete) {
             co_return site.invalid_type_qualifier(site.syntax().expression(source.operand_id).span);

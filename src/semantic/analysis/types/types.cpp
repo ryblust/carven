@@ -174,16 +174,6 @@ auto resolve_named_value(
         if (!success) {
             co_return std::unexpected(success.error());
         }
-        auto checked = require_source_value_type(
-            draft,
-            *success,
-            module_id,
-            origin,
-            "Operation successful result"
-        );
-        if (!checked) {
-            co_return std::unexpected(checked.error());
-        }
         auto failures = ConstructionFailureRef(draft.empty_failure_set());
         if (named.arguments.size() == 2uz) {
             const auto& argument = named.arguments[1];
@@ -244,11 +234,6 @@ auto resolve_named_value(
         ));
         if (!element) {
             co_return std::unexpected(element.error());
-        }
-        if (auto checked =
-                require_source_value_type(draft, *element, module_id, origin, "Vector element");
-            !checked) {
-            co_return std::unexpected(checked.error());
         }
         const auto concrete = draft.canonicalize_declared_type(*element);
         draft.record_vector_element(
@@ -323,7 +308,7 @@ auto resolve_named_value(
             co_return std::unexpected(name.error());
         }
         if (name->has_value()) {
-            auto arguments = std::vector<TypeID>();
+            auto arguments = std::vector<ConstructionTypeRef>();
             for (const auto& argument : named.arguments) {
                 const auto selected_type = require_type_argument(draft, module_id, argument);
                 if (!selected_type) {
@@ -344,22 +329,28 @@ auto resolve_named_value(
                 if (!resolved.has_value()) {
                     co_return std::unexpected(resolved.error());
                 }
-                const auto* concrete = std::get_if<TypeID>(&*resolved);
-                if (concrete == nullptr) {
-                    co_return std::unexpected(fail(
-                        draft,
-                        module_id,
-                        origin,
-                        DiagnosticCode::TypeUnresolved,
-                        "C++ type arguments require concrete types"
-                    ));
-                }
-                arguments.push_back(*concrete);
+                arguments.push_back(*resolved);
+            }
+            if (std::ranges::any_of(arguments, [](ConstructionTypeRef type) static noexcept {
+                    return !std::holds_alternative<TypeID>(type);
+                })) {
+                co_return ConstructionTypeRef {draft.intern_generic_type(
+                    GenericCppNamedType {
+                        .name = std::move(**name),
+                        .arguments = std::move(arguments)
+                    }
+                )};
+            }
+            auto concrete_arguments = std::vector<TypeID>();
+            for (const auto argument : arguments) {
+                concrete_arguments.push_back(std::get<TypeID>(argument));
             }
             co_return ConstructionTypeRef {draft.intern_type(
                 {.value = CppTypeValue {
-                     .form =
-                         CppNamedType {.name = std::move(**name), .arguments = std::move(arguments)}
+                     .form = CppNamedType {
+                         .name = std::move(**name),
+                         .arguments = std::move(concrete_arguments)
+                     }
                  }}
             )};
         }
@@ -629,20 +620,10 @@ auto resolve_function_type(
         if (!concrete) {
             co_return std::unexpected(concrete.error());
         }
-        auto value_type = require_source_value_type(
-            draft,
-            *concrete,
-            module_id,
-            syntax.type(parameter.type).span,
-            "function parameter"
-        );
-        if (!value_type.has_value()) {
-            co_return std::unexpected(value_type.error());
-        }
         parameters.push_back({
             .stage = ParameterStage::Runtime,
             .access = semantic_access_mode(parameter.access),
-            .type = *value_type,
+            .type = *concrete,
         });
     }
     auto result = (co_await resolve_source_type(
@@ -785,23 +766,13 @@ auto resolve_type_value(
                 if (!element) {
                     co_return std::unexpected(element.error());
                 }
-                auto checked = require_source_value_type(
-                    draft,
-                    *element,
-                    module_id,
-                    syntax.type(view.element_type).span,
-                    "slice element"
-                );
-                if (!checked) {
-                    co_return std::unexpected(checked.error());
-                }
-                if (const auto* concrete = std::get_if<TypeID>(&*checked)) {
+                if (const auto* concrete = std::get_if<TypeID>(&*element)) {
                     co_return ConstructionTypeRef {
                         draft.intern_type({.value = SliceTypeValue {.element = *concrete}})
                     };
                 }
                 co_return ConstructionTypeRef {draft.append_construction_type(
-                    {.value = ConstructionSliceTypeValue {.element = *checked}}
+                    {.value = ConstructionSliceTypeValue {.element = *element}}
                 )};
             },
             [&](const ASTArrayType& array) noexcept -> AnalysisTask<ConstructionTypeRef> {
@@ -820,21 +791,11 @@ auto resolve_type_value(
                 if (!element.has_value()) {
                     co_return std::unexpected(element.error());
                 }
-                auto value_element = require_source_value_type(
-                    draft,
-                    *element,
-                    module_id,
-                    syntax.type(array.element_type).span,
-                    "array element"
-                );
-                if (!value_element.has_value()) {
-                    co_return std::unexpected(value_element.error());
-                }
                 auto extent = co_await resolve_extent(array.extent);
                 if (!extent.has_value()) {
                     co_return std::unexpected(extent.error());
                 }
-                if (const auto* concrete = std::get_if<TypeID>(&*value_element)) {
+                if (const auto* concrete = std::get_if<TypeID>(&*element)) {
                     co_return ConstructionTypeRef {draft.intern_type(
                         CanonicalType {
                             .value = ArrayTypeValue {.element = *concrete, .extent = *extent},
@@ -844,7 +805,7 @@ auto resolve_type_value(
                 co_return ConstructionTypeRef {draft.append_construction_type(
                     ConstructionType {
                         .value = ConstructionArrayTypeValue {
-                            .element = *value_element,
+                            .element = *element,
                             .extent = *extent,
                         },
                     }
@@ -871,18 +832,8 @@ auto resolve_type_value(
                     if (!resolved) {
                         co_return std::unexpected(resolved.error());
                     }
-                    auto checked = require_source_value_type(
-                        draft,
-                        *resolved,
-                        module_id,
-                        syntax.type(element).span,
-                        "tuple element"
-                    );
-                    if (!checked) {
-                        co_return std::unexpected(checked.error());
-                    }
-                    elements.push_back(*checked);
-                    if (const auto* concrete = std::get_if<TypeID>(&*checked)) {
+                    elements.push_back(*resolved);
+                    if (const auto* concrete = std::get_if<TypeID>(&*resolved)) {
                         concrete_elements.push_back(*concrete);
                     }
                 }
@@ -935,7 +886,6 @@ auto resolve_generic_type_contents(
     const ASTType& source,
     GenericTypeContext context,
     ArrayExtentResolver resolve_extent,
-    bool value_required,
     ConstructionRequests* requests,
     SourceObservation* observations
 ) noexcept -> AnalysisTask<GenericTypeID> {
@@ -1012,7 +962,6 @@ auto resolve_generic_type_contents(
                             *result_argument,
                             context,
                             resolve_extent,
-                            true,
                             requests,
                             observations
                         );
@@ -1080,7 +1029,6 @@ auto resolve_generic_type_contents(
                             *selected_type,
                             context,
                             resolve_extent,
-                            true,
                             requests,
                             observations
                         ));
@@ -1127,8 +1075,7 @@ auto resolve_generic_type_contents(
                         }
                     }
                 }
-                // Native type arguments remain concrete; a symbolic native provider
-                // requires a separately checked boundary contract.
+                // Native applications retain symbolic arguments until normal instantiation.
                 auto concrete = (co_await resolve_type_value(
                     draft,
                     catalog,
@@ -1144,17 +1091,8 @@ auto resolve_generic_type_contents(
                 if (!concrete) {
                     co_return std::unexpected(concrete.error());
                 }
-                if (value_required) {
-                    auto checked = require_source_value_type(
-                        draft,
-                        *concrete,
-                        module_id,
-                        source.span,
-                        "generic stored value"
-                    );
-                    if (!checked) {
-                        co_return std::unexpected(checked.error());
-                    }
+                if (const auto* symbolic = std::get_if<GenericTypeID>(&*concrete)) {
+                    co_return *symbolic;
                 }
                 co_return draft.intern_generic_type(draft.canonicalize_declared_type(*concrete));
             },
@@ -1168,7 +1106,6 @@ auto resolve_generic_type_contents(
                     array.element_type,
                     context,
                     resolve_extent,
-                    true,
                     requests,
                     observations
                 ));
@@ -1195,7 +1132,6 @@ auto resolve_generic_type_contents(
                         element,
                         context,
                         resolve_extent,
-                        true,
                         requests,
                         observations
                     ));
@@ -1217,7 +1153,6 @@ auto resolve_generic_type_contents(
                     slice.element_type,
                     context,
                     resolve_extent,
-                    true,
                     requests,
                     observations
                 ));
@@ -1236,7 +1171,6 @@ auto resolve_generic_type_contents(
                     pointer.target,
                     context,
                     resolve_extent,
-                    false,
                     requests,
                     observations
                 ));
@@ -1282,7 +1216,6 @@ auto resolve_generic_type_value(
     const ASTType& source,
     GenericTypeContext context,
     ArrayExtentResolver resolve_extent,
-    bool value_required,
     ConstructionRequests* requests,
     SourceObservation* observations
 ) noexcept -> AnalysisTask<GenericTypeID> {
@@ -1295,7 +1228,6 @@ auto resolve_generic_type_value(
         source,
         context,
         resolve_extent,
-        value_required,
         requests,
         observations
     );
@@ -1322,7 +1254,6 @@ auto resolve_generic_source_type(
     ASTTypeID source_type,
     GenericTypeContext context,
     ArrayExtentResolver resolve_extent,
-    bool value_required,
     ConstructionRequests* requests,
     SourceObservation* observations
 ) noexcept -> AnalysisTask<GenericTypeID> {
@@ -1335,7 +1266,6 @@ auto resolve_generic_source_type(
         syntax.type(source_type),
         context,
         resolve_extent,
-        value_required,
         requests,
         observations
     );
@@ -1363,7 +1293,6 @@ auto resolve_source_type(
             source_type,
             *generic_context,
             resolve_extent,
-            true,
             requests,
             observations
         );
@@ -1453,7 +1382,6 @@ auto resolve_source_type_application(
             source,
             *generic_context,
             resolve_extent,
-            true,
             requests,
             observations
         );
@@ -1506,7 +1434,6 @@ auto resolve_source_construction_type(
             selected,
             *generic_context,
             resolve_extent,
-            true,
             requests,
             observations
         );
@@ -1610,31 +1537,6 @@ auto resolve_source_constraint_type(
                 ));
             },
         }
-    ));
-}
-
-auto require_source_value_type(
-    const ProgramDraft& draft,
-    ConstructionTypeRef type,
-    ProgramModuleID module_id,
-    Span origin,
-    std::string_view role
-) noexcept -> AnalysisResult<ConstructionTypeRef> {
-    const auto* concrete = std::get_if<TypeID>(&type);
-    if (concrete == nullptr) {
-        return type;
-    }
-    const auto canonical = draft.type_copy(*concrete);
-    const auto* builtin = std::get_if<BuiltinTypeValue>(&canonical.value);
-    if (builtin == nullptr || builtin->kind != BuiltinType::EntryArgs) {
-        return type;
-    }
-    return std::unexpected(fail(
-        draft,
-        module_id,
-        origin,
-        DiagnosticCode::TypeValueRequired,
-        std::format("{} requires a value type", role)
     ));
 }
 

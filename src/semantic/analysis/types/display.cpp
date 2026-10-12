@@ -34,15 +34,15 @@ auto builtin_name(BuiltinType type) noexcept -> std::string_view {
         case BuiltinType::Str:          return "str";
         case BuiltinType::StrCharsView: return "str chars view";
         case BuiltinType::Void:         return "void";
-        case BuiltinType::EntryArgs:    return "entry arguments";
-        case BuiltinType::U8x16:        return "u8x16";
-        case BuiltinType::Mask16:       return "mask16";
-        case BuiltinType::F32x4:        return "f32x4";
-        case BuiltinType::Mask4:        return "mask4";
-        case BuiltinType::U8x32:        return "u8x32";
-        case BuiltinType::Mask32:       return "mask32";
-        case BuiltinType::F32x8:        return "f32x8";
-        case BuiltinType::Mask8:        return "mask8";
+
+        case BuiltinType::U8x16:  return "u8x16";
+        case BuiltinType::Mask16: return "mask16";
+        case BuiltinType::F32x4:  return "f32x4";
+        case BuiltinType::Mask4:  return "mask4";
+        case BuiltinType::U8x32:  return "u8x32";
+        case BuiltinType::Mask32: return "mask32";
+        case BuiltinType::F32x8:  return "f32x8";
+        case BuiltinType::Mask8:  return "mask8";
     }
     std::unreachable();
 }
@@ -213,6 +213,27 @@ auto type_display_name(const ProgramDraft& draft, ConstructionTypeRef type) noex
                 },
                 [&](const GenericOperationType& value) noexcept {
                     return std::format("Operation<{}>", name(value.success));
+                },
+                [&](const GenericCppNamedType& value) noexcept {
+                    auto text = std::string("::");
+                    for (const auto [index, component] :
+                         std::views::enumerate(value.name.components)) {
+                        if (index != 0) {
+                            text += "::";
+                        }
+                        text += component;
+                    }
+                    text += "<";
+                    for (const auto [index, argument] : std::views::enumerate(value.arguments)) {
+                        if (index != 0) {
+                            text += ", ";
+                        }
+                        text += name(argument);
+                    }
+                    return text + ">";
+                },
+                [](const GenericCppQueryType&) static noexcept {
+                    return std::string("C++ expression");
                 },
                 [&](const GenericNominalApplication& value) noexcept {
                     const auto contract = draft.generic_declaration_contract_copy(value.definition);

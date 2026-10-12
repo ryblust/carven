@@ -1,23 +1,25 @@
-# Printing, entry points, and tests
+# Input, output, entry points, and tests
 
 [Language](README.md)
 
-This page defines observable output, program entry, tests, assertions, and
+This page defines observable input and output, program entry, tests, assertions, and
 selected diagnostics. Compiler invocation and process reporting are covered by
 the [CLI](../toolchain/cli.md).
 
 - [Printing](#printing)
-- [Entry points and tests](#entry-points-and-tests)
+- [Entry points](#entry-points)
+- [Standard input](#standard-input)
+- [Tests](#tests)
 - [Diagnostics](#diagnostics)
 
 ## Printing
 
 `print`, `println`, `eprint`, and `eprintln` are builtin
 callables; they need no import and follow ordinary name lookup and shadowing.
-They accept one or more Read values and return `void`. `void`, entry arguments,
-and character-iteration views are not printable. Arguments are evaluated once,
-from left to right. Values are separated by one space; `println` and `eprintln`
-append one newline.
+They accept one or more Read values and return `void`. `void` and
+character-iteration views are not printable. Arguments are evaluated once, from
+left to right. Values are separated by one space; `println` and `eprintln` append
+one newline.
 `println()` and `eprintln()` also accept no argument to write a newline. Output
 goes to stdout or stderr respectively. No typed failure or `?` is required.
 As with interpolation, scalar Read values are saved and String Read values alias
@@ -99,7 +101,7 @@ Printing values can use an expected signature, for example
 `let output: fn(str, i32) -> void = println;`, and pass through ordinary callable
 views. The expected signature fixes the parameter count and types.
 
-## Entry points and tests
+## Entry points
 
 A compilation may contain zero or one program entry. A function named `main`
 and a file containing top-level executable statements each define an entry.
@@ -123,9 +125,9 @@ arguments; ordinary function parameter rules apply elsewhere. An entry with
 outward failures must declare an explicit `throw` contract, including a
 `private` entry. Its body must stay within that declared failure set.
 
-An [`async fn main()`](async.md) accepts zero parameters. Its private driver
-waits for root completion and lexical child closure before reporting failure or
-cancelled completion.
+An `async fn main(args)` accepts the same optional untyped Read parameter. Its
+private driver waits for root completion and lexical child closure before
+reporting failure or cancelled completion.
 
 Normal completion produces process status zero; a declared Carven result, if
 present, is not a process exit status. A typed failure that escapes either entry
@@ -154,9 +156,54 @@ value carries no source position. The interpreter reports the same payload under
 `CV-INTERPRET-EXECUTION` and locates it at the `throw` statement with its call
 path.
 
-The command-line parameter is an opaque entry-only value. Its C++
-runtime representation is not a Carven sequence contract and does not make the
-parameter indexable or iterable.
+The entry wrapper owns a `Vector<String>` containing arguments in order,
+excluding the executable name. Its command-line parameter borrows that owner.
+Synchronous and asynchronous entries can index, iterate, print, or borrow it
+through ordinary collection and text operations. Native entry validates argument
+UTF-8; invalid native text uses the ordinary runtime ingress trap. The owner
+remains alive until entry execution and child closure finish.
+
+```carven
+async fn main(args) {
+    for argument in args {
+        println(argument);
+    }
+}
+```
+
+## Standard input
+
+`stdin()` is available without an import and follows ordinary name lookup.
+The public input types and errors are selected from `std::io`.
+Reads return cold operations and run under the same async driver,
+cancellation, child closure, and timeout rules as other operations.
+
+```carven
+import std::io using IOError;
+
+async fn main() throw IOError {
+    let input = stdin().with_line_limit(4096);
+    while {
+        match await input.read_line()? {
+            .Data(line) => println(line),
+            .End => break,
+        }
+    }
+}
+```
+
+An empty line is `.Data("")`; EOF is `.End`. Reads report one `IOError` enum:
+`.System(code)`, `.InputTooLarge(limit)`, or `.InvalidUTF8(detail)`. Text reads
+reuse UTF validation and retain its typed error detail; byte reads preserve
+arbitrary bytes. Line reads strip LF and its immediately preceding CR, and
+return a final unterminated line before EOF.
+`read_all(limit)` and `read_text(limit)` require an explicit maximum byte count.
+All handles share the process input cursor. Started reads run in FIFO order.
+Cancellation preserves buffered incomplete input, and limit failures preserve
+input for another read. Completed text reads consume their bytes before UTF
+validation, including when validation fails.
+
+## Tests
 
 A test is a module-local body with no parameters or result. An explicit test name
 must be unique within its module and cannot be `main`. Tests participate in

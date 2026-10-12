@@ -24,7 +24,7 @@ const TestSuite suite([] static noexcept {
              .primary_text = "&&"},
             {.name = "copy retains storage",
              .source =
-                 "fn bad() { var a = [1]; let b = [2]; var v = a.as_slice(); let copy = v; v = b; a[0] = 3; }",
+                 "fn bad() { var a = [1]; let b = [2]; var v = a.slice(); let copy = v; v = b; a[0] = 3; }",
              .code = DiagnosticCode::AccessBorrowConflict,
              .primary_text = "a[0] = 3"},
             {.name = "local return",
@@ -70,7 +70,7 @@ const TestSuite suite([] static noexcept {
              .primary_text = "s.clear()"},
             {.name = "subslice element storage",
              .source =
-                 "fn bad() { var s = String {}; let a = [\"\", s.as_str()]; let v = a.as_slice().slice(1, 2); let text = v[0]; s.clear(); }",
+                 "fn bad() { var s = String {}; let a = [\"\", s.as_str()]; let v = a.slice(1, 2); let text = v[0]; s.clear(); }",
              .code = DiagnosticCode::AccessBorrowConflict,
              .primary_text = "s.clear()"},
             {.name = "nested slice storage",
@@ -79,13 +79,13 @@ const TestSuite suite([] static noexcept {
              .code = DiagnosticCode::AccessBorrowConflict,
              .primary_text = "a[0] = 2"},
             {.name = "loop storage",
-             .source = "fn bad() { var a = [1]; for v in a.as_slice() { a[0] = 2; } }",
+             .source = "fn bad() { var a = [1]; for v in a.slice() { a[0] = 2; } }",
              .code = DiagnosticCode::AccessBorrowConflict,
              .primary_text = "a[0] = 2"},
             {.name = "nested temporary storage",
-             .source = "fn bad() { let v = [[1].as_slice()]; }",
+             .source = "fn bad() { let v = [[1].slice()]; }",
              .code = DiagnosticCode::AccessBorrowConflict,
-             .primary_text = "let v = [[1].as_slice()]"},
+             .primary_text = "let v = [[1].slice()]"},
             {.name = "readonly index",
              .source = "fn bad(v: [i32]) { v[0] = 1; }",
              .code = DiagnosticCode::AccessImmutable,
@@ -123,7 +123,7 @@ const TestSuite suite([] static noexcept {
              .primary_text = "row"},
             {.name = "joined Read sources protect every possible owner",
              .source =
-                 "fn first(a: [[i32; 1]]) -> [i32] { for row in a { return row; } return a[0]; } fn bad(flag: bool) { var a = [[1]]; let b = [[2]]; let rows = if flag { a.as_slice() } else { b.as_slice() }; let v = first(rows); a[0][0] = 3; }",
+                 "fn first(a: [[i32; 1]]) -> [i32] { for row in a { return row; } return a[0]; } fn bad(flag: bool) { var a = [[1]]; let b = [[2]]; let rows = if flag { a.slice() } else { b.slice() }; let v = first(rows); a[0][0] = 3; }",
              .code = DiagnosticCode::AccessBorrowConflict,
              .primary_text = "a[0][0] = 3"},
             {.name = "temporary array retains escaping text",
@@ -148,19 +148,19 @@ const TestSuite suite([] static noexcept {
              .primary_text = "a"},
             {.name = "callable slice element protects closure storage",
              .source =
-                 "fn bad() { let n = 42; let closure = [n]() => n; let owners = [closure]; let view: fn() -> i32 = owners.as_slice()[0]; let moved = &&owners; }",
+                 "fn bad() { let n = 42; let closure = [n]() => n; let owners = [closure]; let view: fn() -> i32 = owners.slice()[0]; let moved = &&owners; }",
              .code = DiagnosticCode::AccessBorrowConflict,
              .primary_text = "&&"},
             {.name = "temporary callable slice element cannot be saved",
              .source =
-                 "fn bad() { let n = 42; let closure = [n]() => n; let view: fn() -> i32 = [closure].as_slice()[0]; }",
+                 "fn bad() { let n = 42; let closure = [n]() => n; let view: fn() -> i32 = [closure].slice()[0]; }",
              .code = DiagnosticCode::TypeCallableViewEscape,
-             .primary_text = "[closure].as_slice()[0]"},
+             .primary_text = "[closure].slice()[0]"},
             {.name = "temporary callable array selected through a slice cannot be saved",
              .source =
-                 "fn bad() { let n = 42; let closure = [n]() => n; let views: [fn() -> i32; 1] = [[closure]].as_slice()[0]; }",
+                 "fn bad() { let n = 42; let closure = [n]() => n; let views: [fn() -> i32; 1] = [[closure]].slice()[0]; }",
              .code = DiagnosticCode::TypeCallableViewEscape,
-             .primary_text = "[[closure]].as_slice()[0]"},
+             .primary_text = "[[closure]].slice()[0]"},
         });
         check_compiler_errors(cases);
     };
@@ -168,10 +168,10 @@ const TestSuite suite([] static noexcept {
     "Compiler diagnostics: slice methods enforce their operand contracts"_test =
         [] static noexcept {
             constexpr auto cases = std::to_array<CompilerErrorExpectation>({
-                {.name = "array borrowing takes no arguments",
-                 .source = "fn bad(a: [i32; 1]) { a.as_slice(0usize); }",
+                {.name = "array slicing requires zero or two arguments",
+                 .source = "fn bad(a: [i32; 1]) { a.slice(0usize); }",
                  .code = DiagnosticCode::TypeMethodCallArity,
-                 .primary_text = "a.as_slice(0usize)"},
+                 .primary_text = "a.slice(0usize)"},
                 {.name = "slice length takes no arguments",
                  .source = "fn bad(a: [i32]) { a.length(0usize); }",
                  .code = DiagnosticCode::TypeMethodCallArity,
@@ -187,6 +187,22 @@ const TestSuite suite([] static noexcept {
             });
             check_compiler_errors(cases);
         };
+
+    "Compiler diagnostics: complete slice views preserve their backing loans"_test = [] static noexcept {
+        constexpr auto cases = std::to_array<CompilerErrorExpectation>({
+            {.name = "replacing the source view preserves the copied backing loan",
+             .source =
+                 "fn bad() { var a = [1]; let b = [2]; var view = a.slice(); let copied = view.slice(); view = b; a[0] = 3; }",
+             .code = DiagnosticCode::AccessBorrowConflict,
+             .primary_text = "a[0] = 3"},
+            {.name = "slice view elements retain their text owners",
+             .source =
+                 "fn bad() { var s: String = \"hello\"; let texts = [s.as_str()]; let view = texts.slice(); let copied = view.slice(); let text = copied[0]; s.clear(); }",
+             .code = DiagnosticCode::AccessBorrowConflict,
+             .primary_text = "s.clear()"},
+        });
+        check_compiler_errors(cases);
+    };
 });
 
 } // namespace

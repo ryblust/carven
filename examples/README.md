@@ -1,77 +1,52 @@
-# Learn by running
+# Examples
 
-These small programs demonstrate Carven through complete tasks. Each example
-includes source, a reading guide, build commands, and expected output. Use the
-examples and compiler from the same revision.
+Each directory contains one application, with source files grouped by
+responsibility. Start with [`hello.cv`](hello.cv) for a single-file program.
 
-## Run your first example
+| Program | What it does | Start here |
+| --- | --- | --- |
+| `log_analyzer` | Parse logs, reject malformed records, redact credentials, and emit a JSON report | [README](log_analyzer/README.md), [main.cv](log_analyzer/main.cv) |
+| `audio_mixer` | Mix two tracks, clip samples, and report peak and RMS levels | [README](audio_mixer/README.md), [main.cv](audio_mixer/main.cv) |
+| `stream_collector` | Collect framed records from concurrent TCP streams with a deadline and partial failure recovery | [README](stream_collector/README.md), [workflow.cv](stream_collector/workflow.cv) |
 
-With the [repository toolchain](../README.md#build-and-run) installed, run from
-the repository root:
+Build and run from the repository root:
 
 ```sh
 ./xmakew build
-./xmakew run carven examples/helloworld/main.cv
-```
-
-Expected output:
-
-```text
-Hello World
-```
-
-Direct execution builds and runs the program with the native C++ toolchain.
-For multi-module examples, name each application `.cv` file; Crafts sources are
-collected automatically. In PowerShell, use `.\xmakew.ps1`.
-
-The targets below also support `./xmakew build <target>` and
-`./xmakew run <target>`, including the C++ host example. They share the repository
-build, use the local compiler, and compile as C++20; they are not standalone
-packages. Initial configuration may need to obtain the Carven Xmake rule.
-
-Each example occupies one directory with a single `main.cv` entry and any helper
-modules beside it. Top-level statements form the implicit program entry. The C++
-host example uses `main.cpp` as its process entry and calls exported Carven functions.
-
-## Choose an example
-
-Read in table order for a progression through modules, values, ownership,
-constant computation, failures, and C++ integration, or choose a topic directly.
-
-| Example | What it demonstrates | Target |
-| --- | --- | --- |
-| [Deduced C++ values](native_values/) | C++ template deduction, indexing, reference-result snapshots, and native formatting | `carven-example-native-values` |
-| [Hello World](helloworld/) | Top-level entry, string literal, and builtin output | `carven-example-hello-world` |
-| [Shipping](modules/) | Relative imports and private constants | `carven-example-shipping` |
-| [Receipt](basics/) | Records, enums, match, arrays, loops, and calculation functions | `carven-example-receipt` |
-| [Inventory](ownership/) | Read, Write, Take, copying and reassignment | `carven-example-inventory` |
-| [Greeting](strings/) | UTF-8 String, independent copies, and scoped borrowing | `carven-example-strings` |
-| [Execution stages](execution/) | Constant blocks, static tests, native execution, and interpretation | `carven-example-execution` |
-| [Constant computation](constant/) | Text construction, fixed arrays, frozen slices, and typed record tables, with ordinary runtime calls | `carven-example-constant` |
-| [Failure contracts](failures/) | Expression propagation, recovery, callable contracts, and owned or borrowed failure payloads | `carven-example-failures` |
-| [Native parser](call_cpp/) | Header imports, `#[cpp]`, and native exceptions converted to declared failures | `carven-example-native-parser` |
-| [Pricing library](cpp_host/) | Generated public headers, owning String results, Write, and Take | `carven-example-cpp-host` |
-
-Within each example, follow its reading guide from declarations and providers
-to helpers and callers. Change the small inputs, rebuild, and run to observe the
-result. Restore the documented inputs before checking expected output.
-
-For an introduction to individual language concepts, use the
-[tutorial](../docs/language/tutorial.md).
-
-## Check the examples
-
-Build all examples and run their output checks from the repository root:
-
-```sh
 ./xmakew build examples
+./xmakew run carven-example-log-analyzer
+./xmakew run carven-example-audio-mixer
+./xmakew run carven-example-stream-collector
 ./xmakew test -g examples
 ```
 
-The test group also builds its targets as needed. Its checks execute the actual
-programs and compare their output with the expected results.
+The programs include their sample input. The collector opens nonblocking TCP
+sockets on loopback with OS-assigned ports. Its C++ host supplies socket readiness;
+Carven owns concurrent collection,
+record framing, typed recovery, and timeout-driven cancellation.
 
-When updating an example, keep its explanation, commands, and expected output
-consistent with the executable source. Explain providers before callers and
-keep navigation between examples in this index. Rejection and termination cases
-belong in the compiler's test suites.
+The programs also share a small line format:
+
+```text
+LEVEL milliseconds message
+```
+
+`LEVEL` is `INFO`, `WARN`, or `ERROR`. For example,
+`WARN 37 mixer clipped=2 samples=10`. The analyzer reports messages at or above
+30 milliseconds and redacts words beginning with `token=`.
+The mixer can emit this format, and the collector can publish standard input
+over its first TCP connection and emit the collected records. After building,
+connect the applications:
+
+```sh
+./xmakew run -q carven-example-audio-mixer --logs > mixer.log
+./xmakew run -q carven-example-stream-collector --stdin --records < mixer.log > collected.log
+./xmakew run -q carven-example-log-analyzer --stdin < collected.log
+```
+
+The collector's other feeds supply a truncated stream and a stalled stream.
+Rejection and timeout are handled independently for each feed. Output records
+keep feed order and record order within each feed.
+
+The example test group checks documented output, application behavior, and the
+connected pipeline.

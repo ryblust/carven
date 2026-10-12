@@ -93,7 +93,7 @@ auto BodyContractVerifier::verify_body_inputs() const noexcept -> void {
         }
         return;
     }
-    const auto contract = program.callable_signatures().signature(
+    const auto& contract = program.callable_signatures().signature(
         program.declarations().callable(*callable).signature
     );
     if (body.inputs().parameters.size() != contract.parameters.size()) {
@@ -129,7 +129,7 @@ auto BodyContractVerifier::require_body_failure_set(FailureSetID failures) const
     if (!callable.has_value()) {
         invariant_violation("test body exposes a failure contract");
     }
-    const auto contract = program.callable_signatures().signature(
+    const auto& contract = program.callable_signatures().signature(
         program.declarations().callable(*callable).signature
     );
     const auto expected = contract.failures;

@@ -363,6 +363,11 @@ struct OwnershipRecordedError final {
     std::string help;
 };
 
+auto check_ownership_contracts(
+    const AnalysisModelView& model,
+    const AnalysisBodyView& body
+) noexcept -> std::optional<OwnershipRecordedError>;
+
 struct OwnershipDiagnosisRecord final {
     std::optional<OwnershipRecordedError> error;
     std::map<ProgramOriginID, bool> returned_copies;
@@ -489,11 +494,10 @@ public:
     OwnershipBodyAnalyzer(
         OwnershipBatchAnalyzer& analysis,
         const OwnershipCallInput& input,
-        OwnershipStorageTopology* topology = nullptr
+        OwnershipStorageTopology& topology
     ) noexcept;
 
     auto run() noexcept -> OwnershipBodyResult;
-    auto check_contracts() noexcept -> std::unique_ptr<OwnershipDiagnosisRecord>;
 
 private:
     auto storage_relations() const noexcept -> const OwnershipRegionIndex&;
@@ -612,7 +616,6 @@ private:
         -> std::vector<OwnershipPlace>;
 
     auto binding_place(LocalBindingID binding) const noexcept -> OwnershipPlace;
-    auto is_writable(LocalBindingID binding) const noexcept -> bool;
 
     auto storage_ancestor(
         const OwnershipPlace& owner,
@@ -745,7 +748,6 @@ private:
     const AnalysisBodyView& body;
     const SemIRProgram& program;
     const OwnershipBodyFacts& facts;
-    OwnershipStorageTopology local_topology;
     OwnershipStorageTopology& topology;
     std::optional<ProgramOriginID> feedback_origin;
     mutable std::optional<std::size_t> cached_alias_revision;
@@ -785,9 +787,10 @@ public:
     auto contents(ConstructionTypeRef type) const noexcept -> TypeContents;
     auto symbolic_input(const AnalysisBodyView& body) const noexcept -> OwnershipCallInput;
 
-    // Answers are borrowed during body evaluation, before the solver updates them.
+    // Query objects remain stable for this batch. Their answers are borrowed
+    // during body evaluation, before the solver updates them.
     auto query(OwnershipCallInput input, bool recursive = false) noexcept
-        -> const OwnershipCallSummary&;
+        -> const OwnershipCallQuery&;
 
     auto region_site(
         AnalysisBodyID body,

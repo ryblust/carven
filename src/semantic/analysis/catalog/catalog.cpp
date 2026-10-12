@@ -432,6 +432,19 @@ auto build_analysis_catalog(ProgramDraft& draft) noexcept
     result.modules.reserve(module_count);
     result.visible_candidates.reserve(module_count);
     auto first_entry = std::optional<SourceSpan>();
+    const auto provided_entity = [&](ProvidedExport identity) noexcept -> CatalogEntity {
+        if (const auto key = provided_source_key(identity)) {
+            for (const auto& symbol : result.symbols) {
+                if (symbol.name == key->name
+                    && draft.module_path_copy(symbol.module_id).value() == key->module
+                    && !symbol.class_operation) {
+                    return symbol.symbol_id;
+                }
+            }
+        }
+        return identity;
+    };
+
     for (auto module_index = 0uz; module_index < module_count; ++module_index) {
         const auto module_id = draft.provenance_module_at(module_index);
         const auto source_id = syntax_trees[module_index].view().source_id();
@@ -888,7 +901,7 @@ auto build_analysis_catalog(ProgramDraft& draft) noexcept
             } else {
                 for (const auto& entry : provided_exports()) {
                     if (entry.module == std::get<ProvidedModule>(target_id)) {
-                        target_entities.emplace_back(entry.identity);
+                        target_entities.push_back(provided_entity(entry.identity));
                     }
                 }
             }
@@ -1109,7 +1122,7 @@ auto build_analysis_catalog(ProgramDraft& draft) noexcept
                 append_candidate(
                     candidates,
                     info.name,
-                    {.entity = info.identity, .import_binding = std::nullopt}
+                    {.entity = provided_entity(info.identity), .import_binding = std::nullopt}
                 );
             }
         }

@@ -5,7 +5,7 @@ import .tracked using run_tracked;
 import std::time.duration using RangeError;
 import std::time.timeout using Timeout;
 
-async fn main() throw ParentFailure + Timeout + RangeError {
+export(cpp) async fn run_ownership() throw ParentFailure + Timeout + RangeError {
     await run_fixed()?;
     await run_tracked();
     await run_tail();

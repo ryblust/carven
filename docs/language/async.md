@@ -276,6 +276,11 @@ not establish Copy or independent backing. Known invalid arguments and completio
 types at an async call inside a parameterized function are rejected even if that
 function is never instantiated.
 
+The optional command-line parameter of `async fn main(args)` is a Read borrow
+of the entry wrapper's `Vector<String>`. The wrapper retains that owner until
+the root and its children close. Ordinary async Read parameters follow the
+owning-value restrictions above.
+
 Native local operations follow the ordinary declared interoperation contract.
 Carven checks source-visible loans, destructive access, and escaping backing.
 Native Write is checked as potentially invalidating its selected storage. Native
@@ -290,10 +295,11 @@ executing its body for this effect check.
 
 The current driver is single-threaded and nonreentrant, with bounded native
 stack use for deep await chains. It does not promise preemption, fairness, or
-bounded cancellation latency. `async fn main()` accepts zero parameters and is
-driven to completion by a private entry wrapper. Normal completion returns process
-status zero regardless of its source result; failure or cancelled completion is
-reported after child closure.
+bounded cancellation latency. `async fn main` accepts no parameters or one
+untyped command-line parameter borrowing a `Vector<String>` with Read access.
+A private entry wrapper drives it to completion. Normal completion returns
+process status zero regardless of its source result; failure or cancelled
+completion is reported after child closure.
 
 Async tests, class receivers, async callable values, arbitrary external awaitable
 types and cross-thread resume remain outside this admission boundary.
@@ -340,8 +346,8 @@ imports undergo the same async signature checks even without a source body.
 `export(cpp) async fn` exposes a source async function through its module's existing
 C++ API header with the same cold AsyncOperation representation.
 
-A native host owns its event pump and provider resources, passes an explicit
-context to the exported root, and calls `drive_root(operation, &pump)`. Context
+A native host owns its event source and provider resources, passes an explicit
+context to the exported root, and calls `drive_root(operation, &source)`. Context
 Read is a const-reference borrow. The native caller keeps its holder and hidden
 resources alive until the cold owner is dropped or execution and child closure
 finish. Source loans check the holder; they do not prove native fd, buffer, or
@@ -349,17 +355,28 @@ callback lifetimes. The provider maps events to Completion, releases external
 reachability, and queues the existing continuation before source execution resumes.
 Requesting cancellation does not establish callback quiescence: provider-reachable
 state remains alive until no pending or executing callback can access it.
-Native provider awaiters use `ResumeContinuation` from the shared execution entry,
+Native provider awaiters use `ResumeContinuation` from the execution core,
 `carven/runtime/execution/execution.hpp`.
 They bind the suspended coroutine, query its cancellation request, and enqueue
 resumption through the supplied driver after committing completion. The provider
 keeps the continuation alive through dispatch and performs event delivery on the
-driver thread. The source entry wrapper supplies a default timer service; an
-external I/O event pump remains the native host's responsibility. A host with
-pending builtin timers also provides `wait_until(i64_deadline)` in the runtime's
-steady-clock nanosecond domain, coordinating its external events and the nearest
-timer in one blocking wait. Native requests use `TaskContext::request_cancel()`
-on the driver thread so parked timer cancellation is notified.
+driver thread. The host source derives from `EventSource` and implements
+`poll(Driver&) noexcept` and
+`wait(std::optional<std::int64_t> deadline) noexcept -> bool`. Polling commits
+ready completions and queues their continuations. Waiting returns false when
+there are no pending native requests; otherwise it waits for readiness or the
+supplied steady-clock nanosecond deadline and returns true. These methods run
+on the driver thread and do not resume source code directly.
+
+The driver services registered event sources and builtin timers through one
+polling and waiting loop. A single source waits directly until readiness or the
+nearest timer. With multiple independent sources, waits are capped at ten
+milliseconds so each source can be polled. Standard input registers its source
+while reads are pending. `drive_root` borrows the host source through root and
+child closure, then detaches it. Providers using `Driver::attach` and `detach`
+keep their source alive throughout that registration. Native requests use
+`TaskContext::request_cancel()` on the driver thread so parked timer cancellation
+is notified.
 
 The time craft supplies `std::time.duration`, `std::time.clock`, and
 `std::time.sleep`. Its waits produce ordinary cold operations and accept

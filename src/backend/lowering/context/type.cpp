@@ -36,7 +36,6 @@ auto builtin_symbol(BuiltinType type) noexcept -> TargetSymbol {
         case Str:          return TargetSymbol::StdStringView;
         case StrCharsView: return TargetSymbol::RuntimeStrCharsView;
         case Void:         return TargetSymbol::RuntimeVoid;
-        case EntryArgs:    return TargetSymbol::RuntimeEntryArgsType;
     }
     std::unreachable();
 }

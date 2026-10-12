@@ -11,12 +11,25 @@ general iterator capabilities.
 
 `Option<T>` is a possible library consumer of the implemented generic-enum model.
 If public Option/Result APIs are selected, define their value and ownership
-contracts. Result also needs explicit
-failure capture and a defined relationship to typed control effects.
+contracts. Result also needs explicit failure capture and a defined relationship
+to typed control effects.
 
-Iterator protocols need a concrete source API and access contract. Type
+[Sequence views and pipeline calls](sequence-pipelines.md) develops bounded Read
+sequence APIs without requiring a general iterator capability system. Type
 computation, structural queries, and declaration generation each need a defined
 source contract.
+
+## Sequence extensions
+
+These candidates are outside the selected first-version sequence design. Their
+identifiers belong to that design domain; selection requires the evidence below.
+
+| ID | Direction | Evidence and contract needed |
+| --- | --- | --- |
+| `DEFER-01` | Fallible or suspending traversal | A consumer needs lazy failure transport or suspension beyond ordinary loop handling; define outward effects, partial results, stopping, cleanup, and cancellation |
+| `DEFER-02` | Additional operations or element access | A consumer needs positional alignment, one-to-many production, mutation, or extraction; define length mismatch and stopping for zip, retain nonexclusive Write and owner protection, or define whole-owner transfer and remaining-element cleanup |
+| `DEFER-03` | User-defined producers | A custom container needs direct traversal; select a bounded concrete contract for element access, cursor lifetime, end detection, restartability, and static admission |
+| `DEFER-04` | ECS or column-oriented storage | A craft demonstrates a missing shared capability; define entity association, structural mutation, scheduling, and storage access, since positional alignment and Read traversal do not supply those contracts |
 
 ## Vector extensions
 

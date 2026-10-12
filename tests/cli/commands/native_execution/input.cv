@@ -1,4 +1,3 @@
-import "arguments.hpp";
 import std::utf.scalar using { char_from_u32, UnicodeScalarError };
 import demo::api using answer;
 
@@ -27,6 +26,8 @@ fn main(args) throw Failure + UnicodeScalarError {
     println("running", prepared);
     println(char_from_u32(65)?);
     println(answer());
-    ::show_args(args);
+    for argument in args {
+        println(argument);
+    }
     throw Failure {};
 }

@@ -624,19 +624,6 @@ auto DeclResolver::resolve_type(ProgramModuleID module_id, ASTView syntax, ASTTy
     ));
 }
 
-auto DeclResolver::resolve_value_type(
-    ProgramModuleID module_id,
-    ASTView syntax,
-    ASTTypeID type,
-    std::string_view role
-) noexcept -> AnalysisTask<ConstructionTypeRef> {
-    auto resolved = (co_await resolve_type(module_id, syntax, type));
-    if (!resolved.has_value()) {
-        co_return std::unexpected(resolved.error());
-    }
-    co_return require_source_value_type(draft, *resolved, module_id, syntax.type(type).span, role);
-}
-
 auto DeclResolver::resolve_failures(
     ProgramModuleID module_id,
     ASTView syntax,

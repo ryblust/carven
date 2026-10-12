@@ -156,7 +156,7 @@ test "UTF8: prefix errors use offsets relative to the selected input" {
     let bytes = [0x61u8, 0xe2, 0x28, 0xa1];
     var rejected = false;
     try {
-        let _ = decode_utf8_prefix(bytes.as_slice().slice(1, 4))?;
+        let _ = decode_utf8_prefix(bytes.slice(1, 4))?;
     } catch {
         UTF8Error(error) => {
             rejected = error.kind

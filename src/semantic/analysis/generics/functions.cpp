@@ -306,6 +306,20 @@ auto ProgramDraft::instantiate_generic_function(
                 call->callee_failures =
                     BodyFailures(effects.substitute(call->callee_failures.reference()));
             }
+            if (auto* native = std::get_if<SemCpp>(&expression.value)) {
+                if (auto* construction = std::get_if<CppConstructOperation>(&native->operation)) {
+                    substitute(construction->target);
+                }
+                if (auto* member = std::get_if<CppStaticMemberOperation>(&native->operation)) {
+                    substitute(member->type);
+                }
+            }
+            if (auto* native = std::get_if<SemCppCall>(&expression.value)) {
+                if (auto* member =
+                        std::get_if<CppStaticMemberCallee<ConstructionTypeRef>>(&native->callee)) {
+                    substitute(member->type);
+                }
+            }
             if (auto* record = std::get_if<SemStruct>(&expression.value)) {
                 substitute_owner(record->structure);
             }

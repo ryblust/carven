@@ -51,7 +51,9 @@ using AnalysisTypeShape = std::variant<
     ConstructionOperationTypeValue,
     CppTypeValue,
     GenericTypeParameter,
-    GenericNominalApplication>;
+    GenericNominalApplication,
+    GenericCppNamedType,
+    GenericCppQueryType>;
 
 class AnalysisBodyView final {
 public:

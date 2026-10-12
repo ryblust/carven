@@ -68,7 +68,7 @@ identity and do not extend temporary backing lifetimes.
 owns one `ConstantStorage` within its artifact. Storage records which canonical
 constant identities have been materialized; declarations and references use
 names from `TargetNamePlan`. It emits an `inline constexpr` declaration initialized
-by a typed `std::array` and realizes the slice as `runtime::as_slice` of that array.
+by a typed `std::array` and realizes the slice as `runtime::slice` of that array.
 Generated names distinguish linkage domains and source modules; artifacts can
 materialize the same planned backing independently. Storage remains in its source
 module's C++ namespace so user types resolve in the same scope. Empty values use
@@ -304,7 +304,7 @@ Eligible operations are declared `constexpr` in the C++20 runtime.
 Native constant evaluation does not determine Carven static-execution admission.
 
 Vector literals lower to direct owner construction. Vector and array borrowing
-both lower through `as_slice`, and direct source slicing selects the borrowed
+both lower through `slice`, and direct source slicing selects the borrowed
 subrange. Source loans protect the owning storage before native realization.
 
 Retained constants use typed logical contents rather than compiler-host addresses.

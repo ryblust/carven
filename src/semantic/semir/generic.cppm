@@ -1,6 +1,7 @@
 module carven:semantic.semir.generic;
 
 import :semantic.semir.decl;
+import :semantic.semir.delegation;
 import :semantic.semir.ids;
 import :semantic.semir.type;
 import std;
@@ -73,6 +74,14 @@ struct GenericNominalApplication final {
     auto operator<=>(const GenericNominalApplication&) const noexcept = default;
 };
 
+struct GenericCppNamedType final {
+    CppNameReference name;
+    std::vector<ConstructionTypeRef> arguments;
+    auto operator<=>(const GenericCppNamedType&) const noexcept = default;
+};
+
+using GenericCppQueryType = BasicCppQueryType<ConstructionTypeRef>;
+
 using GenericTypeExpression = std::variant<
     TypeID,
     GenericTypeParameter,
@@ -82,7 +91,9 @@ using GenericTypeExpression = std::variant<
     GenericVectorType,
     GenericPointerType,
     GenericOperationType,
-    GenericNominalApplication>;
+    GenericNominalApplication,
+    GenericCppNamedType,
+    GenericCppQueryType>;
 
 template<typename Visitor>
 auto visit_generic_type_children(const GenericTypeExpression& type, Visitor&& visitor) noexcept
@@ -101,6 +112,12 @@ auto visit_generic_type_children(const GenericTypeExpression& type, Visitor&& vi
             visitor(shape.target);
         } else if constexpr (std::same_as<Shape, GenericOperationType>) {
             visitor(shape.success);
+        } else if constexpr (std::same_as<Shape, GenericCppNamedType>) {
+            for (const auto argument : shape.arguments) {
+                visitor(argument);
+            }
+        } else if constexpr (std::same_as<Shape, GenericCppQueryType>) {
+            visit_cpp_query_types(shape, visitor);
         } else if constexpr (std::same_as<Shape, GenericNominalApplication>) {
             for (const auto& argument : shape.arguments) {
                 if (const auto* type = std::get_if<ConstructionTypeRef>(&argument)) {
@@ -173,6 +190,14 @@ auto visit_generic_argument_failures(const GenericArgument& argument, Visitor&& 
     }
 }
 
+// Concrete dependencies of a checked parameterized definition are needed by
+// its producer even before any consumer requests a concrete instance.
+struct GenericImplementationDependencies final {
+    std::vector<TypeID> types;
+    std::vector<CallableID> callables;
+    std::vector<GenericDeclarationID> definitions;
+};
+
 struct GenericDeclarationContract final {
     ModuleID module_id;
     ProgramSpellingID name;
@@ -181,6 +206,7 @@ struct GenericDeclarationContract final {
     std::vector<ProgramSpellingID> parameters;
     std::vector<GenericAudienceDependency> audience_dependencies;
     std::vector<GenericParameterKind> parameter_kinds;
+    GenericImplementationDependencies implementation_dependencies = {};
 };
 
 struct GenericField final {
@@ -235,4 +261,10 @@ struct GenericNominalInstance final {
     GenericDeclarationID definition;
     CanonicalGenericEnvironment arguments;
     NominalDeclarationRef declaration;
+};
+
+struct GenericFunctionInstance final {
+    GenericDeclarationID definition;
+    CanonicalGenericEnvironment arguments;
+    CallableID callable;
 };

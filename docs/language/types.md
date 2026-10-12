@@ -261,13 +261,15 @@ implemented.
 
 `[T]` is a copyable, nonowning, read-only view of contiguous elements. `[T; N]`
 denotes a fixed array. Arrays and `Vector<T>` create views explicitly through
-`as_slice()`. When a destination requires `[T]`, either owner implicitly creates
+`slice()`. When a destination requires `[T]`, either owner implicitly creates
 the same borrowed view. This applies to bindings, assignments, arguments,
-returns, and aggregate elements. Both owners also support `slice(start, end)` directly. Element types remain invariant;
-Write arguments require an actual slice slot. Array literals use the expected
-slice element type, including empty literals. Without a slice destination,
-an array remains an array. Conversion does not extend backing lifetimes.
+returns, and aggregate elements. Both owners also support `slice(start, end)`
+directly. Element types remain invariant; Write arguments require an actual slice
+slot. Array literals use the expected slice element type, including empty
+literals. Without a slice destination, an array remains an array. Conversion does
+not extend backing lifetimes.
 
+Calling `slice()` on an existing slice preserves its backing and range.
 Slices provide `length() -> usize`, `is_empty() -> bool`, read-only integer
 indexing, Read iteration, and `slice(start: usize, end: usize) -> [T]` with a
 half-open range. Empty ranges, including `slice(length, length)`, are valid. Invalid

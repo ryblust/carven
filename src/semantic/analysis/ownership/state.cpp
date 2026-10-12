@@ -7,14 +7,14 @@ import std;
 OwnershipBodyAnalyzer::OwnershipBodyAnalyzer(
     OwnershipBatchAnalyzer& analysis,
     const OwnershipCallInput& input,
-    OwnershipStorageTopology* storage
+    OwnershipStorageTopology& storage
 ) noexcept
     : analysis(analysis),
       input(input),
       body(analysis.body(input.body_id)),
       program(analysis.program),
       facts(analysis.facts_for_body(input.body_id)),
-      topology(storage ? *storage : local_topology),
+      topology(storage),
       accesses(input.accesses),
       storage_readers(input.storage_readers) {
     if (topology.objects.empty()) {
@@ -504,24 +504,6 @@ auto OwnershipBodyAnalyzer::binding_places(
         return found->second;
     }
     return {binding_place(binding)};
-}
-
-auto OwnershipBodyAnalyzer::is_writable(LocalBindingID id) const noexcept -> bool {
-    return body.binding(id).storage.visit(
-        Overloaded {
-            [](const OwnerBindingStorage& value) static noexcept { return value.writable; },
-            [](const ParameterBindingStorage& value) static noexcept {
-                return value.access == AccessMode::Write;
-            },
-            [](const AsyncChildBindingStorage&) static noexcept { return false; },
-            [](const CaptureBindingStorage& value) static noexcept {
-                return value.mode == CaptureMode::Write;
-            },
-            [](const AccessBindingStorage& value) static noexcept {
-                return value.access == AccessMode::Write;
-            },
-        }
-    );
 }
 
 auto OwnershipBodyAnalyzer::storage_ancestor(

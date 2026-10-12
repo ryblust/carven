@@ -26,10 +26,6 @@ export const fn load_block(values: [f32], offset: usize) -> FloatBlock {
     };
 }
 
-export const fn extract(left: f32x8, right: f32x8, const offset: usize) -> f32x8 {
-    return left.extract(right, offset);
-}
-
 private const fn checked_pattern(indices: [u8; 8]) -> [u8; 8] {
     for index in indices {
         assert(index < 8);

@@ -21,8 +21,10 @@ target("carven-format-test-internal")
     add_files(path.join(os.scriptdir(), "tests", "internal", "*.cpp"))
     add_tests("format", {group = "format", run_timeout = 60000,
         runargs = {"--exclude", "Format corpus:*"}})
-    add_tests("corpus", {group = "format", run_timeout = 60000,
-        runargs = {"--filter", "Format corpus:*"}})
+    for index = 1, 2 do
+        add_tests("corpus-" .. index, {group = "format", run_timeout = 60000,
+            runargs = {"--filter", "Format corpus:*", "--shard", index .. "/2"}})
+    end
 target_end()
 
 target("carven-format-test-cli")

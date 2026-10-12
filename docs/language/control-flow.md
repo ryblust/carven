@@ -23,7 +23,7 @@ Equality requires compatible operands and an equality-capable type. It is
 available for `void`, `bool`, `char`, integers, floating-point values, `str`, `String`, arrays
 and tuples whose elements support equality, numeric enums, payload enums whose payloads all
 support equality, and pointers with identical target types. Structures and classes
-do not support `==` or `!=`. Callable types, process-entry arguments, slices, and
+do not support `==` or `!=`. Callable types, slices, and
 `str.chars` iteration views do not support equality.
 
 Payload enum values with different cases compare unequal. Values of the same

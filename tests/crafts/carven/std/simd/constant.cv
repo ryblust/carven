@@ -1,0 +1,59 @@
+import .bytes using {
+    verify_vectors,
+    verify_classification,
+    verify_blocks,
+    verify_ascii_prefix,
+    verify_shifts_and_first,
+    verify_shift,
+};
+
+import .floats using verify_floats;
+
+import .primitives using {
+    verify_narrow_primitives,
+    verify_wide_bits_and_lookup,
+    verify_lookup_indices,
+    verify_mask_counts,
+    verify_byte_sums,
+};
+
+import std::simd using u8x32;
+import std::simd.scan using { byte_range, match_set, count_where, find_from, prefix_where };
+
+const digits = byte_range(0x30, 0x39);
+
+const test "SIMD: static execution agrees on vectors, masks and static controls" {
+    check(verify_vectors());
+    check(verify_classification());
+    check(verify_blocks());
+}
+
+const test "SIMD: ASCII prefix positions and tails" {
+    check(verify_ascii_prefix());
+}
+
+const test "SIMD: lane shifts and first queries have constant semantics" {
+    check(verify_shifts_and_first());
+    const for amount in 0usize..8 {
+        check(verify_shift(amount));
+    }
+}
+
+const test "SIMD: floating lanes and masks execute in the static stage" {
+    check(verify_floats());
+}
+
+const test "SIMD: narrow shapes and wide mask bits preserve logical contracts" {
+    check(verify_narrow_primitives());
+    check(verify_wide_bits_and_lookup());
+    check(verify_lookup_indices());
+    check(verify_mask_counts());
+    check(verify_byte_sums());
+}
+
+const test "SIMD scan: constant sets and queries" {
+    check(match_set(u8x32::splat(0x35), digits).bits() == 0xffffffff);
+    check(count_where("a12b".bytes, digits) == 2);
+    check(find_from("a12b".bytes, 2, digits) == 2);
+    check(prefix_where("12b".bytes, digits) == 2);
+}

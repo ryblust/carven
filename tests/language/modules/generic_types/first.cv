@@ -11,4 +11,4 @@ export class HiddenBox {
     fn read(self) -> i32 => self.stored.value.value;
 }
 
-export fn first(value: Box<i32>) -> Maybe<i32> => Maybe<i32>::Some(value.value);
+export fn first(value: Box<i32>) -> Maybe<i32> => .Some(value.value);

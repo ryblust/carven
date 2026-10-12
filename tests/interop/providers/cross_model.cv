@@ -1,0 +1,11 @@
+export struct Payload {
+    text: String
+}
+
+export struct Token {
+    text: String
+}
+
+export enum Failure {
+    Denied(String)
+}

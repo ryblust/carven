@@ -213,6 +213,15 @@ auto ProgramDraft::take_generic_analysis_snapshot(
             } else if constexpr (std::same_as<Shape, GenericOperationType>) {
                 normalize(shape.success);
                 shape.failures = failures->normalize(shape.failures);
+            } else if constexpr (std::same_as<Shape, GenericCppNamedType>) {
+                for (auto& argument : shape.arguments) {
+                    normalize(argument);
+                }
+            } else if constexpr (std::same_as<Shape, GenericCppQueryType>) {
+                shape = map_cpp_query_types(shape, [&](ConstructionTypeRef type) noexcept {
+                    normalize(type);
+                    return type;
+                });
             } else if constexpr (std::same_as<Shape, GenericNominalApplication>) {
                 for (auto& argument : shape.arguments) {
                     if (auto* type = std::get_if<ConstructionTypeRef>(&argument)) {
@@ -277,6 +286,22 @@ auto ProgramDraft::take_generic_analysis_snapshot(
             [&](SemanticExpression& expression) noexcept {
                 normalize_body_type(expression.type);
                 normalize_failure(expression.failures);
+                if (auto* native = std::get_if<SemCpp>(&expression.value)) {
+                    if (auto* construction =
+                            std::get_if<CppConstructOperation>(&native->operation)) {
+                        normalize(construction->target);
+                    }
+                    if (auto* member = std::get_if<CppStaticMemberOperation>(&native->operation)) {
+                        normalize(member->type);
+                    }
+                }
+                if (auto* native = std::get_if<SemCppCall>(&expression.value)) {
+                    if (auto* member = std::get_if<CppStaticMemberCallee<ConstructionTypeRef>>(
+                            &native->callee
+                        )) {
+                        normalize(member->type);
+                    }
+                }
                 if (auto* call = std::get_if<SemCall>(&expression.value)) {
                     normalize_failure(call->callee_failures);
                 }

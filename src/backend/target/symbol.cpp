@@ -130,22 +130,22 @@ auto target_symbol_info(TargetSymbol symbol) noexcept -> TargetSymbolInfo {
         case TargetSymbol::RuntimeAsyncCompletion:
             return runtime_symbol_info(
                 "::carven::runtime::execution::Completion",
-                "carven/runtime/execution/execution.hpp"
+                "carven/runtime/execution/completion.hpp"
             );
         case TargetSymbol::RuntimeAsyncSuccessBinding:
             return runtime_symbol_info(
                 "::carven::runtime::execution::SuccessBinding",
-                "carven/runtime/execution/execution.hpp"
+                "carven/runtime/execution/completion.hpp"
             );
         case TargetSymbol::RuntimeAsyncChild:
             return runtime_symbol_info(
                 "::carven::runtime::execution::Child",
-                "carven/runtime/execution/execution.hpp"
+                "carven/runtime/execution/child.hpp"
             );
         case TargetSymbol::RuntimeAsyncChildScope:
             return runtime_symbol_info(
                 "::carven::runtime::execution::ChildScope",
-                "carven/runtime/execution/execution.hpp"
+                "carven/runtime/execution/child.hpp"
             );
         case TargetSymbol::RuntimeAsyncCurrentActivation:
             return runtime_symbol_info(
@@ -155,47 +155,47 @@ auto target_symbol_info(TargetSymbol symbol) noexcept -> TargetSymbolInfo {
         case TargetSymbol::RuntimeAsyncClosingPolicy:
             return runtime_symbol_info(
                 "::carven::runtime::execution::ClosingPolicy",
-                "carven/runtime/execution/execution.hpp"
+                "carven/runtime/execution/child.hpp"
             );
         case TargetSymbol::RuntimeAsyncCancel:
             return runtime_symbol_info(
                 "::carven::runtime::execution::cancel",
-                "carven/runtime/execution/execution.hpp"
+                "carven/runtime/execution/child.hpp"
             );
         case TargetSymbol::RuntimeAsyncWaitReady:
             return runtime_symbol_info(
                 "::carven::runtime::execution::wait_ready",
-                "carven/runtime/execution/execution.hpp"
+                "carven/runtime/execution/child.hpp"
             );
         case TargetSymbol::RuntimeAsyncClose:
             return runtime_symbol_info(
                 "::carven::runtime::execution::close",
-                "carven/runtime/execution/execution.hpp"
+                "carven/runtime/execution/child.hpp"
             );
         case TargetSymbol::RuntimeAsyncWhenAll:
             return runtime_symbol_info(
                 "::carven::runtime::execution::when_all",
-                "carven/runtime/execution/execution.hpp"
+                "carven/runtime/execution/composition.hpp"
             );
         case TargetSymbol::RuntimeAsyncWhenAny:
             return runtime_symbol_info(
                 "::carven::runtime::execution::when_any",
-                "carven/runtime/execution/execution.hpp"
+                "carven/runtime/execution/composition.hpp"
             );
         case TargetSymbol::RuntimeAsyncFirstSuccessful:
             return runtime_symbol_info(
                 "::carven::runtime::execution::first_successful",
-                "carven/runtime/execution/execution.hpp"
+                "carven/runtime/execution/composition.hpp"
             );
         case TargetSymbol::RuntimeAsyncTimeout:
             return runtime_symbol_info(
                 "::carven::runtime::execution::timeout",
-                "carven/runtime/execution/execution.hpp"
+                "carven/runtime/execution/timeout.hpp"
             );
         case TargetSymbol::RuntimeAsyncCompositionOperand:
             return runtime_symbol_info(
                 "::carven::runtime::execution::composition_operand",
-                "carven/runtime/execution/execution.hpp"
+                "carven/runtime/execution/composition.hpp"
             );
         case TargetSymbol::RuntimeAsyncCancelRequested:
             return runtime_symbol_info(
@@ -230,7 +230,7 @@ auto target_symbol_info(TargetSymbol symbol) noexcept -> TargetSymbolInfo {
         case TargetSymbol::RuntimeAsyncReportEntryCancelled:
             return runtime_symbol_info(
                 "::carven::runtime::execution::report_entry_cancelled",
-                "carven/runtime/execution/execution.hpp"
+                "carven/runtime/execution/entry.hpp"
             );
         case TargetSymbol::RuntimeOutcome:
             return runtime_symbol_info(
@@ -313,9 +313,9 @@ auto target_symbol_info(TargetSymbol symbol) noexcept -> TargetSymbolInfo {
                 "::carven::runtime::adopt_array",
                 "carven/runtime/collection/array.hpp"
             );
-        case TargetSymbol::RuntimeAsSlice:
+        case TargetSymbol::RuntimeSliceView:
             return runtime_symbol_info(
-                "::carven::runtime::as_slice",
+                "::carven::runtime::slice",
                 "carven/runtime/collection/slice.hpp"
             );
         case TargetSymbol::RuntimeRange:
@@ -379,11 +379,6 @@ auto target_symbol_info(TargetSymbol symbol) noexcept -> TargetSymbolInfo {
             return runtime_symbol_info(
                 "::carven::runtime::StrCharsView",
                 "carven/runtime/text/text.hpp"
-            );
-        case TargetSymbol::RuntimeEntryArgsType:
-            return runtime_symbol_info(
-                "::carven::runtime::EntryArgs",
-                "carven/runtime/execution/entry.hpp"
             );
         case TargetSymbol::RuntimeEntryArgs:
             return runtime_symbol_info(

@@ -268,9 +268,7 @@ auto BodyElaborator::validate_builtin(
         }
         if (parameter.access != AccessMode::Read
             || (type != nullptr
-                && (type->kind == BuiltinType::Void
-                    || type->kind == BuiltinType::EntryArgs
-                    || type->kind == BuiltinType::StrCharsView))) {
+                && (type->kind == BuiltinType::Void || type->kind == BuiltinType::StrCharsView))) {
             return std::unexpected(
                 fail(parameter_span, DiagnosticCode::TypeMismatch, "printing requires a Read value")
             );

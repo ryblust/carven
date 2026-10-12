@@ -57,7 +57,7 @@ const TestSuite suite([] static noexcept {
                  .source = R"(
              fn invalid() {
                  var values = [1, 2];
-                 var view = values.as_slice();
+                 var view = values.slice();
                  let address = addressof(&view[0]);
              }
          )",
@@ -67,7 +67,7 @@ const TestSuite suite([] static noexcept {
                  .source = R"(
              fn invalid() {
                  var values = [1, 2];
-                 let view = values.as_slice();
+                 let view = values.slice();
                  let element = &&view[0];
              }
          )",
@@ -78,7 +78,7 @@ const TestSuite suite([] static noexcept {
              struct Item { number: i32 }
              fn invalid() {
                  var values = [Item { number: 1 }];
-                 var view = values.as_slice();
+                 var view = values.slice();
                  view[0].number = 2;
              }
          )",
@@ -89,7 +89,7 @@ const TestSuite suite([] static noexcept {
              import <utility>;
              fn invalid() {
                  var values = [::std::pair<i32, i32> { 1, 2 }];
-                 let view = values.as_slice();
+                 let view = values.slice();
                  let address = addressof(&view[0].first);
              }
          )",
@@ -100,7 +100,7 @@ const TestSuite suite([] static noexcept {
              import <vector>;
              fn invalid() {
                  var values = [::std::vector<i32> { 1, 2 }];
-                 let view = values.as_slice();
+                 let view = values.slice();
                  let address = addressof(&view[0][0]);
              }
          )",

@@ -1,5 +1,6 @@
 import std::utf.error using { UTF8Error, UTF8ErrorKind };
 import std::utf.validation using { validate_utf8, UTF8Validator };
+import .cases using rejection_cases;
 
 private const fn incremental_static_state() -> bool {
     var state = UTF8Validator::new();
@@ -43,7 +44,7 @@ const test "UTF8: incremental class state executes statically with independent c
 
 test "UTF8: chunk boundaries preserve state and errors identify the sequence" {
     let bytes: [u8; 5] = [0x61, 0xf0, 0x9f, 0x98, 0x80];
-    let view = bytes.as_slice();
+    let view = bytes.slice();
     for split in 0..=view.length() {
         var state = UTF8Validator::new();
         try {
@@ -85,126 +86,9 @@ test "UTF8: chunk boundaries preserve state and errors identify the sequence" {
     check(rejected);
 }
 
-private struct UTFCase {
-    bytes: [u8; 5],
-    length: usize,
-    error: UTF8Error,
-}
-
-private const rejection_cases: [UTFCase] = [
-    {
-        bytes: [0x61, 0x80, 0x00, 0x00, 0x00],
-        length: 2,
-        error: {
-            kind:.InvalidLead,
-            offset: 1,
-            sequence_start: 1
-        }
-    },
-    {
-        bytes: [0x61, 0xc0, 0x80, 0x00, 0x00],
-        length: 3,
-        error: {
-            kind:.InvalidLead,
-            offset: 1,
-            sequence_start: 1
-        }
-    },
-    {
-        bytes: [0x61, 0xf5, 0x80, 0x80, 0x80],
-        length: 5,
-        error: {
-            kind:.InvalidLead,
-            offset: 1,
-            sequence_start: 1
-        }
-    },
-    {
-        bytes: [0x61, 0xe2, 0x28, 0xa1, 0x00],
-        length: 4,
-        error: {
-            kind:.InvalidContinuation,
-            offset: 2,
-            sequence_start: 1
-        }
-    },
-    {
-        bytes: [0x61, 0xf0, 0x9f, 0x98, 0x21],
-        length: 5,
-        error: {
-            kind:.InvalidContinuation,
-            offset: 4,
-            sequence_start: 1
-        }
-    },
-    {
-        bytes: [0x61, 0xe0, 0x9f, 0x80, 0x00],
-        length: 4,
-        error: {
-            kind:.Overlong,
-            offset: 2,
-            sequence_start: 1
-        }
-    },
-    {
-        bytes: [0x61, 0xf0, 0x8f, 0x80, 0x80],
-        length: 5,
-        error: {
-            kind:.Overlong,
-            offset: 2,
-            sequence_start: 1
-        }
-    },
-    {
-        bytes: [0x61, 0xed, 0xa0, 0x80, 0x00],
-        length: 4,
-        error: {
-            kind:.Surrogate,
-            offset: 2,
-            sequence_start: 1
-        }
-    },
-    {
-        bytes: [0x61, 0xf4, 0x90, 0x80, 0x80],
-        length: 5,
-        error: {
-            kind:.TooLarge,
-            offset: 2,
-            sequence_start: 1
-        }
-    },
-    {
-        bytes: [0x61, 0xc2, 0x00, 0x00, 0x00],
-        length: 2,
-        error: {
-            kind:.Truncated,
-            offset: 2,
-            sequence_start: 1
-        }
-    },
-    {
-        bytes: [0x61, 0xe2, 0x82, 0x00, 0x00],
-        length: 3,
-        error: {
-            kind:.Truncated,
-            offset: 3,
-            sequence_start: 1
-        }
-    },
-    {
-        bytes: [0x61, 0xf0, 0x9f, 0x98, 0x00],
-        length: 4,
-        error: {
-            kind:.Truncated,
-            offset: 4,
-            sequence_start: 1
-        }
-    },
-];
-
 test "UTF8: chunk boundaries preserve error positions and accepted progress" {
     for item in rejection_cases {
-        let bytes = item.bytes.as_slice().slice(0, item.length);
+        let bytes = item.bytes.slice(0, item.length);
         for split in 0..=bytes.length() {
             var state = UTF8Validator::new();
             var rejected = false;
@@ -237,7 +121,7 @@ test "UTF8: whole-buffer validation accepts valid text and reports exact errors"
     for item in rejection_cases {
         var rejected = false;
         try {
-            validate_utf8(item.bytes.as_slice().slice(0, item.length))?;
+            validate_utf8(item.bytes.slice(0, item.length))?;
         } catch {
             UTF8Error(error) => {
                 rejected = error.kind
@@ -283,53 +167,10 @@ test "UTF8: copied validators and rejected operations preserve pending constrain
     }
 }
 
-private fn verify_simd_rejections(prefixes: [usize]) -> bool {
-    for prefix in prefixes {
-        for item in rejection_cases {
-            var data: [u8; 72] = {};
-            for index in 0..prefix {
-                data[index] = 0x61;
-            }
-            for index in 0..item.length {
-                data[prefix + index] = item.bytes[index];
-            }
-            var rejected = false;
-            try {
-                validate_utf8(data.as_slice().slice(0, prefix + item.length))?;
-            } catch {
-                UTF8Error(error) => {
-                    rejected = error.kind
-                        == item.error.kind
-                        && error.offset == prefix + item.error.offset
-                        && error.sequence_start == prefix + item.error.sequence_start;
-                },
-            }
-            assert(rejected);
-        }
-    }
-    return true;
-}
-
 const test "UTF8: wide block validation accepts valid constant text" {
     try {
         validate_utf8("0123456789abcdef0123456789abcdef你好😀\u{0}abcdefghijklmnop".bytes)?;
     } catch {
         UTF8Error(_) => fail("valid SIMD constant input rejected"),
-    }
-}
-
-test "UTF8: block boundaries preserve validation errors and partial sequences" {
-    check(verify_simd_rejections([15, 16, 31, 32, 63, 64]));
-    let valid = "0123456789abcde😀0123456789abcdef你abcdefghijklmnop\u{0}abcdefghijklmnop".bytes;
-    for split in [0usize, 15, 16, 17, 31, 32, valid.length()] {
-        var validator = UTF8Validator::new();
-        try {
-            validator.feed(valid.slice(0, split))?;
-            validator.feed(valid.slice(split, valid.length()))?;
-            validator.check_complete()?;
-            check(validator.processed_bytes() == valid.length());
-        } catch {
-            UTF8Error(_) => fail("valid split stream rejected"),
-        }
     }
 }

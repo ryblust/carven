@@ -9,6 +9,7 @@
 namespace {
 
 namespace api = carven::api::tests::interop::providers::contracts;
+
 using String = carven::runtime::String;
 using Record = decltype(api::make_record());
 using Failure = decltype(api::make_failure());
@@ -59,7 +60,7 @@ auto contract_consumer() noexcept -> bool {
     if (api::array(values) != values || api::view("view") != "view") {
         return false;
     }
-    const auto view = api::slice(carven::runtime::as_slice(values));
+    const auto view = api::slice(carven::runtime::slice(values));
     if (view.data() != values.data()
         || view.size() != 2
         || view[1] != 8

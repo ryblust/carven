@@ -61,15 +61,6 @@ auto DeclResolver::resolve_function(
             cpp_import ? "const fn requires a Carven body" : "the entry function cannot be const fn"
         ));
     }
-    if (entry && function.async_span && !function.parameters.empty()) {
-        co_return std::unexpected(declaration_failure(
-            draft,
-            symbol.module_id,
-            function.name_span,
-            DiagnosticCode::EntryParameters,
-            "async main requires zero parameters"
-        ));
-    }
     if (entry && function.parameters.size() > 1uz) {
         co_return std::unexpected(declaration_failure(
             draft,
@@ -203,16 +194,13 @@ auto DeclResolver::resolve_function(
             parameters.push_back({
                 .stage = stage,
                 .access = AccessMode::Read,
-                .type = draft.builtin_type(BuiltinType::EntryArgs),
+                .type = draft.intern_type(
+                    {.value = VectorTypeValue {.element = draft.builtin_type(BuiltinType::String)}}
+                ),
             });
             continue;
         }
-        auto type = (co_await resolve_value_type(
-            symbol.module_id,
-            syntax,
-            *parameter.type,
-            "function parameter"
-        ));
+        auto type = (co_await resolve_type(symbol.module_id, syntax, *parameter.type));
         if (!type.has_value()) {
             co_return std::unexpected(type.error());
         }

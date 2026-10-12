@@ -72,18 +72,7 @@ auto DeclResolver::resolve_module_constant(
     // retaining its resume-stack address across suspension. Keep this explicit
     // selection instead of value_or.
     const auto selected = declared_type ? *declared_type : ConstructionTypeRef {fact.type};
-    auto value_type = require_source_value_type(
-        draft,
-        selected,
-        symbol.module_id,
-        declaration.type.has_value() ? syntax.type(*declaration.type).span
-                                     : syntax.expression(declaration.initializer).span,
-        "constant"
-    );
-    if (!value_type.has_value()) {
-        co_return std::unexpected(value_type.error());
-    }
-    const auto* concrete = std::get_if<TypeID>(&*value_type);
+    const auto* concrete = std::get_if<TypeID>(&selected);
     if (concrete == nullptr) {
         co_return std::unexpected(declaration_failure(
             draft,

@@ -11,11 +11,11 @@ fn writable_address() -> ptr<&i32> => ::pointer_probe::get();
 
 test "Pointers: native slice projections preserve Read access" {
     var pairs = [::std::pair<i32, i32> { 1, 2 }];
-    let pair_view = pairs.as_slice();
+    let pair_view = pairs.slice();
     let member = addressof(pair_view[0].first);
     check(*member == 1);
     var arrays = [::std::vector<i32> { 3, 4 }];
-    let array_view = arrays.as_slice();
+    let array_view = arrays.slice();
     let element = addressof(array_view[0][1]);
     check(*element == 4);
 }

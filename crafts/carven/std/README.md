@@ -1,6 +1,9 @@
 # Carven standard crafts
 
 Standard crafts own library APIs and their implementations.
+
+- [IO](io/README.md) provides asynchronous standard-input bytes and checked text
+  through `std::io`, using the ordinary operation and failure contracts.
 - [UTF](utf/README.md) provides encoding, validation, and text APIs.
 - [SIMD](simd/README.md) provides byte and floating algorithms and bounded
 block traversal over Carven's built-in vector primitives. Native primitives use

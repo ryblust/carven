@@ -72,7 +72,6 @@ auto resolve_generic_source_type(
     ASTTypeID source_type,
     GenericTypeContext context,
     ArrayExtentResolver resolve_extent,
-    bool value_required = true,
     ConstructionRequests* requests = nullptr,
     SourceObservation* observations = nullptr
 ) noexcept -> AnalysisTask<GenericTypeID>;
@@ -128,14 +127,6 @@ auto resolve_source_constraint_type(
     const GenericTypeContext* generic_context = nullptr,
     SourceObservation* observations = nullptr
 ) noexcept -> AnalysisTask<ConstructionTypeRef>;
-
-auto require_source_value_type(
-    const ProgramDraft& draft,
-    ConstructionTypeRef type,
-    ProgramModuleID module_id,
-    Span origin,
-    std::string_view role
-) noexcept -> AnalysisResult<ConstructionTypeRef>;
 
 auto resolve_failure_types(
     ProgramDraft& draft,

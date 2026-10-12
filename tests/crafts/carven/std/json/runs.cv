@@ -1,0 +1,55 @@
+import std::json.error using JSONError;
+import std::json.validation using validate;
+
+test "JSON: long whitespace and number runs preserve syntax and EOF offsets" {
+    for length in [0usize, 1, 31, 32, 33, 63, 64, 65, 97] {
+        var spaces = String {};
+        var digits = String {};
+        for _ in 0..length {
+            spaces.push(' ');
+            digits.push('7');
+        }
+        var document = String {};
+        document.append(spaces);
+        document.push('[');
+        document.append(spaces);
+        document.push('1');
+        document.append(digits);
+        document.push('.');
+        document.push('1');
+        document.append(digits);
+        document.push('e');
+        document.push('+');
+        document.push('1');
+        document.append(digits);
+        document.append(spaces);
+        document.push(']');
+        document.append(spaces);
+        try {
+            validate(document)?;
+        } catch {
+            JSONError(_) => fail("long runs must be accepted"),
+        }
+        let end = document.byte_length();
+        document.push('x');
+        var rejected = false;
+        try {
+            validate(document)?;
+        } catch {
+            JSONError(error) => { rejected = error.kind == .TrailingInput && error.offset == end; },
+        }
+        check(rejected);
+        var incomplete: String = "1";
+        incomplete.append(digits);
+        incomplete.append("e+");
+        rejected = false;
+        try {
+            validate(incomplete)?;
+        } catch {
+            JSONError(error) => {
+                rejected = error.kind == .InvalidNumber && error.offset == incomplete.byte_length();
+            },
+        }
+        check(rejected);
+    }
+}

@@ -243,7 +243,7 @@ const TestSuite suite([] static noexcept {
                     private fn relay<T>(&&value: T) -> T => &&value;
                     fn run() {
                         let data = [1, 2];
-                        let view = data.as_slice();
+                        let view = data.slice();
                         let forwarded = relay<[i32]>(&&view);
                         let owner = &&data;
                         print(forwarded[0]);
@@ -255,7 +255,7 @@ const TestSuite suite([] static noexcept {
                 private fn relay<T>(&&value: T) -> T => &&value;
                 fn run() {
                     let data = [1, 2];
-                    let view = data.as_slice();
+                    let view = data.slice();
                     if true {
                         let forwarded = relay<[i32]>(&&view);
                         print(forwarded[0]);
@@ -334,7 +334,7 @@ const TestSuite suite([] static noexcept {
         [] static noexcept {
             static_cast<void>(analyze_test_program(R"(
                 fn inspect<T>(values: [T; 1]) -> usize {
-                    let slice = values.as_slice();
+                    let slice = values.slice();
                     return slice.length();
                 }
                 fn empty<T>() -> usize {
@@ -342,7 +342,7 @@ const TestSuite suite([] static noexcept {
                     return values.length();
                 }
                 fn nested<T>(values: [[T; 1]; 1]) -> usize {
-                    let slice = values.as_slice();
+                    let slice = values.slice();
                     return slice.length();
                 }
             )"));

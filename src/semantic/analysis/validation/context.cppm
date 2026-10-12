@@ -40,10 +40,11 @@ private:
     auto pattern_bindings(PatternID id) const noexcept -> std::vector<LocalBindingID>;
     auto signature_for_type(TypeID type) const noexcept -> CallableSignatureID;
 
-    auto verify_expression(const SemanticExpression& source, bool residual = false) const noexcept
+    auto verify_expression(const SemanticExpression& source, bool rewritten = false) const noexcept
         -> void;
 
-    auto verify_region(const SemanticRegion& source, bool residual = false) const noexcept -> void;
+    auto verify_region(const SemanticRegion& source, bool executable = false) const noexcept
+        -> void;
     const SemIRBody& body;
     const SemIRProgram& program;
 };

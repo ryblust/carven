@@ -14,5 +14,5 @@ fn f() {
         0
     ];
     let singleton = [Entry { "one", 1 }];
-    let length = [FixedOwner { 74 }].as_slice().length();
+    let length = [FixedOwner { 74 }].slice().length();
 }

@@ -57,6 +57,11 @@ auto interpret_call(
                     site.syntax().expression(member->operand_id).span
                 );
             }
+            if constexpr (Site::mode == ExpressionMode::Body) {
+                if (site.external(**type)) {
+                    co_return co_await site.call(source, span);
+                }
+            }
             if (const auto shape = sequence_shape(site.draft(), **type);
                 shape && shape->kind == SequenceShapeKind::Vector) {
                 const auto name = site.spelling(member->name_span);

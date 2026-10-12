@@ -95,6 +95,12 @@ auto ModuleLowering::cpp_type_query(const CppQueryType& query, TypeNameScope sco
             [&](const CppNameReference& name) noexcept -> TargetExpr {
                 return {.value = TargetNameExpr {.name = cpp_name(name)}};
             },
+            [&](const CppStaticMemberQuery& value) noexcept -> TargetExpr {
+                return static_member_expression(
+                    lower_type(value.type, scope),
+                    TargetIdentifier::from_spelling(value.member)
+                );
+            },
             [&](const CppMemberQuery& value) noexcept {
                 return member(value.receiver, value.member);
             },
@@ -143,6 +149,12 @@ auto ModuleLowering::cpp_type_query(const CppQueryType& query, TypeNameScope sco
                     Overloaded {
                         [&](const CppNameReference& name) noexcept -> TargetExpr {
                             return {.value = TargetNameExpr {.name = cpp_name(name)}};
+                        },
+                        [&](const CppStaticMemberCallee<TypeID>& value) noexcept -> TargetExpr {
+                            return static_member_expression(
+                                lower_type(value.type, scope),
+                                TargetIdentifier::from_spelling(value.member)
+                            );
                         },
                         [&](const CppMemberCallee<CppTypeOperand>& value) noexcept {
                             return member(value.receiver, value.member);

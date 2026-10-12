@@ -96,9 +96,9 @@ test "Failure transport: raw carriers widen consistently across callable forms" 
     let empty_wide: [fn(i32) -> i32 throw ZFailure + AFailure; 0] = empty_narrow;
     let empty_rows: [[fn(i32) -> i32 throw ZFailure; 0]; 2] = [empty_narrow, empty_narrow];
     let widened_rows: [[fn(i32) -> i32 throw ZFailure + AFailure; 0]; 2] = empty_rows;
-    check(empty_wide.as_slice().length() == 0usize);
-    check(widened_rows[0].as_slice().length() == 0usize);
-    check(widened_rows[1].as_slice().length() == 0usize);
+    check(empty_wide.length() == 0usize);
+    check(widened_rows[0].length() == 0usize);
+    check(widened_rows[1].length() == 0usize);
     let closure = [](value: i32) => narrow(value)?;
     let exact_closure: fn(i32) -> i32 throw ZFailure = closure;
     let wide_closure: fn(i32) -> i32 throw ZFailure + AFailure = closure;

@@ -197,8 +197,13 @@ carven/runtime/collection/vector.hpp
 carven/runtime/diagnostics/report.hpp
 carven/runtime/diagnostics/trap.hpp
 carven/runtime/display/display.hpp
+carven/runtime/execution/child.hpp
+carven/runtime/execution/completion.hpp
+carven/runtime/execution/composition.hpp
 carven/runtime/execution/entry.hpp
 carven/runtime/execution/execution.hpp
+carven/runtime/execution/time.hpp
+carven/runtime/execution/timeout.hpp
 carven/runtime/execution/unreachable.hpp
 carven/runtime/format/format.hpp
 carven/runtime/format/writer.hpp
@@ -214,13 +219,20 @@ carven/runtime/value/tuple.hpp
 carven/runtime/value/void.hpp
 ```
 
+The execution core owns cold operations, activation, host event sources, and the
+driver. Child scopes own readiness, observation, and closure. Composition depends
+on child scopes, time depends on the core, and timeout combines composition and
+time. Each header includes its dependencies directly; generated files select the
+header that owns each runtime symbol.
+
 Use support headers matching the compiler that generated the artifacts.
 Private target names, helper selections, and representation layouts are
 implementation details.
 
 `call/passing.hpp` supplies native parameter and transfer support;
-`execution/entry.hpp` supplies process-argument ingress. `diagnostics/trap.hpp`
-supplies source-positioned termination for violated runtime checks.
+`execution/entry.hpp` supplies process arguments and entry failure reporting.
+`diagnostics/trap.hpp` supplies source-positioned termination for violated runtime
+checks.
 `testing/testing.hpp` supplies inline-test execution contexts, failure records,
 and reporting in `carven::runtime`.
 

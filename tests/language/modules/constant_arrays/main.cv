@@ -10,7 +10,7 @@ test "Modules: constant arrays preserve values across imported functions and dec
     var copy = published;
     let independent = copy;
     copy[0] = 99;
-    let view = independent.as_slice();
+    let view = independent.slice();
     var index = 0;
     check(view[index] == 5);
     check(published[0] == 5);

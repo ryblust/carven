@@ -697,7 +697,12 @@ auto OwnershipBodyAnalyzer::expression(
                                 const auto previous_readers = storage_readers.size();
                                 auto relationships =
                                     (co_await evaluate(value.operands.front().expression));
-                                if (family.intrinsic == SliceIntrinsic::FromOwner) {
+                                if (family.intrinsic == SliceIntrinsic::View
+                                    && !std::holds_alternative<ConstructionSliceTypeValue>(
+                                        analysis.model.shape(
+                                            value.operands.front().expression.type.construction()
+                                        )
+                                    )) {
                                     // A slice refers to backing storage; nested relationships remain
                                     // on that storage and are selected only when an element is read.
                                     relationships = {};
@@ -719,8 +724,7 @@ auto OwnershipBodyAnalyzer::expression(
                                     );
                                 }
                                 if (flow.normal) {
-                                    flow.normal->value =
-                                        family.intrinsic == SliceIntrinsic::FromOwner
+                                    flow.normal->value = family.intrinsic == SliceIntrinsic::View
                                             || family.intrinsic == SliceIntrinsic::Slice
                                         ? std::move(relationships)
                                         : OwnershipRelationships {};

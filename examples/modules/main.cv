@@ -1,3 +1,0 @@
-import .rates using shipping_cents;
-
-println("Shipping in cents:", shipping_cents(4));

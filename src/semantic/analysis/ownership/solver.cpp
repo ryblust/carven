@@ -158,7 +158,7 @@ auto OwnershipBatchAnalyzer::includes_input_topology(
 }
 
 auto OwnershipBatchAnalyzer::query(OwnershipCallInput input, bool recursive) noexcept
-    -> const OwnershipCallSummary& {
+    -> const OwnershipCallQuery& {
     normalize_storage_loans(input.storage_readers);
     for (auto&& [binding, parameter] :
          std::views::zip(body(input.body_id).inputs().parameters, input.parameters)) {
@@ -261,7 +261,7 @@ auto OwnershipBatchAnalyzer::query(OwnershipCallInput input, bool recursive) noe
     if (active_query.has_value()) {
         query.consumers.insert(*active_query);
     }
-    return query.answer;
+    return query;
 }
 
 auto OwnershipBatchAnalyzer::symbolic_input(const AnalysisBodyView& source) const noexcept
@@ -280,7 +280,7 @@ auto OwnershipBatchAnalyzer::symbolic_input(const AnalysisBodyView& source) cons
             && !facts.contains_parametric_value) {
             return relationships;
         }
-        const auto value = model.shape(type);
+        const auto& value = model.shape(type);
         if (std::holds_alternative<GenericTypeParameter>(value)) {
             relationships.edit().formal_bundles.push_back(
                 {{}, source.id(), input_role, std::move(source_path), origin}
@@ -540,19 +540,25 @@ auto OwnershipBatchAnalyzer::join_summary(
 
 auto OwnershipBatchAnalyzer::run() noexcept -> AnalysisResult<OwnershipAnalysisSummary> {
     auto evaluation_count = 0uz;
-    auto definition_queries = std::map<AnalysisBodyID, std::size_t>();
+    auto definition_queries = std::map<AnalysisBodyID, const OwnershipCallQuery*>();
     // Source bodies are checked; an instance repeats one with fewer paths.
     for (const auto& [id, source] : model.bodies()) {
         if (source.specialized()) {
             continue;
         }
         auto input = symbolic_input(source);
-        commit_diagnosis(OwnershipBodyAnalyzer(*this, input).check_contracts());
-        const auto& answer = query(std::move(input));
-        const auto found = std::ranges::find_if(queries, [&](const auto& query) noexcept {
-            return std::addressof(query->answer) == std::addressof(answer);
-        });
-        definition_queries.emplace(id, static_cast<std::size_t>(found - queries.begin()));
+        if (auto error = check_ownership_contracts(model, source)) {
+            diagnose(
+                error->code,
+                std::move(error->message),
+                error->origin,
+                error->related,
+                std::move(error->related_label),
+                std::move(error->help)
+            );
+        }
+        const auto& definition = query(std::move(input));
+        definition_queries.emplace(id, std::addressof(definition));
     }
     if (failure.has_value()) {
         return std::unexpected(*failure);
@@ -572,7 +578,7 @@ auto OwnershipBatchAnalyzer::run() noexcept -> AnalysisResult<OwnershipAnalysisS
         ++evaluation_count;
         const auto input_revision = query.input_revision;
         const auto revision = query.topology.revision;
-        auto result = OwnershipBodyAnalyzer(*this, query.input, &query.topology).run();
+        auto result = OwnershipBodyAnalyzer(*this, query.input, query.topology).run();
         active_query.reset();
         if (!result.answer.has_value()) {
             // An invalid completion keeps priority over every deferred query.
@@ -647,7 +653,7 @@ auto OwnershipBatchAnalyzer::run() noexcept -> AnalysisResult<OwnershipAnalysisS
                     AnalysisBodyID {body(*body_id).specialized().value_or(*body_id)};
                 if (const auto found = definition_queries.find(source_id);
                     found != definition_queries.end()) {
-                    const auto& query = *queries[found->second];
+                    const auto& query = *found->second;
                     const auto source_parameters = body(source_id).inputs().parameters;
                     const auto instance_parameters = body(*body_id).inputs().parameters;
                     const auto retain = [&](const OwnershipRelationships& relationships) noexcept {

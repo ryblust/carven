@@ -1,5 +1,6 @@
 #pragma once
 
+#include <carven/runtime/execution/child.hpp>
 #include <carven/runtime/text/utf8.hpp>
 
 #include <optional>

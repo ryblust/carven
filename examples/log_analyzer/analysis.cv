@@ -1,0 +1,205 @@
+import std::number.parse using { ParseError, parse };
+import std::utf.text using { from_utf8, split_once, split, starts_with, TextError };
+import std::utf.error using UTF8Error;
+import std::json.value using Value;
+import std::json.error using ValueError;
+
+enum Level {
+    Info,
+    Warning,
+    Error
+}
+
+enum RecordError {
+    Shape,
+    UnknownLevel,
+    Latency,
+    InvalidLatency(ParseError),
+    InvalidText(UTF8Error),
+    TextProcessing(TextError)
+}
+
+struct Record {
+    level: Level,
+    milliseconds: u64,
+    message: String,
+}
+
+struct Report {
+    accepted: usize,
+    rejected: usize,
+    warnings: usize,
+    errors: usize,
+    slow: Vector<String>,
+}
+
+struct Rules {
+    slow_ms: u64,
+    secret_marker: String
+}
+
+const rules: Rules = {
+    slow_ms: 30,
+    secret_marker: "token="
+};
+
+// Parse the report template once at compile time; runtime copies remain writable.
+const report_template = Value::parse(
+    r#"{"accepted":0,"rejected":0,"warnings":0,"errors":0,"slow":[]}"#
+)?;
+
+private const fn level(text: str) -> Level throw RecordError => match text {
+    "INFO" => .Info,
+    "WARN" => .Warning,
+    "ERROR" => .Error,
+    _ => throw RecordError::UnknownLevel,
+};
+
+private const fn redact(text: str) -> String throw TextError {
+    var result: String = {};
+    var first = true;
+    for word in split(text, " ")? {
+        if !first { result.push(' '); }
+        first = false;
+        if starts_with(word, rules.secret_marker) {
+            result.append(rules.secret_marker);
+            result.append("[redacted]");
+        } else {
+            result.append(word);
+        }
+    }
+    return &&result;
+}
+
+fn parse_record(bytes: [u8]) -> Record throw RecordError {
+    try {
+        let text = from_utf8(bytes)?;
+        let first = split_once(text, " ")?;
+        if !first.found { throw RecordError::Shape; }
+        let second = split_once(first.after, " ")?;
+        if !second.found || second.before.is_empty() { throw RecordError::Shape; }
+        let milliseconds = parse<u64>(second.before)?;
+        if milliseconds > 60000 { throw RecordError::Latency; }
+        return {
+            level: level(first.before)?,
+            milliseconds: milliseconds,
+            message: redact(second.after)?,
+        };
+    } catch {
+        ParseError(error) => throw RecordError::InvalidLatency(error),
+        UTF8Error(error) => throw RecordError::InvalidText(error),
+        TextError(error) => throw RecordError::TextProcessing(error),
+    }
+}
+
+fn analyze(bytes: [u8]) -> Report {
+    var report: Report = {};
+    var start: usize = 0;
+    for end in 0usize..=bytes.length() {
+        if end != bytes.length() && bytes[end] != 0x0a { continue; }
+        var limit = end;
+        if limit > start && bytes[limit - 1] == 0x0d { --limit; }
+        if limit != start {
+            try {
+                let record = parse_record(bytes.slice(start, limit))?;
+                ++report.accepted;
+                match record.level {
+                    .Info => {},
+                    .Warning => { ++report.warnings; },
+                    .Error => { ++report.errors; },
+                }
+                if record.milliseconds >= rules.slow_ms { report.slow.push(record.message); }
+            } catch {
+                RecordError(_) => { ++report.rejected; },
+            }
+        }
+        start = end + 1;
+    }
+    return &&report;
+}
+
+fn to_json(report: Report) -> String throw ValueError {
+    var document = report_template;
+    document.set("accepted", &&Value::unsigned_integer(report.accepted as u64))?;
+    document.set("rejected", &&Value::unsigned_integer(report.rejected as u64))?;
+    document.set("warnings", &&Value::unsigned_integer(report.warnings as u64))?;
+    document.set("errors", &&Value::unsigned_integer(report.errors as u64))?;
+    var slow = Value::array();
+    for message in report.slow {
+        slow.push(&&Value::string(message))?;
+    }
+    document.set("slow", &&slow)?;
+    return document.to_json()?;
+}
+
+const test "log rules redact credentials before retaining messages" {
+    check(
+        try {
+            level("WARN")? == .Warning
+        } catch {
+            RecordError(_) => false
+        }
+    );
+    check(
+        try {
+            redact("connected token=secret peer=本机")?
+                == "connected token=[redacted] peer=本机"
+        } catch {
+            TextError(_) => false
+        }
+    );
+    check(
+        try {
+            report_template.get("accepted")?.number_text()? == "0"
+        } catch {
+            ValueError(_) => false
+        }
+    );
+}
+
+test "log analysis recovers per record and keeps slow messages in order" {
+    let report = analyze(
+        "INFO 12 ready\r\nWARN 37 token=abc\nINFO nope broken\nERROR 42 超时".bytes
+    );
+    check(report.accepted == 3 && report.rejected == 1);
+    check(report.warnings == 1 && report.errors == 1);
+    check(report.slow.length() == 2);
+    check(report.slow[0] == "token=[redacted]" && report.slow[1] == "超时");
+    check(analyze([]).accepted == 0);
+}
+
+test "log validation rejects invalid fields and UTF-8 without losing valid input" {
+    let report = analyze(
+        "INFO 60000 boundary\nINFO 60001 too slow\nDEBUG 1 unknown\nINFO\nINFO -1 negative\n".bytes
+    );
+    check(report.accepted == 1 && report.rejected == 4 && report.slow[0] == "boundary");
+    var bytes: Vector<u8> = [];
+    for byte in "INFO 1 ".bytes {
+        bytes.push(byte);
+    }
+    bytes.push(0xff);
+    bytes.push(0x0a);
+    check(analyze(bytes).rejected == 1);
+    check(
+        try {
+            let _ = parse_record(bytes)?;
+            false
+        } catch {
+            RecordError(error) => match error {
+                .InvalidText(detail) => detail.kind == .InvalidLead && detail.offset == 7,
+                _ => false
+            },
+        }
+    );
+    check(
+        try {
+            let _ = parse_record("INFO -1 negative".bytes)?;
+            false
+        } catch {
+            RecordError(error) => match error {
+                .InvalidLatency(detail) => detail == .Invalid,
+                _ => false
+            },
+        }
+    );
+}

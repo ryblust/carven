@@ -626,9 +626,9 @@ auto SemanticExecutor::expression_value(
                     .type = *target,
                     .value = BooleanConstant {.value = sequence->extent == 0uz}
                 };
-            case SliceIntrinsic::FromOwner:
-            case SliceIntrinsic::Slice:     {
-                if (intrinsic == SliceIntrinsic::FromOwner && sequence->extent == 0uz) {
+            case SliceIntrinsic::View:
+            case SliceIntrinsic::Slice: {
+                if (intrinsic == SliceIntrinsic::View && sequence->extent == 0uz) {
                     co_return ExecutionAggregateValue {.type = *target, .elements = {}};
                 }
                 auto begin = 0uz;

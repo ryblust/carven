@@ -1,6 +1,7 @@
 module carven:backend.generation.plan.references.impl;
 
 import :backend.generation.plan.references;
+import :semantic.semir.generic;
 import :support.invariant;
 import :support.visit;
 import std;
@@ -39,6 +40,7 @@ private:
 
 public:
     auto collect_declaration(DeclarationRef declaration) noexcept -> void;
+    auto collect_generic(GenericDeclarationID definition) noexcept -> void;
 
 private:
     const SemIRProgram& semantic;
@@ -48,6 +50,7 @@ private:
     std::set<std::pair<TypeID, TargetTypeCompleteness>> visited_types;
     std::set<std::pair<CallableSignatureID, TargetTypeCompleteness>> visited_signatures;
     std::set<CallableID> visited_surfaces;
+    std::set<GenericDeclarationID> visited_generics;
 };
 
 DeclarationReferenceCollector::DeclarationReferenceCollector(
@@ -151,9 +154,9 @@ auto DeclarationReferenceCollector::collect_type(
                 collect_type(value.target, TargetTypeCompleteness::Declaration);
             },
             [&](const CppTypeValue& value) noexcept {
-                for (const auto argument : cpp_type_references(value)) {
+                visit_cpp_type_references(value, [&](TypeID argument) noexcept {
                     collect_type(argument, TargetTypeCompleteness::CompleteDefinition);
-                }
+                });
             },
             [](const BuiltinTypeValue&) static noexcept {},
             [&](const StructTypeValue& value) noexcept {
@@ -228,13 +231,35 @@ auto DeclarationReferenceCollector::collect_surface(CallableID callable) noexcep
     }
 }
 
+auto DeclarationReferenceCollector::collect_generic(GenericDeclarationID definition) noexcept
+    -> void {
+    if (!visited_generics.insert(definition).second) {
+        return;
+    }
+    const auto& dependencies =
+        semantic.generic_declaration_contract(definition).implementation_dependencies;
+    for (const auto type : dependencies.types) {
+        collect_type(type, TargetTypeCompleteness::CompleteDefinition);
+    }
+    for (const auto callable : dependencies.callables) {
+        collect_body_callable(callable);
+    }
+    for (const auto dependency : dependencies.definitions) {
+        collect_generic(dependency);
+    }
+}
+
 auto DeclarationReferenceCollector::collect_declaration(DeclarationRef declaration) noexcept
     -> void {
     declaration.visit(
         Overloaded {
             [&](FunctionID id) noexcept {
                 const auto& function = semantic.declarations().function(id);
-                collect_callable(function.callable);
+                collect_signature(
+                    semantic.declarations().callable(function.callable).signature,
+                    function.cpp_export_origin ? TargetTypeCompleteness::CompleteDefinition
+                                               : TargetTypeCompleteness::Declaration
+                );
                 result.callables.insert(function.callable);
                 if (function.module_id == surface_module) {
                     collect_surface(function.callable);
@@ -333,6 +358,13 @@ auto collect_target_references(
         auto collector = DeclarationReferenceCollector(semantic, entry.id);
         for (const auto declaration : surface_declarations[index]) {
             collector.collect_declaration(declaration);
+        }
+        for (const auto generic : semantic.generic_declaration_contracts()) {
+            const auto& contract = generic.value;
+            if (contract.module_id == entry.id
+                && contract.visibility != DeclarationVisibility::Module) {
+                collector.collect_generic(generic.id);
+            }
         }
         auto facts = std::move(collector).finish();
         result.surface_requirements[index] = std::move(facts.requirements);

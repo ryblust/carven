@@ -1,6 +1,4 @@
-export(cpp) fn value() -> i32 {
-    return 42;
-}
+export(cpp) fn value() -> i32 => 42;
 
 test "value" {
     check(value() == 42);

@@ -156,11 +156,24 @@ Construction and mutation require evaluation even when their results are discard
 Contextual String literals and `str as String` publish `FromStr`; contextual
 String-to-str borrowing publishes `AsStr`, sharing the explicit APIs' ownership
 and lowering paths.
-Contextual array/Vector-to-slice borrowing publishes `SliceIntrinsic::FromOwner`,
-sharing `as_slice()` storage checks and lowering. Unchecked scalar and UTF-8
+Contextual array/Vector-to-slice borrowing publishes `SliceIntrinsic::View`,
+sharing `slice()` storage checks and lowering. Unchecked scalar and UTF-8
 construction publish text intrinsics with `u32` and byte-slice inputs respectively.
 UTF-8 construction preserves the input storage loans; the caller must establish
 content validity.
+
+Generic native named applications retain construction type arguments in
+`GenericCppNamedType`. Native expression queries use `BasicCppQueryType<Type>`
+for calls, construction, static members, projections, and operators. Operands
+retain type references and access modes. Substitution maps construction references
+to canonical types; validation and dependency collection visit the same query
+structure. Published concrete bodies and native lowering use `CppNamedType` and
+`CppQueryType`.
+
+Published generic function instances retain their source declaration, canonical
+arguments, and concrete callable. Target planning uses these facts for stable
+content names and inline definitions at their uses, including when the source
+template belongs to a fixed source library.
 
 ### Formatting facts
 
@@ -287,11 +300,12 @@ requests retain the completed callable or the original construction failure.
 
 A body under analysis stores its checked region and, when needed, one residual
 region. Bodies that need no static rewriting retain their region directly.
-Semantic tree copies use `semantic.semir.clone` to rebuild owning edges in
-iterative postorder while retaining semantic identities. Instance and iteration
-construction own local-table copying and remapping. After source validation and
-surface collection, publication discards checked alternatives and retains
-exactly one executable region per body.
+Semantic tree copies use `semantic.semir.clone` to construct child storage and
+iteratively fill it in place while retaining semantic identities. The shared
+direct-child structure pairs source and destination storage. Instance and
+iteration construction own local-table copying and remapping. After source
+validation and surface collection, publication discards checked alternatives and
+retains exactly one executable region per body.
 Source templates, static tests, and module static blocks publish no body.
 Their declarations and diagnostic provenance remain available. Removed bodies
 leave vacant IDs; surviving body IDs and local table identities do not change.
@@ -402,3 +416,7 @@ and range relations, type and call contracts, lifetime and control legality,
 binding relations, declaration topology, and cross-body callable relations.
 Each declaration and body has its required unique owner. A lexical closure has
 one callable and one body; construction expressions create values of that type.
+An unchanged executable region checks source contracts and executable constraints
+in one traversal. Separate checked and rewritten regions each retain their
+applicable checks; rewritten native construction may establish additional value
+witnesses without changing the checked query's type identity.

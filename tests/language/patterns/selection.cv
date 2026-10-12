@@ -58,14 +58,14 @@ private fn select_bound(
 };
 
 test "Pattern selection: residual products preserve source and guard selection" {
-    check(select_pair(Pair::Values(true, true)) == 1);
-    check(select_pair(Pair::Values(true, false)) == 1);
-    check(select_pair(Pair::Values(false, true)) == 2);
-    check(select_pair(Pair::Values(false, false)) == 3);
-    check(select_source(Choice::Left(7)) == 7);
-    check(select_source(Choice::Right(7)) == 7);
-    check(select_source(Choice::Left(-3)) == 3);
-    check(select_source(Choice::Right(-3)) == 3);
+    check(select_pair(.Values(true, true)) == 1);
+    check(select_pair(.Values(true, false)) == 1);
+    check(select_pair(.Values(false, true)) == 2);
+    check(select_pair(.Values(false, false)) == 3);
+    check(select_source(.Left(7)) == 7);
+    check(select_source(.Right(7)) == 7);
+    check(select_source(.Left(-3)) == 3);
+    check(select_source(.Right(-3)) == 3);
 
     var calls = 0;
     check(select_guarded(true, &calls, false) == 1);

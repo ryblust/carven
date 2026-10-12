@@ -14,7 +14,7 @@ const fn build() -> Vector<Entry> {
         var values: Vector<i32> = [number, number * 10];
         values.reserve(5);
         rows.push(
-            Entry {
+            {
                 title: f"row {number}",
                 values: &&values
             }
@@ -34,7 +34,7 @@ const pair: (String, Vector<i32>) = (f"pair {2}", [7, 8]);
 private const fn constant_view() -> [i32] => rows[1].values;
 
 private const fn local_constant_text() -> str {
-    const label = String::from_str("local static");
+    const label: String = "local static";
     return label;
 }
 

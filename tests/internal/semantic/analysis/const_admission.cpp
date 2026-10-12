@@ -307,8 +307,7 @@ const TestSuite suite([] static noexcept {
         })"},
                 {"slice signature",
                  R"(fn example(value: [i32]) -> usize { return value.length(); })"},
-                {"array operation",
-                 R"(fn example() -> usize { return [1, 2].as_slice().length(); })"},
+                {"array operation", R"(fn example() -> usize { return [1, 2].slice().length(); })"},
                 {"closure value",
                  R"(fn example() -> i32 { let call = []() => 1; return call(); })"},
                 {"unchecked scalar construction", R"(fn example() -> char {

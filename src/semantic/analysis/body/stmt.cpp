@@ -476,7 +476,7 @@ auto BodyElaborator::assignment_statement(const ASTAssignment& source) noexcept
         target->expression.type.construction(),
         right_value->type.construction(),
         compatible(target->expression.type.construction(), right_value->type.construction()),
-        type_supports_equality(draft(), target->expression.type.construction())
+        true
     );
     if (!is_cpp_type(target->expression.type.construction())
         && !is_cpp_type(right_value->type.construction())

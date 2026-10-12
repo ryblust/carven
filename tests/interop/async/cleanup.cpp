@@ -27,7 +27,7 @@ auto scalar(auto operation, int expected) noexcept -> void {
 
 } // namespace
 
-auto main() -> int {
+auto run_cleanup_cases() noexcept -> void {
     scalar(api::nested_return, 7);
     scalar(api::nested_break, 7);
     scalar(api::nested_continue, 7);
@@ -85,5 +85,4 @@ auto main() -> int {
     scalar([] { return api::assignment_regions(0); }, 7);
     scalar([] { return api::assignment_regions(1); }, 7);
     std::puts("async lexical cleanup passed");
-    return EXIT_SUCCESS;
 }

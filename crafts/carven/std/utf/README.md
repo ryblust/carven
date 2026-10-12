@@ -14,7 +14,7 @@ the official package sources.
 | `std::utf.codec` | UTF-8 encoding and prefix decoding; `UTF8Encoded` and `UTF8DecodeResult` |
 | `std::utf.error` | Shared `UTF8ErrorKind` and `UTF8Error` contracts |
 | `std::utf.validation` | Whole-buffer and incremental validation; `UTF8Validator` |
-| `std::utf.text` | Borrowed and owning text construction |
+| `std::utf.text` | Checked construction, substring selection, splitting, and lines |
 
 | Operation | Result |
 | --- | --- |
@@ -31,7 +31,7 @@ the official package sources.
 | `state.feed(bytes: [u8]) throw UTF8Error` | Accept one block; its end is not EOF |
 | `state.check_complete() throw UTF8Error` | Check that no partial scalar remains; does not end the stream |
 
-Array arguments create byte views implicitly; `as_slice()` is also available. Text exposes `[u8]`
+Array arguments create byte views implicitly; `slice()` is also available. Text exposes `[u8]`
 through `.bytes`. `from_utf8` returns a view into the input: the caller must keep
 the backing array or String alive and unchanged while using that view. Carven
 tracks the returned view and rejects conflicting mutation and escaping borrows.
@@ -47,6 +47,42 @@ import std::utf.error using UTF8Error;
 fn example() -> String throw UTF8Error {
     let bytes: [u8; 4] = [0xf0, 0x9f, 0x98, 0x80];
     return to_string(bytes)?;
+}
+```
+
+## Text processing
+
+`std::utf.text` reuses `str`, `String`, slices, and ordinary typed failures.
+All operations below are `const fn` and also run at runtime.
+
+| Operation | Result and ownership |
+| --- | --- |
+| `substring(text, start, end) -> str throw TextError` | Borrow `[start, end)` UTF-8 bytes; both offsets must be scalar boundaries |
+| `starts_with(text, prefix) -> bool` | Compare the prefix without allocation |
+| `split_once(text, separator) -> Split throw TextError` | Borrow `before` and `after`; `found` distinguishes a separator from an absent one |
+| `split(text, separator) -> Vector<String> throw TextError` | Independent owning fields, including leading, adjacent, and trailing empty fields |
+| `lines(text) -> Vector<String>` | Independent lines delimited by LF or CRLF, including empty lines; no extra line after a final delimiter |
+
+Substring offsets count bytes, not Unicode scalars or grapheme clusters. A
+reversed or out-of-range selection reports `TextError::OutOfBounds`; an offset
+inside a scalar reports `NotCharBoundary`. Splitting uses an exact, nonempty
+UTF-8 separator and reports `EmptySeparator` for an empty separator. It performs
+no whitespace normalization. An absent separator returns `found: false`, the
+entire input as `before`, and an empty `after`.
+
+`Split` and substring results borrow the original input, including results
+returned through helper functions. Their lifetimes and mutations follow ordinary
+ownership checks. `split` and `lines` return owners and copy the fields, so callers
+can retain the collection independently of the input. Empty text yields one empty
+split field and zero lines. A lone CR is content; only CR immediately before LF is
+stripped.
+
+```carven
+import std::utf.text using { split_once, TextError };
+
+fn setting(text: str) -> String throw TextError {
+    let pair = split_once(text, "=")?;
+    return if pair.found { pair.after as String } else { "" };
 }
 ```
 

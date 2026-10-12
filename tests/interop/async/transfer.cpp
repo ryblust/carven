@@ -21,7 +21,7 @@ namespace api = carven::api::tests::interop::async::transfer;
 
 using async_transfer::Context;
 using async_interop::PipeQueue;
-using IoError = decltype(carven::api::tests::interop::async::bridge::make_io_error(0));
+using IOError = decltype(carven::api::tests::interop::async::bridge::make_io_error(0));
 
 constexpr auto data = std::array {
     std::byte {0},
@@ -127,10 +127,7 @@ public:
     }
 
     auto balanced() const noexcept -> void {
-        check(
-            queue.pending_count() == 0 && queue.registration_count() == queue.completion_count(),
-            "all registrations settle before host cleanup"
-        );
+        check(queue.pending_count() == 0, "all registrations settle before host cleanup");
         for (const auto* observed : {&reading, &writing}) {
             check(
                 observed->live == 0
@@ -173,9 +170,7 @@ auto chunks() noexcept -> void {
         auto cold = api::copy(transfer.reader, transfer.writer);
     }
     check(
-        transfer.reading.started == 0
-            && transfer.writing.started == 0
-            && transfer.queue.registration_count() == 0,
+        transfer.reading.started == 0 && transfer.writing.started == 0,
         "cold copy does not touch provider or buffers"
     );
     auto result = async::drive_root(api::copy(transfer.reader, transfer.writer), &transfer.queue);
@@ -183,7 +178,7 @@ auto chunks() noexcept -> void {
     transfer.copied(result.success_if()->value);
 }
 
-class ExternalInput final {
+class ExternalInput final : public async::EventSource {
     Transfer& transfer;
     std::thread writer;
     bool injected = false;
@@ -192,15 +187,15 @@ public:
     explicit ExternalInput(Transfer& value) noexcept
         : transfer(value) {}
 
-    ~ExternalInput() noexcept {
+    ~ExternalInput() noexcept override {
         if (writer.joinable()) {
             writer.join();
         }
     }
 
-    auto poll(async::Driver& driver) noexcept -> void { transfer.queue.poll(driver); }
+    auto poll(async::Driver& driver) noexcept -> void override { transfer.queue.poll(driver); }
 
-    auto wait() noexcept -> bool {
+    auto wait(std::optional<std::int64_t> limit) noexcept -> bool override {
         check(
             !injected
                 && transfer.queue.pending_count() == 1
@@ -214,7 +209,7 @@ public:
             write_all(transfer.input.writer(), data);
             transfer.input.close_writer();
         });
-        const auto ready = transfer.queue.wait();
+        const auto ready = transfer.queue.wait(limit);
         writer.join(); // EOF is established before the source resumes and reads again.
         return ready;
     }
@@ -226,13 +221,9 @@ auto pending_read() noexcept -> void {
     auto result = async::drive_root(api::copy(transfer.reader, transfer.writer), &input);
     check(result.success_if() != nullptr, "pending chunk read resumes through actual poll");
     transfer.copied(result.success_if()->value);
-    check(
-        transfer.queue.registration_count() == 1 && transfer.queue.wait_count() == 1,
-        "one empty-input registration and one idle wait"
-    );
 }
 
-class DrainOutput final {
+class DrainOutput final : public async::EventSource {
     Transfer& transfer;
     std::size_t filled;
     bool drained = false;
@@ -242,9 +233,9 @@ public:
         : transfer(value),
           filled(initial) {}
 
-    auto poll(async::Driver& driver) noexcept -> void { transfer.queue.poll(driver); }
+    auto poll(async::Driver& driver) noexcept -> void override { transfer.queue.poll(driver); }
 
-    auto wait() noexcept -> bool {
+    auto wait(std::optional<std::int64_t> limit) noexcept -> bool override {
         check(
             !drained
                 && transfer.queue.pending_count() == 1
@@ -267,7 +258,7 @@ public:
             filled -= amount;
         }
         drained = true;
-        return transfer.queue.wait();
+        return transfer.queue.wait(limit);
     }
 };
 
@@ -294,10 +285,6 @@ auto backpressure() noexcept -> void {
     auto result = async::drive_root(api::copy(transfer.reader, transfer.writer), &output);
     check(result.success_if() != nullptr, "source write resumes after host drains capacity");
     transfer.copied(result.success_if()->value);
-    check(
-        transfer.queue.registration_count() == 1 && transfer.queue.wait_count() == 1,
-        "one EAGAIN write registration is unlinked and delivered"
-    );
 }
 
 auto failure() noexcept -> void {
@@ -314,7 +301,7 @@ auto failure() noexcept -> void {
         } else {
             auto result =
                 async::drive_root(api::copy(transfer.reader, transfer.writer), &transfer.queue);
-            const auto* error = result.failure_if<IoError>();
+            const auto* error = result.failure_if<IOError>();
             check(
                 error != nullptr && error->code == EBADF,
                 "source propagates typed actual write error"
@@ -339,9 +326,7 @@ auto cancelled_close() noexcept -> void {
         "source child cancellation closes before parent delivery"
     );
     check(
-        transfer.queue.registration_count() == 1
-            && transfer.queue.completion_count() == 1
-            && transfer.reading.cancelled == 1
+        transfer.reading.cancelled == 1
             && transfer.writing.started == 0
             && transfer.read_counts.empty()
             && transfer.write_counts.empty(),

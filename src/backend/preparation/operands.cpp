@@ -47,8 +47,7 @@ auto BodyPreparation::operands(
             prepared.use = PreparedUse::ConstPlace;
         } else if (input.access == AccessMode::Read
                    && builtin != nullptr
-                   && builtin->kind != BuiltinType::String
-                   && builtin->kind != BuiltinType::EntryArgs) {
+                   && builtin->kind != BuiltinType::String) {
             prepared.use = PreparedUse::OperandValue;
         } else if (input.access == AccessMode::Read && prepared.use == PreparedUse::ReadBorrow) {
             prepared.use = PreparedUse::ReadArgument;
@@ -214,6 +213,7 @@ auto BodyPreparation::operands(
                 value.callee.visit(
                     Overloaded {
                         [](const CppNameReference&) static noexcept {},
+                        [](const CppStaticMemberCallee<ConstructionTypeRef>&) static noexcept {},
                         [&](const CppMemberCallee<SemCppOperand>& member) noexcept {
                             receiver(*member.receiver.expression, member.receiver.access);
                         },

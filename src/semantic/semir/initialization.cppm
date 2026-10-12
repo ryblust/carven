@@ -81,7 +81,9 @@ auto query_default_initialization(
                         const auto declaration = read_declaration(current, value);
                         return declaration && append_fields(*declaration);
                     }
-                } else if constexpr (std::same_as<Value, CppTypeValue>) {
+                } else if constexpr (std::same_as<Value, CppTypeValue>
+                                     || std::same_as<Value, GenericCppNamedType>
+                                     || std::same_as<Value, GenericCppQueryType>) {
                     result = DefaultInitialization::Native;
                     return true;
                 } else {

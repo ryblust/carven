@@ -735,11 +735,12 @@ auto ProgramDraft::set_residual(BodyID body, StructuredRegionDraft residual) noe
 }
 
 auto ProgramDraft::staged_function(FunctionID function) const noexcept -> bool {
-    const auto declaration = function_declaration_copy(function);
-    const auto pending = pending_function_contract_copy(declaration.callable);
-    const auto parameters = pending
-        ? pending->parameters
-        : construction_callable_contract_copy(declaration.callable).parameters;
+    const auto view = storage.declarations.construction_view();
+    const auto callable = view.function(function).callable;
+    const auto pending = storage.pending_function_contracts.find(callable);
+    const auto& parameters = pending != storage.pending_function_contracts.end()
+        ? pending->second.parameters
+        : view.callable_contract(callable).parameters;
     return std::ranges::any_of(parameters, [](const auto& parameter) static noexcept {
         return parameter.stage == ParameterStage::Static;
     });

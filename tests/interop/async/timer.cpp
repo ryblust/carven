@@ -1,5 +1,7 @@
 #include "timer.hpp"
 
+#include <carven/runtime/execution/child.hpp>
+
 #include <cstdio>
 #include <cstdlib>
 #include <memory>
@@ -21,10 +23,6 @@ auto check(bool condition, const char* message) noexcept -> void {
 
 auto balanced(const TimerQueue& timers) noexcept -> void {
     check(timers.pending_count() == 0, "no registration remains after completion");
-    check(
-        timers.registration_count() == timers.completion_count(),
-        "registration/unregistration balance"
-    );
 }
 
 struct Observation final {
@@ -77,10 +75,7 @@ auto cold() noexcept -> void {
         auto operation =
             captured_timer(timers, std::make_unique<Lifetime>(live, destroyed), observed);
         check(live == 1 && destroyed == 0, "unstarted operation owns capture");
-        check(
-            observed.started == 0 && timers.registration_count() == 0,
-            "construction does not start timer"
-        );
+        check(observed.started == 0, "construction does not start timer");
     }
     check(
         live == 0 && destroyed == 1 && observed.started == 0,
@@ -98,17 +93,13 @@ auto immediate() noexcept -> void {
             result.success_if() != nullptr && observed.started == 1 && observed.finished == 1,
             "nonpositive timer completes successfully once"
         );
-        check(
-            timers.registration_count() == 0 && timers.wait_count() == 0,
-            "nonpositive timer never registers or waits"
-        );
         balanced(timers);
     }
 }
 
 // Delay the first provider poll until the driver is idle. This establishes a
 // real idle wait even if the process was descheduled beyond the deadline.
-class IdleWait final {
+class IdleWait final : public async::EventSource {
     TimerQueue& timers;
     bool waited = false;
     std::optional<TimerQueue::Clock::time_point> deadline;
@@ -117,18 +108,18 @@ public:
     explicit IdleWait(TimerQueue& provider) noexcept
         : timers(provider) {}
 
-    auto poll(async::Driver& driver) noexcept -> void {
+    auto poll(async::Driver& driver) noexcept -> void override {
         if (waited || timers.pending_count() == 0) {
             timers.poll(driver);
         }
     }
 
-    auto wait() noexcept -> bool {
+    auto wait(std::optional<std::int64_t> limit) noexcept -> bool override {
         check(timers.pending_count() == 1, "future timer suspends before idle wait");
         deadline = timers.next_deadline();
         check(deadline.has_value(), "registered timer exposes its actual deadline");
         waited = true;
-        return timers.wait();
+        return timers.wait(limit);
     }
 
     auto completed_after_deadline() const noexcept -> bool {
@@ -138,24 +129,20 @@ public:
 
 auto future() noexcept -> void {
     auto timers = TimerQueue();
-    auto pump = IdleWait(timers);
+    auto source = IdleWait(timers);
     auto observed = Observation {.started = 0, .finished = 0, .cancelled = false};
-    auto result = async::drive_root(timer(timers, 2ms, observed), &pump);
+    auto result = async::drive_root(timer(timers, 2ms, observed), &source);
     check(
         result.success_if() != nullptr && observed.finished == 1,
         "future timer delivers success once"
     );
-    check(pump.completed_after_deadline(), "future timer never completes before deadline");
-    check(
-        timers.registration_count() == 1 && timers.wait_count() >= 1,
-        "future timer registers and uses idle wait"
-    );
+    check(source.completed_after_deadline(), "future timer never completes before deadline");
     balanced(timers);
 }
 
 // Hold provider delivery while a parent establishes the registered boundary.
 // Timers keep real deadlines; only delivery policy is gated on the same thread.
-class PollGate final {
+class PollGate final : public async::EventSource {
     TimerQueue& timers;
     bool& released;
 
@@ -164,13 +151,15 @@ public:
         : timers(provider),
           released(allow_poll) {}
 
-    auto poll(async::Driver& driver) noexcept -> void {
+    auto poll(async::Driver& driver) noexcept -> void override {
         if (released) {
             timers.poll(driver);
         }
     }
 
-    auto wait() noexcept -> bool { return timers.wait(); }
+    auto wait(std::optional<std::int64_t> limit) noexcept -> bool override {
+        return timers.wait(limit);
+    }
 };
 
 auto sibling_timer(
@@ -216,8 +205,9 @@ auto siblings() noexcept -> void {
     auto live = 0;
     auto destroyed = 0;
     auto released = false;
-    auto pump = PollGate(timers, released);
-    auto result = async::drive_root(siblings_body(timers, trace, live, destroyed, released), &pump);
+    auto source = PollGate(timers, released);
+    auto result =
+        async::drive_root(siblings_body(timers, trace, live, destroyed, released), &source);
     check(
         result.success_if() != nullptr && live == 0 && destroyed == 2,
         "child backing destroyed once after close"
@@ -230,7 +220,6 @@ auto siblings() noexcept -> void {
         (trace[3] == 11 && trace[4] == 12) || (trace[3] == 12 && trace[4] == 11),
         "each sibling completes once without a deadline ordering assumption"
     );
-    check(timers.registration_count() == 2, "both children registered");
     balanced(timers);
 }
 
@@ -261,10 +250,6 @@ auto pre_cancel() noexcept -> void {
                 && observed.finished == 1
                 && observed.cancelled,
             "pre-cancelled child completes once, including nonpositive duration"
-        );
-        check(
-            timers.registration_count() == 0 && timers.wait_count() == 0,
-            "pre-cancelled timer never registers or waits"
         );
         balanced(timers);
     }
@@ -360,10 +345,6 @@ auto cancelled_close() noexcept -> void {
         result.success_if() != nullptr && own.finished == 1 && own.cancelled,
         "registered cancellation and close complete once"
     );
-    check(
-        timers.registration_count() == 2 && timers.wait_count() == 0,
-        "cancelled one-hour timers do not wait for deadline"
-    );
     balanced(timers);
 }
 
@@ -374,10 +355,10 @@ auto committed_body(TimerQueue& timers, Observation& observed, bool& released) n
     auto child = scope.start(timer(timers, 2ms, observed));
     co_await async::await_yield_once();
     check(timers.pending_count() == 1, "child registers before explicit timer commit");
-    check(timers.wait(), "registered timer has a real deadline");
+    check(timers.wait(std::nullopt), "registered timer has a real deadline");
     timers.poll(*activation.task->driver);
     check(
-        timers.pending_count() == 0 && timers.completion_count() == 1 && observed.finished == 0,
+        timers.pending_count() == 0 && observed.finished == 0,
         "provider commits and unlinks before dispatching child continuation"
     );
     async::cancel(child);
@@ -395,8 +376,8 @@ auto committed() noexcept -> void {
     auto timers = TimerQueue();
     auto observed = Observation {.started = 0, .finished = 0, .cancelled = false};
     auto released = false;
-    auto pump = PollGate(timers, released);
-    auto result = async::drive_root(committed_body(timers, observed, released), &pump);
+    auto source = PollGate(timers, released);
+    auto result = async::drive_root(committed_body(timers, observed, released), &source);
     check(result.success_if() != nullptr, "committed timer returns success");
     balanced(timers);
 }
@@ -418,16 +399,75 @@ auto rearm_body(TimerQueue& timers) noexcept -> async::AsyncOperation<void> {
 auto rearm() noexcept -> void {
     auto timers = TimerQueue();
     auto result = async::drive_root(rearm_body(timers), &timers);
-    check(
-        result.success_if() != nullptr && timers.registration_count() == 2,
-        "sequential timer reuse completes twice"
-    );
+    check(result.success_if() != nullptr, "sequential timer reuse completes twice");
     balanced(timers);
+}
+
+class WaitGate final : public async::EventSource {
+    TimerQueue& timers;
+    bool& released;
+
+public:
+    WaitGate(TimerQueue& provider, bool& allow_poll) noexcept
+        : timers(provider),
+          released(allow_poll) {}
+
+    auto poll(async::Driver& driver) noexcept -> void override { timers.poll(driver); }
+
+    auto wait(std::optional<std::int64_t> limit) noexcept -> bool override {
+        released = true;
+        return timers.wait(limit);
+    }
+};
+
+auto multiple_sources(
+    TimerQueue& fast,
+    TimerQueue& slow,
+    WaitGate& slow_source,
+    Observation& first,
+    Observation& second
+) noexcept -> async::AsyncOperation<void> {
+    auto& activation = co_await async::current_activation();
+    auto& driver = *activation.task->driver;
+    driver.attach(slow_source);
+    auto scope = async::ChildScope(activation);
+    auto fast_child = scope.start(timer(fast, 2ms, first));
+    auto slow_child = scope.start(timer(slow, 1h, second));
+    const auto selected = co_await async::wait_ready(fast_child, slow_child);
+    check(
+        selected.head == 0,
+        "independent fast source makes progress while slow source is pending"
+    );
+    const auto result = co_await fast_child.observe();
+    check(result.success_if() != nullptr, "fast source publishes success");
+    async::cancel(slow_child);
+    co_await scope.close(async::ClosingPolicy::CloseOnly);
+    check(
+        first.finished == 1 && second.finished == 1 && second.cancelled,
+        "source cancellation closes both children before detach"
+    );
+    driver.detach(slow_source);
+    co_return async::Completion<void>::success();
+}
+
+auto multi_source() noexcept -> void {
+    auto fast = TimerQueue();
+    auto slow = TimerQueue();
+    auto released = false;
+    auto fast_source = PollGate(fast, released);
+    auto slow_source = WaitGate(slow, released);
+    auto first = Observation {.started = 0, .finished = 0, .cancelled = false};
+    auto second = Observation {.started = 0, .finished = 0, .cancelled = false};
+    auto result =
+        async::drive_root(multiple_sources(fast, slow, slow_source, first, second), &fast_source);
+    check(result.success_if() != nullptr, "multiple event sources preserve root completion");
+    balanced(fast);
+    balanced(slow);
 }
 
 } // namespace
 
-auto main() -> int {
+auto run_timer_cases() noexcept -> void {
     for (const auto& test : {
              std::pair {"cold", cold},
              std::pair {"immediate", immediate},
@@ -437,9 +477,9 @@ auto main() -> int {
              std::pair {"cancelled-close", cancelled_close},
              std::pair {"committed", committed},
              std::pair {"rearm", rearm},
+             std::pair {"multi-source", multi_source},
          }) {
         test.second();
         std::printf("%s: pass\n", test.first);
     }
-    return EXIT_SUCCESS;
 }

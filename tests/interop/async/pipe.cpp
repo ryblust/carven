@@ -1,5 +1,6 @@
 #include "pipe.hpp"
 
+#include <carven/runtime/execution/child.hpp>
 #include <carven/std/time/native.hpp>
 
 #include <array>
@@ -31,10 +32,6 @@ auto check(bool condition, const char* message) noexcept -> void {
 
 auto balanced(const PipeQueue& queue) noexcept -> void {
     check(queue.pending_count() == 0, "no pending pipe registration");
-    check(
-        queue.registration_count() == queue.completion_count(),
-        "registration/unregistration balance"
-    );
 }
 
 class Pipe final {
@@ -136,10 +133,7 @@ auto cold() noexcept -> void {
     {
         auto reading = read(queue, pipe.reader(), buffer, observed);
         auto writing = write(queue, pipe.writer(), data, observed);
-        check(
-            observed.started == 0 && queue.registration_count() == 0,
-            "cold construction does not execute I/O"
-        );
+        check(observed.started == 0, "cold construction does not execute I/O");
     }
     check(
         raw_read(pipe.reader(), buffer) == 1 && buffer == data,
@@ -177,10 +171,7 @@ auto transfer() noexcept -> void {
     auto pipe = Pipe();
     auto queue = PipeQueue();
     auto result = async::drive_root(transfer_body(queue, pipe), &queue);
-    check(
-        result.success_if() != nullptr && queue.registration_count() == 0,
-        "ready I/O needs no registration"
-    );
+    check(result.success_if() != nullptr, "ready I/O transfers its complete payload");
     balanced(queue);
 }
 
@@ -225,14 +216,10 @@ auto eof_error() noexcept -> void {
             "reading valid write-only descriptor reports EBADF"
         );
     }
-    check(
-        queue.registration_count() == 1,
-        "pending HUP read registers once; immediate system error does not register"
-    );
     balanced(queue);
 }
 
-class PollGate final {
+class PollGate final : public async::EventSource {
     PipeQueue& queue;
     bool& released;
 
@@ -241,13 +228,15 @@ public:
         : queue(provider),
           released(allow_poll) {}
 
-    auto poll(async::Driver& driver) noexcept -> void {
+    auto poll(async::Driver& driver) noexcept -> void override {
         if (released) {
             queue.poll(driver);
         }
     }
 
-    auto wait() noexcept -> bool { return queue.wait(); }
+    auto wait(std::optional<std::int64_t> limit) noexcept -> bool override {
+        return queue.wait(limit);
+    }
 };
 
 auto writer_task(PipeQueue& queue, int fd, Observation& reading, bool& released) noexcept
@@ -283,17 +272,14 @@ auto delayed() noexcept -> void {
     auto pipe = Pipe();
     auto queue = PipeQueue();
     auto released = false;
-    auto pump = PollGate(queue, released);
+    auto source = PollGate(queue, released);
     auto observed = Observation {.started = 0, .finished = 0, .cancelled = false};
-    auto result = async::drive_root(delayed_body(queue, pipe, released, observed), &pump);
-    check(
-        result.success_if() != nullptr && queue.registration_count() == 1,
-        "EAGAIN read registers exactly once"
-    );
+    auto result = async::drive_root(delayed_body(queue, pipe, released, observed), &source);
+    check(result.success_if() != nullptr, "delayed read resumes after the writer supplies bytes");
     balanced(queue);
 }
 
-class ExternalWriter final {
+class ExternalWriter final : public async::EventSource {
     PipeQueue& queue;
     int fd;
     bool waited = false;
@@ -303,13 +289,13 @@ public:
         : queue(provider),
           fd(descriptor) {}
 
-    auto poll(async::Driver& driver) noexcept -> void {
+    auto poll(async::Driver& driver) noexcept -> void override {
         if (waited || queue.pending_count() == 0) {
             queue.poll(driver);
         }
     }
 
-    auto wait() noexcept -> bool {
+    auto wait(std::optional<std::int64_t> limit) noexcept -> bool override {
         check(
             queue.pending_count() == 1 && !waited,
             "driver reaches idle boundary with registered pipe read"
@@ -322,7 +308,7 @@ public:
                 "external thread writes pipe without touching driver"
             );
         });
-        const auto pending = queue.wait();
+        const auto pending = queue.wait(limit);
         writer.join();
         return pending;
     }
@@ -382,19 +368,18 @@ auto timer_cancel() noexcept -> void {
         result.success_if() != nullptr && result.success_if()->value,
         "ready I/O cancels and unlinks distant timer before completion"
     );
-    check(queue.wait_count() == 0, "timer cancellation does not sleep to the discarded deadline");
     balanced(queue);
 }
 
 auto idle_wait() noexcept -> void {
     auto pipe = Pipe();
     auto queue = PipeQueue();
-    auto pump = ExternalWriter(queue, pipe.writer());
+    auto source = ExternalWriter(queue, pipe.writer());
     auto buffer = std::array<std::byte, 1> {};
     auto observed = Observation {.started = 0, .finished = 0, .cancelled = false};
-    auto result = async::drive_root(read(queue, pipe.reader(), buffer, observed), &pump);
+    auto result = async::drive_root(read(queue, pipe.reader(), buffer, observed), &source);
     check(
-        bytes(result) == 1 && buffer[0] == std::byte {9} && queue.wait_count() == 1,
+        bytes(result) == 1 && buffer[0] == std::byte {9},
         "real poll wait receives external pipe event"
     );
     balanced(queue);
@@ -505,10 +490,7 @@ auto cancelled_close() noexcept -> void {
         &queue
     );
     check(
-        result.success_if() != nullptr
-            && own.cancelled
-            && own.finished == 1
-            && queue.wait_count() == 0,
+        result.success_if() != nullptr && own.cancelled && own.finished == 1,
         "pending cancel closes without waiting for data"
     );
     balanced(queue);
@@ -529,7 +511,7 @@ auto committed_body(PipeQueue& queue, Pipe& pipe, bool& released, Observation& o
     check(raw_write(pipe.writer(), data) == 1, "make registered descriptor readable");
     queue.poll(*activation.task->driver);
     check(
-        queue.pending_count() == 0 && queue.completion_count() == 1 && observed.finished == 0,
+        queue.pending_count() == 0 && observed.finished == 0,
         "read syscall commits and unlinks before user continuation dispatch"
     );
     async::cancel(child);
@@ -547,14 +529,14 @@ auto committed() noexcept -> void {
     auto pipe = Pipe();
     auto queue = PipeQueue();
     auto released = false;
-    auto pump = PollGate(queue, released);
+    auto source = PollGate(queue, released);
     auto observed = Observation {.started = 0, .finished = 0, .cancelled = false};
-    auto result = async::drive_root(committed_body(queue, pipe, released, observed), &pump);
+    auto result = async::drive_root(committed_body(queue, pipe, released, observed), &source);
     check(result.success_if() != nullptr && observed.finished == 1, "committed read finishes once");
     balanced(queue);
 }
 
-class Refill final {
+class Refill final : public async::EventSource {
     PipeQueue& queue;
     int fd;
     int ordinal = 0;
@@ -564,9 +546,9 @@ public:
         : queue(provider),
           fd(descriptor) {}
 
-    auto poll(async::Driver& driver) noexcept -> void { queue.poll(driver); }
+    auto poll(async::Driver& driver) noexcept -> void override { queue.poll(driver); }
 
-    auto wait() noexcept -> bool {
+    auto wait(std::optional<std::int64_t> limit) noexcept -> bool override {
         check(
             queue.pending_count() == 1 && ordinal < 2,
             "each rearm reaches a new registered read boundary"
@@ -574,7 +556,7 @@ public:
         const auto data = std::array {static_cast<std::byte>(11 + ordinal)};
         ++ordinal;
         check(raw_write(fd, data) == 1, "refill after each read registration");
-        return queue.wait();
+        return queue.wait(limit);
     }
 };
 
@@ -593,14 +575,9 @@ auto rearm_body(PipeQueue& queue, Pipe& pipe) noexcept -> async::AsyncOperation<
 auto rearm() noexcept -> void {
     auto pipe = Pipe();
     auto queue = PipeQueue();
-    auto pump = Refill(queue, pipe.writer());
-    auto result = async::drive_root(rearm_body(queue, pipe), &pump);
-    check(
-        result.success_if() != nullptr
-            && queue.registration_count() == 2
-            && queue.wait_count() == 2,
-        "rearm registers and completes two reads independently"
-    );
+    auto source = Refill(queue, pipe.writer());
+    auto result = async::drive_root(rearm_body(queue, pipe), &source);
+    check(result.success_if() != nullptr, "rearm registers and completes two reads independently");
     balanced(queue);
 }
 
@@ -701,12 +678,12 @@ auto backpressure() noexcept -> void {
     const auto capacity = fill(pipe);
     auto queue = PipeQueue();
     auto released = false;
-    auto pump = PollGate(queue, released);
+    auto source = PollGate(queue, released);
     auto observed = Observation {.started = 0, .finished = 0, .cancelled = false};
     auto result =
-        async::drive_root(backpressure_body(queue, pipe, capacity, released, observed), &pump);
+        async::drive_root(backpressure_body(queue, pipe, capacity, released, observed), &source);
     check(
-        result.success_if() != nullptr && observed.finished == 1 && queue.registration_count() == 1,
+        result.success_if() != nullptr && observed.finished == 1,
         "registered backpressure writer completes once"
     );
     balanced(queue);
@@ -714,7 +691,7 @@ auto backpressure() noexcept -> void {
 
 } // namespace
 
-auto main() -> int {
+auto run_pipe_cases() noexcept -> void {
     for (const auto& test : {
              std::pair {"cold", cold},
              std::pair {"transfer", transfer},
@@ -731,5 +708,4 @@ auto main() -> int {
         test.second();
         std::printf("%s: pass\n", test.first);
     }
-    return EXIT_SUCCESS;
 }

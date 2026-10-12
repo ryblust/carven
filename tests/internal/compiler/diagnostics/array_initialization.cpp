@@ -88,7 +88,7 @@ const TestSuite suite([] static noexcept {
                 {.name = "a view prevents mutating a runtime copy of a constant",
                  .source =
                      "const values = [1, 2]; "
-                     "fn bad() { var local = values; let view = local.as_slice(); local[0] = 3; }",
+                     "fn bad() { var local = values; let view = local.slice(); local[0] = 3; }",
                  .code = DiagnosticCode::AccessBorrowConflict,
                  .primary_text = "local[0] = 3"},
             });

@@ -71,8 +71,8 @@ private const fn iterate_slice(const values: [i32]) -> i32 {
 
 private const fn slice_sequences() -> i32 {
     const values = [9, 1, 2, 3, 9];
-    const selected = values.as_slice().slice(1, 4);
-    const nothing = values.as_slice().slice(2, 2);
+    const selected = values.slice(1, 4);
+    const nothing = values.slice(2, 2);
     return iterate_slice(selected) + iterate_slice(nothing);
 }
 

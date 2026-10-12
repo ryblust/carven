@@ -16,7 +16,7 @@ fn sum(values: [i32]) -> i32 {
 
 test "Slices: arrays expose explicit read views and half-open subranges" {
     let values = [10, 20, 30, 40];
-    let view: [i32] = values.as_slice();
+    let view: [i32] = values.slice();
     check(view.length() == 4);
     check(!view.is_empty());
     check(view[0] == 10);
@@ -27,12 +27,26 @@ test "Slices: arrays expose explicit read views and half-open subranges" {
     check(view.slice(0, 0).is_empty());
 }
 
+test "Slices: complete views retain backing and release the source view slot" {
+    let first = [10, 20, 30];
+    let second = [40];
+    var selected = first.slice();
+    let original = selected.slice();
+    selected = second;
+    check(::slice_observation::same_backing(first, original));
+    check(original.length() == 3 && original[2] == 30);
+    check(selected.length() == 1 && selected[0] == 40);
+    let subrange = original.slice(1, 3);
+    let suffix = subrange.slice();
+    check(suffix.length() == 2 && suffix[0] == 20 && suffix[1] == 30);
+}
+
 fn first_text(values: [str]) -> str => values[0];
 
 test "Slices: extracting elements preserves their text backing" {
     let owner: String = "hello";
     let values = [owner.as_str(), "world"];
-    let view = values.as_slice();
+    let view = values.slice();
     check(first_text(view) == "hello");
     let copy = view;
     for text in copy {
@@ -54,7 +68,7 @@ test "Slices: byte projections have a native slice type" {
     }
     check(count == 4);
     let empty: [u8; 0] = [];
-    check(empty.as_slice().is_empty());
+    check(empty.slice().is_empty());
 }
 
 fn call_first(callbacks: [fn() -> i32]) -> i32 => callbacks[0]();
@@ -67,7 +81,7 @@ test "Slices: callable elements and expression temporaries" {
     check(call_first(values) == 42);
     check(sum([1, 2, 3]) == 6);
     var total = 0;
-    for value in [1, 2, 3].as_slice() {
+    for value in [1, 2, 3].slice() {
         total += value;
     }
     check(total == 6);
@@ -76,10 +90,10 @@ test "Slices: callable elements and expression temporaries" {
 test "Slices: inner borrowed elements survive subrange rebasing" {
     let owner: String = "text";
     let texts = ["", owner.as_str()];
-    let suffix = texts.as_slice().slice(1, 2);
+    let suffix = texts.slice(1, 2);
     check(first_text(suffix) == "text");
     let nested = [suffix];
-    check(first_text(nested.as_slice()[0]) == "text");
+    check(first_text(nested.slice()[0]) == "text");
 }
 
 private struct SliceNode {
@@ -141,7 +155,7 @@ test "Slices: Read parameters preserve array backing through aggregates" {
 test "Slices: replacing a view releases its former backing" {
     var first = [1];
     let second = [2];
-    var view = first.as_slice();
+    var view = first.slice();
     view = second;
     first[0] = 3;
     check(view[0] == 2);
@@ -177,16 +191,12 @@ test "Slices: Read selection preserves backing through parameters, projections a
         [30, 40]
     ];
     check(::slice_observation::same_backing(rows[0], borrow_first_row(rows)));
-    check(
-        ::slice_observation::same_backing(rows[1], borrow_slice_row(rows.as_slice().slice(1, 2)))
-    );
-    check(
-        ::slice_observation::same_backing(rows[1], borrow_slice_loop(rows.as_slice().slice(1, 2)))
-    );
+    check(::slice_observation::same_backing(rows[1], borrow_slice_row(rows.slice(1, 2))));
+    check(::slice_observation::same_backing(rows[1], borrow_slice_loop(rows.slice(1, 2))));
     let texts: [String; 1] = ["borrowed"];
     check(borrow_text_loop(texts) == "borrowed");
-    let copied = rows.as_slice()[0];
-    check(!::slice_observation::same_backing(rows[0], copied.as_slice()));
+    let copied = rows.slice()[0];
+    check(!::slice_observation::same_backing(rows[0], copied.slice()));
     rows[0][0] = 99;
     check(copied[0] == 10);
     check(sum(borrow_slice_loop([[1, 2]])) == 3);
@@ -231,16 +241,16 @@ test "Slices: callable views borrow named closure elements" {
     let number = 42;
     let closure = [number]() => number;
     let owners = [closure];
-    let view: fn() -> i32 = owners.as_slice()[0];
+    let view: fn() -> i32 = owners.slice()[0];
     check(view() == 42);
-    for element in owners.as_slice() {
+    for element in owners.slice() {
         let selected: fn() -> i32 = element;
         check(selected() == 42);
     }
     let rows = [[closure]];
-    let callbacks: [fn() -> i32; 1] = rows.as_slice()[0];
+    let callbacks: [fn() -> i32; 1] = rows.slice()[0];
     check(callbacks[0]() == 42);
-    check(invoke([closure].as_slice()[0]) == 42);
+    check(invoke([closure].slice()[0]) == 42);
 }
 
 test "Slices: consumed temporary holders release their contained borrows" {
@@ -301,27 +311,26 @@ private fn slice_extent_mark(&trace: i32, digit: i32) -> bool {
 }
 
 private fn specialized_slice_element(values: [i32; 4], const index: usize) -> i32 {
-    return values.as_slice()[index];
+    return values.slice()[index];
 }
 
 test "Slices: known lengths preserve receiver and bound evaluation" {
     var trace = 0;
-    check(slice_extent_array(&trace).as_slice().length() == 4);
+    check(slice_extent_array(&trace).slice().length() == 4);
     check(trace == 1);
     trace = 0;
-    let rendered = f"{slice_extent_array(&trace).as_slice().slice(
+    let rendered = f"{slice_extent_array(&trace).slice(
             (slice_extent_mark(&trace, 2) && false) as usize,
             ((slice_extent_mark(&trace, 3) && false) as usize) + 2
         ).length()}";
     check(rendered == "2");
     check(trace == 123);
     trace = 0;
-    slice_extent_array(&trace).as_slice().slice(0, 2).length();
+    slice_extent_array(&trace).slice(0, 2).length();
     check(trace == 1);
     trace = 0;
     check(
-        slice_extent_array(&trace).as_slice()[slice_extent_array(&trace).as_slice().length() - 3]
-            == 20
+        slice_extent_array(&trace).slice()[slice_extent_array(&trace).slice().length() - 3] == 20
     );
     check(trace == 11);
     check(specialized_slice_element([10, 20, 30, 40], 2) == 30);

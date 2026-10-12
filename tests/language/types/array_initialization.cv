@@ -24,11 +24,7 @@ const fn array_repeat_empty() -> bool {
     let empty = [array_initialize(&counter); 0];
     let input: String = "retained";
     let unused = [&&input; 0];
-    return empty.as_slice().length()
-        == 0
-        && unused.as_slice().length() == 0
-        && counter == 0
-        && input == "retained";
+    return empty.length() == 0 && unused.length() == 0 && counter == 0 && input == "retained";
 }
 
 const fn array_repeat_extent() -> usize => 3;
@@ -52,8 +48,8 @@ const test "Array initialization: each element executes in order and zero execut
     check(array_repeat_empty());
     check(array_repeat_units());
     check(array_repeated == [7u8, 7u8, 7u8]);
-    check(array_zero.as_slice().length() == 0);
-    check(array_skipped_failure.as_slice().length() == 0);
+    check(array_zero.length() == 0);
+    check(array_skipped_failure.length() == 0);
     check(
         array_nested_repeat
             == [
@@ -100,7 +96,7 @@ test "Array initialization: elements need no default construction" {
     check(counter == 3);
     check(values[0].read() == 1 && values[1].read() == 2 && values[2].read() == 3);
     let empty = [ArrayElement::new(&counter); 0];
-    check(empty.as_slice().length() == 0 && counter == 3);
+    check(empty.length() == 0 && counter == 3);
 }
 
 test "Array initialization: one lexical lambda type keeps independent capture values" {
@@ -153,9 +149,9 @@ test "Array initialization: zero lambda occurrences retain a type without constr
     let nested = [[[]() -> i32 => 7; 0]; 2];
     let factory = []() => [[]() -> i32 => 7; 0];
     let produced = factory();
-    check(produced.as_slice().is_empty());
-    check(empty.as_slice().is_empty() && stateless.as_slice().is_empty());
-    check(nested[0].as_slice().is_empty() && nested[1].as_slice().is_empty());
+    check(produced.is_empty());
+    check(empty.is_empty() && stateless.is_empty());
+    check(nested[0].is_empty() && nested[1].is_empty());
     let taken = &&input;
     check(taken == "retained");
 }

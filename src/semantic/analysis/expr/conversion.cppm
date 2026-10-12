@@ -79,7 +79,7 @@ auto convert_intrinsic_argument(
             operands.push_back({.access = AccessMode::Read, .expression = std::move(*receiver)});
             auto converted = construct_slice_value(
                 site,
-                SliceIntrinsic::FromOwner,
+                SliceIntrinsic::View,
                 source,
                 extent,
                 std::move(operands),

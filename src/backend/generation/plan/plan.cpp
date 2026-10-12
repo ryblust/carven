@@ -494,7 +494,7 @@ TargetPlan::TargetPlan(
 
 auto target_definition_placement(const SemIRProgram& semantic, CallableID callable) noexcept
     -> TargetDefinitionPlacement {
-    if (semantic.static_instance(callable)) {
+    if (semantic.static_instance(callable) || semantic.generic_function_instance(callable)) {
         return TargetDefinitionPlacement::Use;
     }
     return semantic.is_source_template(callable) ? TargetDefinitionPlacement::None

@@ -336,7 +336,7 @@ local case_specs = {
 }
 
 case_specs["commands/native_execution"] = {
-    inputs = {"input.cv", "library.cv", "arguments.hpp", "unlisted.cv",
+    inputs = {"input.cv", "library.cv", "unlisted.cv",
         "crafts/demo/api.cv", "crafts/demo/native.hpp", "crafts/demo/native.cpp"},
     fixtures = {
         ["../../../../crafts/carven/runtime"] = "installation/crafts/toolchain with spaces/crafts/carven/runtime",
@@ -639,8 +639,6 @@ end
 case_specs["commands/source_collection"] = {
     inputs = {"input.cv", "isolated.cv", "crafts/demo/value.cv", "explicit.cv", "external/crafts/json/parser.cv"},
     steps = {
-        {args = {"check", "--explicit-inputs", "isolated.cv", "crafts/demo/value.cv"},
-            stderr_contains = {"carven: check passed"}},
         {args = {"interpret", "--explicit-inputs", "isolated.cv", "crafts/demo/value.cv"},
             stdout_contains = {"7\n"}},
         {args = {"check", "--explicit-inputs", "isolated.cv"}, exit_code = 1,
@@ -743,16 +741,14 @@ for _, spec in ipairs(native_specs) do
         set_languages("c++20")
         if spec.name == "runtime" then
             add_defines("NDEBUG")
+            add_includedirs(path.join(cli_dir, "commands", "runtime_traps"))
         end
         on_load(function (target)
             for source, destination in table.orderpairs(spec.sources) do
                 local prepared_source = path.join(source_root, destination)
                 os.mkdir(path.directory(prepared_source))
                 os.cp(path.join(cli_dir, source), prepared_source, {copy_if_different = true})
-                target:add("files", prepared_source, {
-                    includedirs = spec.name == "runtime"
-                        and path.join(cli_dir, "commands", "runtime_traps") or nil,
-                })
+                target:add("files", prepared_source)
             end
         end)
         for _, name in ipairs(table.orderkeys(spec.scenarios)) do

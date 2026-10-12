@@ -75,7 +75,7 @@ resolve Carven modules.
 | Provided module | Exports | Available without an import |
 | --- | --- | --- |
 | `std::core` | `bool`, `char`, `void`, `str`, `String`; `i8`, `i16`, `i32`, `i64`, `isize`; `u8`, `u16`, `u32`, `u64`, `usize`; `f32`, `f64`; `Vector`, `Range`; `assert`, `addressof` | These listed names |
-| `std::io` | `print`, `println`, `eprint`, `eprintln` | These listed names |
+| `std::io` | `print`, `println`, `eprint`, `eprintln`, `stdin`, `Stdin`, `Read`, `IOError` | Printing names and `stdin` |
 | `std::testing` | `check`, `require`, `fail` | These listed names |
 | `std::async` | `Operation`, `cancel_requested`, `cancel_point`, `yield_once`, `wait_ready`, `close`, `when_all`, `when_any`, `first_successful` | None |
 | `std::simd` | `u8x16`, `mask16`, `f32x4`, `mask4`, `u8x32`, `mask32`, `f32x8`, `mask8` | None |
@@ -88,7 +88,9 @@ active-test admission rules; `assert` works outside tests.
 Provided modules expose compiler-supported types and operations through ordinary
 module paths and import selections. `std::core` contains scalar and text types,
 `Vector`, `Range`, assertions, and address operations. Printing, testing, async,
-SIMD, and time have separate module owners.
+SIMD, and time have separate module owners. `std::io` also exposes `stdin`
+and its source-defined types and failures. The default `stdin` binding and
+explicit IO selections resolve to the same ordinary Carven declarations.
 
 Crafts are source packages. Import their APIs through source module paths such as
 `std::json.value`, `std::simd.bytes`, and `std::time.duration`, under ordinary

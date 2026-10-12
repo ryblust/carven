@@ -23,18 +23,30 @@ local reporting_source = path.join(language_dir, "testing", "reporting.cv")
 
 target("carven-test-language")
     set_default(false)
-    add_rules("@carven/carven", {tests = "main"})
+    add_rules("@carven/carven", {tests = "runner"})
 
     set_languages("c++20")
+    add_includedirs(language_dir)
     for _, source in ipairs(language_sources) do
-        add_files(source, {includedirs = language_dir})
+        add_files(source)
+    end
+
+    add_files(path.join(language_dir, "main.cv"))
+    add_files(path.join(language_dir, "io", "input.cv"))
+    for _, source in ipairs({
+        "behavior.cv", "core.cv", "containers.cv", "tuples.cv", "tail.cv", "constant.cv", "contracts.cv",
+        "owners.cv", "composition.cv", "waiting.cv", "scheduling.cv",
+    }) do
+        add_files(path.join(language_dir, "async", source))
     end
 
     add_tests("language", {group = "language", run_timeout = 30000})
-    on_test(function (target)
-        return import("generated", {
-            rootdir = path.join(os.projectdir(), "tests", "harness"),
-        }).main(target, "language")
+    add_tests("input", {group = "language", run_timeout = 30000})
+    on_test(function (target, opt)
+        local name = opt.name:match("([^/]+)$")
+        return import("harness." .. (name == "language" and "behavior" or name), {
+            rootdir = language_dir,
+        }).main(target)
     end)
 target_end()
 
@@ -43,7 +55,8 @@ target("carven-test-language-entry")
     add_rules("@carven/carven", {tests = "runner"})
 
     set_languages("c++20")
-    add_files(entry_source, {includedirs = language_dir})
+    add_includedirs(language_dir)
+    add_files(entry_source)
 
     for _, scenario in ipairs({"success", "throw", "recover", "propagate"}) do
         add_tests(scenario, {group = "language"})
@@ -94,10 +107,9 @@ target("carven-test-language-reporting")
     add_rules("@carven/carven", {tests = "runner"})
 
     set_languages("c++20")
-    add_files(reporting_source, {includedirs = language_dir})
-    add_files(path.join(language_dir, "testing", "reporting_driver.cpp"), {
-        includedirs = language_dir,
-    })
+    add_includedirs(language_dir)
+    add_files(reporting_source)
+    add_files(path.join(language_dir, "testing", "reporting_driver.cpp"))
 
     add_tests("reporting", {group = "language"})
     on_test(function (target)
@@ -133,6 +145,8 @@ target("carven-test-language-runner-failure")
     end)
 target_end()
 
+-- Printing calls synchronous callable views. Keep its entry outside the async
+-- suite, and exercise both the C++20 fallback and C++23 std::print backend.
 for _, mode in ipairs({
     {standard = "c++20", suffix = ""},
     {standard = "c++23", suffix = "-cxx23"},
@@ -144,96 +158,7 @@ for _, mode in ipairs({
         add_files(path.join(language_dir, "printing", "core.cv"))
         add_tests("printing", {group = "language"})
         on_test(function (target)
-            local stdout_file, stderr_file = os.tmpfile(), os.tmpfile()
-            local status = os.execv(target:targetfile(), {}, {
-                try = true, timeout = 30000, stdout = stdout_file, stderr = stderr_file,
-            })
-            -- Preserve NUL bytes while normalizing Windows text-stream line endings.
-            local stdout = io.readfile(stdout_file, {encoding = "binary"}):gsub("\r\n", "\n")
-            local stderr = io.readfile(stderr_file, {encoding = "binary"}):gsub("\r\n", "\n")
-            os.tryrm(stdout_file)
-            os.tryrm(stderr_file)
-            assert(status == 0, "printing failed: " .. tostring(status))
-            assert(stdout == "text: 你好😀\n42\ntrue\n我\n1.25\na\0b\n{unchanged}\nvalue=0007\n9\ndone\nmixed: 42 true 我 1.25 owned\n{value} 7 a\0b \ncount: 3\n1 2 3\n3\nafter 1\n1 false 11\n11\n42 before 1\n42 after 1\n18446744073709551615 -9223372036854775808\n"
-                .. 'PrintedOrder {\n    price: PrintedMoney {\n        cents: 1250,\n    },\n    names: [\n        "a",\n        "b\\n",\n    ],\n}\n'
-                .. 'PrintedState::Done(\n    42,\n    "ok",\n) PrintedState::Pending PrintedCode::Bad\n'
-                .. 'PrintedEmpty {} [\n    1,\n    2,\n    3,\n]\n[\n    4,\n    5,\n]\n'
-                .. 'PrintedOrder {\n    price: PrintedMoney {\n        cents: 99,\n    },\n    names: [\n        "a",\n        "b\\n",\n    ],\n} 1\n'
-                .. 'PrintedOrder {\n    price: PrintedMoney {\n        cents: 99,\n    },\n    names: [\n        "a",\n        "b\\n",\n    ],\n}\n1..=3\nPrintedBox PrintedEnvelope {\n    box: PrintedBox,\n}\n'
-                .. '我\n \n'
-                .. [=[constant=123
-[
-    "a\n",
-    "\"\\",
-    "",
-]
-text=123; empty=; unicode=我😀
-[
-    ',',
-    '我',
-]
-[
-    PrintedMoney {
-        cents: 7,
-    },
-]
-[]
-PrintedEmptyBox
-[
-    PrintedBox,
-    PrintedBox,
-]
-1
-2
-PrintedPair {
-    first: PrintedMoney {
-        cents: 1,
-    },
-    second: PrintedMoney {
-        cents: 2,
-    },
-}
-]=],
-                "unexpected stdout: " .. stdout)
-            assert(stderr == "error: -3\n\nerror: -4status: false\nerror\n", "unexpected stderr: " .. stderr)
-            return true
-        end)
-    target_end()
-end
-
--- Ordinary async cases share a void entry. Keep the i32 entry result contract
--- and escaped failure/cancellation in their own processes.
-for _, scenario in ipairs({
-    {
-        target = "carven-test-language-async-behavior",
-        sources = {"behavior.cv", "containers.cv", "tuples.cv", "tail.cv", "constant.cv", "contracts.cv",
-            "owners.cv", "composition.cv", "waiting.cv", "scheduling.cv"},
-        output = "containers\ntrue\ntuples\n42\ntail\ntrue\ntrue\ntrue\ntrue\ntrue\n"
-            .. "constant\ntrue\ntrue\ntrue\n1234\n10065\n1241\ntrue\n"
-            .. "contracts\n17\n13\n5\n10\n23\n20\n1\n12\n25\n2\n12\n9\n3\n12110\n129\n12384\n182\n"
-            .. "owners\ntrue\ncomposition\ntrue\nwaiting\ntrue\n"
-            .. "scheduling\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\n",
-    },
-    {
-        target = "carven-test-language-async",
-        source = "core.cv",
-        output = "0\n9\n9\n4\n5\n6\n7\n7\n19\n11\n14\n21\n22\n2\n12\n0\nfalse\n58\n124433\n1384\n1284\n",
-    },
-}) do
-    target(scenario.target)
-        set_default(false)
-        add_rules("@carven/carven", {tests = "runner"})
-        set_languages("c++20")
-        for _, source in ipairs(scenario.sources or {scenario.source}) do
-            add_files(path.join(language_dir, "async", source))
-        end
-        add_tests("behavior", {group = "language", run_timeout = 30000})
-        on_test(function (target)
-            local output, errors = os.iorunv(target:targetfile(), {}, {timeout = 30000})
-            assert(output:gsub("\r\n", "\n") == scenario.output,
-                "async source behavior differs: " .. output)
-            assert(errors == "", "unexpected async entry report: " .. errors)
-            return true
+            return import("harness.printing", {rootdir = language_dir}).main(target)
         end)
     target_end()
 end

@@ -9,10 +9,5 @@ inline auto install_abort_handler() noexcept -> void {
 }
 
 inline auto selected(const auto& arguments, std::string_view expected) noexcept -> bool {
-    for (const auto& [index, argument] : arguments) {
-        if (index == 0 && argument == expected) {
-            return true;
-        }
-    }
-    return false;
+    return !arguments.empty() && arguments.begin()->as_str() == expected;
 }

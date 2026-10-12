@@ -15,6 +15,7 @@ auto valid_query(const TargetExpr& expression) noexcept -> bool {
                 return valid_query(*value.operand);
             },
             [](const TargetNameExpr&) static noexcept { return true; },
+            [](const TargetStaticMemberExpr&) static noexcept { return true; },
             [](const TargetIntrinsicNameExpr&) static noexcept { return true; },
             [](const TargetTemplateNameExpr& value) static noexcept {
                 return valid_query(*value.operand);
@@ -77,6 +78,8 @@ auto equal_query(const TargetExpr& left, const TargetExpr& right) noexcept -> bo
             return value.type == other.type && equal_query(*value.operand, *other.operand);
         } else if constexpr (std::same_as<Value, TargetNameExpr>) {
             return value.name == other.name;
+        } else if constexpr (std::same_as<Value, TargetStaticMemberExpr>) {
+            return value.owner == other.owner && value.name == other.name;
         } else if constexpr (std::same_as<Value, TargetIntrinsicNameExpr>) {
             return value.symbol == other.symbol;
         } else if constexpr (std::same_as<Value, TargetTemplateNameExpr>) {

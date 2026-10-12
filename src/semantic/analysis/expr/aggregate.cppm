@@ -380,7 +380,7 @@ auto construct_slice_value(
     }
     auto result_extent = std::optional<std::uint64_t>();
     auto known = std::optional<ConstantID>();
-    if (intrinsic == SliceIntrinsic::FromOwner) {
+    if (intrinsic == SliceIntrinsic::View) {
         result_extent = extent;
     } else if constexpr (Site::mode == ExpressionMode::Body) {
         if (intrinsic == SliceIntrinsic::Slice) {
@@ -412,8 +412,8 @@ auto construct_slice_value(
                          .value = BooleanConstant {.value = *extent == 0u}}
                     );
                     break;
-                case SliceIntrinsic::FromOwner:
-                case SliceIntrinsic::Slice:     std::unreachable();
+                case SliceIntrinsic::View:
+                case SliceIntrinsic::Slice: std::unreachable();
             }
         }
     }
@@ -441,7 +441,7 @@ auto construct_slice_call(
     if (intrinsic == SliceIntrinsic::Slice && !slice_element(site.draft(), site.type(receiver))) {
         auto borrowed = co_await construct_slice_call(
             site,
-            SliceIntrinsic::FromOwner,
+            SliceIntrinsic::View,
             std::move(receiver),
             std::span<const ASTExprID>(),
             span

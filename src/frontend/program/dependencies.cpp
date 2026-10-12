@@ -46,6 +46,9 @@ auto source_dependencies(
                 }
             });
             if (selected) {
+                if (const auto source_export = provided_source_key(entry.identity)) {
+                    paths.emplace(source_export->module);
+                }
                 for (const auto record : provided_contract_dependencies(entry.identity)) {
                     require_record(record);
                 }
@@ -53,6 +56,15 @@ auto source_dependencies(
         }
     }
     for (const auto& expression : syntax.expressions()) {
+        if (const auto* name = std::get_if<ASTNameExpr>(&expression.value)) {
+            for (const auto& entry : provided_exports()) {
+                if (entry.default_available && entry.name == slice(source, name->name_span)) {
+                    if (const auto source_export = provided_source_key(entry.identity)) {
+                        paths.emplace(source_export->module);
+                    }
+                }
+            }
+        }
         const auto* literal = std::get_if<ASTLiteral>(&expression.value);
         const auto* integer = literal ? std::get_if<IntegerLiteralValue>(&literal->value) : nullptr;
         if (integer && duration_literal_scale(integer->suffix)) {

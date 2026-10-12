@@ -71,7 +71,7 @@ const TestSuite suite([] static noexcept {
                     TargetHeaderGroup::StandardLibrary
                 ),
                 std::tuple(
-                    TargetSymbol::RuntimeAsSlice,
+                    TargetSymbol::RuntimeSliceView,
                     "carven/runtime/collection/slice.hpp",
                     TargetHeaderGroup::Runtime
                 ),

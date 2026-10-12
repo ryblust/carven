@@ -27,7 +27,7 @@ test "Array initialization: repeated factories directly construct native owners"
     }
     check(count(1) == 0);
     let empty: [Resource; 0] = [create(&attempts); 0];
-    check(empty.as_slice().is_empty());
+    check(empty.slice().is_empty());
     check(attempts == 3);
     check(count(1) == 0);
 }
@@ -58,7 +58,7 @@ test "Array initialization: zero lambda occurrences do not copy native captures"
     if true {
         let owner = CopyOwner { 1 };
         let empty = [[owner]() -> i32 => owner.id; 0];
-        check(empty.as_slice().is_empty());
+        check(empty.slice().is_empty());
         check(matches("1 "));
     }
     check(matches("1 -1 "));

@@ -119,8 +119,8 @@ retain C++ artifacts:
 ./xmakew run carven compile --stdout main.cv
 ```
 
-The [execution example](examples/execution/README.md) combines top-level statements,
-compile-time output, static tests, and ordinary function calls. `compile --stdout`
+The [audio mixer](examples/audio_mixer/README.md) uses the same mixing function in
+compile-time tests and native execution. `compile --stdout`
 displays generated artifacts; `compile -o <dir>` writes them below the selected
 directory. With no destination option, `compile` writes below the current directory.
 The [CLI reference](docs/toolchain/cli.md) defines execution limits and supported platforms.
@@ -188,8 +188,8 @@ dependencies remain ordinary build configuration. See the
 
 ## Documentation
 
-- **Run examples:** [Learning examples](examples/README.md) and the
-  [failure-contract example](examples/failures/README.md)
+- **Run examples:** [Complete example programs](examples/README.md), including
+  [async TCP collection](examples/stream_collector/README.md)
 - **Learn the language:** [Tutorial](docs/language/tutorial.md),
   [Grammar](docs/language/grammar.md), and [Language Reference](docs/language/README.md)
 - **Use the compiler:** [CLI Reference](docs/toolchain/cli.md) and

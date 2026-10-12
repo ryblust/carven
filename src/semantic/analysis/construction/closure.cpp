@@ -54,6 +54,12 @@ auto ConstructionRequests::close_generic_environment(
                     for (const auto& actual : shape.arguments) {
                         collect(actual);
                     }
+                } else if constexpr (std::same_as<Shape, GenericCppNamedType>) {
+                    types.append_range(shape.arguments);
+                } else if constexpr (std::same_as<Shape, GenericCppQueryType>) {
+                    visit_cpp_query_types(shape, [&](ConstructionTypeRef child) noexcept {
+                        types.push_back(child);
+                    });
                 }
             });
         } else if (const auto* term = std::get_if<TypeTermID>(&type)) {

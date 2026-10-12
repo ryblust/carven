@@ -38,6 +38,9 @@ auto visit_semantic_edges(Operation& operation, Visitor visitor) noexcept -> voi
             value.callee.visit(
                 Overloaded {
                     [](SemanticChildNode<Operation, CppNameReference>&) static noexcept {},
+                    [](
+                        SemanticChildNode<Operation, CppStaticMemberCallee<ConstructionTypeRef>>&
+                    ) static noexcept {},
                     [&](
                         SemanticChildNode<Operation, CppMemberCallee<SemCppOperand>>& callee
                     ) noexcept { child(callee.receiver.expression); },

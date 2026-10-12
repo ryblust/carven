@@ -61,10 +61,11 @@ Arrays retain `[T; N]`, tuples retain their arity and ordered component types,
 and structs retain their nominal type. The unit value `()` freezes as `void`;
 a successful `const fn` call with a `void` result can initialize a constant.
 Array `length()` and `is_empty()` queries also produce constants.
-An explicit `[T]` constant annotation or `as_slice()` in a constant initializer
-retains eligible completed array or Vector backing as a frozen slice. Its `length`, `is_empty`, indexing,
-and `slice` queries can also produce constants. Calls to ordinary `fn` and direct
-control-flow expressions are not Carven constant expressions. Local and module
+An explicit `[T]` constant annotation or `slice()` in a constant initializer
+retains eligible completed array or Vector backing as a frozen slice. Its
+`length`, `is_empty`, indexing, and `slice` queries can also produce constants.
+Calls to ordinary `fn` and direct control-flow expressions are not Carven constant
+expressions. Local and module
 constant declarations exist only in the static stage; their later uses denote the
 selected normalized value without creating a runtime binding or lambda capture.
 Retained owners and their projections have immutable program-lifetime backing,
@@ -285,7 +286,7 @@ Empty array literals require an expected element type.
 Read arguments containing array, Vector, or String storage observe their contents after
 all arguments have evaluated. Other supported values are snapshotted at their
 argument position. Field and index projections follow the selected value's type.
-Slice operations, including `as_slice().length()`, indexing, and subslicing, can
+Slice operations, including `slice().length()`, indexing, and subslicing, can
 execute against live backing storage. Slice chains preserve the selected element
 identity during execution. Completed results become frozen slices at a constant
 initializer; runtime copies use the ordinary slice API and borrowing rules.
@@ -356,7 +357,7 @@ produces an ordinary `char` constant with the same publication rules as a litera
 ## Frozen constant slices
 
 A constant initializer can retain a completed array or Vector as `[T]`,
-using an explicit annotation or `as_slice()`:
+using an explicit annotation or `slice()`:
 
 ```carven
 const table: [i32] = [2, 4, 6];

@@ -414,10 +414,12 @@ the library's owning build instead. Library identity and emission use no runtime
 test mode, so application test runners do not require additional library builds.
 
 This boundary supports the fixed library installed with the compiler. It rejects
-unknown or duplicate modules, generic declarations, process entries, and interfaces
+unknown or duplicate modules, process entries, and interfaces
 that merge library and application modules. The owning build supplies and checks
-the library as an independent source batch. Consumers emit the inline static
-instances they use.
+the library as an independent source batch. Consumers emit requested inline
+static and generic function instances, together with their nominal type instances.
+Generic declarations are checked in each source batch; their concrete native
+operations are checked when instantiated.
 
 The compiler supplies generated identity and artifacts. The build system owns
 library targets, toolchains, native configurations, object reuse, and linking.

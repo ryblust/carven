@@ -1,0 +1,158 @@
+import std::simd.floats using { block_count, load_block };
+import std::simd using f32x8;
+import <cmath>;
+
+struct Gains {
+    voice: f32,
+    music: f32
+}
+
+enum MixError {
+    Length,
+    Gain,
+    NonFinite
+}
+
+struct Mix {
+    samples: Vector<f32>,
+    clipped: usize,
+    peak: f32,
+    energy: f32,
+}
+
+const fn preset() -> Gains => {
+    voice: 1.0,
+    music: 0.5
+};
+
+const gains = preset();
+
+// Mixing stays the same in static execution and native SIMD execution.
+const fn mix(voice: [f32], music: [f32], gain: Gains) -> Mix throw MixError {
+    if voice.length() != music.length() { throw MixError::Length; }
+    if !gain.voice.is_finite() || !gain.music.is_finite() || gain.voice < 0.0 || gain.music < 0.0 {
+        throw MixError::Gain;
+    }
+    var output: Mix = {};
+    for index in 0..block_count(voice) {
+        let left = load_block(voice, index * 8);
+        let right = load_block(music, index * 8);
+        let combined = left.value * gain.voice + right.value * gain.music;
+        let lanes = combined.to_array();
+        // Include active lanes: the final block may contain fewer than eight samples.
+        output.clipped += (((combined > 1.0) | (combined < -1.0)) & left.active).count();
+        let bounded = (combined > 1.0).select(
+            f32x8::splat(1.0),
+            (combined < -1.0).select(f32x8::splat(-1.0), combined)
+        );
+        let samples = bounded.to_array();
+        for lane in 0..left.length {
+            if !lanes[lane].is_finite() { throw MixError::NonFinite; }
+            let value = samples[lane];
+            output.samples.push(value);
+            output.energy += value * value;
+            let magnitude = if value < 0.0 { -value } else { value };
+            if magnitude > output.peak { output.peak = magnitude; }
+        }
+    }
+    return &&output;
+}
+
+fn rms(value: Mix) -> f32 => if value.samples.is_empty() {
+    0.0
+} else {
+    ::std::sqrt(value.energy / (value.samples.length() as f32)) as f32
+};
+
+private const fn verify_tail() -> bool throw MixError {
+    let voice: [f32; 9] = [0.5; 9];
+    let music: [f32; 9] = [0.25, -0.25, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 2.0];
+    let output = mix(voice, music, gains)?;
+    return output.samples.length()
+        == 9
+        && output.clipped == 1
+        && output.samples[0] == 0.625
+        && output.samples[1] == 0.375
+        && output.samples[8] == 1.0
+        && output.peak == 1.0;
+}
+
+const test "mixing clips the active tail at compile time" {
+    check(
+        try {
+            verify_tail()?
+        } catch {
+            MixError(_) => false
+        }
+    );
+}
+
+test "mixing clips the active tail and preserves sample order" {
+    check(
+        try {
+            verify_tail()?
+        } catch {
+            MixError(_) => false
+        }
+    );
+}
+
+test "mixing rejects mismatched tracks and invalid gains" {
+    let mismatch = try {
+        let _ = mix([0.0], [], gains)?;
+        false
+    } catch {
+        MixError(error) => error == .Length
+    };
+    let invalid = try {
+        let _ = mix(
+            [],
+            [],
+            {
+                voice: -1.0,
+                music: 1.0
+            }
+        )?;
+        false
+    } catch {
+        MixError(error) => error == .Gain
+    };
+    check(mismatch && invalid);
+    check(
+        try {
+            rms(mix([], [], gains)?) == 0.0
+        } catch {
+            MixError(_) => false
+        }
+    );
+}
+
+test "mixing rejects nonfinite gains and overflowing samples" {
+    let invalid = try {
+        let _ = mix(
+            [],
+            [],
+            {
+                voice: 0.0f32 / 0.0f32,
+                music: 1.0
+            }
+        )?;
+        false
+    } catch {
+        MixError(error) => error == .Gain
+    };
+    let overflow = try {
+        let _ = mix(
+            [3.0e38f32],
+            [3.0e38f32],
+            {
+                voice: 1.0,
+                music: 1.0
+            }
+        )?;
+        false
+    } catch {
+        MixError(error) => error == .NonFinite
+    };
+    check(invalid && overflow);
+}

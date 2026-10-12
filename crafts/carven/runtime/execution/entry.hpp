@@ -1,5 +1,6 @@
 #pragma once
 
+#include <carven/runtime/collection/vector.hpp>
 #include <carven/runtime/diagnostics/trap.hpp>
 #include <carven/runtime/display/display.hpp>
 #include <carven/runtime/text/text.hpp>
@@ -8,25 +9,21 @@
 #include <cstddef>
 #include <cstdio>
 #include <functional>
-#include <ranges>
 #include <string>
 #include <string_view>
-#include <utility>
 
 namespace carven::runtime {
 
-constexpr auto entry_args(int argc, const char* const* argv) noexcept -> auto {
+inline auto entry_args(int argc, const char* const* argv) noexcept -> Vector<String> {
     const auto count = argc > 1 ? static_cast<std::size_t>(argc - 1) : std::size_t {0};
+    auto result = Vector<String>::with_capacity(count);
     for (auto index = std::size_t {0}; index < count; ++index) {
-        checked_utf8(std::string_view(argv[index + 1]), SourceSite::native());
+        const auto text = std::string_view(argv[index + 1]);
+        checked_utf8(text, SourceSite::native());
+        result.push(String::from_str(text));
     }
-    return std::views::iota(std::size_t {0}, count)
-        | std::views::transform([argv](std::size_t index) noexcept {
-               return std::pair {index, std::string_view(argv[index + 1])};
-           });
+    return result;
 }
-
-using EntryArgs = decltype(entry_args(0, nullptr));
 
 namespace detail {
 
@@ -66,3 +63,13 @@ auto report_entry_failure(
 }
 
 } // namespace carven::runtime
+
+namespace carven::runtime::execution {
+
+inline auto report_entry_cancelled(SourceSite site) noexcept -> void {
+    carven::runtime::detail::begin_report("cancellation escaped the program entry", site);
+    std::fputs("  note: program exited with a failure status\n\n", stderr);
+    std::fflush(stderr);
+}
+
+} // namespace carven::runtime::execution

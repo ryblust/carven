@@ -8,7 +8,7 @@ namespace {
 
 struct TestCase final {
     std::string name;
-    TestFunction body;
+    std::function<void()> body;
     std::source_location location;
 };
 
@@ -43,6 +43,8 @@ struct RunOptions final {
     std::string_view include_pattern;
     std::string_view exclude_pattern;
     std::string_view test_name;
+    std::size_t shard_index;
+    std::size_t shard_count;
     bool list_tests;
     bool timings;
     bool show_help;
@@ -90,10 +92,13 @@ auto parse_options(int argc, const char* const* argv) noexcept -> std::optional<
         .include_pattern = {},
         .exclude_pattern = {},
         .test_name = {},
+        .shard_index = 0uz,
+        .shard_count = 1uz,
         .list_tests = false,
         .timings = false,
         .show_help = false,
     };
+    auto shard = std::string_view();
     for (auto index = 1; index < argc; ++index) {
         const auto argument = std::string_view(argv[index]);
         if (argument == "--list-tests" || argument == "--timings" || argument == "--help") {
@@ -110,6 +115,7 @@ auto parse_options(int argc, const char* const* argv) noexcept -> std::optional<
         auto* destination = argument == "--filter" ? &options.include_pattern
             : argument == "--exclude"              ? &options.exclude_pattern
             : argument == "--test"                 ? &options.test_name
+            : argument == "--shard"                ? &shard
                                                    : nullptr;
         if (destination == nullptr || !destination->empty()) {
             std::print(std::cerr, "Invalid test option: {}\n", argument);
@@ -125,6 +131,35 @@ auto parse_options(int argc, const char* const* argv) noexcept -> std::optional<
             return std::nullopt;
         }
     }
+    if (!shard.empty()) {
+        const auto separator = shard.find('/');
+        auto index = 0uz;
+        auto count = 0uz;
+        if (separator == std::string_view::npos) {
+            std::print(std::cerr, "Invalid test shard: {} (expected INDEX/COUNT).\n", shard);
+            return std::nullopt;
+        }
+        const auto* begin = shard.data();
+        const auto* middle = begin + separator;
+        const auto* end = begin + shard.size();
+        const auto parsed_index = std::from_chars(begin, middle, index);
+        const auto parsed_count = std::from_chars(middle + 1, end, count);
+        if (parsed_index.ec != std::errc()
+            || parsed_index.ptr != middle
+            || parsed_count.ec != std::errc()
+            || parsed_count.ptr != end
+            || index == 0uz
+            || index > count) {
+            std::print(
+                std::cerr,
+                "Invalid test shard: {} (expected 1 <= INDEX <= COUNT).\n",
+                shard
+            );
+            return std::nullopt;
+        }
+        options.shard_index = index - 1uz;
+        options.shard_count = count;
+    }
     return options;
 }
 
@@ -137,7 +172,7 @@ auto collect_tests() noexcept -> bool {
     std::ranges::sort(runner.tests, {}, &TestCase::name);
     const TestCase* previous = nullptr;
     for (const auto& entry : runner.tests) {
-        if (entry.name.empty() || entry.body == nullptr) {
+        if (entry.name.empty() || !entry.body) {
             std::print(
                 std::cerr,
                 "{}:{}: Invalid test declaration: {}\n",
@@ -183,7 +218,7 @@ auto TestRegistration::operator=(TestBody body) const noexcept -> void {
         return;
     }
     runner.tests.push_back(
-        {.name = std::string(name), .body = body.body, .location = body.location}
+        {.name = std::string(name), .body = std::move(body.body), .location = body.location}
     );
 }
 
@@ -290,8 +325,9 @@ auto run_tests(int argc, const char* const* argv) noexcept -> int {
         std::print(
             std::cout,
             "Usage: {} [--filter PATTERN] [--exclude PATTERN] [--test NAME] [--list-tests] "
-            "[--timings]\n"
+            "[--shard INDEX/COUNT] [--timings]\n"
             "Patterns support * and ?. An empty selection fails.\n"
+            "Shards partition sorted, selected cases by interleaved position; indices start at 1.\n"
             "Timings report case execution durations, slowest first.\n",
             argv[0]
         );
@@ -307,12 +343,16 @@ auto run_tests(int argc, const char* const* argv) noexcept -> int {
         return 1;
     }
     runner.phase = Phase::Execution;
+    auto candidate_index = 0uz;
     auto selected_count = 0uz;
     auto passed_count = 0uz;
     auto failed_count = 0uz;
     auto timings = std::vector<TestTiming>();
     for (const auto& entry : runner.tests) {
         if (!is_selected(entry.name, *options)) {
+            continue;
+        }
+        if (candidate_index++ % options->shard_count != options->shard_index) {
             continue;
         }
         ++selected_count;

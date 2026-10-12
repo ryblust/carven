@@ -106,9 +106,9 @@ fn f(v: u8x16) -> u8x16 => v / v;)",
              .primary_text = "/"},
             {.name = "short full load",
              .source = R"(import std::simd using *;
-const bytes: [u8; 1] = [1]; const x = u8x16::load(bytes.as_slice(), 0);)",
+const bytes: [u8; 1] = [1]; const x = u8x16::load(bytes.slice(), 0);)",
              .code = DiagnosticCode::ConstIndexBounds,
-             .primary_text = "u8x16::load(bytes.as_slice(), 0)"},
+             .primary_text = "u8x16::load(bytes.slice(), 0)"},
             {.name = "float mask is not a condition",
              .source = R"(import std::simd using f32x4;
 

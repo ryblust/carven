@@ -157,9 +157,9 @@ auto DeclarationSurfaceValidator::validate(TypeID type) noexcept -> void {
                 }
             },
             [&](const CppTypeValue& value) noexcept {
-                for (const auto referenced : cpp_type_references(value)) {
+                visit_cpp_type_references(value, [&](TypeID referenced) noexcept {
                     validate(referenced);
-                }
+                });
             },
         }
     );
@@ -209,7 +209,8 @@ auto validate_declaration_surfaces(
             failure = checked.error();
         }
     };
-    for (const auto& contract : program.generic_declaration_contracts()) {
+    for (const auto entry : program.generic_declaration_contracts()) {
+        const auto& contract = entry.value;
         for (const auto& dependency : contract.audience_dependencies) {
             auto validator = DeclarationSurfaceValidator(
                 program,

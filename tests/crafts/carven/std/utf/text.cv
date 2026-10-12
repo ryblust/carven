@@ -1,9 +1,19 @@
 import std::utf.error using UTF8Error;
-import std::utf.text using { from_utf8, to_string };
+
+import std::utf.text using {
+    from_utf8,
+    to_string,
+    substring,
+    split_once,
+    split,
+    lines,
+    starts_with,
+    TextError,
+};
 
 private const fn copied_text() -> String throw UTF8Error {
     let bytes = [0xffu8, 0x61, 0, 0xc3, 0xa9, 0xe4, 0xbd, 0xa0, 0xff];
-    let selected = bytes.as_slice().slice(1, 8);
+    let selected = bytes.slice(1, 8);
     let view = from_utf8(selected)?;
     assert(view.bytes.length() == selected.length());
     assert(view.bytes[0] == 0x61);
@@ -80,7 +90,7 @@ test "UTF8: byte slices construct borrowed and owning text" {
 
 test "UTF8: borrowed and owning text construction report invalid bytes" {
     let input: [u8; 2] = [0xe2, 0x28];
-    let bytes = input.as_slice();
+    let bytes = input.slice();
     let expected = UTF8Error {
         kind:.InvalidContinuation,
         offset: 1,
@@ -110,4 +120,102 @@ test "UTF8: borrowed and owning text construction report invalid bytes" {
         },
     }
     check(rejected);
+}
+
+private const fn processed_text() -> bool throw TextError {
+    let text = "aé世界😀z";
+    if substring(text, 1, 9)? != "é世界" { return false; }
+    if substring(text, 9, 13)? != "😀" { return false; }
+    if !substring(text, 3, 3)?.is_empty() { return false; }
+    if !starts_with(text, "aé") || starts_with(text, "é") { return false; }
+    let pair = split_once("key=世界=value", "=")?;
+    if !pair.found || pair.before != "key" || pair.after != "世界=value" { return false; }
+    let absent = split_once(text, "missing")?;
+    if absent.found || absent.before != text || !absent.after.is_empty() { return false; }
+    let fields = split("世界::a::::", "::")?;
+    if fields.length()
+        != 4
+        || fields[0] != "世界"
+        || fields[1] != "a"
+        || !fields[2].is_empty()
+        || !fields[3].is_empty() {
+        return false;
+    }
+    let empty = split("", ",")?;
+    if empty.length() != 1 || !empty[0].is_empty() { return false; }
+    let separated = split("a世b世界c", "世界")?;
+    if separated.length() != 2 || separated[0] != "a世b" || separated[1] != "c" { return false; }
+    let records = lines("a\r\n\n世界\nlast\r");
+    return records.length()
+        == 4
+        && records[0] == "a"
+        && records[1].is_empty()
+        && records[2] == "世界"
+        && records[3] == "last\r"
+        && lines("").is_empty()
+        && lines("\n").length() == 1
+        && lines("a\n").length() == 1;
+}
+
+const test "Text: byte boundaries and exact splitting execute at compilation" {
+    check(
+        try {
+            processed_text()?
+        } catch {
+            TextError(_) => false
+        }
+    );
+}
+
+test "Text: processing preserves UTF8 boundaries and empty fields" {
+    check(
+        try {
+            processed_text()?
+        } catch {
+            TextError(_) => false
+        }
+    );
+    let rejected = try {
+        let _ = substring("é", 1, 2)?;
+        false
+    } catch {
+        TextError(error) => error == .NotCharBoundary,
+    };
+    check(rejected);
+    check(
+        try {
+            let _ = substring("é", 3, 3)?;
+            false
+        } catch {
+            TextError(error) => error == .OutOfBounds
+        }
+    );
+    check(
+        try {
+            let _ = substring("é", 2, 0)?;
+            false
+        } catch {
+            TextError(error) => error == .OutOfBounds
+        }
+    );
+    check(
+        try {
+            let _ = split("abc", "")?;
+            false
+        } catch {
+            TextError(error) => error == .EmptySeparator
+        }
+    );
+
+    var source: String = "first=世界";
+    let owned = try {
+        split(source, "=")?
+    } catch {
+        TextError(_) => {
+            fail("valid separator");
+            []
+        }
+    };
+    source.clear();
+    check(owned.length() == 2 && owned[0] == "first" && owned[1] == "世界");
 }

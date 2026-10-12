@@ -141,7 +141,10 @@ auto ConstFunctionValidator::supported_type(ConstructionTypeRef type) const noex
             const auto shape = draft.generic_type_copy(*generic);
             const auto admitted = shape.visit([&](const auto& value) noexcept -> bool {
                 using Value = std::remove_cvref_t<decltype(value)>;
-                if constexpr (std::same_as<Value, TypeID>) {
+                if constexpr (std::same_as<Value, GenericCppNamedType>
+                              || std::same_as<Value, GenericCppQueryType>) {
+                    return false;
+                } else if constexpr (std::same_as<Value, TypeID>) {
                     pending.emplace_back(value);
                 } else if constexpr (std::same_as<Value, GenericArrayType>) {
                     pending.emplace_back(value.element);
@@ -302,16 +305,16 @@ auto ConstFunctionValidator::check_body(const StructuredBodyDraft& body) noexcep
         std::visit(
             Overloaded {
                 [&](const SemanticRegion* region) noexcept {
-                    auto children = std::vector<PendingNode>();
+                    const auto first = nodes.size();
                     for (const auto& statement : region->statements) {
                         if (statement.reachable) {
-                            children.emplace_back(&statement);
+                            nodes.emplace_back(&statement);
                         }
                     }
                     if (region->result && region->result_reachable) {
-                        children.emplace_back(&*region->result);
+                        nodes.emplace_back(&*region->result);
                     }
-                    nodes.insert(nodes.end(), children.rbegin(), children.rend());
+                    std::reverse(nodes.begin() + static_cast<std::ptrdiff_t>(first), nodes.end());
                 },
                 [&](const SemanticStatement* statement) noexcept {
                     if (std::holds_alternative<SemStaticBinding>(statement->value)
@@ -322,18 +325,18 @@ auto ConstFunctionValidator::check_body(const StructuredBodyDraft& body) noexcep
                         reject(statement->origin, std::string(*reason));
                         return;
                     }
-                    auto children = std::vector<PendingNode>();
+                    const auto first = nodes.size();
                     statement->value.visit([&](const auto& operation) noexcept {
                         visit_evaluation_children(operation, [&](const auto& child) noexcept {
                             using Child = std::remove_cvref_t<decltype(child)>;
                             if constexpr (std::same_as<Child, SemanticExpression>) {
-                                children.emplace_back(&child);
+                                nodes.emplace_back(&child);
                             } else if constexpr (std::same_as<Child, SemanticRegion>) {
-                                children.emplace_back(&child);
+                                nodes.emplace_back(&child);
                             }
                         });
                     });
-                    nodes.insert(nodes.end(), children.rbegin(), children.rend());
+                    std::reverse(nodes.begin() + static_cast<std::ptrdiff_t>(first), nodes.end());
                 },
                 [&](const SemanticExpression* expression) noexcept {
                     // Control operations select a child result rather than construct
@@ -365,14 +368,14 @@ auto ConstFunctionValidator::check_body(const StructuredBodyDraft& body) noexcep
                             return;
                         }
                     }
-                    auto children = std::vector<PendingNode>();
+                    const auto first = nodes.size();
                     expression->value.visit([&](const auto& operation) noexcept {
                         visit_evaluation_children(operation, [&](const auto& child) noexcept {
                             using Child = std::remove_cvref_t<decltype(child)>;
                             if constexpr (std::same_as<Child, SemanticExpression>) {
-                                children.emplace_back(&child);
+                                nodes.emplace_back(&child);
                             } else if constexpr (std::same_as<Child, SemanticRegion>) {
-                                children.emplace_back(&child);
+                                nodes.emplace_back(&child);
                             }
                         });
                         using Operation = std::remove_cvref_t<decltype(operation)>;
@@ -387,7 +390,7 @@ auto ConstFunctionValidator::check_body(const StructuredBodyDraft& body) noexcep
                             }
                         }
                     });
-                    nodes.insert(nodes.end(), children.rbegin(), children.rend());
+                    std::reverse(nodes.begin() + static_cast<std::ptrdiff_t>(first), nodes.end());
                 },
             },
             next

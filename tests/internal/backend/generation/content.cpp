@@ -101,6 +101,47 @@ const TestSuite suite([] static noexcept {
             expect(diagnostics.empty());
         };
 
+    "Generic instances: library identities preserve unused arguments across consumer domains and request order"_test =
+        [] static noexcept {
+            const auto names = [](std::string calls, std::string domain) static noexcept {
+                const auto semantic = analyze_test_program(
+                    "export fn tag<T>() -> i32 => 42; fn use() {" + calls + "}"
+                );
+                const auto module =
+                    (*semantic.generic_declaration_contracts().begin()).value.module_id;
+                const auto library = std::flat_set<ModuleID> {module};
+                const auto compilation = PlannedCompilation::build(
+                    semantic,
+                    {.test_mode = TestGenerationMode::None,
+                     .linkage_domain = *LinkageDomain::explicit_value(std::move(domain)),
+                     .library =
+                         SourceLibrary {
+                             .modules = {semantic_test_module_path()},
+                             .linkage_domain = *LinkageDomain::explicit_value("fixed-library"),
+                             .emit_implementations = false,
+                         }},
+                    library
+                );
+                auto result = std::map<BuiltinType, TargetName>();
+                for (const auto& instance : semantic.generic_function_instances()) {
+                    const auto argument = std::get<TypeID>(instance.arguments.front());
+                    const auto kind =
+                        std::get<BuiltinTypeValue>(semantic.types().type(argument).value).kind;
+                    const auto name =
+                        compilation.target().names().callable_name(std::nullopt, instance.callable);
+                    result.emplace(kind, name);
+                }
+                return result;
+            };
+            const auto first = names("let _ = tag<i16>(); let _ = tag<i32>();", "consumer:first");
+            const auto second = names("let _ = tag<i32>(); let _ = tag<i16>();", "consumer:second");
+            if (!expect(first.contains(BuiltinType::I16) && first.contains(BuiltinType::I32))) {
+                return;
+            }
+            expect(first == second);
+            expect(first.at(BuiltinType::I16) != first.at(BuiltinType::I32));
+        };
+
     "Generation: shared native query types have bounded expanded target syntax"_test =
         [] static noexcept {
             constexpr auto depth = 12uz;

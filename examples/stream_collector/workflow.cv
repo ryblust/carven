@@ -1,0 +1,123 @@
+import std::async using { when_all, yield_once, close };
+import std::time using timeout;
+import std::time.timeout using Timeout;
+import std::utf.text using to_string;
+import std::io using IOError;
+import "network.hpp" using collector::Context;
+
+enum ProtocolError {
+    TooLong,
+    Truncated
+}
+
+enum Status {
+    Complete,
+    Rejected,
+    TimedOut
+}
+
+struct Feed {
+    records: Vector<String>,
+    status: Status
+}
+
+// The host calls the same source-level input API as a Carven entry.
+export(cpp) async fn read_input() -> Vector<u8> throw IOError {
+    return await stdin().read_all(16 * 1024 * 1024)?;
+}
+
+export(cpp) fn io_error(code: i32) -> IOError => .System(code);
+
+#[cpp] ---
+#include <carven/api/examples/stream_collector/workflow.hpp>
+using CollectorIOError = decltype(carven::api::examples::stream_collector::workflow::io_error(0));
+auto receive_chunk(const collector::Context&) noexcept
+    -> carven::runtime::execution::AsyncOperation<carven::runtime::Vector<std::uint8_t>, CollectorIOError>;
+auto send_stream(const collector::Context&) noexcept
+    -> carven::runtime::execution::AsyncOperation<void, CollectorIOError>;
+---
+
+import(cpp) async fn receive_chunk(context: Context) -> Vector<u8> throw IOError;
+import(cpp) async fn send_stream(context: Context) throw IOError;
+
+private async fn receive(context: Context) -> Vector<String> {
+    var records: Vector<String> = [];
+    var line: Vector<u8> = [];
+    while {
+        let chunk = await receive_chunk(context)?;
+        if chunk.is_empty() {
+            if !line.is_empty() { throw ProtocolError::Truncated; }
+            return &&records;
+        }
+        for byte in chunk {
+            if byte == 0x0a {
+                if !line.is_empty() { records.push(to_string(line)?); }
+                line.clear();
+            } else {
+                if line.length() == 256 { throw ProtocolError::TooLong; }
+                line.push(byte);
+            }
+        }
+    }
+}
+
+private async fn guarded_receive(context: Context) -> Feed {
+    try {
+        return {
+            records: await timeout(receive(context), 1s)?,
+            status:.Complete
+        };
+    } catch {
+        Timeout(_) => {
+            return {
+                records: [],
+                status:.TimedOut
+            };
+        },
+        _ => {
+            return {
+                records: [],
+                status:.Rejected
+            };
+        },
+    }
+}
+
+// C++ drives this workflow; its async providers borrow host-owned socket contexts.
+export(cpp) async fn collect(
+    first: Context,
+    second: Context,
+    stalled: Context,
+    records_only: bool
+) -> String {
+    async let readers = when_all(
+        guarded_receive(first),
+        guarded_receive(second),
+        guarded_receive(stalled)
+    );
+    // Let the reads register before starting the loopback publishers.
+    await yield_once();
+    async let publishers = when_all(send_stream(first), send_stream(second));
+    let (left, right, idle) = await readers;
+    // A rejected feed may leave its publisher blocked by TCP backpressure.
+    // Drain publishers before releasing their host contexts and buffers.
+    await close(publishers);
+    var records: String = {};
+    var count: usize = 0;
+    var rejected: usize = 0;
+    var timed_out: usize = 0;
+    for feed in [left, right, idle] {
+        match feed.status {
+            .Complete => {},
+            .Rejected => { ++rejected; },
+            .TimedOut => { ++timed_out; },
+        }
+        for line in feed.records {
+            records.append(line);
+            records.push('\n');
+            ++count;
+        }
+    }
+    if records_only { return &&records; }
+    return f"Collected {count} records; rejected feeds: {rejected}; timed out: {timed_out}\n{records}";
+}

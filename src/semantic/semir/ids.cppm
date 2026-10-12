@@ -128,6 +128,8 @@ using TypeTermID = ProgramID<TypeTermIDTag>;
 using FailureTermID = ProgramID<FailureTermIDTag>;
 using GenericFailureID = ProgramID<GenericFailureIDTag>;
 
+using ConstructionTypeRef = std::variant<TypeID, TypeTermID, GenericTypeID>;
+
 struct LifetimeRegionIDTag final {};
 
 struct LocalBindingIDTag final {};

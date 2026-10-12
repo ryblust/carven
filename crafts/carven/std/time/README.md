@@ -78,7 +78,7 @@ cleanup before releasing retained backing.
 
 The shared execution runtime owns clock access, waiting operations, timer
 registration, deadline polling, and cancellation delivery. Its public C++ entry is
-`carven/runtime/execution/execution.hpp`. The time library owns durations, time points,
+`carven/runtime/execution/time.hpp`. The time library owns durations, time points,
 checked arithmetic, and their source APIs; its native adapter calls
 `carven::runtime::execution::now` and `sleep_until`. The native source entry supplies
 the execution driver automatically. It runs ready work on the same thread and
@@ -125,13 +125,14 @@ positive whole number of nanoseconds. Clock readings must fit the signed
 nanosecond domain. Conversion uses checked integer arithmetic and rounds a
 waiting deadline to the later native tick.
 
-An explicit host passed to `drive_root(operation, &pump)` continues to provide
-`poll(driver)` and `wait()`. When timers are pending, it also provides
-`wait_until(i64_deadline) -> bool`. This deadline uses the same steady-clock epoch
-and nanosecond representation as the runtime. The host waits for external events
-or that deadline in one operation; it returns true after an event, timeout, or
-other wake that permits the driver to poll again. A wait-only host cannot drive
-pending timers.
+A host passed to `drive_root(operation, &source)` derives from `EventSource`.
+It implements `poll(Driver&)` and `wait(std::optional<std::int64_t> deadline)`.
+The deadline uses the runtime's steady-clock epoch and nanosecond representation.
+Waiting returns false when there are no pending native requests. Otherwise it
+waits for readiness or the supplied deadline and returns true, allowing the
+driver to poll again. The driver services builtin timers and registered sources
+in the same loop; with multiple independent sources it caps waits at ten
+milliseconds.
 
 Native cancellation uses the current task's `request_cancel()` on the driver
 thread. It records intent and marks timer cancellation work for the next poll;

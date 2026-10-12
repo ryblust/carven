@@ -40,51 +40,51 @@ private struct ByteRun {
     upper: u8,
 }
 
-private const fn run_count(set: ByteSet) -> usize {
-    var count: usize = 0;
+private struct BytePlan {
+    runs: [ByteRun; 4],
+    // Five denotes more than four runs.
+    count: usize,
+    inverted: bool,
+}
+
+private const fn plan_runs(set: ByteSet, inverted: bool) -> BytePlan {
+    var plan = BytePlan {
+        runs: {},
+        count: 0,
+        inverted: inverted
+    };
     var inside = false;
-    for value in 0u16..256 {
-        if contains(set, value as u8) {
-            if inside == false { count += 1; }
-            inside = true;
-        } else {
-            inside = false;
+    var value: u16 = 0;
+    for word in set.words {
+        var bits = word;
+        for _ in 0u8..64 {
+            let byte = value as u8;
+            if ((bits & 1u64) != 0) != inverted {
+                if inside == false {
+                    plan.count += 1;
+                    if plan.count == 5 { return plan; }
+                    plan.runs[plan.count - 1].lower = byte;
+                    inside = true;
+                }
+            } else if inside {
+                plan.runs[plan.count - 1].upper = byte - 1;
+                inside = false;
+            }
+            bits >>= 1;
+            value += 1;
         }
     }
-    return count;
+    if inside { plan.runs[plan.count - 1].upper = 255; }
+    return plan;
 }
 
-private const fn complement(set: ByteSet) -> ByteSet {
-    var result = ByteSet {};
-    for index in 0usize..4 {
-        result.words[index] = ~set.words[index];
-    }
-    return result;
+private const fn comparison_plan(set: ByteSet) -> BytePlan {
+    // Runs alternate; the complement has fewer only when both endpoints are members.
+    return plan_runs(set, contains(set, 0) && contains(set, 255));
 }
 
-private const fn comparison_set(set: ByteSet) -> ByteSet {
-    let inverse = complement(set);
-    let inverse_count = run_count(inverse);
-    if inverse_count <= 4 && inverse_count < run_count(set) { return inverse; }
-    return set;
-}
-
-private const fn plan_runs(set: ByteSet) -> [ByteRun; 4] {
-    var runs: [ByteRun; 4] = {};
-    var index: usize = 0;
-    var inside = false;
-    for value in 0u16..256 {
-        let byte = value as u8;
-        if contains(set, byte) {
-            if inside == false { runs[index].lower = byte; }
-            runs[index].upper = byte;
-            inside = true;
-        } else if inside {
-            index += 1;
-            inside = false;
-        }
-    }
-    return runs;
+private const fn is_empty(set: ByteSet) -> bool {
+    return set.words == [0u64; 4];
 }
 
 private const fn is_complete(set: ByteSet) -> bool {
@@ -104,10 +104,7 @@ private const fn grouped_tables(set: ByteSet) -> GroupedTables {
     var high: [u8; 16] = {};
     var groups: usize = 0;
     for upper in 0usize..16 {
-        var row: u16 = 0;
-        for lower in 0usize..16 {
-            if contains(set, (upper * 16 + lower) as u8) { row |= 1u16 << (lower as u16); }
-        }
+        let row = ((set.words[upper >> 2] >> (((upper & 3) * 16) as u64)) & 0xffffu64) as u16;
         if row == 0 { continue; }
         var group: usize = 0;
         while group < groups && rows[group] != row {
@@ -159,17 +156,14 @@ private const fn bit_table() -> u8x16 {
 private const powers = bit_table();
 
 export const fn match_set(value: u8x32, const set: ByteSet) -> mask32 {
-    const comparisons = comparison_set(set);
-    const inverted = comparisons.words != set.words;
-    const count = run_count(comparisons);
-    const if count == 0 {
-        const if inverted { return mask32::prefix(32); } else { return mask32::prefix(0); }
-    } else if count <= 4 {
-        const runs = plan_runs(comparisons);
+    const plan = comparison_plan(set);
+    const if plan.count == 0 {
+        const if plan.inverted { return mask32::prefix(32); } else { return mask32::prefix(0); }
+    } else if plan.count <= 4 {
         var matched = mask32::prefix(0);
-        const for index in 0..count {
-            const lower = runs[index].lower;
-            const upper = runs[index].upper;
+        const for index in 0..plan.count {
+            const lower = plan.runs[index].lower;
+            const upper = plan.runs[index].upper;
             const if lower == upper {
                 matched |= value == lower;
             } else {
@@ -177,7 +171,7 @@ export const fn match_set(value: u8x32, const set: ByteSet) -> mask32 {
                 matched |= (value - lower) <= (upper - lower);
             }
         }
-        const if inverted { return ~matched; } else { return matched; }
+        const if plan.inverted { return ~matched; } else { return matched; }
     } else {
         const grouped = grouped_tables(set);
         let high_nibbles = value.shift_right(4);
@@ -197,30 +191,27 @@ export const fn match_set(value: u8x32, const set: ByteSet) -> mask32 {
 }
 
 private const fn contains_byte(byte: u8, const set: ByteSet) -> bool {
-    const comparisons = comparison_set(set);
-    const inverted = comparisons.words != set.words;
-    const count = run_count(comparisons);
-    const if count == 0 {
-        return inverted;
-    } else if count <= 4 {
-        const runs = plan_runs(comparisons);
-        const for index in 0..count {
-            const lower = runs[index].lower;
-            const upper = runs[index].upper;
+    const plan = comparison_plan(set);
+    const if plan.count == 0 {
+        return plan.inverted;
+    } else if plan.count <= 4 {
+        const for index in 0..plan.count {
+            const lower = plan.runs[index].lower;
+            const upper = plan.runs[index].upper;
             const if lower == upper {
-                if byte == lower { return inverted == false; }
+                if byte == lower { return plan.inverted == false; }
             } else {
-                if (byte - lower) <= (upper - lower) { return inverted == false; }
+                if (byte - lower) <= (upper - lower) { return plan.inverted == false; }
             }
         }
-        return inverted;
+        return plan.inverted;
     } else {
         return (set.words[(byte >> 6) as usize] & (1u64 << ((byte & 63) as u64))) != 0;
     }
 }
 
 export const fn count_where(bytes: [u8], const set: ByteSet) -> usize {
-    const if run_count(set) == 0 { return 0; }
+    const if is_empty(set) { return 0; }
     const if is_complete(set) { return bytes.length(); }
     const chains = 2usize;
     const group_bytes = chains * 32;
@@ -264,7 +255,7 @@ export const fn find_where(bytes: [u8], const set: ByteSet) -> usize {
 // Positions refer to the supplied input; its length denotes no match.
 export const fn find_from(bytes: [u8], start: usize, const set: ByteSet) -> usize {
     assert(start <= bytes.length());
-    const if run_count(set) == 0 { return bytes.length(); }
+    const if is_empty(set) { return bytes.length(); }
     const if is_complete(set) { return start; }
     var offset = start;
     while bytes.length() - offset >= 32 {
@@ -285,7 +276,7 @@ export const fn prefix_where(bytes: [u8], const set: ByteSet) -> usize {
 
 export const fn prefix_end(bytes: [u8], start: usize, const set: ByteSet) -> usize {
     assert(start <= bytes.length());
-    const if run_count(set) == 0 { return start; }
+    const if is_empty(set) { return start; }
     const if is_complete(set) { return bytes.length(); }
     if start == bytes.length() || contains_byte(bytes[start], set) == false { return start; }
     var offset = start;

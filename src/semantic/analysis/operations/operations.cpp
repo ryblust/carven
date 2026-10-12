@@ -432,8 +432,7 @@ auto builtin_type_supports_equality(BuiltinType type) noexcept -> bool {
         case BuiltinType::F32x4:
         case BuiltinType::Mask4:
         case BuiltinType::Mask16:
-        case BuiltinType::StrCharsView:
-        case BuiltinType::EntryArgs:    return false;
+        case BuiltinType::StrCharsView: return false;
     }
     std::unreachable();
 }
@@ -491,6 +490,10 @@ auto type_formation_status(
                     return TypeFormationStatus::Dependent;
                 }
 
+                if (std::holds_alternative<GenericCppNamedType>(expression)
+                    || std::holds_alternative<GenericCppQueryType>(expression)) {
+                    return TypeFormationStatus::NativeDelegated;
+                }
                 return TypeFormationStatus::Supported;
             }
             // Every deferred construction describes an object constructor;
@@ -721,6 +724,14 @@ auto type_contains_callable_view(const ProgramDraft& draft, ConstructionTypeRef 
         }
         if (const auto* sequence = std::get_if<GenericVectorType>(&expression)) {
             return type_contains_callable_view(draft, ConstructionTypeRef(sequence->element));
+        }
+        if (const auto* native = std::get_if<GenericCppNamedType>(&expression)) {
+            return std::ranges::any_of(
+                native->arguments,
+                [&](ConstructionTypeRef argument) noexcept {
+                    return type_contains_callable_view(draft, argument);
+                }
+            );
         }
         return false;
     }
@@ -1174,13 +1185,10 @@ auto decide_slice_method(
     const auto view = slice_element(draft, operand).has_value();
     const auto shape = sequence_shape(draft, operand);
     const auto vector = shape && shape->kind == SequenceShapeKind::Vector;
-    if ((!array && !view && !vector) || (vector && name != "as_slice" && name != "slice")) {
+    if ((!array && !view && !vector) || (vector && name != "slice")) {
         return std::optional<SliceIntrinsic>();
     }
     auto operation = std::optional<SliceIntrinsic>();
-    if (name == "as_slice") {
-        operation = SliceIntrinsic::FromOwner;
-    }
     if (name == "length") {
         operation = SliceIntrinsic::Length;
     }
@@ -1188,7 +1196,7 @@ auto decide_slice_method(
         operation = SliceIntrinsic::IsEmpty;
     }
     if (name == "slice") {
-        operation = SliceIntrinsic::Slice;
+        operation = arguments == 0 ? SliceIntrinsic::View : SliceIntrinsic::Slice;
     }
     if (!operation) {
         return operation_error("sequence has no such method", DiagnosticCode::TypeMethodCall);
@@ -1220,7 +1228,7 @@ auto decide_vector_method(
     if (!shape || shape->kind != SequenceShapeKind::Vector) {
         return std::optional<VectorIntrinsic>();
     }
-    if (name == "as_slice" || name == "slice") {
+    if (name == "slice") {
         return std::optional<VectorIntrinsic>();
     }
     auto intrinsic = VectorIntrinsic::Length;

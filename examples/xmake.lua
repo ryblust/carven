@@ -1,123 +1,32 @@
 local examples_dir = path.join(os.projectdir(), "examples")
 
 local cases = {
-    {name = "native-values", dir = "native_values", output = "Snapshot: 1, count: 4\nCurrent first: 9\n"},
-    {name = "execution", dir = "execution", output = "Build 0042\n0 0\n1 1\n2 1\n3 2\n4 3\n5 5\n6 8\n"},
-    {name = "constant", dir = "constant", output = [[
-Text
-Carven build-0042
-00,01,02,03
-[Carven build-0042: 00,01,02,03]
-Title bytes: 17
-Runtime: 00,01,02
-Array values
-Selected: 7
-Entries: 4
-3
-4
-7
-12
-Runtime: 10 11 14 19
-Static slices
-Selected: 7
-Entries: 4
-3
-4
-7
-12
-Runtime: 10 11 14 19
-Record tables
-Selected: 11
-import 10
-const 11
-struct 12
-Runtime: const 21
+    {name = "hello", source = "hello.cv", output = "Hello, Carven!\n"},
+    {name = "log-analyzer", dir = "log_analyzer", output = [[
+{"accepted":3,"rejected":1,"warnings":1,"errors":1,"slow":["mixer token=[redacted] clipped=2","upstream timed out"]}
 ]]},
-    {name = "json", dir = "json", output = "你好 JSON\n{\"message\":\"你好 JSON\",\"ok\":true,\"attempts\":3}\n"},
-    {name = "strings", dir = "strings", output = "Hello, 世界!\nGoodbye!\nHello, 世界!\nBytes: 14, ID: 002a\n"},
-    {name = "hello-world", dir = "helloworld", output = "Hello World\n"},
-    {name = "receipt", dir = "basics", output = [[
-Notebook x 2
-  Subtotal in cents: 500
-  Discount in cents: 0
-  Line total in cents: 500
-Pencil x 3
-  Subtotal in cents: 360
-  Discount in cents: 36
-  Line total in cents: 324
-Subtotal in cents: 860
-Savings in cents: 36
-Total in cents: 824
+    {name = "audio-mixer", dir = "audio_mixer", output = [[
+Mixed 10 samples; clipped: 2
+Peak: 1.00; RMS: 0.652
+[
+    0.5,
+    -0.5,
+    1,
+    -1,
+    0.25,
+    0.5,
+    -0.5,
+    0.25,
+    0.75,
+    -0.75,
+]
 ]]},
-    {name = "inventory", dir = "ownership",
-        output = "Snapshot: 7\nDispatched: 9\nReplacement stock: 1\n"},
-    {name = "shipping", dir = "modules", output = "Shipping in cents: 500\n"},
-    {name = "failures", dir = "failures", output = [[
-Basic failures
-Seats remaining: 3
-Not enough seats for: 6
-Failure composition
-Standard delivery
-Quote in cents: 800
-Alternate carrier
-Quote in cents: 1200
-Stock shortage
-Requested: 6
-Available: 5
-Invalid quantity
-Quantity must be between 1 and 100: 0
-Oversized order
-Quantity must be between 1 and 100: 101
-Unknown destination
-Unknown zone: 9
-Unavailable destination
-No carrier for zone: 3
-Recovery lookup fails
-Carrier lookup failed for zone: 4
-Expression total: 800
-Evaluation trace: 12
-Expression total: -1
-Evaluation trace: 1
-Delivery affordable: 0
-Delivery trace: 0
-Delivery affordable: 1
-Delivery trace: 2
-Recovery
-Primary setting
-Port: 443
-Backup setting
-Port: 9000
-Built-in default
-Port: 8080
-Invalid primary is not hidden
-Bad digit at byte: 1
-Invalid backup propagates
-Port must be between 1 and 65535
-Zero is not a port
-Port must be between 1 and 65535
-Callbacks
-Basic policy
-Accepted: 8
-Rejected by basic policy
-Amount must be positive: 0
-Widened stored view
-Accepted: 3
-Captured policy
-Accepted: 4
-Rejected by captured policy
-Requested: 8
-Policy limit: 5
-Invalid input through captured policy
-Amount must be positive: -2
-Failure payloads
-Owned detail: request rejected
-Taken detail: taken detail
-Saved detail: borrowed detail
-Source bytes after clear: 0
+    {name = "stream-collector", dir = "stream_collector", native = true, output = [[
+Collected 3 records; rejected feeds: 1; timed out: 1
+INFO 12 collector connected
+WARN 37 mixer token=demo clipped=2
+ERROR 42 upstream timed out
 ]]},
-    {name = "native-parser", dir = "call_cpp", exceptions = true,
-        output = "Port: 8080\nInvalid port\nInvalid port\nInvalid port\n"},
-    {name = "cpp-host", dir = "cpp_host", output = "12 items: 1080 cents (delivery included)\n"},
 }
 
 local names = {}
@@ -129,18 +38,16 @@ for _, case in ipairs(cases) do
         set_kind("binary")
         set_languages("c++20")
         add_rules("@carven/carven")
-
-        add_files(path.join(examples_dir, case.dir, "*.cv"), {
-            includedirs = case.name == "native-parser" and path.join(examples_dir, case.dir) or nil,
-        })
-        if case.name == "cpp-host" then
-            add_files(path.join(examples_dir, case.dir, "main.cpp"))
-        end
-        if case.exceptions then
-            set_exceptions("cxx")
-            add_cxxflags("-frtti", {tools = "clang", force = true})
-            add_cxxflags("/GR", "/U_HAS_EXCEPTIONS", "/D_HAS_EXCEPTIONS=1",
-                {tools = {"cl", "clang_cl"}, force = true})
+        if case.source then
+            add_files(path.join(examples_dir, case.source))
+        else
+            local directory = path.join(examples_dir, case.dir)
+            add_files(path.join(directory, "*.cv"))
+            if case.native then
+                add_includedirs(directory)
+                add_files(path.join(directory, "*.cpp"))
+                if is_plat("windows") then add_syslinks("ws2_32") end
+            end
         end
         add_tests("output", {
             group = "examples",
@@ -150,6 +57,31 @@ for _, case in ipairs(cases) do
         })
     target_end()
 end
+
+target("carven-test-examples-behavior")
+    set_default(false)
+    set_languages("c++20")
+    add_rules("@carven/carven", {tests = "main"})
+    add_files(path.join(examples_dir, "log_analyzer", "analysis.cv"), path.join(examples_dir, "audio_mixer", "mix.cv"))
+    add_tests("behavior", {group = "examples", run_timeout = 30000})
+target_end()
+table.insert(names, "carven-test-examples-behavior")
+
+target("carven-test-examples")
+    set_default(false)
+    set_kind("phony")
+    add_deps("carven-example-log-analyzer", "carven-example-audio-mixer", "carven-example-stream-collector")
+    for _, name in ipairs({
+        "pipeline", "configuration", "stream-framing", "stream-incomplete", "stream-invalid-utf8", "stream-oversized",
+    }) do
+        add_tests(name, {group = "examples", run_timeout = 30000})
+    end
+    on_test(function (target, opt)
+        import("checks", {rootdir = examples_dir}).main(opt.name:match("([^/]+)$"))
+        return true
+    end)
+target_end()
+table.insert(names, "carven-test-examples")
 
 target("examples")
     set_default(false)

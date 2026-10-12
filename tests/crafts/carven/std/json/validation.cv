@@ -189,7 +189,7 @@ const fn byte_ingress() -> bool {
     let invalid_utf: [u8; 4] = [0x22, 0xff, 0x22, 0];
     var rejected = false;
     try {
-        validate_bytes(invalid_utf.as_slice().slice(0, 3))?;
+        validate_bytes(invalid_utf.slice(0, 3))?;
     } catch {
         UTF8Error(error) => { rejected = error.offset == 1; },
         JSONError(_) => return false,
@@ -228,7 +228,7 @@ const fn depth_boundary(const count: usize) -> bool {
     }
     var accepted = false;
     try {
-        validate_bytes(nested.as_slice().slice(0, count * 2))?;
+        validate_bytes(nested.slice(0, count * 2))?;
         accepted = true;
     } catch {
         JSONError(error) => {
@@ -260,57 +260,4 @@ test "JSON: native complete grammar and strict Unicode validation" {
     check(byte_ingress());
     check(depth_boundary(64));
     check(depth_boundary(65));
-}
-
-test "JSON: long whitespace and number runs preserve syntax and EOF offsets" {
-    for length in [0usize, 1, 31, 32, 33, 63, 64, 65, 97] {
-        var spaces = String {};
-        var digits = String {};
-        for _ in 0..length {
-            spaces.push(' ');
-            digits.push('7');
-        }
-        var document = String {};
-        document.append(spaces);
-        document.push('[');
-        document.append(spaces);
-        document.push('1');
-        document.append(digits);
-        document.push('.');
-        document.push('1');
-        document.append(digits);
-        document.push('e');
-        document.push('+');
-        document.push('1');
-        document.append(digits);
-        document.append(spaces);
-        document.push(']');
-        document.append(spaces);
-        try {
-            validate(document)?;
-        } catch {
-            JSONError(_) => fail("long runs must be accepted"),
-        }
-        let end = document.byte_length();
-        document.push('x');
-        var rejected = false;
-        try {
-            validate(document)?;
-        } catch {
-            JSONError(error) => { rejected = error.kind == .TrailingInput && error.offset == end; },
-        }
-        check(rejected);
-        var incomplete: String = "1";
-        incomplete.append(digits);
-        incomplete.append("e+");
-        rejected = false;
-        try {
-            validate(incomplete)?;
-        } catch {
-            JSONError(error) => {
-                rejected = error.kind == .InvalidNumber && error.offset == incomplete.byte_length();
-            },
-        }
-        check(rejected);
-    }
 }

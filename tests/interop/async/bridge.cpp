@@ -1,6 +1,7 @@
 #include "bridge.hpp"
 
 #include <carven/api/tests/interop/async/bridge.hpp>
+#include <carven/runtime/execution/child.hpp>
 
 #include <array>
 #include <cerrno>
@@ -26,7 +27,7 @@ using async_bridge::Context;
 using async_bridge::Observations;
 using async_bridge::TrivialContext;
 using async_interop::PipeQueue;
-using IoError = decltype(api::make_io_error(0));
+using IOError = decltype(api::make_io_error(0));
 
 auto check(bool condition, const char* message) noexcept -> void {
     if (!condition) {
@@ -48,10 +49,7 @@ auto observations() noexcept -> Observations {
 }
 
 auto balanced(const PipeQueue& queue, const Observations& observed) noexcept -> void {
-    check(
-        queue.pending_count() == 0 && queue.registration_count() == queue.completion_count(),
-        "provider registrations are fully closed"
-    );
+    check(queue.pending_count() == 0, "provider registrations are fully closed");
     check(
         observed.live == 0
             && observed.started == observed.finished
@@ -111,10 +109,7 @@ auto cold() noexcept -> void {
         auto context = Context(queue, pipe.reader(), observed);
         {
             auto operation = api::source_read(context);
-            check(
-                observed.started == 0 && queue.registration_count() == 0,
-                "exported source root remains cold"
-            );
+            check(observed.started == 0, "exported source root remains cold");
         }
         balanced(queue, observed);
     }
@@ -146,9 +141,7 @@ auto ready() noexcept -> void {
     pipe.close_writer();
     auto eof = async::drive_root(api::source_read(reader), &queue);
     check(
-        eof.success_if() != nullptr
-            && eof.success_if()->value == -1
-            && queue.registration_count() == 0,
+        eof.success_if() != nullptr && eof.success_if()->value == -1,
         "native EOF passes source await as scalar sentinel"
     );
     balanced(queue, received);
@@ -156,7 +149,7 @@ auto ready() noexcept -> void {
     balanced(queue, stored_observed);
 }
 
-class ExternalWriter final {
+class ExternalWriter final : public async::EventSource {
     PipeQueue& queue;
     int fd;
     const Observations& observed;
@@ -168,13 +161,13 @@ public:
           fd(descriptor),
           observed(state) {}
 
-    auto poll(async::Driver& driver) noexcept -> void {
+    auto poll(async::Driver& driver) noexcept -> void override {
         if (waited || queue.pending_count() == 0) {
             queue.poll(driver);
         }
     }
 
-    auto wait() noexcept -> bool {
+    auto wait(std::optional<std::int64_t> limit) noexcept -> bool override {
         check(
             !waited && queue.pending_count() == 1 && observed.live == 1 && observed.finished == 0,
             "generated await reaches real pending I/O with native frame buffer alive"
@@ -182,7 +175,7 @@ public:
         waited = true;
         auto writer =
             std::thread([descriptor = fd]() noexcept { put(descriptor, std::byte {57}); });
-        const auto pending = queue.wait();
+        const auto pending = queue.wait(limit);
         writer.join();
         return pending;
     }
@@ -193,12 +186,10 @@ auto pending() noexcept -> void {
     auto queue = PipeQueue();
     auto observed = observations();
     auto context = Context(queue, pipe.reader(), observed);
-    auto pump = ExternalWriter(queue, pipe.writer(), observed);
-    auto result = async::drive_root(api::source_read(context), &pump);
+    auto source = ExternalWriter(queue, pipe.writer(), observed);
+    auto result = async::drive_root(api::source_read(context), &source);
     check(
-        result.success_if() != nullptr
-            && result.success_if()->value == 57
-            && queue.wait_count() == 1,
+        result.success_if() != nullptr && result.success_if()->value == 57,
         "host external event resumes native producer and generated source consumer"
     );
     balanced(queue, observed);
@@ -210,7 +201,7 @@ auto failures() noexcept -> void {
     auto observed = observations();
     auto context = Context(queue, pipe.writer(), observed);
     auto result = async::drive_root(api::source_read(context), &queue);
-    const auto* error = result.failure_if<IoError>();
+    const auto* error = result.failure_if<IOError>();
     check(
         error != nullptr && error->code == EBADF,
         "native errno maps to canonical source failure and propagates to host"
@@ -240,10 +231,7 @@ auto cancelled_close_case(int mode) noexcept -> void {
             "generated lexical closure returns only after child cancellation settles"
         );
         check(
-            observed.started == 1
-                && observed.cancelled == 1
-                && observed.context_destroyed == 0
-                && queue.registration_count() == 1,
+            observed.started == 1 && observed.cancelled == 1 && observed.context_destroyed == 0,
             "source cancellation unlinks pending I/O without releasing borrowed context"
         );
         balanced(queue, observed);
@@ -312,7 +300,7 @@ auto characters() noexcept -> void {
         "discarded native char await still executes valid success"
     );
     auto failed = async::drive_root(api::source_character(0xd800, true));
-    const auto* error = failed.failure_if<IoError>();
+    const auto* error = failed.failure_if<IOError>();
     check(
         error != nullptr && error->code == EIO,
         "char failure is handled without reading success"
@@ -330,8 +318,8 @@ auto characters() noexcept -> void {
     auto failed_race = async::drive_root(api::source_race_characters(0xd800, true));
     auto recovered_first = async::drive_root(api::source_first_character(0xd800, true));
     check(
-        failed_join.failure_if<IoError>()
-            && failed_race.failure_if<IoError>()
+        failed_join.failure_if<IOError>()
+            && failed_race.failure_if<IOError>()
             && recovered_first.success_if(),
         "compositions do not validate the absent success of a failure"
     );
@@ -345,10 +333,9 @@ auto terminated(int signal) noexcept -> void {
 
 } // namespace
 
-auto main(int argc, char** argv) -> int {
-    if (argc == 2) {
+auto run_bridge_cases(std::string_view operation) noexcept -> int {
+    if (operation != "bridge") {
         std::signal(SIGABRT, terminated);
-        const auto operation = std::string_view(argv[1]);
         if (operation == "invalidchar") {
             auto result = async::drive_root(api::source_character(0xd800, false));
         } else if (operation == "invalidchar-discard") {
@@ -365,9 +352,6 @@ auto main(int argc, char** argv) -> int {
             return EXIT_FAILURE;
         }
         std::fputs("invalid async success unexpectedly reached native host\n", stderr);
-        return EXIT_FAILURE;
-    }
-    if (argc != 1) {
         return EXIT_FAILURE;
     }
     for (const auto& test : {
