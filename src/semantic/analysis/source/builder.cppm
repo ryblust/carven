@@ -26,12 +26,14 @@ public:
         std::optional<SourceSpan> definition,
         std::optional<ConstructionTypeRef> type
     ) noexcept -> void;
+
     auto expression(
         const ProgramDraft& draft,
         ASTView syntax,
         ASTExprID id,
         ConstructionTypeRef type
     ) noexcept -> void;
+
     auto merge(SourceObservation&& child) noexcept -> void;
 
 private:

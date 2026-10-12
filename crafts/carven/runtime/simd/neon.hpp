@@ -5,11 +5,11 @@
 #error "include carven/runtime/simd/simd.hpp instead of a SIMD backend header"
 #endif
 
-#include <arm_neon.h>
-
 #include <array>
 #include <cstddef>
 #include <cstdint>
+
+#include <arm_neon.h>
 
 namespace carven::runtime::simd {
 inline namespace neon {

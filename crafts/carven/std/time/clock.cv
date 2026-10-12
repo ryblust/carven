@@ -1,5 +1,6 @@
 import .duration using { Duration, RangeError, checked_add_nanoseconds };
-import "carven/std/time/native.hpp";
+
+import <carven/std/time/native.hpp>;
 
 private import(cpp) fn carven_time_now_nanoseconds() -> i64;
 private import(cpp) async fn carven_time_wait_until_nanoseconds(deadline_nanoseconds: i64);

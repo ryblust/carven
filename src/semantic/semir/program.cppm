@@ -101,13 +101,18 @@ public:
     auto tests() const noexcept -> const TestStore&;
     // A staged function has static parameters and executes only through instances.
     auto is_staged(FunctionID function) const noexcept -> bool;
+
     auto generic_declaration_contracts() const noexcept
         -> std::span<const GenericDeclarationContract>;
+
     auto generic_declaration_contract(GenericDeclarationID id) const noexcept
         -> const GenericDeclarationContract&;
+
     auto generic_nominal_instances() const noexcept -> std::span<const GenericNominalInstance>;
+
     auto generic_nominal_instance(NominalDeclarationRef declaration) const noexcept
         -> const GenericNominalInstance*;
+
     auto static_instances() const noexcept -> std::span<const StaticInstance>;
     // The function a callable implements: its declaration, or the function
     // an instance was produced from.
@@ -120,20 +125,25 @@ public:
     auto executes(BodyID body) const noexcept -> bool;
     // The instance a callable is, when static specialization produced it.
     auto static_instance(CallableID callable) const noexcept -> const StaticInstance*;
+
     auto find_static_instance(
         FunctionID function,
         std::span<const ConstantID> arguments
     ) const noexcept -> std::optional<CallableID>;
+
     // Outward cancellation of execution, independent of nominal failures.
     auto may_complete_cancelled(CallableID callable) const noexcept -> bool;
+
     // Completion observed by this await, excluding evaluation of its operand.
     auto await_completion_may_be_cancelled(BodyID body, const SemAwait& occurrence) const noexcept
         -> bool;
+
     auto may_stop_test(CallableID callable_id) const noexcept -> bool;
     auto may_stop_test(TypeID type) const noexcept -> bool;
     auto may_stop_test(const SemCall& call) const noexcept -> bool;
     auto call_signature(TypeID type) const noexcept -> CallableSignatureID;
     auto call_signature(const SemCall& call) const noexcept -> CallableSignatureID;
+
     auto read_requires_stable_storage(CallableID callable, std::size_t parameter) const noexcept
         -> bool;
 
@@ -141,6 +151,7 @@ private:
     auto publish_surfaces() noexcept -> void;
     auto publish_bodies() noexcept -> void;
     auto publish_read_passing_facts(ReadPassingFacts facts) noexcept -> void;
+
     SemIRProgram(
         ProgramIdentity identity,
         CompilationProvenance provenance,

@@ -1,6 +1,6 @@
 #include "scan.hpp"
 #if CARVEN_SIMD_BENCH_CARVEN
-#include "carven/api/workload.hpp"
+#include <carven/api/workload.hpp>
 #endif
 #include <array>
 #include <chrono>

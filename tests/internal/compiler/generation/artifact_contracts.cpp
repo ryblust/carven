@@ -356,12 +356,11 @@ const TestSuite suite([] static noexcept {
             const auto implementation = artifact_content(artifacts, "dependencies.cpp");
 
             expect(implementation.contains("\"dependencies.cv\""));
-            expect(!(implementation.contains("#include <carven/runtime/runtime.hpp>")));
-            expect(implementation.contains("#include <carven/runtime/array.hpp>"));
-            expect(implementation.contains("#include <carven/runtime/callable.hpp>"));
-            expect(implementation.contains("#include <carven/runtime/numeric.hpp>"));
-            expect(implementation.contains("#include <carven/runtime/outcome.hpp>"));
-            expect(!(implementation.contains("#include <carven/runtime/entry.hpp>")));
+            expect(implementation.contains("#include <carven/runtime/collection/array.hpp>"));
+            expect(implementation.contains("#include <carven/runtime/call/callable.hpp>"));
+            expect(implementation.contains("#include <carven/runtime/numeric/numeric.hpp>"));
+            expect(implementation.contains("#include <carven/runtime/value/outcome.hpp>"));
+            expect(!(implementation.contains("#include <carven/runtime/execution/entry.hpp>")));
             expect(!(implementation.contains("#include <carven/runtime/text/text.hpp>")));
             expect(implementation.contains("#include \"dependency_provider.hpp\""));
         };

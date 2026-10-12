@@ -1,4 +1,5 @@
 #include "tail.hpp"
+
 #include <array>
 #include <cstddef>
 

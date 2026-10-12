@@ -1,7 +1,7 @@
 #pragma once
 
-#include "numeric.hpp"
-#include "text/text.hpp"
+#include <carven/runtime/numeric/numeric.hpp>
+#include <carven/runtime/text/text.hpp>
 
 #include <array>
 #include <charconv>

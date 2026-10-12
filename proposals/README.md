@@ -15,6 +15,7 @@ Current contracts belong in `docs/`.
 
 | Proposal | Decision owned here |
 | --- | --- |
+| [Standard modules](standard-modules.md) | Compiler-provided standard modules, default bindings, import renaming, unified symbol selection, and Craft source-package integration |
 | [Generic extensions](generic-extensions.md) | Static capabilities, associated types, parameterized class operations, and finite boundary extensions |
 | [Operator capabilities](operator-capabilities.md) | Mapping existing tokens to checked operations; consumes generic evidence |
 | [Dynamic values](dynamic-values.md) | Erased holding forms, nominal conformance, and dispatch |

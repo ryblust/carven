@@ -1,5 +1,5 @@
 module;
-#include <carven/runtime/vector.hpp>
+#include <carven/runtime/collection/vector.hpp>
 
 module carven:test.internal.runtime.vector;
 

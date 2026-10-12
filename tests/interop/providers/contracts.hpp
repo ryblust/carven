@@ -1,10 +1,10 @@
 #pragma once
 
-#include <carven/runtime/array.hpp>
-#include <carven/runtime/callable.hpp>
-#include <carven/runtime/outcome.hpp>
+#include <carven/runtime/call/callable.hpp>
+#include <carven/runtime/collection/array.hpp>
+#include <carven/runtime/testing/testing.hpp>
 #include <carven/runtime/text/text.hpp>
-#include <carven/runtime/testing.hpp>
+#include <carven/runtime/value/outcome.hpp>
 
 #include <cstdint>
 #include <memory>

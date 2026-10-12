@@ -1,5 +1,5 @@
-import std::utf.text using { from_utf8, to_string };
 import std::utf.error using UTF8Error;
+import std::utf.text using { from_utf8, to_string };
 
 private const fn copied_text() -> String throw UTF8Error {
     let bytes = [0xffu8, 0x61, 0, 0xc3, 0xa9, 0xe4, 0xbd, 0xa0, 0xff];

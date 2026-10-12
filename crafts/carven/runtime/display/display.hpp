@@ -1,8 +1,8 @@
 #pragma once
 
-#include "../format.hpp"
-#include "../stateless.hpp"
-#include "text.hpp"
+#include <carven/runtime/display/text.hpp>
+#include <carven/runtime/format/format.hpp>
+#include <carven/runtime/value/stateless.hpp>
 
 #include <concepts>
 #include <cstddef>

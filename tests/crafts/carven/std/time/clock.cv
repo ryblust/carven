@@ -1,5 +1,5 @@
-import std::time.duration using RangeError;
 import std::time.clock using TimePoint;
+import std::time.duration using RangeError;
 
 test "Time: monotonic time points compare without exposing their epoch" {
     let first = TimePoint::now();

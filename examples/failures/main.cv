@@ -1,8 +1,8 @@
-import .intro using run_intro;
-import .composition using run_composition;
-import .recovery using run_recovery;
 import .callbacks using run_callbacks;
+import .composition using run_composition;
+import .intro using run_intro;
 import .payloads using run_payloads;
+import .recovery using run_recovery;
 
 println("Basic failures");
 run_intro();

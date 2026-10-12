@@ -3,6 +3,7 @@
 #if defined(__unix__) || defined(__APPLE__)
 
 #include <carven/runtime/execution/execution.hpp>
+
 #include <cassert>
 #include <cerrno>
 #include <cstddef>
@@ -12,9 +13,10 @@
 #include <optional>
 #include <poll.h>
 #include <span>
-#include <unistd.h>
 #include <utility>
 #include <vector>
+
+#include <unistd.h>
 
 namespace async_interop {
 

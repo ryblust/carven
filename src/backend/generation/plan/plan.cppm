@@ -85,16 +85,23 @@ public:
     auto callable_identifier(CallableID id) const noexcept -> const TargetIdentifier&;
     auto callable_owner(CallableID id) const noexcept -> ModuleID;
     auto structure_identifier(StructID id) const noexcept -> const TargetIdentifier&;
+
     auto structure_name(std::optional<ModuleID> active_module, StructID id) const noexcept
         -> TargetName;
+
     auto enumeration_identifier(EnumID id) const noexcept -> const TargetIdentifier&;
+
     auto enumeration_name(std::optional<ModuleID> active_module, EnumID id) const noexcept
         -> TargetName;
+
     auto enum_case_identifier(EnumCaseID id) const noexcept -> const TargetIdentifier&;
+
     auto callable_name(std::optional<ModuleID> active_module, CallableID id) const noexcept
         -> TargetName;
+
     auto closure_type_name(std::optional<ModuleID> active_module, CallableID id) const noexcept
         -> TargetName;
+
     auto closure_owner(CallableID id) const noexcept -> ModuleID;
     auto payload_enum(EnumID enumeration) const noexcept -> const TargetPayloadEnumNames&;
     auto test_function(TestID test) const noexcept -> const TargetIdentifier&;
@@ -102,6 +109,7 @@ public:
     auto query_identifier(TypeID type) const noexcept -> const TargetIdentifier&;
     auto display_identifier(TypeID type) const noexcept -> const TargetIdentifier&;
     auto constant_identifier(ConstantID constant) const noexcept -> const TargetIdentifier&;
+
     auto module_support_name(ModuleID module, const TargetIdentifier& identifier) const noexcept
         -> TargetName;
 
@@ -268,11 +276,13 @@ public:
         const TargetPlanningRequest& request,
         const std::flat_set<ModuleID>& library_modules
     ) noexcept -> PlannedCompilation;
+
     static auto build(
         const SemIRProgram&&,
         const TargetPlanningRequest&,
         const std::flat_set<ModuleID>&
     ) noexcept -> PlannedCompilation = delete;
+
     PlannedCompilation(const PlannedCompilation&) = delete;
     PlannedCompilation(PlannedCompilation&& other) noexcept = default;
     ~PlannedCompilation() = default;

@@ -20,6 +20,7 @@ struct SyntaxProgramParts final {
         std::vector<SyntaxTree> syntax_trees,
         ResolvedModuleImportGraph resolved_imports
     ) noexcept;
+
     SyntaxProgramParts(const SyntaxProgramParts&) = delete;
     SyntaxProgramParts(SyntaxProgramParts&&) = default;
     ~SyntaxProgramParts() = default;
@@ -40,10 +41,13 @@ public:
     auto operator=(SyntaxProgram&&) -> SyntaxProgram& = delete;
     auto syntax_tree(ProgramModuleID id) const noexcept -> const SyntaxTree&;
     auto syntax_trees() const noexcept -> std::span<const SyntaxTree>;
+
     auto resolved_imports(ProgramModuleID id) const noexcept
         -> std::span<const ResolvedModuleImport>;
+
     auto resolved_import_graph() const noexcept
         -> std::span<const std::vector<ResolvedModuleImport>>;
+
     auto provenance() const noexcept -> CompilationProvenanceView;
     auto decompose() && noexcept -> SyntaxProgramParts;
 

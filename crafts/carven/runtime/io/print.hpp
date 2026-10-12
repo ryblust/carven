@@ -1,6 +1,6 @@
 #pragma once
 
-#include "display/display.hpp"
+#include <carven/runtime/display/display.hpp>
 
 #include <cstddef>
 #include <cstdio>

@@ -1,6 +1,6 @@
 module;
-#include <carven/runtime/array.hpp>
-#include <carven/runtime/slice.hpp>
+#include <carven/runtime/collection/array.hpp>
+#include <carven/runtime/collection/slice.hpp>
 
 module carven:test.internal.runtime.array;
 

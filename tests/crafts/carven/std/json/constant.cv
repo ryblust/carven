@@ -1,6 +1,6 @@
-import std::json.value using Value;
 import std::json.error using { JSONError, ValueError };
 import std::json.string using decode_string;
+import std::json.value using Value;
 import std::utf.error using UTF8Error;
 
 private const fn edited_document(text: str) -> String throw JSONError + ValueError {

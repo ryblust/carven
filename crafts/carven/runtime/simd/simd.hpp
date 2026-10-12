@@ -6,14 +6,7 @@
 // encode those types can diagnose some mismatches at link time.
 // CARVEN_SIMD_FORCE_PORTABLE selects the portable backend for testing.
 
-#include "../slice.hpp"
-
-#include <array>
-#include <bit>
-#include <cstddef>
-#include <cstdint>
-#include <cstring>
-#include <type_traits>
+#include <carven/runtime/collection/slice.hpp>
 
 #if defined(_MSC_VER)
 #define CARVEN_SIMD_INLINE __forceinline
@@ -35,18 +28,25 @@
 #endif
 
 #if !defined(CARVEN_SIMD_FORCE_PORTABLE) && defined(__aarch64__) && defined(__ARM_NEON)
-#include "neon.hpp"
+#include <carven/runtime/simd/neon.hpp>
 #define CARVEN_SIMD_ABI neon
 #define CARVEN_SIMD_NATIVE_BACKEND true
 #elif !defined(CARVEN_SIMD_FORCE_PORTABLE) && defined(__AVX2__)
-#include "avx2.hpp"
+#include <carven/runtime/simd/avx2.hpp>
 #define CARVEN_SIMD_ABI avx2
 #define CARVEN_SIMD_NATIVE_BACKEND true
 #else
-#include "portable.hpp"
+#include <carven/runtime/simd/portable.hpp>
 #define CARVEN_SIMD_ABI portable
 #define CARVEN_SIMD_NATIVE_BACKEND false
 #endif
+
+#include <array>
+#include <bit>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <type_traits>
 
 namespace carven::runtime::simd {
 inline namespace CARVEN_SIMD_ABI {

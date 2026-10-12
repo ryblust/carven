@@ -18,16 +18,19 @@ public:
     ConstantStorage(const ConstantStorage&) = delete;
     ConstantStorage(ConstantStorage&&) = default;
     auto operator=(const ConstantStorage&) -> ConstantStorage& = delete;
+
     auto find(
         ConstantID id,
         ConstantStorageRole role = ConstantStorageRole::Elements
     ) const noexcept -> std::optional<TargetName>;
+
     auto append(
         ConstantID id,
         TargetTypeID type,
         TargetExpr initializer,
         ConstantStorageRole role = ConstantStorageRole::Elements
     ) noexcept -> TargetName;
+
     auto take() noexcept -> std::vector<TargetItem>;
     auto empty() const noexcept -> bool;
 

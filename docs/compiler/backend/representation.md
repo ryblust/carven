@@ -195,10 +195,10 @@ C++ assignment operation to copy values and rebind reference targets.
 Callable borrows use non-owning `FunctionRef` target descriptions.
 
 Runtime type-selected operations use `Stateless<T>` and `stateless_value<T>`
-from `runtime/stateless.hpp`. The contract admits unqualified empty object types
-with trivial default construction and destruction. Each type has a shared const
-instance; consumers check invocation arguments and results. Operations may
-observe external state.
+from `runtime/value/stateless.hpp`. The contract admits unqualified empty object
+types with trivial default construction and destruction. Each type has a shared
+const instance; consumers check invocation arguments and results. Operations
+may observe external state.
 
 `FunctionRef::from_stateless(value)` invokes that instance without retaining a
 source-object borrow. The source expression executes once. Stateless array

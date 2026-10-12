@@ -213,20 +213,27 @@ public:
     auto callable_for_body(BodyID body) const noexcept -> std::optional<CallableID>;
     auto function_for_callable(CallableID callable) const noexcept -> std::optional<FunctionID>;
     auto modules() const noexcept -> IDTableEntries<ModuleID, ModuleDeclaration, ProgramIdentity>;
+
     auto functions() const noexcept
         -> IDTableEntries<FunctionID, FunctionDeclaration, ProgramIdentity>;
+
     auto structures() const noexcept
         -> IDTableEntries<StructID, StructDeclaration, ProgramIdentity>;
+
     auto enumerations() const noexcept -> IDTableEntries<EnumID, EnumDeclaration, ProgramIdentity>;
+
     auto enum_cases() const noexcept
         -> IDTableEntries<EnumCaseID, EnumCaseDeclaration, ProgramIdentity>;
+
     auto module_constants() const noexcept
         -> IDTableEntries<ModuleConstantID, ModuleConstantDeclaration, ProgramIdentity>;
+
     auto callables() const noexcept
         -> IDTableEntries<CallableID, CallableDeclaration, ProgramIdentity>;
 
 private:
     auto publish_bodies(std::span<const std::optional<BodyID>> bodies) noexcept -> void;
+
     DeclarationStore(
         ImmutableProgramTable<ModuleDeclaration, ModuleID> modules,
         ImmutableProgramTable<FunctionDeclaration, FunctionID> functions,
@@ -316,8 +323,10 @@ public:
     auto define(EnumID id, EnumDeclaration declaration) noexcept -> void;
     auto define(EnumCaseID id, ConstructionEnumCaseDeclaration declaration) noexcept -> void;
     auto define(ModuleConstantID id, ModuleConstantDeclaration declaration) noexcept -> void;
+
     auto define_callable_contract(CallableID id, ConstructionCallableContract contract) noexcept
         -> void;
+
     auto set_enum_equality(EnumID enumeration, bool supported) noexcept -> void;
     auto append_function_instance(FunctionDeclaration declaration) noexcept -> FunctionID;
     auto append_nominal_item(ModuleID module, NominalDeclarationRef declaration) noexcept -> void;

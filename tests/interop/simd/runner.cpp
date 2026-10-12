@@ -1,7 +1,8 @@
-#include "provider.hpp"
+#include <carven/runtime/simd/simd.hpp>
 
 #include <carven/generated/carven-test-runner.hpp>
-#include <carven/runtime/simd/simd.hpp>
+
+#include "provider.hpp"
 
 #include <array>
 #include <bit>

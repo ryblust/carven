@@ -1,7 +1,7 @@
 #pragma once
 
-#include "text/text.hpp"
-#include "void.hpp"
+#include <carven/runtime/text/text.hpp>
+#include <carven/runtime/value/void.hpp>
 
 #include <cstddef>
 #include <format>

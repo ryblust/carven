@@ -1,8 +1,8 @@
 #pragma once
 
-#include "display/display.hpp"
-#include "trap.hpp"
-#include "text/text.hpp"
+#include <carven/runtime/diagnostics/trap.hpp>
+#include <carven/runtime/display/display.hpp>
+#include <carven/runtime/text/text.hpp>
 
 #include <concepts>
 #include <cstddef>

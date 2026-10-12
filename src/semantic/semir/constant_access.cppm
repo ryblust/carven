@@ -36,8 +36,10 @@ class ExecutionValueAccess : public ConstantValueReader {
 public:
     virtual auto display_names(TypeID type) const noexcept -> ExecutionDisplayNames = 0;
     virtual auto read_borrows_storage(TypeID type) const noexcept -> bool = 0;
+
     virtual auto struct_field_types(StructID structure) const noexcept
         -> std::optional<std::vector<TypeID>> = 0;
+
     virtual auto enum_case_types(EnumID enumeration) const noexcept
         -> std::optional<std::vector<EnumCaseTypes>> = 0;
 };
@@ -51,10 +53,13 @@ public:
     auto display_names(TypeID type) const noexcept -> ExecutionDisplayNames override;
     auto builtin_type(BuiltinType type) const noexcept -> TypeID override;
     auto read_borrows_storage(TypeID type) const noexcept -> bool override;
+
     auto struct_field_types(StructID structure) const noexcept
         -> std::optional<std::vector<TypeID>> override;
+
     auto enum_case_types(EnumID enumeration) const noexcept
         -> std::optional<std::vector<EnumCaseTypes>> override;
+
     auto identity() const noexcept -> ProgramIdentity override;
     auto owns(ProgramSpellingID id) const noexcept -> bool override;
     auto type_copy(TypeID type) const noexcept -> CanonicalType override;

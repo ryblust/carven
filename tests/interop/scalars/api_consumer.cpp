@@ -1,5 +1,5 @@
-#include "carven/api/tests/interop/scalars/scalars.hpp"
-#include "carven/api/tests/interop/scalars/scalars.hpp"
+#include <carven/api/tests/interop/scalars/scalars.hpp>
+#include <carven/api/tests/interop/scalars/scalars.hpp>
 
 #include "scalars/providers.hpp"
 

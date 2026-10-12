@@ -39,8 +39,10 @@ public:
     auto module_context(ModuleID id) noexcept -> ModuleLowering&;
     auto next_definition() noexcept -> std::optional<CallableID>;
     auto take_module_support() noexcept -> std::vector<TargetItem>;
+
     auto require_cpp_environment(ModuleID provider, CppEnvironmentRequirement requirement) noexcept
         -> void;
+
     // The definitions placed at their uses that the definition of `id` named.
     auto use_placed_callees(CallableID id) const noexcept -> const std::set<CallableID>&;
     auto finish(TargetUnitSections sections) && noexcept -> TargetUnit;
@@ -87,57 +89,77 @@ public:
     auto active_module() const noexcept -> ModuleID;
     auto names() const noexcept -> const TargetNamePlan&;
     auto global_function_name(FunctionID id) noexcept -> TargetName;
+
     auto structure_name(StructID id, TypeNameScope scope = TypeNameScope::Module) noexcept
         -> TargetName;
+
     auto field_identifier(StructID owner, std::size_t index) const noexcept -> TargetIdentifier;
+
     auto enumeration_name(EnumID id, TypeNameScope scope = TypeNameScope::Module) noexcept
         -> TargetName;
+
     auto callable_name(CallableID id) noexcept -> TargetName;
+
     auto closure_type_name(CallableID id, TypeNameScope scope = TypeNameScope::Module) noexcept
         -> TargetName;
+
     auto require_callable(CallableID id) noexcept -> void;
     auto payload_enum(EnumID id) noexcept -> const TargetPayloadEnumNames&;
+
     auto enum_payload_projection(EnumID id, std::size_t case_index, TargetExpr subject) noexcept
         -> TargetExpr;
+
     auto constant_storage() noexcept -> ConstantStorage&;
     auto make_callable_name_allocator() const noexcept -> TargetNameAllocator;
     auto intrinsic_type(TargetSymbol symbol, bool constant = false) noexcept -> TargetTypeID;
     auto named_type(TargetName name, bool constant = false) noexcept -> TargetTypeID;
+
     auto reference_type(TargetTypeID referent, bool constant = false, bool rvalue = false) noexcept
         -> TargetTypeID;
+
     auto pointer_type(TargetTypeID pointee, bool constant = false) noexcept -> TargetTypeID;
     auto optional_type(TargetTypeID value) noexcept -> TargetTypeID;
     auto variant_type(std::span<const TypeID> members) noexcept -> TargetTypeID;
+
     auto async_type(
         TargetSymbol symbol,
         TypeID success,
         FailureSetID failures,
         TypeNameScope scope = TypeNameScope::Module
     ) noexcept -> TargetTypeID;
+
     auto callable_completion(CallableID callable_id) noexcept -> TargetTypeID;
     auto callable_result(CallableID callable_id) noexcept -> TargetTypeID;
     auto call_result(const SemCall& call) noexcept -> TargetTypeID;
+
     auto lower_type(TypeID id, TypeNameScope scope = TypeNameScope::Module) noexcept
         -> TargetTypeID;
+
     auto lower_native_type(TypeID id, TypeNameScope scope = TypeNameScope::Module) noexcept
         -> TargetTypeID;
+
     auto cpp_name(const CppNameReference& name) noexcept -> TargetName;
+
     auto cpp_constant_argument(
         const CppConstructArgument& argument,
         TypeNameScope scope = TypeNameScope::Module
     ) noexcept -> TargetExpr;
+
     auto lower_cpp_query(TypeID query_type) noexcept -> TargetTypeID;
+
     auto lower_parameter(
         AccessMode access,
         TypeID type,
         TypeNameScope scope = TypeNameScope::Module,
         bool requires_stable_storage = false
     ) noexcept -> TargetTypeID;
+
     auto lower_signature_result(
         CallableSignatureID signature,
         bool stops_test,
         TypeNameScope scope = TypeNameScope::Module
     ) noexcept -> TargetTypeID;
+
     auto display_emitter_type(TypeID type) noexcept -> TargetTypeID;
     auto display_emitter(TypeID type) noexcept -> TargetExpr;
     auto take_query_aliases() noexcept -> std::vector<TargetItem>;
@@ -158,6 +180,7 @@ private:
         TypeNameScope scope,
         std::optional<CallableID> callable = std::nullopt
     ) noexcept -> TargetType;
+
     auto cpp_type_query(const CppQueryType& query, TypeNameScope scope) noexcept -> TargetExpr;
 
     ArtifactLowering& artifact_lowering;

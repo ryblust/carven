@@ -48,18 +48,22 @@ private:
     using Event = std::variant<std::string, Node>;
     std::vector<Event> events;
     auto drain() noexcept -> void;
+
     auto render_parts(
         const std::vector<ASTInterpolationPart>& parts,
         std::string_view prefix
     ) noexcept -> void;
+
     auto render_parts_node(
         const std::vector<ASTInterpolationPart>& parts,
         std::string_view prefix
     ) noexcept -> void;
 
     auto source_label(Span span) const noexcept -> std::string;
+
     auto append_line(std::string_view prefix, bool is_last, std::string_view label) noexcept
         -> void;
+
     static auto child_prefix(std::string_view prefix, bool is_last) noexcept -> std::string;
 
     template<typename Range, typename Renderer>
@@ -83,30 +87,35 @@ private:
         std::string_view name,
         Span span
     ) noexcept -> void;
+
     auto render_type(
         ASTTypeID type,
         std::string_view prefix,
         bool is_last,
         std::string_view field = {}
     ) noexcept -> void;
+
     auto render_type_node(
         ASTTypeID type,
         std::string_view prefix,
         bool is_last,
         std::string_view field
     ) noexcept -> void;
+
     auto render_expression(
         ASTExprID expression,
         std::string_view prefix,
         bool is_last,
         std::string_view field = {}
     ) noexcept -> void;
+
     auto render_expression_node(
         ASTExprID expression,
         std::string_view prefix,
         bool is_last,
         std::string_view field
     ) noexcept -> void;
+
     auto render_expression(
         const ASTInterpolationExpr& value,
         ASTExprID expression,
@@ -114,6 +123,7 @@ private:
         bool is_last,
         std::string_view field
     ) noexcept -> void;
+
     auto render_expression(
         const ASTLiteral& value,
         ASTExprID expression,
@@ -121,6 +131,7 @@ private:
         bool is_last,
         std::string_view field
     ) noexcept -> void;
+
     auto render_expression(
         const ASTNameExpr& value,
         ASTExprID expression,
@@ -128,6 +139,7 @@ private:
         bool is_last,
         std::string_view field
     ) noexcept -> void;
+
     auto render_expression(
         const ASTCppNameExpr& value,
         ASTExprID expression,
@@ -135,6 +147,7 @@ private:
         bool is_last,
         std::string_view field
     ) noexcept -> void;
+
     auto render_expression(
         const ASTContextualCaseExpr& value,
         ASTExprID expression,
@@ -142,6 +155,7 @@ private:
         bool is_last,
         std::string_view field
     ) noexcept -> void;
+
     auto render_expression(
         const ASTGroupExpr& value,
         ASTExprID expression,
@@ -149,6 +163,7 @@ private:
         bool is_last,
         std::string_view field
     ) noexcept -> void;
+
     auto render_expression(
         const ASTArrayExpr& value,
         ASTExprID expression,
@@ -156,6 +171,7 @@ private:
         bool is_last,
         std::string_view field
     ) noexcept -> void;
+
     auto render_expression(
         const ASTTupleExpr& value,
         ASTExprID expression,
@@ -163,6 +179,7 @@ private:
         bool is_last,
         std::string_view field
     ) noexcept -> void;
+
     auto render_expression(
         const ASTArrayRepeatExpr& value,
         ASTExprID expression,
@@ -170,6 +187,7 @@ private:
         bool is_last,
         std::string_view field
     ) noexcept -> void;
+
     auto render_expression(
         const ASTConstructionExpr& value,
         ASTExprID expression,
@@ -177,6 +195,7 @@ private:
         bool is_last,
         std::string_view field
     ) noexcept -> void;
+
     auto render_expression(
         const ASTPrefixExpr& value,
         ASTExprID expression,
@@ -184,6 +203,7 @@ private:
         bool is_last,
         std::string_view field
     ) noexcept -> void;
+
     auto render_expression(
         const ASTAccessExpr& value,
         ASTExprID expression,
@@ -191,6 +211,7 @@ private:
         bool is_last,
         std::string_view field
     ) noexcept -> void;
+
     auto render_expression(
         const ASTBinaryExpr& value,
         ASTExprID expression,
@@ -198,6 +219,7 @@ private:
         bool is_last,
         std::string_view field
     ) noexcept -> void;
+
     auto render_expression(
         const ASTRangeExpr& value,
         ASTExprID expression,
@@ -205,6 +227,7 @@ private:
         bool is_last,
         std::string_view field
     ) noexcept -> void;
+
     auto render_expression(
         const ASTCastExpr& value,
         ASTExprID expression,
@@ -212,6 +235,7 @@ private:
         bool is_last,
         std::string_view field
     ) noexcept -> void;
+
     auto render_expression(
         const ASTTypeApplicationExpr& value,
         ASTExprID expression,
@@ -219,6 +243,7 @@ private:
         bool is_last,
         std::string_view field
     ) noexcept -> void;
+
     auto render_expression(
         const ASTCallExpr& value,
         ASTExprID expression,
@@ -226,6 +251,7 @@ private:
         bool is_last,
         std::string_view field
     ) noexcept -> void;
+
     auto render_expression(
         const ASTIndexExpr& value,
         ASTExprID expression,
@@ -233,6 +259,7 @@ private:
         bool is_last,
         std::string_view field
     ) noexcept -> void;
+
     auto render_expression(
         const ASTTupleElementExpr& value,
         ASTExprID expression,
@@ -240,6 +267,7 @@ private:
         bool is_last,
         std::string_view field
     ) noexcept -> void;
+
     auto render_expression(
         const ASTMemberExpr& value,
         ASTExprID expression,
@@ -247,6 +275,7 @@ private:
         bool is_last,
         std::string_view field
     ) noexcept -> void;
+
     auto render_expression(
         const ASTLambdaExpr& value,
         ASTExprID expression,
@@ -254,6 +283,7 @@ private:
         bool is_last,
         std::string_view field
     ) noexcept -> void;
+
     auto render_expression(
         const ASTPropagationExpr& value,
         ASTExprID expression,
@@ -261,6 +291,7 @@ private:
         bool is_last,
         std::string_view field
     ) noexcept -> void;
+
     auto render_expression(
         const ASTIfForm& value,
         ASTExprID expression,
@@ -268,6 +299,7 @@ private:
         bool is_last,
         std::string_view field
     ) noexcept -> void;
+
     auto render_expression(
         const ASTMatchForm& value,
         ASTExprID expression,
@@ -275,6 +307,7 @@ private:
         bool is_last,
         std::string_view field
     ) noexcept -> void;
+
     auto render_expression(
         const ASTTryForm& value,
         ASTExprID expression,
@@ -282,16 +315,20 @@ private:
         bool is_last,
         std::string_view field
     ) noexcept -> void;
+
     auto render_statement(ASTStmtID statement, std::string_view prefix, bool is_last) noexcept
         -> void;
+
     auto render_statement_node(ASTStmtID statement, std::string_view prefix, bool is_last) noexcept
         -> void;
+
     auto render_literal(
         const ASTLiteral& literal,
         std::string_view prefix,
         bool is_last,
         std::string_view field = {}
     ) noexcept -> void;
+
     auto render_numeric_literal(
         Span span,
         const NumericLiteralValue& value,
@@ -299,118 +336,141 @@ private:
         bool is_last,
         std::string_view field = {}
     ) noexcept -> void;
+
     auto render_cpp_source_fragment(
         const ASTCppSourceFragment& fragment,
         std::string_view prefix,
         bool is_last,
         std::string_view field = {}
     ) noexcept -> void;
+
     auto render_construction_type(
         const ASTConstructionType& type,
         std::string_view prefix,
         bool is_last
     ) noexcept -> void;
+
     auto render_binding_target(
         const ASTBindingTarget& target,
         std::string_view prefix,
         bool is_last
     ) noexcept -> void;
+
     auto render_variable_declaration(
         const ASTVariableDecl& declaration,
         std::string_view prefix,
         bool is_last,
         Span outer_span
     ) noexcept -> void;
+
     auto render_assignment(
         const ASTAssignment& assignment,
         std::string_view prefix,
         bool is_last,
         Span outer_span
     ) noexcept -> void;
+
     auto render_update(
         const ASTUpdate& update,
         std::string_view prefix,
         bool is_last,
         Span outer_span
     ) noexcept -> void;
+
     auto render_control_transfer(
         const ASTControlTransfer& transfer,
         std::string_view prefix,
         bool is_last,
         Span outer_span
     ) noexcept -> void;
+
     auto render_branch_block(
         ASTBranchBlockID block,
         std::string_view prefix,
         bool is_last,
         std::string_view field = {}
     ) noexcept -> void;
+
     auto render_callable_body(
         const ASTCallableBody& body,
         std::string_view prefix,
         bool is_last,
         std::string_view field
     ) noexcept -> void;
+
     auto render_ordinary_block(
         ASTBlockID block,
         std::string_view prefix,
         bool is_last,
         std::string_view field = {}
     ) noexcept -> void;
+
     auto render_if_form(
         const ASTIfForm& form,
         std::string_view prefix,
         bool is_last,
         std::string_view field = {}
     ) noexcept -> void;
+
     auto render_match_form(
         const ASTMatchForm& form,
         std::string_view prefix,
         bool is_last,
         std::string_view field = {}
     ) noexcept -> void;
+
     auto render_try_form(
         const ASTTryForm& form,
         std::string_view prefix,
         bool is_last,
         std::string_view field = {}
     ) noexcept -> void;
+
     auto render_throw_clause(
         const std::optional<ASTThrowClause>& clause,
         std::string_view prefix,
         bool is_last
     ) noexcept -> void;
+
     auto render_generic_argument(
         const ASTGenericArgument& argument,
         std::string_view prefix,
         bool is_last
     ) noexcept -> void;
+
     auto render_module_import(
         ASTModuleImportID declaration,
         std::string_view prefix,
         bool is_last
     ) noexcept -> void;
+
     auto render_cpp_header_import(
         const ASTCppHeaderImport& header,
         std::string_view prefix,
         bool is_last
     ) noexcept -> void;
+
     auto render_top_level_item(ASTItemID item, std::string_view prefix, bool is_last) noexcept
         -> void;
+
     auto render_pattern(ASTPatternID pattern, std::string_view prefix, bool is_last) noexcept
         -> void;
+
     auto render_pattern_node(ASTPatternID pattern, std::string_view prefix, bool is_last) noexcept
         -> void;
+
     auto render_for_header(
         const ASTForHeader& header,
         std::string_view prefix,
         bool is_last
     ) noexcept -> void;
+
     auto render_named_type_children(
         const ASTNamedType& named,
         std::string_view prefix,
         bool is_last
     ) noexcept -> void;
+
     auto render_function_type_children(
         const ASTFunctionType& function,
         std::string_view prefix

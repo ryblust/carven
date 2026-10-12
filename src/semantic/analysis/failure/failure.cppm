@@ -80,8 +80,10 @@ public:
     auto intern(GenericFailureExpression expression) noexcept -> GenericFailureID;
     auto unite(std::span<const GenericFailureID> inputs) noexcept -> GenericFailureID;
     auto residual(GenericFailureID input, std::vector<TypeID> members) noexcept -> GenericFailureID;
+
     auto intersection(GenericFailureID input, std::vector<TypeID> members) noexcept
         -> GenericFailureID;
+
     auto guard(GenericFailureID gate, GenericFailureID source) noexcept -> GenericFailureID;
     // Subset quantifies over all parameter environments; Disproven denotes a
     // counterexample. Emptiness queries instead return definite truth: a
@@ -229,77 +231,99 @@ public:
     auto generic_failure_copy(GenericFailureID id) const noexcept -> GenericFailureExpression;
     auto add_generic_concrete(std::vector<TypeID> members) noexcept -> GenericFailureID;
     auto add_generic_union(std::vector<GenericFailureID> inputs) noexcept -> GenericFailureID;
+
     auto add_generic_residual(GenericFailureID input, std::vector<TypeID> members) noexcept
         -> GenericFailureID;
+
     auto add_generic_intersection(GenericFailureID input, std::vector<TypeID> members) noexcept
         -> GenericFailureID;
+
     auto add_generic_guard(GenericFailureID gate, GenericFailureID source) noexcept
         -> GenericFailureID;
+
     auto generic_subset(GenericFailureID actual, GenericFailureID allowed) const noexcept
         -> FailureProof;
+
     auto generic_empty(GenericFailureID source) const noexcept -> FailureProof;
     auto generic_non_empty(GenericFailureID source) const noexcept -> FailureProof;
     auto add_empty_term() noexcept -> FailureTermID;
     auto add_concrete_term(std::vector<TypeID> members) noexcept -> FailureTermID;
     auto add_union_term(std::vector<ConstructionFailureRef> inputs) noexcept -> FailureTermID;
+
     auto add_residual_term(
         ConstructionFailureRef input,
         std::vector<TypeID> handled_members
     ) noexcept -> FailureTermID;
+
     auto add_intersection_term(
         ConstructionFailureRef input,
         std::vector<TypeID> retained_members
     ) noexcept -> FailureTermID;
+
     auto copy(FailureTermID term) const noexcept -> FailureTerm;
     auto add_member(FailureTermID destination, TypeID member) noexcept -> void;
+
     auto add_thrown_member(
         FailureTermID destination,
         TypeID member,
         ProgramOriginID origin
     ) noexcept -> void;
+
     auto add_contribution(FailureTermID destination, ConstructionFailureRef source) noexcept
         -> void;
+
     auto add_guarded_contribution(
         FailureTermID destination,
         ConstructionFailureRef gate,
         ConstructionFailureRef source
     ) noexcept -> void;
+
     auto equate(FailureTermID left, FailureTermID right) noexcept -> void;
+
     auto require_empty(
         ConstructionFailureRef source,
         ProgramOriginID origin,
         EmptyFailureRequirementKind kind
     ) noexcept -> void;
+
     auto require_non_empty(
         ConstructionFailureRef source,
         ProgramOriginID origin,
         bool allow_dependent = false
     ) noexcept -> void;
+
     auto require_subset(
         ConstructionFailureRef actual,
         ConstructionFailureRef allowed,
         ProgramOriginID origin,
         FailureSubsetRequirementKind kind
     ) noexcept -> void;
+
     auto require_equal(
         ConstructionFailureRef left,
         ConstructionFailureRef right,
         ProgramOriginID origin
     ) noexcept -> void;
+
     auto require_declared_contract(ConstructionFailureRef actual, ProgramOriginID origin) noexcept
         -> void;
+
     auto complete_applications(
         FailureSetStoreBuilder& sets,
         std::span<const ConstructionFailureRef> roots = {}
     ) noexcept -> bool;
+
     auto growing_parameter() const noexcept -> std::optional<GenericFailureParameter>;
+
     auto dependencies(ConstructionFailureRef source) const noexcept
         -> std::vector<ConstructionFailureRef>;
+
     auto application(
         FailureTermID source,
         FailureParameterEnvironment environment,
         FailureSetStoreBuilder& sets
     ) noexcept -> FailureTermID;
+
     auto parameter(GenericFailureParameter source) noexcept -> GenericFailureID;
     auto finish() && noexcept -> FrozenFailureConstraints;
     auto snapshot() const noexcept -> FrozenFailureConstraints;
@@ -309,12 +333,15 @@ private:
     auto require_source(ConstructionFailureRef source) const noexcept -> void;
     auto require_origin(ProgramOriginID origin) const noexcept -> void;
     auto normalize_members(std::vector<TypeID> members) const noexcept -> std::vector<TypeID>;
+
     auto normalize_inputs(std::vector<ConstructionFailureRef> inputs) const noexcept
         -> std::vector<ConstructionFailureRef>;
+
     auto reduce_application_argument(
         ConstructionFailureRef source,
         FailureSetStoreBuilder& sets
     ) noexcept -> ConstructionFailureRef;
+
     auto normalize_application_environment(
         FailureParameterEnvironment environment,
         FailureSetStoreBuilder& sets
@@ -351,6 +378,7 @@ public:
         FailureInstantiationEnvironment environment,
         std::optional<FailureParameterEnvironment> deferred = std::nullopt
     ) noexcept;
+
     auto substitute(ConstructionFailureRef source) noexcept -> ConstructionFailureRef;
 
 private:
@@ -376,6 +404,7 @@ public:
         DeclarationConstructionView declarations,
         CompilationProvenanceReader provenance
     ) noexcept;
+
     auto name(TypeID type) const noexcept -> std::string;
 
 private:

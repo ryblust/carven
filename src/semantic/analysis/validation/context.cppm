@@ -30,15 +30,19 @@ private:
     auto verify_lifetimes() const noexcept -> void;
     auto verify_rows() noexcept -> void;
     auto verify_patterns() const noexcept -> void;
+
     auto verify_pattern_bounds(
         std::span<const PatternID> roots,
         std::span<const SemPatternBounds> pattern_bounds
     ) const noexcept -> void;
+
     auto compatible_pattern_type(TypeID left, TypeID right) const noexcept -> bool;
     auto pattern_bindings(PatternID id) const noexcept -> std::vector<LocalBindingID>;
     auto signature_for_type(TypeID type) const noexcept -> CallableSignatureID;
+
     auto verify_expression(const SemanticExpression& source, bool residual = false) const noexcept
         -> void;
+
     auto verify_region(const SemanticRegion& source, bool residual = false) const noexcept -> void;
     const SemIRBody& body;
     const SemIRProgram& program;

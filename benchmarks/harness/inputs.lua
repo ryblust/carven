@@ -4,10 +4,10 @@ function crafts_root(compiler)
     end
     local directory = path.directory(compiler)
     local installed = path.join(path.directory(directory), "crafts")
-    if os.isfile(path.join(installed, "carven/runtime/runtime.hpp")) then return installed end
+    if os.isdir(path.join(installed, "carven")) then return installed end
     while directory ~= path.directory(directory) do
         if os.isfile(path.join(directory, "src/carven.cppm")) and os.isfile(path.join(directory, "xmake.lua"))
-            and os.isfile(path.join(directory, "crafts/carven/runtime/runtime.hpp")) then
+            and os.isdir(path.join(directory, "crafts/carven")) then
             return path.join(directory, "crafts")
         end
         directory = path.directory(directory)

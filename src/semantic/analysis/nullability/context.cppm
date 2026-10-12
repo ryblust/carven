@@ -66,54 +66,71 @@ public:
         const AnalysisBodyView& body,
         AnalysisDiagnostics diagnostics
     ) noexcept;
+
     auto run() noexcept -> void;
 
 private:
     auto location(const SemanticExpression& source, bool enclosing = false) const noexcept
         -> std::optional<NullPlace>;
+
     auto value_at(const NullState& state, const NullPlace& place) const noexcept -> NullValue;
     auto constant_value(const SemanticExpression& source) const noexcept -> NullValue;
     auto invalidate(NullState& state, const std::optional<NullPlace>& place) const noexcept -> void;
     auto invalidate_exposed(NullState& state) const noexcept -> void;
+
     auto store(NullState& state, const NullPlace& place, const NullValue& value) const noexcept
         -> void;
+
     auto expose(NullState& state, const SemanticExpression& source) const noexcept -> void;
+
     auto refine(
         std::optional<NullNormal>& branch,
         const NullPlace& place,
         NullFact fact
     ) const noexcept -> void;
+
     auto scan_writes(NullState& state, const SemanticRegion& region) noexcept -> void;
     auto scan_writes(NullState& state, const SemanticExpression& expression) noexcept -> void;
+
     template<typename Source>
     auto scan_writes_impl(NullState& state, const Source& source) noexcept -> void;
+
     auto add_range_aliases(const SemRangeLoop& source) noexcept -> void;
     auto scan_write(NullState& state, const SemanticExpression& expression) const noexcept -> void;
     auto call_execution(GenericDeclarationID definition) const noexcept -> CallableExecutionKind;
+
     auto apply_call_writes(
         NullState& state,
         std::span<const SemCallArgument> arguments
     ) const noexcept -> void;
+
     auto expression(const SemanticExpression& source, NullState state) noexcept
         -> ContinuationTask<NullFlow>;
+
     auto condition(const SemanticExpression& source, NullState state) noexcept
         -> ContinuationTask<NullCondition>;
+
     auto region(const SemanticRegion& source, NullState state) noexcept
         -> ContinuationTask<NullFlow>;
+
     auto statement(const SemanticStatement& source, NullState state) noexcept
         -> ContinuationTask<NullFlow>;
+
     auto conditional(const SemIf& source, NullState state) noexcept -> ContinuationTask<NullFlow>;
     auto match(const SemMatch& source, NullState state) noexcept -> ContinuationTask<NullFlow>;
     auto attempt(const SemTry& source, NullState state) noexcept -> ContinuationTask<NullFlow>;
     auto loop(const SemLoop& source, NullState state) noexcept -> ContinuationTask<NullFlow>;
     auto range(const SemRangeLoop& source, NullState state) noexcept -> ContinuationTask<NullFlow>;
+
     auto bind_pattern(NullState& state, PatternID pattern, const NullValue& value) const noexcept
         -> void;
+
     auto pattern_condition(
         PatternID pattern,
         std::span<const SemPatternBounds> bounds,
         NullState state
     ) noexcept -> ContinuationTask<NullCondition>;
+
     auto failures(NullFlow& flow, ConstructionFailureRef failures) const noexcept -> void;
     auto require_nonnull(ProgramOriginID origin, const NullValue& value) noexcept -> void;
 

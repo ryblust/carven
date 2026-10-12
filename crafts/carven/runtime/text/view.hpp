@@ -1,8 +1,8 @@
 #pragma once
 
-#include "../slice.hpp"
-#include "string.hpp"
-#include "utf8.hpp"
+#include <carven/runtime/collection/slice.hpp>
+#include <carven/runtime/text/string.hpp>
+#include <carven/runtime/text/utf8.hpp>
 
 #include <cstddef>
 #include <cstdint>

@@ -1,3 +1,5 @@
+import .control using Failure;
+
 import "lifetimes/lifetimes.hpp" using lifetime_probe::{
     Owner,
     observe_owner,
@@ -8,8 +10,6 @@ import "lifetimes/lifetimes.hpp" using lifetime_probe::{
     ResultMaker,
     CopyOwner,
 };
-
-import .control using Failure;
 
 fn fixed_success() -> FixedOwner throw Failure => 41;
 

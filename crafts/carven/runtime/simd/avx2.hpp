@@ -5,11 +5,11 @@
 #error "include carven/runtime/simd/simd.hpp instead of a SIMD backend header"
 #endif
 
-#include <immintrin.h>
-
 #include <bit>
 #include <cstddef>
 #include <cstdint>
+
+#include <immintrin.h>
 
 namespace carven::runtime::simd {
 inline namespace avx2 {

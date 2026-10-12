@@ -52,9 +52,11 @@ public:
         const SemanticExpression& expression,
         ExecutionOutputMode output = ExecutionOutputMode::Write
     ) noexcept -> AnalysisTask<ExecutionValue>;
+
     // Executes a body that belongs to the static stage as a whole: a const
     // test or a module const block.
     auto run_body(BodyID body, BlockSource source) noexcept -> AnalysisTask<void>;
+
     // Executes a const block of a completed body. The region reads no binding
     // declared outside it.
     auto run_block(BodyID body, const SemanticRegion& region, BlockSource source) noexcept

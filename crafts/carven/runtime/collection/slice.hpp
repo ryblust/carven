@@ -1,6 +1,6 @@
 #pragma once
 
-#include "index.hpp"
+#include <carven/runtime/collection/index.hpp>
 
 #include <array>
 #include <cstddef>

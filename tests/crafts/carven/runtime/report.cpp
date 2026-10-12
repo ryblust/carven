@@ -1,4 +1,4 @@
-#include <carven/runtime/report.hpp>
+#include <carven/runtime/diagnostics/report.hpp>
 
 #include <type_traits>
 

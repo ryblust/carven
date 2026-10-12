@@ -28,6 +28,7 @@ private:
         std::optional<SyntaxTree> syntax,
         Diagnostics diagnostics
     ) noexcept;
+
     friend auto parse_document(
         std::shared_ptr<const SourceDocument> source,
         TimingOutput timings

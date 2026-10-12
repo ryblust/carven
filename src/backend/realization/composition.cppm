@@ -174,19 +174,23 @@ public:
     auto exits() const noexcept -> const LoweringExitSummary&;
     auto record_exits(const LoweringExitSummary& exits) noexcept -> void;
     auto consume_exit(LoweringExitTarget target) noexcept -> bool;
+
     auto replace_exit(LoweringExitTarget target, const LoweringExitSummary& continuation) noexcept
         -> void;
+
     auto emit(TargetStmt statement, bool continues = true) noexcept -> void;
     auto declare(TargetVariableStmt variable, bool needs_cleanup) noexcept -> void;
     auto terminate(TargetStmt statement, LoweringExitTarget target) noexcept -> void;
     auto append(LoweringStmtBuilder source) noexcept -> void;
     auto attribute(const TargetAttribution& attribution) noexcept -> void;
+
     auto scope(
         LoweringStmtBuilder source,
         TargetAttribution attribution = TargetGeneratedExpansionAttribution {
             .reason = TargetExpansionReason::LoweringSupport
         }
     ) noexcept -> void;
+
     auto resume(TargetIdentifier label, TargetJumpRole role, LoweringExitTarget target) noexcept
         -> void;
 
@@ -221,6 +225,7 @@ public:
     }
 
     auto result_factory(TargetTypeID type, LoweringExitTarget yield) && noexcept -> TargetExpr;
+
     // A direct region that only returns expressions is spelled as that
     // expression, or as `?:` for one two-way conditional; any other region
     // invokes a typed factory. A copied result relies on its typed consumer. A
@@ -231,6 +236,7 @@ public:
         LoweringExitTarget yield,
         LoweringRegionDelivery delivery
     ) && noexcept -> TargetExpr;
+
     auto finish() && noexcept -> std::vector<TargetStmt>;
 
     template<typename Visitor>

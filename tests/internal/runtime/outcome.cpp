@@ -1,6 +1,7 @@
 module;
-#include <carven/runtime/outcome.hpp>
-#include <carven/runtime/passing.hpp>
+#include <carven/runtime/call/passing.hpp>
+#include <carven/runtime/value/outcome.hpp>
+
 #include <concepts>
 #include <string>
 #include <type_traits>

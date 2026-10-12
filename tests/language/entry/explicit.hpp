@@ -1,8 +1,8 @@
 #pragma once
 
-#include "harness/lifetime.hpp"
-
 #include <carven/generated/carven-test-runner.hpp>
+
+#include "harness/lifetime.hpp"
 
 #include <cstdint>
 #include <cstdlib>

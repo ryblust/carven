@@ -1,4 +1,4 @@
-import "carven/std/number/parse.hpp";
+import <carven/std/number/parse.hpp>;
 
 export enum ParseError {
     Invalid

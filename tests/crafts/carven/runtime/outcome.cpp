@@ -1,4 +1,4 @@
-#include <carven/runtime/outcome.hpp>
+#include <carven/runtime/value/outcome.hpp>
 
 namespace {
 

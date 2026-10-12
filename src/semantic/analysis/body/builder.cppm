@@ -27,11 +27,13 @@ public:
     auto kind() const noexcept -> BodyKind;
     auto set_lifetime(LifetimeRegionID lifetime) noexcept -> void;
     auto lifetime() const noexcept -> LifetimeRegionID;
+
     auto add_lifetime_region(
         std::optional<LifetimeRegionID>,
         LifetimeRegionKind,
         ProgramOriginID
     ) noexcept -> LifetimeRegionID;
+
     auto add_parameter(
         ProgramSpellingID,
         ConstructionTypeRef,
@@ -39,6 +41,7 @@ public:
         AccessMode,
         ProgramOriginID
     ) noexcept -> BoundStorage;
+
     auto add_capture(
         ProgramSpellingID,
         ConstructionTypeRef,
@@ -46,6 +49,7 @@ public:
         CaptureMode,
         ProgramOriginID
     ) noexcept -> BoundStorage;
+
     auto add_owner_binding(
         ProgramSpellingID,
         ConstructionTypeRef,
@@ -53,12 +57,14 @@ public:
         bool,
         ProgramOriginID
     ) noexcept -> BoundStorage;
+
     auto add_async_child_binding(
         ProgramSpellingID name,
         ConstructionTypeRef type,
         LifetimeRegionID owner,
         ProgramOriginID origin
     ) noexcept -> BoundStorage;
+
     auto add_access_binding(
         ProgramSpellingID,
         ConstructionTypeRef,
@@ -66,6 +72,7 @@ public:
         AccessMode,
         ProgramOriginID
     ) noexcept -> BoundStorage;
+
     auto binding_copy(LocalBindingID) const noexcept -> ElaboratedLocalBinding;
     auto add_pattern(ElaboratedPattern) noexcept -> PatternID;
     auto pattern_copy(PatternID) const noexcept -> ElaboratedPattern;
@@ -74,8 +81,10 @@ public:
     auto binding_expression(LocalBindingID) noexcept -> PlaceExpression;
     auto remember_initializer(LocalBindingID, const SemanticExpression&) noexcept -> void;
     auto known_callable(const SemanticExpression&) const noexcept -> std::optional<CallableID>;
+
     auto known_sequence_extent(const SemanticExpression&) const noexcept
         -> std::optional<std::uint64_t>;
+
     auto make_place(
         std::optional<LocalBindingID>,
         AccessMode,
@@ -83,6 +92,7 @@ public:
         SemanticExpressionValue&&,
         ProgramOriginID
     ) noexcept -> PlaceExpression;
+
     auto cpp_place(
         PlaceExpression,
         ConstructionTypeRef,
@@ -90,7 +100,9 @@ public:
         std::vector<SemCallArgument>,
         ProgramOriginID
     ) noexcept -> PlaceExpression;
+
     auto callable_expression(CallableID, ProgramOriginID) noexcept -> SemanticExpression;
+
     auto make_expression(
         ConstructionTypeRef,
         LifetimeRegionID,
@@ -98,6 +110,7 @@ public:
         SemanticExpressionValue&&,
         std::optional<ConstantID> = std::nullopt
     ) noexcept -> SemanticExpression;
+
     auto finish(SemanticRegion) && noexcept -> StructuredBodyDraft;
 
 private:
@@ -108,6 +121,7 @@ private:
         BindingStorage,
         ProgramOriginID
     ) noexcept -> BoundStorage;
+
     ProgramDraft& draft;
     BodyIdentity body_identity;
     BodyID body_id;

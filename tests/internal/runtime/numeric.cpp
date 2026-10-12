@@ -1,5 +1,6 @@
 module;
-#include <carven/runtime/numeric.hpp>
+#include <carven/runtime/numeric/numeric.hpp>
+
 #include <concepts>
 #include <limits>
 

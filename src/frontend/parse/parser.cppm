@@ -107,22 +107,26 @@ private:
     auto check_optionally_const(TokenKind keyword) const noexcept -> bool;
     auto consume() noexcept -> Token;
     auto match(TokenKind kind) noexcept -> std::optional<Token>;
+
     auto fail(
         std::string_view message,
         Span span,
         DiagnosticCode code = DiagnosticCode::Syntax
     ) noexcept -> void;
+
     auto fail_here(std::string_view message) noexcept -> void;
     auto expect(TokenKind kind, std::string_view message) noexcept -> Token;
     auto expect_name_component(std::string_view message) noexcept -> Token;
     auto save() const noexcept -> Checkpoint;
     auto restore(const Checkpoint& checkpoint) noexcept -> void;
     auto begin_speculation() noexcept -> Checkpoint;
+
     auto finish_speculation(
         const Checkpoint& checkpoint,
         bool commit,
         bool retain_failure = true
     ) noexcept -> void;
+
     auto remember_speculative_failure(ParseFailure failure) noexcept -> void;
     static auto join(Span first, Span last) noexcept -> Span;
     auto parse_module_reference() noexcept -> ASTModuleReference;
@@ -130,11 +134,15 @@ private:
     auto parse_module_import() noexcept -> ASTModuleImportID;
     auto parse_top_level_item() noexcept -> std::optional<ASTItemID>;
     auto parse_type_parameters() noexcept -> std::optional<ASTTypeParameterClause>;
+
     auto parse_enum(ASTDeclarationVisibility visibility) noexcept
         -> std::optional<std::pair<Span, ASTEnumDecl>>;
+
     auto parse_record(ASTDeclarationVisibility visibility) noexcept
         -> std::optional<std::pair<Span, ASTRecordDecl>>;
+
     auto parse_cpp_declaration_form(Token keyword) noexcept -> Span;
+
     auto parse_function(
         ASTDeclarationVisibility visibility,
         std::optional<ASTCppExportForm> cpp_export,
@@ -142,8 +150,10 @@ private:
         std::optional<Span> const_span,
         std::optional<Span> async_span
     ) noexcept -> std::optional<std::pair<Span, ASTFunctionDecl>>;
+
     auto parse_constant(ASTDeclarationVisibility visibility) noexcept
         -> std::optional<std::pair<Span, ASTConstantDecl>>;
+
     auto parse_test(bool is_const) noexcept -> std::optional<std::pair<Span, ASTTestDecl>>;
     auto parse_block_label() noexcept -> std::optional<ASTBlockLabel>;
     auto parse_type() noexcept -> std::optional<ASTTypeID>;
@@ -163,8 +173,10 @@ private:
     auto parse_statement() noexcept -> std::optional<ASTStmtID>;
     auto parse_variable_declaration_head() noexcept -> std::optional<ASTVariableDecl>;
     auto parse_binding_target() noexcept -> std::optional<ASTBindingTarget>;
+
     static auto assignment_operator(TokenKind kind) noexcept
         -> std::optional<ASTAssignmentOperator>;
+
     auto finish_assignment(ASTExprID target) noexcept -> std::optional<ASTAssignment>;
     auto parse_update() noexcept -> std::optional<ASTUpdate>;
     auto parse_control_transfer(bool with_semicolon) noexcept -> std::optional<ASTControlTransfer>;
@@ -173,11 +185,13 @@ private:
     auto parse_for_header(std::optional<Span> const_span) noexcept -> std::optional<ASTForHeader>;
     auto parse_for_step() noexcept -> std::optional<ASTForStep>;
     auto parse_expression() noexcept -> std::optional<ASTExprID>;
+
     template<typename ParseOperand>
     auto parse_left_associative(
         ParseOperand parse_operand,
         std::span<const std::pair<TokenKind, ASTBinaryOperator>> operators
     ) noexcept -> std::optional<ASTExprID>;
+
     auto parse_logical_or() noexcept -> std::optional<ASTExprID>;
     auto parse_logical_and() noexcept -> std::optional<ASTExprID>;
     auto parse_bitwise_or() noexcept -> std::optional<ASTExprID>;
@@ -189,10 +203,13 @@ private:
     auto parse_additive() noexcept -> std::optional<ASTExprID>;
     auto parse_multiplicative() noexcept -> std::optional<ASTExprID>;
     auto parse_cast_expression() noexcept -> std::optional<ASTExprID>;
+
     auto parse_prefix_expression(bool allow_propagation = true) noexcept
         -> std::optional<ASTExprID>;
+
     auto parse_postfix_expression(bool allow_propagation = true) noexcept
         -> std::optional<ASTExprID>;
+
     auto parse_call(ASTExprID callee) noexcept -> std::optional<ASTExprID>;
     auto parse_interpolation_parts(TokenKind closing) noexcept -> std::vector<ASTInterpolationPart>;
     auto parse_primary_expression() noexcept -> std::optional<ASTExprID>;
@@ -213,13 +230,18 @@ private:
     auto parse_catch_pattern_atom() noexcept -> std::optional<ASTCatchPatternAtom>;
     auto parse_pattern() noexcept -> std::optional<ASTPatternID>;
     auto parse_primary_pattern() noexcept -> std::optional<ASTPatternID>;
+
     auto finish_case_pattern(Span start, ASTCaseQualifier qualifier, Span name_span) noexcept
         -> std::optional<ASTPatternID>;
+
     auto parse_qualified_name() noexcept -> ASTQualifiedName;
     auto consume_literal() noexcept -> ASTLiteral;
+
     auto expect_numeric_literal(std::string_view message) noexcept
         -> std::optional<ParsedNumericLiteral>;
+
     auto expect_string_literal(std::string_view message) noexcept
         -> std::optional<ParsedStringLiteral>;
+
     auto make_cpp_source_fragment(Span full_span) const noexcept -> ASTCppSourceFragment;
 };

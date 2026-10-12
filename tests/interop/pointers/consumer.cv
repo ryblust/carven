@@ -1,4 +1,5 @@
 import .api using { Link, identity, opaque, accept_opaque };
+
 import "pointers/provider.hpp";
 
 test "Pointers: recursive and incomplete types cross generated interfaces" {

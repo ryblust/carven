@@ -1,6 +1,6 @@
 #pragma once
 
-#include <carven/runtime/void.hpp>
+#include <carven/runtime/value/void.hpp>
 
 #include <cstdint>
 

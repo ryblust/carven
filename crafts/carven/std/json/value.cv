@@ -1,8 +1,9 @@
-import std::number.parse using { ParseError, parse_i64, parse_u64, parse_f64 };
 import .error using { JSONError, ValueError };
 import .node using { Node, Member };
 import .parse using { parse_node, parse_node_bytes, parse_number_node };
 import .serialize using serialize_node;
+
+import std::number.parse using { ParseError, parse_i64, parse_u64, parse_f64 };
 import std::utf.error using UTF8Error;
 
 export enum ValueKind: u8 {

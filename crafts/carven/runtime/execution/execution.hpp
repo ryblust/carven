@@ -1,9 +1,10 @@
 #pragma once
 
-#include "completion.hpp"
-#include "timer.hpp"
-#include "../trap.hpp"
-#include "../tuple.hpp"
+#include <carven/runtime/diagnostics/trap.hpp>
+#include <carven/runtime/execution/completion.hpp>
+#include <carven/runtime/execution/timer.hpp>
+#include <carven/runtime/value/tuple.hpp>
+
 #include <array>
 #include <coroutine>
 #include <cstddef>
@@ -1047,6 +1048,6 @@ inline auto report_entry_cancelled(SourceSite site) noexcept -> void {
 
 } // namespace carven::runtime::execution
 
-#include "time.hpp"
-#include "composition.hpp"
-#include "timeout.hpp"
+#include <carven/runtime/execution/time.hpp>
+#include <carven/runtime/execution/composition.hpp>
+#include <carven/runtime/execution/timeout.hpp>

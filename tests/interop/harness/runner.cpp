@@ -1,8 +1,7 @@
 #include <carven/api/tests/interop/discarded_results/operations.hpp>
 #include <carven/api/tests/interop/printing/structural.hpp>
-#include <carven/api/tests/interop/scalars/export_argument.hpp>
 #include <carven/api/tests/interop/providers/contracts.hpp>
-
+#include <carven/api/tests/interop/scalars/export_argument.hpp>
 #include <carven/generated/carven-test-runner.hpp>
 
 #include <csignal>

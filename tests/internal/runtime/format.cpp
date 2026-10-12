@@ -1,5 +1,5 @@
 module;
-#include <carven/runtime/format.hpp>
+#include <carven/runtime/format/format.hpp>
 
 module carven:test.internal.runtime.format;
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "passing.hpp"
+#include <carven/runtime/call/passing.hpp>
 
 #include <concepts>
 #include <exception>

@@ -45,7 +45,9 @@ public:
         std::span<const SemPatternBounds> bounds,
         PatternBoundRealizer bound = {}
     ) noexcept;
+
     auto test(Lowered<LoweringPredicate> predicate) noexcept -> PatternSelection;
+
     // Coverage can prove acceptance on this entry. Matching still evaluates
     // required bounds and chooses the first successful alternative's sources.
     auto match(
@@ -53,21 +55,26 @@ public:
         const PatternSubject& subject,
         bool accepts_on_entry = false
     ) noexcept -> ContinuationTask<PatternSelection>;
+
     auto sequence(PatternSelection left, PatternSelection right) noexcept -> PatternSelection;
     auto alternatives(std::vector<PatternSelection> choices) noexcept -> PatternSelection;
+
     auto select(PatternSelection selection, LoweringStmtBuilder accepted) noexcept
         -> LoweringStmtBuilder;
+
     // Pure borrowed projections may be removed after all arm uses are known.
     auto projection_locals() const noexcept -> std::span<const TargetLocalID>;
     static auto subject_expression(const PatternSubject& subject) noexcept -> TargetExpr;
 
 private:
     auto single_case(EnumCaseID id) const noexcept -> bool;
+
     auto branch(
         TargetExpr condition,
         LoweringStmtBuilder selected,
         LoweringStmtBuilder& destination
     ) noexcept -> void;
+
     ModuleLowering& context;
     TargetNameAllocator& names;
     const SemIRBody& body;

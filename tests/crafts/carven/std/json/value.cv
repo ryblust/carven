@@ -1,6 +1,6 @@
-import std::json.value using { Value, ValueKind };
 import std::json.error using ValueError;
 import std::json.error using JSONError;
+import std::json.value using { Value, ValueKind };
 
 // Owning values and mutation are runtime contracts.
 test "JSON values: numeric construction and conversion preserve their one spelling" {

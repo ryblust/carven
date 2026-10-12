@@ -1,6 +1,6 @@
 module;
-#include <carven/runtime/deferred.hpp>
-#include <carven/runtime/tuple.hpp>
+#include <carven/runtime/value/deferred.hpp>
+#include <carven/runtime/value/tuple.hpp>
 
 module carven:test.internal.runtime.tuple;
 

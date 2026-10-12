@@ -1,5 +1,5 @@
-import std::json.value using Value;
 import std::json.error using { JSONError, ValueError };
+import std::json.value using Value;
 
 async fn parse_owned(&&text: String) -> Value throw JSONError {
     await yield_once();

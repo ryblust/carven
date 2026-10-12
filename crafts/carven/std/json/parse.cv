@@ -1,8 +1,9 @@
-import .node using { Node, Member };
 import .error using JSONError;
+import .node using { Node, Member };
 import .syntax using { SyntaxState, SyntaxEvent, syntax_state, next_event, validate_number };
-import std::utf.validation using validate_utf8;
+
 import std::utf.error using UTF8Error;
+import std::utf.validation using validate_utf8;
 
 private const fn read_string(bytes: [u8], &state: SyntaxState) -> String throw JSONError {
     var result = String {};

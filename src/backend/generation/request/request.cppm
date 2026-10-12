@@ -17,8 +17,10 @@ enum class LinkageDomainKind {
 class LinkageDomain final {
 public:
     static auto explicit_value(std::string value) noexcept -> std::optional<LinkageDomain>;
+
     static auto artifact_root(const std::filesystem::path& root) noexcept
         -> std::optional<LinkageDomain>;
+
     auto kind() const noexcept -> LinkageDomainKind;
     auto value() const noexcept -> std::string_view;
 

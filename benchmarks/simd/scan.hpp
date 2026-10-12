@@ -1,6 +1,7 @@
 #pragma once
 
-#include <carven/runtime/slice.hpp>
+#include <carven/runtime/collection/slice.hpp>
+
 #include <cstddef>
 #include <cstdint>
 

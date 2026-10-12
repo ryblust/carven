@@ -60,9 +60,12 @@ struct WorkspaceReferencesQuery final {
 class WorkspaceAnalysisSnapshot final {
 public:
     auto syntax(std::string_view document) const noexcept -> std::optional<WorkspaceSyntaxQuery>;
+
     auto document_symbols(std::string_view document) const noexcept
         -> std::optional<WorkspaceSymbolsQuery>;
+
     auto workspace_symbols() const noexcept -> std::shared_ptr<const WorkspaceSymbolList>;
+
     // The explicit module set is the semantic dependency boundary.
     // An uncached selection runs full compiler analysis.
     // Timings are delivered only for a new computation and borrowed for this call.
@@ -70,6 +73,7 @@ public:
         std::span<const WorkspaceProjectModule> project,
         TimingOutput timings = {}
     ) const noexcept -> WorkspaceSemanticQuery;
+
     // Source types and resolved references share one occurrence index. Failed
     // analysis can retain builtin types and definitions from admitted declarations
     // and successfully constructed bodies.
@@ -83,11 +87,13 @@ public:
         std::string_view document,
         std::uint32_t offset
     ) const noexcept -> WorkspaceHoverQuery;
+
     auto definition(
         std::span<const WorkspaceProjectModule> project,
         std::string_view document,
         std::uint32_t offset
     ) const noexcept -> WorkspaceDefinitionQuery;
+
     // Includes declaration occurrences in the explicit selected module set.
     auto references(
         std::span<const WorkspaceProjectModule> project,
@@ -134,13 +140,16 @@ public:
     WorkspaceAnalysisHost(WorkspaceAnalysisHost&&) = default;
     auto operator=(const WorkspaceAnalysisHost&) -> WorkspaceAnalysisHost& = delete;
     auto operator=(WorkspaceAnalysisHost&&) -> WorkspaceAnalysisHost& = delete;
+
     // Document keys are caller-supplied identities; the host performs no filesystem IO.
     auto update(std::string document, std::int64_t version, std::string text) noexcept
         -> std::expected<WorkspaceDocumentChange, WorkspaceDocumentUpdateFailure>;
+
     // Publish all updates together. Duplicate keys and stale versions reject the
     // entire batch; successful changes follow input order. Empty batches do nothing.
     auto update(std::vector<WorkspaceDocumentUpdate> updates) noexcept
         -> std::expected<std::vector<WorkspaceDocumentChange>, WorkspaceDocumentBatchUpdateFailure>;
+
     auto remove(std::string_view document) noexcept -> bool;
     auto snapshot() const noexcept -> WorkspaceAnalysisSnapshot;
 

@@ -108,6 +108,7 @@ public:
     auto size(const ExecutionMemory* memory) const noexcept -> std::optional<std::size_t>;
     auto alive(const ExecutionMemory* memory) const noexcept -> bool;
     auto slice() const noexcept -> const ExecutionSlice*;
+
     auto observe(const ConstantValueReader& values, const ExecutionMemory* memory) const noexcept
         -> std::optional<ExecutionTextObservation>;
 

@@ -1,8 +1,9 @@
 #pragma once
+#include <carven/runtime/call/passing.hpp>
 #include <carven/runtime/text/text.hpp>
-#include <carven/runtime/passing.hpp>
-#include <string_view>
+
 #include <cstdint>
+#include <string_view>
 
 namespace native_text {
 

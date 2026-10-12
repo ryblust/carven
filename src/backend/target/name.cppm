@@ -25,8 +25,10 @@ using TargetMemberName = std::variant<TargetIdentifier, TargetRawIdentifier>;
 class TargetName final {
 public:
     explicit TargetName(TargetIdentifier identifier) noexcept;
+
     static auto from_components(std::initializer_list<TargetIdentifier> values) noexcept
         -> TargetName;
+
     static auto from_components(std::vector<TargetIdentifier> values) noexcept -> TargetName;
     static auto globally_qualified(std::vector<TargetIdentifier> values) noexcept -> TargetName;
     auto components() const noexcept -> std::span<const TargetIdentifier>;

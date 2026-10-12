@@ -259,6 +259,7 @@ public:
         std::size_t objects,
         std::span<const std::pair<std::size_t, std::size_t>> possible_aliases = {}
     ) noexcept;
+
     auto matches(
         const OwnershipPlace& left,
         const OwnershipPlace& right,
@@ -273,6 +274,7 @@ private:
 
     auto equal_paths(std::size_t left, std::size_t right) const noexcept -> bool;
     auto reaches(std::size_t object) const noexcept -> const std::vector<bool>&;
+
     auto query(
         const OwnershipPlace& left,
         const OwnershipPlace& right,
@@ -425,6 +427,7 @@ public:
     // Starts one body before its expressions are observed in preorder.
     auto begin_body(AnalysisBodyID body) noexcept -> void;
     auto observe(const SemanticExpression& expression) noexcept -> void;
+
     auto finish(std::flat_map<AnalysisBodyID, OwnershipBodyFacts>& facts) && noexcept
         -> std::flat_map<AnalysisBodyID, std::uint32_t>;
 
@@ -488,6 +491,7 @@ public:
         const OwnershipCallInput& input,
         OwnershipStorageTopology* topology = nullptr
     ) noexcept;
+
     auto run() noexcept -> OwnershipBodyResult;
     auto check_contracts() noexcept -> std::unique_ptr<OwnershipDiagnosisRecord>;
 
@@ -496,6 +500,7 @@ private:
     auto propagate_storage_facts() noexcept -> void;
     auto storage_available(const OwnershipState& state, std::size_t object) const noexcept -> bool;
     auto synchronize_storage(OwnershipState& state) const noexcept -> void;
+
     auto select_owned_storage(
         const OwnershipPlace& carrier,
         ConstructionTypeRef element,
@@ -505,6 +510,7 @@ private:
         bool many = false,
         bool summarized = false
     ) noexcept -> std::vector<OwnershipPlace>;
+
     auto select_element_storage(
         ConstructionTypeRef sequence,
         std::span<const OwnershipPlace> storage,
@@ -513,11 +519,14 @@ private:
         ProgramOriginID selection,
         OwnershipState& state
     ) noexcept -> std::vector<OwnershipPlace>;
+
     auto map_relationships(
         const OwnershipRelationships& value,
         FunctionRef<OwnershipPlace(OwnershipPlace) noexcept> map
     ) const noexcept -> OwnershipRelationships;
+
     auto diagnosis_record() noexcept -> OwnershipDiagnosisRecord&;
+
     auto diagnose(
         DiagnosticCode code,
         std::string message,
@@ -526,27 +535,34 @@ private:
         std::string related_label = "related storage or access",
         std::string help = {}
     ) noexcept -> void;
+
     auto outlives(std::size_t source, std::size_t destination) const noexcept -> bool;
     auto full_expression_storage(std::size_t object) const noexcept -> bool;
     auto leave(OwnershipFlow& flow, LifetimeRegionID lifetime) noexcept -> void;
+
     auto retain(
         OwnershipState& state,
         const OwnershipRelationships& relationships,
         const SemanticExpression& source
     ) const noexcept -> void;
+
     auto tracked_borrows(
         const OwnershipRelationships& value,
         const OwnershipState& state
     ) const noexcept -> bool;
+
     auto use(
         const OwnershipRelationships& relationships,
         const OwnershipState& state,
         ProgramOriginID origin,
         bool direct = false
     ) noexcept -> void;
+
     auto preserves_backing(ConstructionTypeRef type) const noexcept -> bool;
+
     auto storage_alias_alternatives(const OwnershipPlace& target) const noexcept
         -> std::vector<OwnershipPlace>;
+
     auto store(
         OwnershipState& state,
         const OwnershipPlace& target,
@@ -555,6 +571,7 @@ private:
         bool definite = true,
         bool preserves_backing = false
     ) noexcept -> void;
+
     // Records whether a returned owner could have been transferred instead of copied.
     auto observe_returned_copy(
         const SemanticExpression& source,
@@ -569,89 +586,117 @@ private:
 
     auto take_conflict(const OwnershipState& state, const OwnershipPlace& target) const noexcept
         -> std::optional<TakeConflict>;
+
     auto storage_write_conflict(
         const OwnershipState& state,
         const OwnershipPlace& target,
         bool preserves_backing = false
     ) const noexcept -> std::optional<ProgramOriginID>;
+
     auto check_storage_write(
         const OwnershipState& state,
         const OwnershipPlace& target,
         ProgramOriginID origin,
         bool preserves_backing = false
     ) noexcept -> void;
+
     auto protect_storage(const OwnershipRelationships& value) noexcept -> void;
     auto restore_storage_readers(std::size_t count) noexcept -> void;
+
     auto references(
         const OwnershipRelationships& relationships,
         const OwnershipState& state
     ) const noexcept -> std::vector<OwnershipCapture>;
+
     auto binding_places(LocalBindingID binding, const OwnershipState& state) const noexcept
         -> std::vector<OwnershipPlace>;
+
     auto binding_place(LocalBindingID binding) const noexcept -> OwnershipPlace;
     auto is_writable(LocalBindingID binding) const noexcept -> bool;
+
     auto storage_ancestor(
         const OwnershipPlace& owner,
         const OwnershipPlace& referent,
         bool strict
     ) const noexcept -> bool;
+
     auto storage_aliases(const OwnershipPlace& left, const OwnershipPlace& right) const noexcept
         -> bool;
+
     auto storage_overlaps(const OwnershipPlace& left, const OwnershipPlace& right) const noexcept
         -> bool;
+
     auto write_access(
         const OwnershipPlace& target,
         ProgramOriginID origin,
         bool invalidates = true
     ) noexcept -> void;
+
     auto require_available(
         const OwnershipState& state,
         const OwnershipPlace& place,
         ProgramOriginID origin
     ) noexcept -> void;
+
     auto selected_access_kind(const SemanticExpression& source) const noexcept
         -> OwnershipAccessKind;
+
     auto constant_index(const SemanticExpression& source) const noexcept
         -> std::optional<std::uint64_t>;
+
     auto complete_place(
         const SemanticExpression& source,
         OwnershipNormal& normal,
         bool read
     ) noexcept -> void;
+
     auto place(const SemanticExpression& source, OwnershipState state, bool read = true) noexcept
         -> ContinuationTask<OwnershipFlow>;
+
     static auto is_leaf_expression(const SemanticExpression& source) noexcept -> bool;
+
     auto finish_expression(
         const SemanticExpression& source,
         OwnershipNormal& normal,
         bool direct
     ) noexcept -> void;
+
     auto complete_leaf_expression(
         const SemanticExpression& source,
         OwnershipNormal& normal,
         bool direct
     ) noexcept -> void;
+
     auto expression(
         const SemanticExpression& source,
         OwnershipState state,
         bool direct = false
     ) noexcept -> ContinuationTask<OwnershipFlow>;
+
     auto complete_expression(const SemanticExpression& source, OwnershipState state) noexcept
         -> ContinuationTask<OwnershipFlow>;
+
     auto region(const SemanticRegion& source, OwnershipState state, bool release = true) noexcept
         -> ContinuationTask<OwnershipFlow>;
+
     auto statement(const SemanticStatement& source, OwnershipState state) noexcept
         -> ContinuationTask<OwnershipFlow>;
+
     auto conditional(const SemIf& value, OwnershipState state) noexcept
         -> ContinuationTask<OwnershipFlow>;
+
     auto match(const SemMatch& value, OwnershipState state) noexcept
         -> ContinuationTask<OwnershipFlow>;
+
     auto attempt(const SemTry& value, OwnershipState state) noexcept
         -> ContinuationTask<OwnershipFlow>;
+
     auto loop(const SemLoop& value, OwnershipState state) noexcept
         -> ContinuationTask<OwnershipFlow>;
+
     auto range(const SemRangeLoop& value, OwnershipState state) noexcept
         -> ContinuationTask<OwnershipFlow>;
+
     auto call(
         CallableID callable,
         const OwnershipRelationships& captures,
@@ -660,6 +705,7 @@ private:
         OwnershipState state,
         ProgramOriginID origin
     ) noexcept -> OwnershipFlow;
+
     auto call_body(
         AnalysisBodyID target,
         const OwnershipRelationships& captures,
@@ -669,6 +715,7 @@ private:
         ProgramOriginID origin,
         std::optional<ConstructionFailureRef> actual_failures = std::nullopt
     ) noexcept -> OwnershipFlow;
+
     auto append_failures(
         OwnershipFlow& flow,
         ConstructionFailureRef failures,
@@ -676,17 +723,20 @@ private:
         const OwnershipRelationships& value = {},
         std::optional<GenericFailureMask> retained = std::nullopt
     ) const noexcept -> void;
+
     auto bind_pattern(
         OwnershipState& state,
         PatternID pattern,
         const OwnershipRelationships& relationships,
         std::span<const OwnershipPlace> places = {}
     ) noexcept -> void;
+
     auto pattern_condition(
         PatternID pattern,
         std::span<const SemPatternBounds> bounds,
         OwnershipState state
     ) noexcept -> ContinuationTask<OwnershipCondition>;
+
     auto object_type(std::size_t object) const noexcept -> ConstructionTypeRef;
     auto object_origin(std::size_t object) const noexcept -> ProgramOriginID;
 
@@ -728,11 +778,13 @@ public:
         AnalysisDiagnostics diagnostics,
         ReadPassingFacts* passing = nullptr
     ) noexcept;
+
     auto run() noexcept -> AnalysisResult<OwnershipAnalysisSummary>;
     auto body(AnalysisBodyID id) const noexcept -> const AnalysisBodyView&;
     auto facts_for_body(AnalysisBodyID id) const noexcept -> const OwnershipBodyFacts&;
     auto contents(ConstructionTypeRef type) const noexcept -> TypeContents;
     auto symbolic_input(const AnalysisBodyView& body) const noexcept -> OwnershipCallInput;
+
     // Answers are borrowed during body evaluation, before the solver updates them.
     auto query(OwnershipCallInput input, bool recursive = false) noexcept
         -> const OwnershipCallSummary&;
@@ -742,8 +794,10 @@ public:
         ConstructionTypeRef type,
         OwnershipRegionDescriptor descriptor
     ) noexcept -> OwnershipStorageSite;
+
     auto same_recursion_component(AnalysisBodyID source, AnalysisBodyID target) const noexcept
         -> bool;
+
     const SemIRProgram& program;
     const AnalysisModelView& model;
 
@@ -752,20 +806,25 @@ private:
         const OwnershipCallInput& left,
         const OwnershipCallInput& right
     ) noexcept -> bool;
+
     static auto includes_input_topology(
         const OwnershipCallInput& destination,
         const OwnershipCallInput& source
     ) noexcept -> bool;
+
     static auto join_summary(
         OwnershipCallSummary& destination,
         const OwnershipCallSummary& source,
         std::size_t input_objects
     ) noexcept -> void;
+
     auto enqueue(std::size_t query) noexcept -> void;
+
     auto commit_diagnosis(
         std::unique_ptr<OwnershipDiagnosisRecord> diagnosis,
         const OwnershipEscape* escape = nullptr
     ) noexcept -> void;
+
     // An empty help adds no advice.
     auto diagnose(
         DiagnosticCode code,

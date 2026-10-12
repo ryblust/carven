@@ -16,6 +16,7 @@ public:
     auto hardline() noexcept -> FormattingNodeID;
     auto indent(FormattingNodeID child) noexcept -> FormattingNodeID;
     auto group(FormattingNodeID child) noexcept -> FormattingNodeID;
+
     auto render(
         FormattingNodeID root,
         std::size_t width = 100,

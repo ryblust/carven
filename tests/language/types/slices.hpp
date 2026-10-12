@@ -1,9 +1,9 @@
 #pragma once
 
+#include <carven/runtime/collection/slice.hpp>
+
 #include <array>
 #include <cstddef>
-
-#include <carven/runtime/slice.hpp>
 
 namespace slice_observation {
 

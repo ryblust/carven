@@ -1,5 +1,5 @@
-import std::json.validation using { validate, validate_bytes };
 import std::json.error using { JSONError, JSONErrorKind };
+import std::json.validation using { validate, validate_bytes };
 import std::utf.error using UTF8Error;
 
 const fn valid_documents() -> bool {

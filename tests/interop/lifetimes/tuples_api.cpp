@@ -1,6 +1,6 @@
-#include "carven/api/tests/interop/lifetimes/tuples.hpp"
+#include <carven/runtime/value/void.hpp>
 
-#include <carven/runtime/void.hpp>
+#include <carven/api/tests/interop/lifetimes/tuples.hpp>
 
 #include <type_traits>
 

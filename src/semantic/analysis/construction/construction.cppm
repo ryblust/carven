@@ -15,6 +15,7 @@ public:
         AnalysisCatalogView catalog,
         ImportUsage& usage
     ) noexcept;
+
     ProgramConstruction(const ProgramConstruction&) = delete;
     ProgramConstruction(ProgramConstruction&&) = delete;
     auto operator=(const ProgramConstruction&) -> ProgramConstruction& = delete;

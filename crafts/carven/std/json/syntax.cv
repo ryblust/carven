@@ -1,5 +1,6 @@
 import .error using JSONError;
 import .string using { begin_string, next_string_part };
+
 import std::simd.scan using { one_of, byte_range, prefix_end };
 
 enum Expectation: u8 {

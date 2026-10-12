@@ -22,6 +22,7 @@ public:
     auto local_name(TargetLocalID id) const noexcept -> const TargetIdentifier&;
     auto add_local(TargetIdentifier name) noexcept -> TargetLocalID;
     auto intern_type(TargetType type) noexcept -> TargetTypeID;
+
     auto finish(TargetUnitSections sections, TargetDirectiveInputs directives = {}) && noexcept
         -> TargetUnit;
 

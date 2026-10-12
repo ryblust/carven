@@ -75,18 +75,22 @@ public:
         CompletionPatterns patterns,
         std::span<const SemPatternBounds> bounds = {}
     ) noexcept;
+
     ~CompletionQuery() noexcept;
     CompletionQuery(const CompletionQuery&) = delete;
     auto operator=(const CompletionQuery&) -> CompletionQuery& = delete;
 
     auto pattern(PatternID pattern, std::span<const SemPatternBounds> bounds = {}) noexcept
         -> PatternCompletion;
+
     auto enter_try(const SemanticRegion& body) noexcept -> void;
     auto catch_entry(std::optional<ConstructionTypeRef> type) noexcept -> bool;
+
     auto consume_catch(
         std::optional<ConstructionTypeRef> type,
         std::optional<PatternID> pattern
     ) noexcept -> void;
+
     auto catch_accepted() const noexcept -> bool;
     auto finish_catch(bool guard_may_reject) noexcept -> void;
     auto pending_failures() const noexcept -> std::optional<std::vector<ConstructionTypeRef>>;

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "trap.hpp"
+#include <carven/runtime/diagnostics/trap.hpp>
 
 #include <bit>
 #include <concepts>

@@ -1,6 +1,6 @@
-import std::utf.scalar using { UnicodeScalarError, char_from_u32 };
 import std::utf.codec using { decode_utf8_prefix, encode_utf8, encoded_bytes };
 import std::utf.error using UTF8Error;
+import std::utf.scalar using { UnicodeScalarError, char_from_u32 };
 import std::utf.validation using validate_utf8;
 
 const test "UTF8: prefix decoding stops before later bytes" {

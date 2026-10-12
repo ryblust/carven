@@ -27,9 +27,12 @@ public:
         ImportUsage& usage,
         ConstructionRequests& requests
     ) noexcept;
+
     auto run() noexcept -> AnalysisTask<void>;
+
     auto ensure_available(CatalogSymbolID id, ProgramModuleID requester, Span origin) noexcept
         -> AnalysisTask<void>;
+
     auto prepare_type(ConstructionTypeRef type, ProgramModuleID requester, Span span) noexcept
         -> AnalysisTask<void>;
 
@@ -47,14 +50,18 @@ private:
     using State = std::variant<Unvisited, Resolving, Resolved, Failed>;
 
     auto module_declaration(ProgramModuleID id) const noexcept -> ModuleID;
+
     auto diagnose_cycle(
         const CatalogSymbol& target,
         ProgramModuleID requester,
         Span origin
     ) noexcept -> AnalysisFailure;
+
     auto resolve(CatalogSymbolID id, ProgramModuleID requester, Span origin) noexcept
         -> AnalysisTask<void>;
+
     auto resolve_fresh(const CatalogSymbol& symbol) noexcept -> AnalysisTask<void>;
+
     auto select_symbol(ProgramModuleID module_id, std::string_view name, Span origin) noexcept
         -> AnalysisResult<const CatalogSymbol*>;
 
@@ -68,54 +75,71 @@ private:
             ASTExprID expression,
             std::optional<ConstructionTypeRef> expected = std::nullopt
         ) noexcept -> ExpressionTask<ConstantID>;
+
         auto evaluate_array_extent(ASTExprID expression) noexcept -> AnalysisTask<std::uint64_t>;
         auto observe_expression(ASTExprID expression, ConstructionTypeRef type) noexcept -> void;
+
         auto observe_field(ProgramOriginID definition, Span name, ConstructionTypeRef type) noexcept
             -> void;
+
         auto resolve_name(std::string_view name, Span span) noexcept
             -> AnalysisTask<std::optional<ConstantID>>;
+
         auto resolve_class_operation(
             StructID owner,
             std::string_view name,
             bool receiver,
             Span span
         ) noexcept -> AnalysisResult<FunctionID>;
+
         auto representation_access(StructID owner, Span span) noexcept -> AnalysisResult<void>;
+
         auto resolve_static_callable(std::string_view name, Span span) noexcept
             -> AnalysisTask<std::optional<ResolvedStaticCallable>>;
+
         auto construction_requests() noexcept -> ConstructionRequests&;
         auto resolve_duration_type(Span span) noexcept -> AnalysisTask<TypeID>;
+
         auto resolve_type_qualifier(ASTExprID expression) noexcept
             -> AnalysisTask<std::optional<ConstructionTypeRef>>;
+
         auto resolve_enum_case(TypeID type, std::string_view name, Span span) noexcept
             -> AnalysisTask<ResolvedEnumCase>;
+
         auto resolve_type(ASTTypeID type) noexcept -> AnalysisTask<ConstructionTypeRef>;
+
         auto resolve_failure_clause(const ASTThrowClause& clause) noexcept
             -> AnalysisTask<ConstructionFailureRef>;
+
         auto resolve_generic_arguments(
             std::span<const ASTGenericArgument> arguments,
             std::span<const GenericParameterKind> policies
         ) noexcept -> AnalysisTask<GenericEnvironment>;
+
         auto resolve_construction_type(const ASTConstructionType& type) noexcept
             -> AnalysisTask<ConstructionTypeRef>;
+
         auto supports_equality(ConstructionTypeRef type) noexcept -> bool;
         auto is_numeric_enum(TypeID type) const noexcept -> bool;
     };
 
     auto resolve_type(ProgramModuleID module_id, ASTView syntax, ASTTypeID type) noexcept
         -> AnalysisTask<ConstructionTypeRef>;
+
     auto resolve_value_type(
         ProgramModuleID module_id,
         ASTView syntax,
         ASTTypeID type,
         std::string_view role
     ) noexcept -> AnalysisTask<ConstructionTypeRef>;
+
     auto resolve_failures(
         ProgramModuleID module_id,
         ASTView syntax,
         const ASTThrowClause& clause,
         const GenericTypeContext* generic_context = nullptr
     ) noexcept -> AnalysisTask<ConstructionFailureRef>;
+
     auto resolve_function(
         const CatalogSymbol& symbol,
         const CatalogFunctionForm& form,
@@ -123,10 +147,12 @@ private:
         const ASTFunctionDecl& function,
         Span item_span
     ) noexcept -> AnalysisTask<void>;
+
     auto resolve_generic_declaration(
         const CatalogSymbol& symbol,
         const CatalogGenericForm& form
     ) noexcept -> AnalysisTask<void>;
+
     auto resolve_struct(
         const CatalogSymbol& symbol,
         const CatalogStructForm& form,
@@ -134,6 +160,7 @@ private:
         const ASTRecordDecl& structure,
         Span item_span
     ) noexcept -> AnalysisTask<void>;
+
     auto resolve_enum(
         const CatalogSymbol& symbol,
         const CatalogEnumForm& form,
@@ -141,8 +168,10 @@ private:
         const ASTEnumDecl& enumeration,
         Span item_span
     ) noexcept -> AnalysisTask<void>;
+
     auto resolve_enum_case(const CatalogSymbol& symbol, const CatalogEnumCaseForm& form) noexcept
         -> AnalysisTask<void>;
+
     auto resolve_module_constant(
         const CatalogSymbol& symbol,
         const CatalogConstantForm& form,
@@ -150,28 +179,33 @@ private:
         const ASTConstantDecl& declaration,
         Span item_span
     ) noexcept -> AnalysisTask<void>;
+
     auto resolve_constant_name(
         ProgramModuleID module_id,
         std::string_view name,
         Span origin
     ) noexcept -> AnalysisTask<std::optional<ConstantID>>;
+
     auto resolve_type_qualifier(
         ProgramModuleID module_id,
         ASTView syntax,
         ASTExprID expression,
         const GenericTypeContext* generic_context = nullptr
     ) noexcept -> AnalysisTask<std::optional<ConstructionTypeRef>>;
+
     auto resolve_constant_enum_case(
         ProgramModuleID module_id,
         TypeID type,
         std::string_view name,
         Span origin
     ) noexcept -> AnalysisTask<ResolvedEnumCase>;
+
     auto supports_equality(ConstructionTypeRef type) noexcept -> bool;
     auto validate_enum_codes(const CatalogSymbol& symbol) noexcept -> AnalysisResult<void>;
     auto publish_modules() noexcept -> void;
     auto finish_declarations() noexcept -> void;
     auto publish_declaration(const CatalogSymbol& symbol) noexcept -> AnalysisResult<void>;
+
     auto prepare_type_dependencies(
         ConstructionTypeRef type,
         ProgramModuleID requester,

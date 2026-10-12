@@ -31,8 +31,10 @@ public:
     ~CompilationAnalysis() = default;
     auto operator=(const CompilationAnalysis&) -> CompilationAnalysis& = delete;
     auto operator=(CompilationAnalysis&&) -> CompilationAnalysis& = delete;
+
     static auto failed(SourceManager sources, Diagnostics diagnostics) noexcept
         -> CompilationAnalysis;
+
     auto program() const noexcept -> const SemIRProgram*;
     auto sources() const noexcept -> const SourceManager&;
     auto diagnostics() const noexcept -> std::span<const Diagnostic>;

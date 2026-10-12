@@ -1,6 +1,7 @@
 #pragma once
 
-#include "../outcome.hpp"
+#include <carven/runtime/value/outcome.hpp>
+
 #include <exception>
 #include <functional>
 #include <new>

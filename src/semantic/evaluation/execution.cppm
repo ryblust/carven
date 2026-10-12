@@ -102,6 +102,7 @@ using ExecutionOperand = std::variant<ExecutionValue, ExecutionPlace>;
 class ExecutionArgumentAccess {
 public:
     virtual ~ExecutionArgumentAccess() = default;
+
     virtual auto detach_argument(ExecutionOperand operand, ProgramOriginID origin) noexcept
         -> ExecutionResult<ExecutionValue> = 0;
 };
@@ -159,8 +160,10 @@ public:
 
     virtual auto trace(const ExecutionTraceEvent&) noexcept -> void;
     virtual auto write(ExecutionOutputStream stream, std::string_view bytes) noexcept -> void = 0;
+
     virtual auto function_for_callable(CallableID callable) const noexcept
         -> std::optional<FunctionID> = 0;
+
     // Adapts an evaluated call before looking up its executable body. The
     // default context preserves the callable and every argument.
     virtual auto bind_call(
@@ -169,11 +172,14 @@ public:
         ExecutionArgumentAccess& access,
         ProgramOriginID origin
     ) noexcept -> ContinuationTask<std::expected<CallableID, ExecutionCallFailure>>;
+
     // The constant a static binding or a static argument holds. Only static
     // execution freezes values.
     virtual auto freeze(ExecutionValue value) noexcept -> std::optional<ConstantID>;
+
     virtual auto prepare_call(CallableID callable, ProgramOriginID origin) noexcept
         -> ContinuationTask<std::expected<ExecutionBody, ExecutionCallFailure>> = 0;
+
     virtual auto report(const ExecutionEvent& event) noexcept -> void = 0;
 };
 

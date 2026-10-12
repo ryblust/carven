@@ -1,4 +1,5 @@
 #include "transfer.hpp"
+
 #include <carven/api/tests/interop/async/bridge.hpp>
 #include <carven/api/tests/interop/async/transfer.hpp>
 
@@ -7,9 +8,10 @@
 #include <cerrno>
 #include <cstdio>
 #include <cstdlib>
-#include <fcntl.h>
 #include <numeric>
 #include <thread>
+
+#include <fcntl.h>
 #include <unistd.h>
 
 namespace {

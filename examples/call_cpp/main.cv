@@ -3,7 +3,7 @@ import "parser.hpp";
 struct InvalidPort {}
 
 #[cpp] ---
-#include <carven/runtime/outcome.hpp>
+#include <carven/runtime/value/outcome.hpp>
 
 template<typename Failure>
 auto parse_port_native(std::string_view text, const Failure& invalid) noexcept

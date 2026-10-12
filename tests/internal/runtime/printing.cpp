@@ -1,7 +1,7 @@
 module;
-#include <carven/runtime/print.hpp>
-#include <carven/runtime/range.hpp>
-#include <carven/runtime/report.hpp>
+#include <carven/runtime/collection/range.hpp>
+#include <carven/runtime/diagnostics/report.hpp>
+#include <carven/runtime/io/print.hpp>
 
 module carven:test.internal.runtime.printing;
 

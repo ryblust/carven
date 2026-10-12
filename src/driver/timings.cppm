@@ -12,6 +12,7 @@ public:
     ~CommandTimings();
     auto output() noexcept -> TimingOutput;
     auto set_outcome(std::string_view outcome) noexcept -> void;
+
     auto operator()(TimingStage stage, std::chrono::steady_clock::duration elapsed) noexcept
         -> void;
 

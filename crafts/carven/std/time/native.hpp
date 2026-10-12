@@ -1,6 +1,7 @@
 #pragma once
 
-#include "../../runtime/execution/execution.hpp"
+#include <carven/runtime/execution/execution.hpp>
+
 #include <cstdint>
 
 inline auto carven_time_now_nanoseconds() noexcept -> std::int64_t {

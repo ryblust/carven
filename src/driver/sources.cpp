@@ -16,17 +16,14 @@ auto find_crafts_directory(std::string_view executable) noexcept -> std::filesys
     }
     auto error = std::error_code();
     auto installed = program.parent_path().parent_path() / "crafts";
-    if (std::filesystem::is_regular_file(installed / "carven/runtime/runtime.hpp", error)) {
+    if (std::filesystem::is_directory(installed / "carven", error)) {
         return installed;
     }
     // Development binaries must belong to a Carven source checkout.
     for (auto root = program.parent_path(); root != root.parent_path(); root = root.parent_path()) {
         if (std::filesystem::is_regular_file(root / "src/carven.cppm", error)
             && std::filesystem::is_regular_file(root / "xmake.lua", error)
-            && std::filesystem::is_regular_file(
-                root / "crafts/carven/runtime/runtime.hpp",
-                error
-            )) {
+            && std::filesystem::is_directory(root / "crafts/carven", error)) {
             return root / "crafts";
         }
     }

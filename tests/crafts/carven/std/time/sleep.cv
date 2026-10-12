@@ -1,5 +1,5 @@
-import std::time.duration using RangeError;
 import std::time.clock using TimePoint;
+import std::time.duration using RangeError;
 import std::time.sleep using { sleep, sleep_until };
 
 fn local_wait() -> AsyncOperation<void> throw RangeError {

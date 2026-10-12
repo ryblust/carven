@@ -1,5 +1,6 @@
-import "async/transfer.hpp" using async_transfer::Context;
 import tests.interop.async.bridge using IoError;
+
+import "async/transfer.hpp" using async_transfer::Context;
 
 #[cpp] ---
 #include <carven/api/tests/interop/async/bridge.hpp>

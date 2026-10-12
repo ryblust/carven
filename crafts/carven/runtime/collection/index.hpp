@@ -1,6 +1,6 @@
 #pragma once
 
-#include "numeric.hpp"
+#include <carven/runtime/numeric/numeric.hpp>
 
 #include <cinttypes>
 #include <concepts>

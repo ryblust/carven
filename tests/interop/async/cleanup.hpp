@@ -1,7 +1,8 @@
 #pragma once
 
-#include "../lifetimes/tail_outcomes.hpp"
 #include <carven/runtime/execution/execution.hpp>
+
+#include "../lifetimes/tail_outcomes.hpp"
 
 namespace async_cleanup_probe {
 

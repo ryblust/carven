@@ -16,8 +16,10 @@ public:
     auto create(ExecutionValue value) noexcept -> ExecutionPlace;
     // Give a product slot its own logical lifetime without relocating storage.
     auto adopt_projection(ExecutionPlace place) noexcept -> ExecutionPlace;
+
     auto text_bytes(const ExecutionText& text, TypeID element) noexcept
         -> std::optional<ExecutionPlace>;
+
     auto release(const ExecutionPlace& place) noexcept -> void;
     // Returned borrows end when the object is assigned, released, or memory is destroyed.
     auto resolve(const ExecutionPlace& place) noexcept -> ExecutionValue*;

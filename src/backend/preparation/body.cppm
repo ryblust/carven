@@ -69,8 +69,10 @@ private:
         const SemanticExpression& source,
         const OperationPreparation* preparation
     ) const noexcept -> std::vector<PreparedOperand>;
+
     auto operand(const SemanticExpression& source, PreparedUse use) const noexcept
         -> PreparedOperand;
+
     auto argument(const SemCallArgument& source) const noexcept -> PreparedOperand;
     const SemIRProgram& semantic;
     const SemIRBody& metadata;

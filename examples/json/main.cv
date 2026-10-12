@@ -1,5 +1,5 @@
-import std::json.value using Value;
 import std::json.error using { JSONError, ValueError };
+import std::json.value using Value;
 
 try {
     var document = Value::parse(r#"{"message":"你好\u0020JSON","ok":false}"#)?;

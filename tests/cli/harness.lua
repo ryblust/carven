@@ -140,14 +140,12 @@ function main(target, opt, case_specs, execution)
         if step.installed_toolchain then
             local prefix = path.join(work_dir, "installation", "crafts", "toolchain with spaces")
             step_program = path.join(prefix, "bin", path.filename(program))
-            -- Source-discovery cases need an installed source package, not every standard API.
-            -- Use the production runtime and one independent public module.
+            -- Use one independent public module for installed source discovery.
+            -- Native execution supplies its runtime headers through case fixtures.
             if not os.isfile(step_program) then
                 os.mkdir(path.directory(step_program))
                 os.cp(program, step_program)
                 local installed_crafts = path.join(prefix, "crafts", "carven")
-                os.cp(path.join(os.projectdir(), "crafts", "carven", "runtime"),
-                    path.join(installed_crafts, "runtime"))
                 os.mkdir(path.join(installed_crafts, "std", "utf"))
                 os.cp(path.join(os.projectdir(), "crafts", "carven", "std", "utf", "scalar.cv"),
                     path.join(installed_crafts, "std", "utf", "scalar.cv"))

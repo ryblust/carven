@@ -133,8 +133,10 @@ public:
     auto origin_id_at(std::size_t index) const noexcept -> ProgramOriginID;
     auto source_snapshot(ProgramSourceID id) const noexcept -> const ProgramSourceSnapshot&;
     auto module_record(ProgramModuleID id) const noexcept -> const ProgramModule&;
+
     auto find_program_module(const CanonicalModulePath& path) const noexcept
         -> std::optional<ProgramModuleID>;
+
     auto spelling(ProgramSpellingID id) const noexcept -> std::string_view;
     auto origin(ProgramOriginID id) const noexcept -> const ProgramOrigin&;
     auto source_snapshots() const noexcept -> std::span<const ProgramSourceSnapshot>;
@@ -181,8 +183,10 @@ public:
     auto source_location(ProgramSourceID id, Span span) const noexcept -> SourceLocation;
     auto module_source(ProgramModuleID id) const noexcept -> ProgramSourceID;
     auto module_path_copy(ProgramModuleID id) const noexcept -> CanonicalModulePath;
+
     auto find_program_module(const CanonicalModulePath& path) const noexcept
         -> std::optional<ProgramModuleID>;
+
     // Spelling borrows survive appends; moving the owner ends the borrow.
     auto spelling(ProgramSpellingID id) const noexcept -> std::string_view;
     auto spelling_copy(ProgramSpellingID id) const noexcept -> std::string;
@@ -228,14 +232,18 @@ public:
     ~CompilationProvenanceBuilder() = default;
     auto operator=(const CompilationProvenanceBuilder&) -> CompilationProvenanceBuilder& = delete;
     auto operator=(CompilationProvenanceBuilder&&) -> CompilationProvenanceBuilder& = delete;
+
     auto intern_source_snapshot(const SourceManager& sources, SourceID source) noexcept
         -> ProgramSourceID;
+
     auto append_module(ProgramModule program_module) noexcept -> ProgramModuleID;
     auto intern_spelling(std::string_view spelling) noexcept -> ProgramSpellingID;
     auto append_origin(ProgramOrigin origin) noexcept -> ProgramOriginID;
     auto find_source_snapshot(SourceID source_id) const noexcept -> std::optional<ProgramSourceID>;
+
     auto find_program_module(const CanonicalModulePath& path) const noexcept
         -> std::optional<ProgramModuleID>;
+
     auto identity() const noexcept -> ProvenanceIdentity;
     auto source_id_at(std::size_t index) const noexcept -> ProgramSourceID;
     auto module_id_at(std::size_t index) const noexcept -> ProgramModuleID;

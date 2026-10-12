@@ -38,9 +38,11 @@ ordinary analysis and compile-time execution. Build integrations and focused
 tests can reuse this boundary without repeating unrelated package analysis.
 
 The installed layout is `<prefix>/bin/carven` with matching resources in
-`<prefix>/crafts/carven/`. Development binaries locate Crafts in their containing
-source checkout. Additional native libraries, compiler flags, dependency
-downloads, and build scheduling belong to an external build system.
+`<prefix>/crafts/carven/`. Discovery checks that the `carven` directory exists.
+Development binaries locate Crafts in their containing source checkout, identified
+by `src/carven.cppm`, `xmake.lua`, and `crafts/carven/`. Additional native libraries,
+compiler flags, dependency downloads, and build scheduling belong to an external
+build system.
 
 ### Installed Crafts
 

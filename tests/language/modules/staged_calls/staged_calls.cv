@@ -1,6 +1,6 @@
+import .api using { biased, relay, runtime_relay, unrolled, untouched };
 import .first using { dormant_first, first };
 import .second using second;
-import .api using { biased, relay, runtime_relay, unrolled, untouched };
 
 const staged_answer = relay(10, 3);
 

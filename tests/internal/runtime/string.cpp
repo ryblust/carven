@@ -1,6 +1,6 @@
 module;
+#include <carven/runtime/call/passing.hpp>
 #include <carven/runtime/text/text.hpp>
-#include <carven/runtime/passing.hpp>
 
 module carven:test.internal.runtime.string;
 

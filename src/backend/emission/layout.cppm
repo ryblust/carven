@@ -90,8 +90,10 @@ public:
     auto source_location(std::size_t line, std::string origin_literal) noexcept -> LayoutNodeID;
     auto generated_location(std::string origin_literal) noexcept -> LayoutNodeID;
     auto concat(std::vector<LayoutNodeID> children) noexcept -> LayoutNodeID;
+
     auto join(std::span<const LayoutNodeID> children, LayoutNodeID separator) noexcept
         -> LayoutNodeID;
+
     auto indent(std::size_t width, LayoutNodeID child) noexcept -> LayoutNodeID;
     auto choice(std::span<const LayoutNodeID> alternatives) noexcept -> LayoutNodeID;
     auto flatten(LayoutNodeID child) noexcept -> LayoutNodeID;

@@ -179,51 +179,57 @@ standard-library code.
 
 ## Support headers
 
-Generated files include the self-contained support component entries they use:
+Include the self-contained support headers for the contracts used by generated
+files and native consumers. Runtime directories group these headers by domain:
 
 ```text
-carven/runtime/passing.hpp
-carven/runtime/trap.hpp
-carven/runtime/numeric.hpp
-carven/runtime/array.hpp
-carven/runtime/range.hpp
-carven/runtime/slice.hpp
-carven/runtime/vector.hpp
-carven/runtime/text/text.hpp
-carven/runtime/format.hpp
-carven/runtime/format_writer.hpp
-carven/runtime/simd/simd.hpp
-carven/runtime/print.hpp
+carven/runtime/call/callable.hpp
+carven/runtime/call/passing.hpp
+carven/runtime/collection/array.hpp
+carven/runtime/collection/range.hpp
+carven/runtime/collection/slice.hpp
+carven/runtime/collection/vector.hpp
+carven/runtime/diagnostics/report.hpp
+carven/runtime/diagnostics/trap.hpp
 carven/runtime/display/display.hpp
-carven/runtime/entry.hpp
-carven/runtime/deferred.hpp
-carven/runtime/outcome.hpp
-carven/runtime/callable.hpp
-carven/runtime/unreachable.hpp
-carven/runtime/testing.hpp
+carven/runtime/execution/entry.hpp
+carven/runtime/execution/execution.hpp
+carven/runtime/execution/unreachable.hpp
+carven/runtime/format/format.hpp
+carven/runtime/format/writer.hpp
+carven/runtime/io/print.hpp
+carven/runtime/numeric/numeric.hpp
+carven/runtime/simd/simd.hpp
+carven/runtime/testing/testing.hpp
+carven/runtime/text/text.hpp
+carven/runtime/value/deferred.hpp
+carven/runtime/value/outcome.hpp
+carven/runtime/value/stateless.hpp
+carven/runtime/value/tuple.hpp
+carven/runtime/value/void.hpp
 ```
 
-`carven/runtime/runtime.hpp` aggregates runtime component entries for direct consumers.
-The compiler and its generated support are developed together. Private target
-names, helper selections, and representation layouts are implementation details.
 Use support headers matching the compiler that generated the artifacts.
+Private target names, helper selections, and representation layouts are
+implementation details.
 
-`passing.hpp` supplies native parameter and transfer support; `entry.hpp`
-supplies process-argument ingress. `trap.hpp` supplies source-positioned
-termination for violated runtime checks. `testing.hpp` supplies inline-test execution
-contexts, failure records, and reporting in `carven::runtime`.
+`call/passing.hpp` supplies native parameter and transfer support;
+`execution/entry.hpp` supplies process-argument ingress. `diagnostics/trap.hpp`
+supplies source-positioned termination for violated runtime checks.
+`testing/testing.hpp` supplies inline-test execution contexts, failure records,
+and reporting in `carven::runtime`.
 
 `text/text.hpp` supplies owning String, borrowed text views, UTF-8 validation,
 scalar encoding and decoding, and native representation conversions. Its
 implementation headers are `string.hpp`, `view.hpp`, and `utf8.hpp`.
-`format.hpp` supplies general interpolation and requires C++20 `<format>` support.
-`format_writer.hpp` defines FormatWriter for prepared builtin formatting, including
-mixed integer, floating, bool, char, and text fields; precomputed text uses direct String
-construction or append. Structural printing uses `display/display.hpp`. The consumer
-compiler checks delegated format strings and native formatter availability.
-`print.hpp` supplies stdout
-and stderr printing, selecting the C++20 implementation or available C++23 library
-print support without changing the consumer's selected standard.
+`format/format.hpp` supplies general interpolation and requires C++20 `<format>`
+support. `format/writer.hpp` defines FormatWriter for prepared builtin formatting,
+including integer, floating, bool, char, and text fields; precomputed text uses
+direct String construction or append. Structural printing uses
+`display/display.hpp`. The consumer compiler checks delegated format strings
+and native formatter availability. `io/print.hpp` supplies stdout and stderr
+printing through the C++20 implementation or available C++23 library print
+support under the consumer's selected standard.
 
 For direct C++ calls, `String::from_str` and `append` require valid UTF-8, and
 `push` requires a Unicode scalar. `String::from_utf8` validates incoming byte

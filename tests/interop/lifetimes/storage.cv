@@ -1,3 +1,6 @@
+import .construction using crossed_step;
+import .control using Failure;
+
 import "lifetimes/lifetimes.hpp" using lifetime_probe::{
     FixedOwner,
     ResultMaker,
@@ -8,9 +11,6 @@ import "lifetimes/lifetimes.hpp" using lifetime_probe::{
 };
 
 import "lifetimes/storage.hpp" using storage_probe::Observer;
-
-import .control using Failure;
-import .construction using crossed_step;
 
 private fn choose(flag: bool) -> bool => ResultMaker { 1 }.make(2).probe(
         if flag { 3 } else { 4 },

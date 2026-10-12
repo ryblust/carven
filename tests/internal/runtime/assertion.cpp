@@ -2,7 +2,7 @@ module;
 #ifndef NDEBUG
 #define NDEBUG
 #endif
-#include <carven/runtime/report.hpp>
+#include <carven/runtime/diagnostics/report.hpp>
 
 module carven:test.internal.runtime.assertion;
 

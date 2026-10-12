@@ -59,10 +59,10 @@ This keeps their analysis cost proportional to the fixture. Source-discovery,
 installed-toolchain, and representative ordinary-command tests use normal
 discovery and establish Crafts integration.
 
-CLI installation fixtures use the production runtime headers and an independent
-public source module. They establish installed-path discovery, source identity,
-native providers, and process behavior without rebuilding the entire standard
-library. Ordinary Crafts and example targets establish the complete library APIs.
+Use an independent public source module in CLI installation fixtures for
+installed-path discovery and source identity. Supply production runtime headers
+to the native execution fixture for native providers and process behavior.
+Exercise library APIs through ordinary Crafts and example targets.
 
 Static execution, interpreted execution, and generated native C++ are separate
 boundaries. Keep representative cases at each applicable boundary. Static tests

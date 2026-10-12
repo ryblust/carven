@@ -1,4 +1,4 @@
-#include <carven/runtime/format_writer.hpp>
+#include <carven/runtime/format/writer.hpp>
 
 static_assert(
     noexcept(carven::runtime::FormatWriter(std::declval<carven::runtime::String&>(), 128, 128))

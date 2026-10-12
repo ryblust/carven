@@ -47,16 +47,20 @@ public:
     auto sources() const noexcept -> const SourceManager&;
     auto diagnostics() const noexcept -> std::span<const Diagnostic>;
     auto output() const noexcept -> std::span<const CompilationOutput>;
+
     // Published TypeIDs belong to program(); failed analysis retains only
     // concrete builtin construction types from admitted declarations and
     // successfully constructed bodies.
     auto hover(std::string_view document, std::uint32_t offset) const noexcept
         -> std::optional<WorkspaceHoverInformation>;
+
     auto definition(std::string_view document, std::uint32_t offset) const noexcept
         -> std::optional<WorkspaceDocumentLocation>;
+
     // Includes declaration occurrences. Unknown targets return no result.
     auto references(std::string_view document, std::uint32_t offset) const noexcept
         -> std::optional<std::vector<WorkspaceDocumentLocation>>;
+
     auto source(std::string_view document) const noexcept -> std::optional<SourceView>;
 
 private:
@@ -67,6 +71,7 @@ private:
 
     auto select(std::string_view document, std::uint32_t offset) const noexcept
         -> const SourceOccurrence*;
+
     auto locate_source(SourceSpan location) const noexcept
         -> std::optional<WorkspaceDocumentLocation>;
 

@@ -1,7 +1,7 @@
 #pragma once
 
-#include "../simd/simd.hpp"
-#include "../trap.hpp"
+#include <carven/runtime/diagnostics/trap.hpp>
+#include <carven/runtime/simd/simd.hpp>
 
 #include <array>
 #include <cstddef>

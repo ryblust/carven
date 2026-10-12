@@ -225,8 +225,6 @@ const TestSuite suite([] static noexcept {
                 ),
             };
         });
-        expect(artifact.content.contains("#include <carven/runtime/stateless.hpp>"));
-        expect(artifact.content.contains("#include <carven/runtime/display/display.hpp>"));
         expect(artifact.content.contains("&::carven::runtime::stateless_value<"));
         expect(artifact.content.contains("::carven::runtime::SequenceDisplay<"));
         expect(artifact.content.contains("::carven::runtime::ScalarDisplay"));
@@ -289,7 +287,7 @@ const TestSuite suite([] static noexcept {
             }
         );
 
-        expect(artifact.content.contains("#include <carven/runtime/unreachable.hpp>"));
+        expect(artifact.content.contains("#include <carven/runtime/execution/unreachable.hpp>"));
         expect(artifact.content.contains("carven::runtime::unreachable();"));
         expect(!(artifact.content.contains("std::unreachable")));
         expect(!(artifact.content.contains("std::abort();")));

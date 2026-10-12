@@ -338,6 +338,9 @@ local case_specs = {
 case_specs["commands/native_execution"] = {
     inputs = {"input.cv", "library.cv", "arguments.hpp", "unlisted.cv",
         "crafts/demo/api.cv", "crafts/demo/native.hpp", "crafts/demo/native.cpp"},
+    fixtures = {
+        ["../../../../crafts/carven/runtime"] = "installation/crafts/toolchain with spaces/crafts/carven/runtime",
+    },
     steps = {
         {
             installed_toolchain = true,

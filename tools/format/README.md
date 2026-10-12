@@ -60,6 +60,8 @@ not lock the file. Unchanged files are not rewritten.
   selections put one name per line. Single-line selections omit the trailing
   comma; multiline selections include it. An existing trailing comma does not
   force a line break.
+- Import declarations remain separate and retain their written order, including
+  selection names and authored groups.
 - Adjacent single-line constructions in an array align their columns and closing
   braces when their written types and field layouts match. Comments, blank lines,
   multiline rows, and differing layouts separate groups. Padding is omitted for
@@ -74,8 +76,9 @@ not lock the file. Unchanged files are not rewritten.
   their syntax. Loop bodies and match/catch lists stay expanded. Empty test and
   const blocks use `{}` unless they contain comments;
   nonempty bodies expand.
-- Adjacent single-line top-level items of the same category need no blank line.
+- Adjacent single-line top-level items of the same category may remain compact.
   Different categories or a multiline item require one separating blank line.
+  The same single-line and multiline rule applies between class member functions.
   Constant and runtime tests form separate categories; visibility modifiers do
   not change the category.
 - Author-written blank lines between entries and around comments are preserved

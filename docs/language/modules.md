@@ -67,6 +67,23 @@ The same prefix may contain C++ header imports. These supply native
 declarations; a `using` clause also supplies external name lookup. They do not
 resolve Carven modules.
 
+## Import style
+
+Group imports in official source in this order:
+
+1. Modules in the current craft, using unprefixed or leading-`.` references.
+2. Modules in other crafts, using craft-qualified references.
+3. Standard-library modules, using `std::`.
+4. Native C++ headers.
+
+Sort module references lexically within each group. Use one blank line to
+separate authored groups when needed. Keep each selection list with its module
+import. Preserve the required order of native headers; order independent headers
+by the [C++ header style](../development/conventions.md#header-order).
+Keep `std::` imports in the standard-library group within the official craft
+as well. Module resolution and name conflicts are independent of import order.
+The formatter preserves the written order.
+
 ## Declarations and names
 
 Modules may declare functions, structures, classes, enums, constants, tests, constant

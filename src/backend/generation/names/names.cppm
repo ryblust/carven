@@ -78,6 +78,7 @@ public:
     auto canonical_scope(TargetScopeID scope) const noexcept -> TargetScopeID;
     auto reserve(std::string_view spelling) noexcept -> void;
     auto reserve(std::string_view spelling, TargetScopeID scope) noexcept -> void;
+
     auto local_symbol(
         std::string_view spelling,
         std::uint32_t ordinal,
@@ -85,6 +86,7 @@ public:
         std::string_view enclosing_class = {},
         std::span<const TargetIdentifier> avoided = {}
     ) noexcept -> TargetIdentifier;
+
     auto fresh(TargetTemporaryNameKind kind) noexcept -> TargetIdentifier;
     auto fresh(TargetTemporaryNameKind kind, TargetScopeID scope) noexcept -> TargetIdentifier;
 

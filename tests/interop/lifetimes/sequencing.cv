@@ -1,3 +1,7 @@
+import .construction using crossed_step;
+import .control using Failure;
+import .outcomes using owned_outcome;
+
 import "lifetimes/lifetimes.hpp" using lifetime_probe::{
     Owner,
     consume_owner,
@@ -7,10 +11,6 @@ import "lifetimes/lifetimes.hpp" using lifetime_probe::{
     FixedOwner,
     event,
 };
-
-import .control using Failure;
-import .construction using crossed_step;
-import .outcomes using owned_outcome;
 
 fn short_circuit(flag: bool) -> bool => (flag && (Owner { 1 }.probe() as bool))
     && (matches("1 11 ") as bool);

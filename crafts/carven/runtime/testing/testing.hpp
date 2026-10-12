@@ -1,7 +1,7 @@
 #pragma once
 
-#include "outcome.hpp"
-#include "report.hpp"
+#include <carven/runtime/diagnostics/report.hpp>
+#include <carven/runtime/value/outcome.hpp>
 
 #include <cstdint>
 #include <cstdio>

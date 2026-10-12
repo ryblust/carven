@@ -10,10 +10,10 @@ formatting; neighboring code demonstrates local idioms.
 
 - Source in `src/`, `tests/internal/`, and `tools/` may use C++26.
 - Crafts, installed support source, generated code, and baseline consumer
-  fixtures and native benchmarks must compile with C++20. Implementations may select newer facilities
-  when the consumer's standard and library support them, while preserving the
-  Carven operation's semantics and functionality. Prefer library feature
-  detection for library capabilities.
+  fixtures and native benchmarks must compile with C++20. Implementations may
+  select newer facilities when the consumer's standard and library support them,
+  while preserving the Carven operation's semantics and functionality.
+  Prefer library feature detection for library capabilities.
 - The consumer project selects its C++ standard. Optional implementations do
   not raise the required baseline. Explicit newer-standard interop targets may
   exercise APIs from that standard.
@@ -26,27 +26,72 @@ formatting; neighboring code demonstrates local idioms.
 - Use directory levels to express ownership and dependency boundaries. Keep an
   owner's entry, state, and implementation slices in the same directory.
 - Mixed file and directory layouts are permitted at the repository root, the
-  `src/` compiler entry boundary, the runtime component boundary described below,
-  and where required by build metadata, test-group harnesses, or fixtures whose
-  layout is under test.
+  `src/` compiler entry boundary, and where required by build metadata,
+  test-group harnesses, or fixtures whose layout is under test.
 - Place a contract and its implementation together. A contract may have
   multiple implementation slices within the same owner directory.
 - Split files by coherent operations, algorithms, or contracts. Define state
   ownership and dependency direction across implementation slices.
 
-### Runtime components
+### Runtime domains
 
-`crafts/carven/runtime/` is a component entry boundary. A single-file component
-lives in `<name>.hpp`. A component with several files owns `<name>/`, with its
-entry in `<name>/<name>.hpp` and its implementation headers beside it. File and
-directory entries coexist at this boundary.
+Keep only domain directories under `crafts/carven/runtime/`. Group related
+contracts and implementation slices by domain:
 
-Within a component directory, the ordinary ownership and dependency rules apply.
-Generated code and other components include its designated entry; implementation
-headers are internal to that component. The runtime umbrella header selects
-component entries and does not expose their implementation headers as contracts.
-Compiler source in `src/` does not include runtime headers. Generated C++ and
-native consumer tests include runtime component entries.
+| Domain | Responsibility |
+| --- | --- |
+| `call/` | Callable views and native parameter passing |
+| `collection/` | Arrays, slices, vectors, ranges, and checked indexing |
+| `diagnostics/` | Runtime checks, assertion observations, and failure reports |
+| `display/` | Bounded structural value display |
+| `execution/` | Program entry, control support, asynchronous operations, and timers |
+| `format/` | General formatting and prepared fragment writing |
+| `io/` | Standard-output and standard-error printing |
+| `numeric/` | Integer operations and arithmetic checks |
+| `simd/` | Vector and mask operations with native and portable backends |
+| `testing/` | Inline-test execution and reporting contexts |
+| `text/` | String storage, borrowed text views, and UTF-8 operations |
+| `value/` | Value representations, result storage, and stateless values |
+
+Expose self-contained contract headers within each domain, such as
+`collection/array.hpp` and `format/writer.hpp`. Include the contracts used by
+generated code and native consumers. Use a domain entry such as `text/text.hpp`
+for implementation headers that share one contract. Keep implementation headers
+internal to their domain and runtime includes out of compiler source in `src/`.
+
+Use angle brackets and the complete `carven/` path for Carven headers,
+including dependencies within the same domain. Use the corresponding native
+import in Carven source. Add the Crafts root to the include search directories:
+
+```cpp
+#include <carven/runtime/collection/array.hpp>
+#include <carven/runtime/text/string.hpp>
+```
+
+```carven
+import <carven/std/time/native.hpp>;
+```
+
+### Header order
+
+Order independent C++ includes in these categories, with lexical path order
+within each category:
+
+1. The implementation's associated interface header, when one exists.
+2. Carven runtime headers.
+3. Other generated Carven API and runner headers.
+4. Other project and craft headers, then third-party headers.
+5. C++ standard-library headers, then platform headers.
+
+Make each public header supply its own dependencies.
+By default, keep independent Carven-owned headers in one block and separate
+external library headers with a blank line. Use one blank line to separate
+authored groups when needed, including runtime and generated API headers.
+Preserve the order required by macro configuration, conditional compilation,
+and implementation-header dependencies. Generated artifacts place explicit
+native import environments after the associated header and before synthesized
+dependency groups; those environments retain source order. Formatters preserve
+include order.
 
 ## Modules and visibility
 
@@ -122,8 +167,11 @@ native consumer tests include runtime component entries.
   When several implementation files use the same concrete context, place its
   calls behind an ordinary entry in an existing implementation file that already
   instantiates that context.
-- Keep consecutive member function declarations together without blank lines.
-  Separate access sections, documented groups, and data members as needed.
+- Keep consecutive single-line member function declarations compact within
+  each group. Separate adjacent declarations with one blank line when either is
+  multiline, including template heads, attributes, and requires clauses.
+  Keep comments with their declarations and preserve documented responsibility
+  groups. Separate access sections and data members as needed.
 - Named functions use trailing return types where C++ permits. Constructors,
   destructors, and conversion functions are exceptions.
 - Single-argument constructors other than copy and move constructors are

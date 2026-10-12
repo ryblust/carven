@@ -72,22 +72,7 @@ const TestSuite suite([] static noexcept {
                 ),
                 std::tuple(
                     TargetSymbol::RuntimeAsSlice,
-                    "carven/runtime/slice.hpp",
-                    TargetHeaderGroup::Runtime
-                ),
-                std::tuple(
-                    TargetSymbol::RuntimeRange,
-                    "carven/runtime/range.hpp",
-                    TargetHeaderGroup::Runtime
-                ),
-                std::tuple(
-                    TargetSymbol::RuntimeAsyncOperation,
-                    "carven/runtime/execution/execution.hpp",
-                    TargetHeaderGroup::Runtime
-                ),
-                std::tuple(
-                    TargetSymbol::RuntimeAsyncDriveRoot,
-                    "carven/runtime/execution/execution.hpp",
+                    "carven/runtime/collection/slice.hpp",
                     TargetHeaderGroup::Runtime
                 ),
             };

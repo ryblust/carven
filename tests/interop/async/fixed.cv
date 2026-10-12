@@ -1,5 +1,6 @@
-import std::time.timeout using Timeout;
 import std::time.duration using RangeError;
+import std::time.timeout using Timeout;
+
 import "async/fixed.hpp";
 
 // These declarations publish scalar native results to source analysis without

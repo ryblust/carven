@@ -1,9 +1,9 @@
 #pragma once
 
-#include "outcome.hpp"
-#include "passing.hpp"
-#include "stateless.hpp"
-#include "trap.hpp"
+#include <carven/runtime/call/passing.hpp>
+#include <carven/runtime/diagnostics/trap.hpp>
+#include <carven/runtime/value/outcome.hpp>
+#include <carven/runtime/value/stateless.hpp>
 
 #include <concepts>
 #include <cstddef>

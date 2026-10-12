@@ -1,4 +1,5 @@
 import .error using JSONError;
+
 import std::simd.scan using { one_of, byte_range, set_union, find_from };
 
 // The payload ends the ordinary byte run; offset advances past the terminator.

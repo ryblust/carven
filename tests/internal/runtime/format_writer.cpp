@@ -1,5 +1,5 @@
 module;
-#include <carven/runtime/format_writer.hpp>
+#include <carven/runtime/format/writer.hpp>
 
 module carven:test.internal.runtime.format_writer;
 

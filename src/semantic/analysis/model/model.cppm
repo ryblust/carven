@@ -60,12 +60,16 @@ public:
     auto id() const noexcept -> AnalysisBodyID;
     auto inputs() const noexcept -> const BodyInputs&;
     auto lifetime_regions() const noexcept -> const LifetimeRegionTree&;
+
     auto bindings() const noexcept
         -> std::span<const std::pair<LocalBindingID, ElaboratedLocalBinding>>;
+
     auto binding(LocalBindingID id) const noexcept -> const ElaboratedLocalBinding&;
     auto pattern(PatternID id) const noexcept -> const ElaboratedPattern&;
+
     auto elaborated_pattern_table() const noexcept
         -> const ImmutableBodyTable<ElaboratedPattern, PatternID>&;
+
     auto pattern_table() const noexcept -> const ImmutableBodyTable<Pattern, PatternID>&;
     auto region() const noexcept -> const SemanticRegion&;
     auto specialized() const noexcept -> std::optional<BodyID>;
@@ -83,6 +87,7 @@ public:
         const SemIRProgram& program,
         const GenericAnalysisSnapshot& generics
     ) noexcept;
+
     auto bodies() const noexcept -> const std::map<AnalysisBodyID, AnalysisBodyView>&;
     auto body(AnalysisBodyID id) const noexcept -> const AnalysisBodyView&;
     auto shape(ConstructionTypeRef type) const noexcept -> const AnalysisTypeShape&;
@@ -90,11 +95,15 @@ public:
     auto contents(ConstructionTypeRef type) const noexcept -> TypeContents;
     auto fields(GenericTypeID type) const noexcept -> std::vector<ConstructionTypeRef>;
     auto failure_support(ConstructionFailureRef failures) const noexcept -> GenericFailureMask;
+
     auto failure_known_members(ConstructionFailureRef failures) const noexcept
         -> std::vector<TypeID>;
+
     auto failure_may_contain(ConstructionFailureRef failures, TypeID member) const noexcept -> bool;
+
     auto failure_closed_set(ConstructionFailureRef failures) const noexcept
         -> std::optional<FailureSetID>;
+
     const SemIRProgram& program;
     const GenericAnalysisSnapshot& generics;
 

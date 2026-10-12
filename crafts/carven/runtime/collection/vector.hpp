@@ -1,7 +1,7 @@
 #pragma once
 
-#include "index.hpp"
-#include "slice.hpp"
+#include <carven/runtime/collection/index.hpp>
+#include <carven/runtime/collection/slice.hpp>
 
 #include <cstddef>
 #include <limits>

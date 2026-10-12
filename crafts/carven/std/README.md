@@ -18,5 +18,10 @@ Carven source uses language operations without importing runtime implementations
 Crafts own their native support alongside their source modules. Runtime support
 provides shared language operations and does not depend on standard crafts.
 
+Use angle brackets and the complete `carven/` path for native imports and
+includes, such as `import <carven/std/time/native.hpp>;` and
+`#include <carven/runtime/execution/execution.hpp>`. Add the installed or project
+Crafts root to the native include search directories.
+
 Standard and user crafts share type checking, ownership, and static execution
 rules. The C++ standard library is available through native interoperation.

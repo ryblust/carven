@@ -294,6 +294,7 @@ public:
 
 private:
     auto intern_row(const CanonicalType& type) noexcept -> TypeID;
+
     auto intern_resolved_callable_view(
         CallableSignatureID signature,
         const CallableSignatureStoreBuilder& signatures
@@ -356,8 +357,10 @@ public:
     auto owner() const noexcept -> ProgramIdentity;
     auto contains(CallableSignatureID id) const noexcept -> bool;
     auto signature(CallableSignatureID id) const noexcept -> const CallableSignature&;
+
     auto entries() const noexcept
         -> IDTableEntries<CallableSignatureID, CallableSignature, ProgramIdentity>;
+
     auto size() const noexcept -> std::size_t;
 
 private:

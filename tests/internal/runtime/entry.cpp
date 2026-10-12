@@ -1,5 +1,5 @@
 module;
-#include <carven/runtime/entry.hpp>
+#include <carven/runtime/execution/entry.hpp>
 
 module carven:test.internal.runtime.entry;
 

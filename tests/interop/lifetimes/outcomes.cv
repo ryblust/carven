@@ -1,3 +1,6 @@
+import .construction using fixed_success;
+import .control using Failure;
+
 import "lifetimes/lifetimes.hpp" using lifetime_probe::{
     Owner,
     observe_owner,
@@ -6,9 +9,6 @@ import "lifetimes/lifetimes.hpp" using lifetime_probe::{
     matches,
     event,
 };
-
-import .control using Failure;
-import .construction using fixed_success;
 
 fn owned_outcome(flag: bool) -> Owner throw Failure {
     if flag { return Owner { 1 }; }

@@ -76,6 +76,7 @@ public:
         SourceAnalysisBuilder* source_analysis = nullptr,
         TimingOutput timings = {}
     ) noexcept -> ProgramDraft;
+
     ProgramDraft(const ProgramDraft&) = delete;
     ProgramDraft(ProgramDraft&&) = default;
     ~ProgramDraft() override = default;
@@ -89,8 +90,10 @@ public:
     auto write_output(ExecutionOutputStream stream, std::string_view bytes) const noexcept -> void;
     auto syntax_tree(ProgramModuleID id) const noexcept -> const SyntaxTree&;
     auto syntax_trees() const noexcept -> std::span<const SyntaxTree>;
+
     auto resolved_imports(ProgramModuleID id) const noexcept
         -> std::span<const ResolvedModuleImport>;
+
     auto module_count() const noexcept -> std::size_t;
     auto provenance_module_at(std::size_t index) const noexcept -> ProgramModuleID;
     auto owns(ProgramModuleID id) const noexcept -> bool;
@@ -107,8 +110,10 @@ public:
     auto source_slice_copy(ProgramModuleID id, Span span) const noexcept -> std::string;
     auto intern_spelling(std::string_view spelling) noexcept -> ProgramSpellingID;
     auto append_source_origin(ProgramSourceID source, Span span) noexcept -> ProgramOriginID;
+
     auto append_expansion_origin(ProgramOriginID parent, ProgramExpansionReason reason) noexcept
         -> ProgramOriginID;
+
     auto intern_type(const CanonicalType& type) noexcept -> TypeID;
     auto record_vector_element(TypeID element, ProgramOriginID origin) noexcept -> void;
     auto builtin_type(BuiltinType type) const noexcept -> TypeID override;
@@ -118,77 +123,104 @@ public:
     auto read_borrows_storage(TypeID type) const noexcept -> bool override;
     auto intern_constant(ConstantFact fact) noexcept -> ConstantID;
     auto display_names(TypeID type) const noexcept -> ExecutionDisplayNames override;
+
     auto struct_field_types(StructID structure) const noexcept
         -> std::optional<std::vector<TypeID>> override;
+
     auto enum_case_types(EnumID enumeration) const noexcept
         -> std::optional<std::vector<EnumCaseTypes>> override;
+
     auto constant(ConstantID constant) const noexcept -> const ConstantFact& override;
     auto failure_set_copy(FailureSetID failures) const noexcept -> FailureSet;
     auto intern_failure_set(std::vector<TypeID> members) noexcept -> FailureSetID;
     auto empty_failure_set() noexcept -> FailureSetID;
+
     auto require_failure_member(ConstructionTypeRef type, ProgramOriginID origin) noexcept
         -> AnalysisResult<TypeID>;
+
     auto validate_failure_members() noexcept -> AnalysisResult<void>;
     auto append_construction_type(ConstructionType type) noexcept -> TypeTermID;
     auto construction_type_copy(TypeTermID type) const noexcept -> ConstructionType;
     auto reserve_generic_declaration() noexcept -> GenericDeclarationID;
+
     auto define_generic_declaration(
         GenericDeclarationID id,
         GenericDeclarationDefinition definition
     ) noexcept -> void;
+
     auto generic_declaration_copy(GenericDeclarationID id) const noexcept
         -> GenericDeclarationDefinition;
+
     auto intern_generic_type(GenericTypeExpression expression) noexcept -> GenericTypeID;
     auto generic_type_copy(GenericTypeID id) const noexcept -> GenericTypeExpression;
+
     auto validate_generic_definitions(
         std::optional<GenericDeclarationID> root = std::nullopt
     ) noexcept -> AnalysisResult<void>;
+
     auto validate_vector_elements() noexcept -> AnalysisResult<void>;
+
     auto generic_nominal_instance_copy(NominalDeclarationRef declaration) const noexcept
         -> std::optional<GenericNominalInstance>;
+
     auto generic_declaration_contract_copy(GenericDeclarationID definition) const noexcept
         -> GenericDeclarationContract;
+
     auto instantiate_generic_nominal(
         GenericDeclarationID definition,
         std::span<const CanonicalGenericArgument> arguments,
         ProgramOriginID origin
     ) noexcept -> AnalysisResult<TypeID>;
+
     auto reserve_generic_body(GenericDeclarationID definition) noexcept -> BodyReservation;
+
     auto set_generic_function_body(
         GenericDeclarationID definition,
         StructuredBodyDraft body
     ) noexcept -> void;
+
     auto has_generic_function_body(GenericDeclarationID definition) const noexcept -> bool;
+
     auto require_type_formation(
         TypeFormationRequirement requirement,
         std::optional<GenericDeclarationID> definition = std::nullopt
     ) noexcept -> AnalysisResult<void>;
+
     auto check_generic_type_formations(
         GenericDeclarationID definition,
         std::span<const GenericArgument> arguments,
         ProgramOriginID origin
     ) noexcept -> AnalysisResult<TypeFormationClosure>;
+
     auto validate_generic_type_formations() noexcept -> AnalysisResult<void>;
+
     auto generic_function_body(GenericDeclarationID definition) const noexcept
         -> const StructuredBodyDraft&;
+
     auto complete_generic_function_result(
         GenericDeclarationID definition,
         ConstructionTypeRef result
     ) noexcept -> void;
+
     auto prepare_generic_analysis_shapes() noexcept -> void;
+
     auto take_generic_analysis_snapshot(
         const TypeResolution& types,
         std::shared_ptr<const FailureSolution> failures
     ) noexcept -> GenericAnalysisSnapshot;
+
     auto generic_declaration_ids() const noexcept -> std::vector<GenericDeclarationID>;
+
     auto generic_parameter_environment(GenericDeclarationID definition) noexcept
         -> GenericEnvironment;
+
     auto substitute_generic_environment(
         std::span<const GenericArgument> source,
         GenericDeclarationID definition,
         std::span<const GenericArgument> arguments,
         FailureInstantiation* effects = nullptr
     ) noexcept -> GenericEnvironment;
+
     auto infer_generic_argument(
         ConstructionTypeRef formal,
         ConstructionTypeRef actual,
@@ -196,6 +228,7 @@ public:
         std::span<std::optional<GenericArgument>> inferred,
         ProgramOriginID origin
     ) noexcept -> bool;
+
     auto substitute_function_type(
         ConstructionTypeRef type,
         GenericDeclarationID definition,
@@ -203,42 +236,55 @@ public:
         ProgramOriginID origin,
         FailureInstantiation* effects = nullptr
     ) noexcept -> AnalysisResult<ConstructionTypeRef>;
+
     auto add_generic_failure_parameter(GenericFailureParameter parameter) noexcept
         -> GenericFailureID;
+
     auto union_generic_failures(std::vector<ConstructionFailureRef> inputs) noexcept
         -> ConstructionFailureRef;
+
     auto make_failure_instantiation(
         GenericDeclarationID definition,
         std::span<const GenericArgument> arguments
     ) noexcept -> FailureInstantiation;
+
     auto substitute_generic_failures(
         ConstructionFailureRef failures,
         GenericDeclarationID definition,
         std::span<const GenericArgument> arguments,
         FailureInstantiation* effects = nullptr
     ) noexcept -> ConstructionFailureRef;
+
     auto normalize_generic_environment(
         std::span<const GenericArgument> arguments,
         const FailureSolution* failures = nullptr
     ) noexcept -> std::optional<CanonicalGenericEnvironment>;
+
     auto failure_dependencies(ConstructionFailureRef failures) const noexcept
         -> std::vector<ConstructionFailureRef>;
+
     auto complete_failure_applications(std::span<const ConstructionFailureRef> roots) noexcept
         -> AnalysisResult<void>;
+
     auto preview_failures() noexcept -> AnalysisResult<FailureSolution>;
+
     auto construction_failure_known_members(ConstructionFailureRef source) noexcept
         -> std::vector<TypeID>;
+
     auto normalize_construction_types(const FailureSolution& failures) noexcept -> TypeResolution;
     auto close_generic_calls() noexcept -> AnalysisResult<void>;
+
     auto instantiate_generic_call(
         SemanticExpression& expression,
         std::span<const CanonicalGenericArgument> environment
     ) noexcept -> AnalysisResult<void>;
+
     auto instantiate_generic_function(
         GenericDeclarationID definition,
         std::span<const CanonicalGenericArgument> arguments,
         ProgramOriginID origin
     ) noexcept -> AnalysisResult<CallableID>;
+
     auto reserve_module_declaration() noexcept -> ModuleID;
     auto reserve_function_declaration() noexcept -> FunctionID;
     auto reserve_struct_declaration() noexcept -> StructID;
@@ -248,19 +294,27 @@ public:
     auto reserve_callable_declaration() noexcept -> CallableID;
     auto define_declaration(ModuleID id, ModuleDeclaration declaration) noexcept -> void;
     auto define_declaration(FunctionID id, FunctionDeclaration declaration) noexcept -> void;
+
     auto define_declaration(StructID id, ConstructionStructDeclaration declaration) noexcept
         -> void;
+
     auto define_declaration(EnumID id, EnumDeclaration declaration) noexcept -> void;
+
     auto define_declaration(EnumCaseID id, ConstructionEnumCaseDeclaration declaration) noexcept
         -> void;
+
     auto define_declaration(ModuleConstantID id, ModuleConstantDeclaration declaration) noexcept
         -> void;
+
     auto define_callable_contract(CallableID id, ConstructionCallableContract contract) noexcept
         -> void;
+
     auto define_pending_function_contract(CallableID id, PendingFunctionContract contract) noexcept
         -> void;
+
     auto pending_function_contract_copy(CallableID id) const noexcept
         -> std::optional<PendingFunctionContract>;
+
     auto complete_function_result(CallableID id, ConstructionTypeRef result) noexcept -> void;
     auto append_body_callable(ConstructionCallableContract contract) noexcept -> CallableID;
     auto complete_callable(CallableID id, CallableImplementation implementation) noexcept -> void;
@@ -268,25 +322,37 @@ public:
     auto function_declaration_copy(FunctionID id) const noexcept -> FunctionDeclaration;
     auto function_for_callable(CallableID id) const noexcept -> std::optional<FunctionID>;
     auto body_for_callable(CallableID id) const noexcept -> std::optional<BodyID>;
+
     auto construction_struct_declaration_copy(StructID id) const noexcept
         -> ConstructionStructDeclaration;
+
     auto enum_declaration_copy(EnumID id) const noexcept -> EnumDeclaration;
+
     auto equality_support(std::span<const ConstructionTypeRef> roots) const noexcept
         -> std::vector<bool>;
+
     auto resolve_enum_equality(std::span<const TypeID> roots) noexcept -> void;
+
     auto enum_case_named(EnumID enumeration, std::string_view name) const noexcept
         -> std::optional<EnumCaseID>;
+
     auto enum_case_names(EnumID enumeration) const noexcept -> std::vector<std::string>;
     auto enum_cases(EnumID id) const noexcept -> std::span<const EnumCaseID>;
+
     auto construction_enum_case_declaration_copy(EnumCaseID id) const noexcept
         -> ConstructionEnumCaseDeclaration;
+
     auto module_constant_declaration_copy(ModuleConstantID id) const noexcept
         -> ModuleConstantDeclaration;
+
     auto construction_callable_contract_copy(CallableID id) const noexcept
         -> ConstructionCallableContract;
+
     auto callable_signature_copy(CallableSignatureID id) const noexcept -> CallableSignature;
+
     auto callable_shape(ConstructionTypeRef type) const noexcept
         -> std::optional<ConstructionCallableShape>;
+
     auto callable_contract(ConstructionTypeRef type) const noexcept
         -> std::optional<ConstructionCallableContract>;
 
@@ -306,55 +372,69 @@ public:
     auto module_constant_declaration_ids() const noexcept -> std::vector<ModuleConstantID>;
     auto callable_declaration_ids() const noexcept -> std::vector<CallableID>;
     auto add_empty_failure_term() noexcept -> FailureTermID;
+
     auto add_union_failure_term(std::vector<ConstructionFailureRef> inputs) noexcept
         -> FailureTermID;
+
     auto add_residual_failure_term(
         ConstructionFailureRef input,
         std::vector<TypeID> handled_members
     ) noexcept -> FailureTermID;
+
     auto add_intersection_failure_term(
         ConstructionFailureRef input,
         std::vector<TypeID> retained_members
     ) noexcept -> FailureTermID;
+
     auto add_failure_member(FailureTermID destination, TypeID member) noexcept -> void;
+
     auto add_thrown_failure_member(
         FailureTermID destination,
         TypeID member,
         ProgramOriginID origin
     ) noexcept -> void;
+
     auto add_failure_contribution(FailureTermID destination, ConstructionFailureRef source) noexcept
         -> void;
+
     auto add_guarded_failure_contribution(
         FailureTermID destination,
         ConstructionFailureRef gate,
         ConstructionFailureRef source
     ) noexcept -> void;
+
     auto equate_failures(FailureTermID left, FailureTermID right) noexcept -> void;
+
     auto require_empty_failures(
         ConstructionFailureRef source,
         ProgramOriginID origin,
         EmptyFailureRequirementKind kind
     ) noexcept -> void;
+
     auto require_non_empty_failures(
         ConstructionFailureRef source,
         ProgramOriginID origin,
         bool allow_dependent = false
     ) noexcept -> void;
+
     auto require_failure_subset(
         ConstructionFailureRef actual,
         ConstructionFailureRef allowed,
         ProgramOriginID origin,
         FailureSubsetRequirementKind kind
     ) noexcept -> void;
+
     auto require_equal_failures(
         ConstructionFailureRef left,
         ConstructionFailureRef right,
         ProgramOriginID origin
     ) noexcept -> void;
+
     auto require_declared_failure_contract(
         ConstructionFailureRef actual,
         ProgramOriginID origin
     ) noexcept -> void;
+
     auto finish_declaration_heads() noexcept -> void;
     auto create_evaluation_root_identity() noexcept -> BodyIdentity;
     auto reserve_body(BodyKind kind) noexcept -> BodyReservation;
@@ -366,21 +446,26 @@ public:
     // checked one.
     auto set_residual(BodyID body, StructuredRegionDraft residual) noexcept -> void;
     auto staged_function(FunctionID function) const noexcept -> bool;
+
     auto find_static_instance(
         FunctionID function,
         std::span<const ConstantID> arguments
     ) const noexcept -> std::optional<CallableID>;
+
     // Reserves the callable and body of an instance before its body is
     // specialized, so a reference made meanwhile names the same instance.
     auto reserve_static_instance(FunctionID function, std::vector<ConstantID> arguments) noexcept
         -> std::pair<CallableID, BodyID>;
+
     auto complete_static_instance(CallableID callable, StructuredBodyDraft body) noexcept -> void;
     auto fail_static_instance(CallableID callable, AnalysisFailure failure) noexcept -> void;
     // The instance a callable is, when static specialization produced it.
     auto static_instance(CallableID callable) const noexcept -> std::optional<StaticInstance>;
+
     // Pending instances have no body yet; a failed instance retains its failure.
     auto static_instance_body(CallableID callable) const noexcept
         -> AnalysisResult<std::optional<BodyID>>;
+
     auto source_module(ProgramSourceID source) const noexcept -> ProgramModuleID;
     auto reserve_test() noexcept -> TestID;
     auto define_test(TestID id, TestDeclaration test) noexcept -> void;
@@ -404,19 +489,24 @@ private:
         SourceAnalysisBuilder* source_analysis,
         TimingOutput timings
     ) noexcept;
+
     auto resolve() && noexcept -> AnalysisResult<ResolvedAnalysisProgram>;
+
     auto finalize_callable_signatures(
         const TypeResolution& types,
         const FailureSolution& failures
     ) noexcept -> void;
+
     auto solve_test_stops(
         const CanonicalTypeStore& types,
         const TypeResolution& resolved_types,
         const DeclarationStore& declarations,
         const GenericAnalysisSnapshot& generics
     ) const noexcept -> TestStopFacts;
+
     auto verify_body(const SemIRBody& body, const DeclarationStore& declarations) const noexcept
         -> void;
+
     auto require_state(State expected, std::string_view operation) const noexcept -> void;
 
 public:
@@ -426,6 +516,7 @@ public:
         std::span<const GenericArgument> arguments,
         FailureInstantiation* effects = nullptr
     ) noexcept -> ConstructionTypeRef;
+
     auto resolve_generic_type(
         ConstructionTypeRef type,
         GenericDeclarationID definition,

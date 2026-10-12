@@ -13,8 +13,10 @@ public:
     auto operator=(const SourceManager&) -> SourceManager& = delete;
     auto operator=(SourceManager&&) -> SourceManager& = default;
     auto append_file(std::string_view path) noexcept -> std::expected<SourceID, SourceLoadError>;
+
     auto append_virtual(std::string origin, std::string text) noexcept
         -> std::expected<SourceID, SourceLoadError>;
+
     auto snapshot() const noexcept -> SourceManager;
     // Shares immutable bytes and line indexing while assigning a local source identity.
     auto append_shared(const SourceManager& sources, SourceID source_id) noexcept -> SourceID;
