@@ -177,7 +177,7 @@ auto admitted_value(
                 pending.push_back(array->element);
                 continue;
             }
-            if (const auto* sequence = std::get_if<AnalysisVectorType>(&value)) {
+            if (const auto* sequence = std::get_if<GenericVectorType>(&value)) {
                 pending.push_back(sequence->element);
                 continue;
             }

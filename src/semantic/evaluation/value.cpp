@@ -76,7 +76,9 @@ auto execution_atom(const ConstantValueReader& values, const ExecutionValue& val
         return *atom;
     }
     if (const auto* pointer = std::get_if<ExecutionPointer>(&value); pointer && !pointer->target) {
-        return ConstantAtom {.type = pointer->type, .value = NullPointerConstant {}};
+        if (const auto* type = std::get_if<TypeID>(&pointer->type)) {
+            return ConstantAtom {.type = *type, .value = NullPointerConstant {}};
+        }
     }
     if (std::holds_alternative<ExecutionVoid>(value)) {
         return ConstantAtom {
@@ -276,7 +278,7 @@ auto ExecutionByteView::operator[](std::size_t index) const noexcept -> Executio
 }
 
 auto execution_equal(
-    const ConstantValueReader& values,
+    const ExecutionValueAccess& values,
     const ExecutionValue& left,
     const ExecutionValue& right,
     std::size_t& steps,
@@ -291,6 +293,18 @@ auto execution_equal(
     const auto* rhs_pointer = std::get_if<ExecutionPointer>(&right);
     if (lhs_pointer || rhs_pointer) {
         if (lhs_pointer && rhs_pointer) {
+            if (lhs_pointer->target && rhs_pointer->target) {
+                if (*lhs_pointer->target == *rhs_pointer->target) {
+                    return true;
+                }
+                const auto relation = memory
+                    ? memory->same_address(values, *lhs_pointer->target, *rhs_pointer->target)
+                    : std::nullopt;
+                if (!relation) {
+                    return std::unexpected(ExecutionComparisonFailure::UnknownAddress);
+                }
+                return *relation;
+            }
             return lhs_pointer->target == rhs_pointer->target;
         }
         const auto other = execution_atom(values, lhs_pointer ? right : left);

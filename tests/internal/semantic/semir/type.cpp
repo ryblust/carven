@@ -2,6 +2,7 @@ module carven:test.internal.semantic.semir.type;
 
 import :semantic.semir.contents;
 import :semantic.semir.decl;
+import :semantic.semir.delegation;
 import :semantic.semir.ids;
 import :semantic.semir.program;
 import :semantic.semir.table;
@@ -354,8 +355,17 @@ const TestSuite suite([] static noexcept {
                              .extent = 1u,
                          }}
                     );
-                    const auto native =
-                        types.intern({.value = CppTypeValue {.form = CppConstCharPointerType {}}});
+                    const auto native = types.intern(
+                        {.value = CppTypeValue {
+                             .form = CppNamedType {
+                                 .name =
+                                     {.context_module = module_id,
+                                      .lookup = CppNameLookup::Global,
+                                      .components = {"Opaque"}},
+                                 .arguments = {},
+                             }
+                         }}
+                    );
                     const auto native_array =
                         types.intern({.value = ArrayTypeValue {.element = native, .extent = 1u}});
                     const auto native_pointer = types.intern(

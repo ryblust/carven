@@ -15,13 +15,14 @@ constexpr auto unsupported_execution_operation(const Operation& operation) noexc
         return "native C++ operation has no compile-time provider";
     } else if constexpr (std::same_as<Operation, SemClosure>) {
         return "closure execution is not supported";
-    } else if constexpr (std::same_as<Operation, SemArrayAdopt>
-                         || std::same_as<Operation, SemEnumConstructor>) {
+    } else if constexpr (std::same_as<Operation, SemEnumConstructor>) {
         return "operation is not supported in execution";
     } else if constexpr (std::same_as<Operation, SemCast>) {
         switch (operation.kind) {
             case CastKind::Identity:
             case CastKind::PointerRead:
+            case CastKind::PointerErase:
+            case CastKind::PointerRestore:
             case CastKind::IntegerToInteger:
             case CastKind::IntegerToBool:
             case CastKind::BoolToInteger:
@@ -79,6 +80,7 @@ constexpr auto unsupported_execution_operation(const Operation& operation) noexc
                          || std::same_as<Operation, SemWaitReady>
                          || std::same_as<Operation, SemCloseChild>
                          || std::same_as<Operation, SemBorrowCallable>
+                         || std::same_as<Operation, SemArrayAdopt>
                          || std::same_as<Operation, SemTake>
                          || std::same_as<Operation, SemPropagate>
                          || std::same_as<Operation, SemIf>

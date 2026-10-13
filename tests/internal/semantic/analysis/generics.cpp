@@ -448,22 +448,6 @@ const TestSuite suite([] static noexcept {
             );
         };
 
-    "Generic pointer targets: indirect callable Read preserves the borrow boundary"_test =
-        [] static noexcept {
-            expect_diagnostic(
-                analyze_test_errors(R"(
-            struct Pointer<T> { value: ptr<T> }
-            fn identity(value: i32) -> i32 => value;
-            fn rejected() {
-                let callback: fn(i32) -> i32 = identity;
-                let pointer = Pointer<fn(i32) -> i32> { value: addressof(callback) };
-                if pointer.value != nullptr { let result = (*pointer.value)(1); let _ = result; }
-            }
-        )"),
-                DiagnosticCode::TypeCallableViewEscape
-            );
-        };
-
     "Generic storage: callable views propagate through values and stop at pointers"_test =
         [] static noexcept {
             constexpr auto invalid = std::array<std::string_view, 8> {

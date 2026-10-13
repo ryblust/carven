@@ -145,6 +145,8 @@ private:
     std::vector<LifetimeRegionID> child_lifetimes;
 };
 
+enum class ExecutionStage { Static, Interpreted };
+
 enum class ExecutionTraceKind { Statement, Call, Return };
 
 struct ExecutionTraceEvent final {
@@ -158,6 +160,7 @@ class SemanticExecutionContext {
 public:
     virtual ~SemanticExecutionContext() = default;
 
+    virtual auto stage() const noexcept -> ExecutionStage;
     virtual auto trace(const ExecutionTraceEvent&) noexcept -> void;
     virtual auto write(ExecutionOutputStream stream, std::string_view bytes) noexcept -> void = 0;
 

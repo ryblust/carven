@@ -174,6 +174,15 @@ auto format_builtin_value(
     if (const auto* number = std::get_if<F64Constant>(&value)) {
         return format_floating(number->value, specification, budget);
     }
+    if (const auto* pointer = std::get_if<BuiltinPointerDisplay>(&value)) {
+        if (!specification.empty() && specification != "p") {
+            return std::unexpected(BuiltinFormatFailureKind::Unsupported);
+        }
+        if (pointer->representation.size() > budget) {
+            return std::unexpected(BuiltinFormatFailureKind::Limit);
+        }
+        return std::string(pointer->representation);
+    }
     if (!specification.empty()) {
         return std::unexpected(BuiltinFormatFailureKind::Unsupported);
     }

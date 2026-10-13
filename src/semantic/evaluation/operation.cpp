@@ -835,6 +835,10 @@ auto evaluate_cast_constant_value(
         }
         return std::unexpected(ConstantEvaluationFailure::InvalidOperation);
     }
+    if ((kind == CastKind::PointerErase || kind == CastKind::PointerRestore)
+        && std::holds_alternative<NullPointerConstant>(operand.value)) {
+        return ConstantFact {.type = result, .value = NullPointerConstant {}};
+    }
     if (kind == CastKind::Identity) {
         if (operand.type != result) {
             return std::unexpected(ConstantEvaluationFailure::InvalidOperation);

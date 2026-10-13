@@ -102,8 +102,18 @@ test "Interpolation interop: mixed folded failures clean backing before the hand
     check(::interpolation_probe::alive() == 0);
 }
 
-test "Interpolation interop: native formatters retain access to original argument indices" {
+export struct FormatSubject {
+    format_identity: String
+}
+
+test "Interpolation interop: native formatters retain argument indices and object identity" {
     check(f"{42:04} {::interpolation_probe::context_value()} {7}" == "0042 42 7");
+    let original = FormatSubject { format_identity: "object" };
+    let address = addressof(original) as ptr<void>;
+    let expected = f"{address:p}/true";
+    for value in [original] {
+        check(f"{address:p}/{value}" == expected);
+    }
 }
 
 test "Interpolation interop: C++ formatter receives its specification and reads once" {

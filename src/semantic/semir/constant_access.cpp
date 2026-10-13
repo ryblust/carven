@@ -2,7 +2,19 @@ module carven:semantic.semir.constant_access.impl;
 
 import :semantic.semir.constant_access;
 import :semantic.semir.program;
+import :support.invariant;
 import std;
+
+auto execution_type_reference(const ExecutionValueAccess& values, ConstructionTypeRef type) noexcept
+    -> ConstructionTypeRef {
+    if (const auto* generic = std::get_if<GenericTypeID>(&type)) {
+        const auto shape = values.generic_type_copy(*generic);
+        if (const auto* canonical = std::get_if<TypeID>(&shape)) {
+            return *canonical;
+        }
+    }
+    return type;
+}
 
 auto constant_has_storage(const ConstantValueReader& values, ConstantID id) noexcept -> bool {
     const auto& fact = values.constant(id);
@@ -15,6 +27,30 @@ auto constant_has_storage(const ConstantValueReader& values, ConstantID id) noex
 
 PublishedConstantValues::PublishedConstantValues(const SemIRProgram& program) noexcept
     : program(program) {}
+
+auto PublishedConstantValues::generic_type_copy(GenericTypeID) const noexcept
+    -> GenericTypeExpression {
+    invariant_violation("published execution cannot read a generic type");
+}
+
+auto PublishedConstantValues::construction_type_copy(TypeTermID) const noexcept
+    -> ConstructionType {
+    invariant_violation("published execution cannot read a construction type");
+}
+
+auto PublishedConstantValues::generic_member_types(GenericTypeID) const noexcept
+    -> std::optional<std::vector<ConstructionTypeRef>> {
+    invariant_violation("published execution cannot read generic members");
+}
+
+auto PublishedConstantValues::callable_signature_copy(CallableSignatureID signature) const noexcept
+    -> CallableSignature {
+    return program.callable_signatures().signature(signature);
+}
+
+auto PublishedConstantValues::failure_set_copy(FailureSetID failures) const noexcept -> FailureSet {
+    return program.failure_sets().failure_set(failures);
+}
 
 auto PublishedConstantValues::type_copy(TypeID type) const noexcept -> CanonicalType {
     return program.types().type(type);
@@ -41,8 +77,9 @@ auto PublishedConstantValues::builtin_type(BuiltinType type) const noexcept -> T
     return program.types().builtin_type(type);
 }
 
-auto PublishedConstantValues::read_borrows_storage(TypeID type) const noexcept -> bool {
-    return program.type_contents(type).read_borrows_storage();
+auto PublishedConstantValues::read_borrows_storage(ConstructionTypeRef type) const noexcept
+    -> bool {
+    return program.type_contents(std::get<TypeID>(type)).read_borrows_storage();
 }
 
 auto PublishedConstantValues::struct_field_types(StructID structure) const noexcept

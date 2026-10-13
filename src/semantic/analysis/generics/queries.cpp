@@ -113,6 +113,30 @@ auto ProgramDraft::complete_generic_function_result(
     source.infer_result = false;
 }
 
+auto ProgramDraft::generic_member_types(GenericTypeID type) const noexcept
+    -> std::optional<std::vector<ConstructionTypeRef>> {
+    if (const auto found = storage.generic_record_shapes.find(type);
+        found != storage.generic_record_shapes.end()) {
+        return found->second;
+    }
+    if (const auto found = storage.generic_enum_shapes.find(type);
+        found != storage.generic_enum_shapes.end()) {
+        auto fields = std::vector<ConstructionTypeRef>();
+        for (const auto& payload : found->second) {
+            fields.insert(fields.end(), payload.begin(), payload.end());
+        }
+        return fields;
+    }
+    return std::nullopt;
+}
+
+auto ProgramDraft::cache_generic_record_fields(
+    GenericTypeID type,
+    std::vector<ConstructionTypeRef> fields
+) noexcept -> void {
+    storage.generic_record_shapes.try_emplace(type, std::move(fields));
+}
+
 auto ProgramDraft::prepare_generic_analysis_shapes() noexcept -> void {
     // Expanding an effect-bearing field may clone constraint terms. Complete
     // every shape while the construction graph is still open, never at seal.

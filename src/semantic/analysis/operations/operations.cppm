@@ -42,6 +42,7 @@ auto type_supports_copy(ProgramDraft& draft, ConstructionTypeRef type) noexcept 
 // Concrete aliases in rigid environments preserve the ordinary type identity.
 auto unwrap_type_alias(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
     -> ConstructionTypeRef;
+
 auto type_formation_status(
     const ProgramDraft& draft,
     TypeFormationRequirementKind requirement,
@@ -97,6 +98,7 @@ auto constant_index_in_bounds(
 
 auto array_element(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
     -> std::optional<ConstructionTypeRef>;
+
 auto array_literal_element(
     const ProgramDraft& draft,
     std::optional<ConstructionTypeRef> expected,
@@ -105,26 +107,31 @@ auto array_literal_element(
 
 auto slice_element(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
     -> std::optional<ConstructionTypeRef>;
+
 auto make_array_type(
     ProgramDraft& draft,
     ConstructionTypeRef element,
     std::uint64_t extent
 ) noexcept -> ConstructionTypeRef;
+
 auto make_slice_type(ProgramDraft& draft, ConstructionTypeRef element) noexcept
     -> ConstructionTypeRef;
+
 auto make_pointer_type(
     ProgramDraft& draft,
     ConstructionTypeRef target,
-    PointerAccess access,
-    ProgramOriginID origin
-) noexcept -> AnalysisResult<ConstructionTypeRef>;
+    PointerAccess access
+) noexcept -> ConstructionTypeRef;
+
 auto operation_shape(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
     -> std::optional<ConstructionOperationTypeValue>;
+
 auto make_operation_type(
     ProgramDraft& draft,
     ConstructionTypeRef success,
     ConstructionFailureRef failures
 ) noexcept -> ConstructionTypeRef;
+
 auto make_tuple_type(ProgramDraft& draft, std::vector<ConstructionTypeRef> elements) noexcept
     -> ConstructionTypeRef;
 
@@ -134,8 +141,10 @@ auto tuple_elements(const ProgramDraft& draft, ConstructionTypeRef type) noexcep
 auto semantic_operator(ASTPrefixOperator op) noexcept -> UnaryOperator;
 auto semantic_operator(ASTBinaryOperator op) noexcept -> std::optional<BinaryOperator>;
 auto binary_operator_requires_equality(ASTBinaryOperator op) noexcept -> bool;
+
 auto numeric_operand_plan(const ASTView& ast, ASTExprID left, ASTExprID right) noexcept
     -> BinaryOperandPlan;
+
 auto binary_operand_plan(const ASTView& ast, const ASTBinaryExpr& expression) noexcept
     -> BinaryOperandPlan;
 
@@ -143,6 +152,7 @@ auto operator_result_builtin(
     OperatorResult result,
     std::optional<BuiltinType> operand = std::nullopt
 ) noexcept -> std::optional<BuiltinType>;
+
 auto select_contextual_numeric_type(
     const ProgramDraft& draft,
     TypeID inferred,
@@ -159,10 +169,18 @@ struct PointerShape final {
 
 auto pointer_shape(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
     -> std::optional<PointerShape>;
+
 auto pointer_narrows(
     const ProgramDraft& draft,
     ConstructionTypeRef source,
     ConstructionTypeRef target
+) noexcept -> bool;
+
+auto constrain_invariant_type(
+    ProgramDraft& draft,
+    ConstructionTypeRef source,
+    ConstructionTypeRef target,
+    ProgramOriginID origin
 ) noexcept -> bool;
 
 auto type_shapes_compatible(
@@ -170,9 +188,11 @@ auto type_shapes_compatible(
     ConstructionTypeRef left,
     ConstructionTypeRef right
 ) noexcept -> bool;
+
 // Inspects construction shapes; nominal members are checked at their storage boundary.
 auto type_contains_callable_view(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
     -> bool;
+
 auto type_supports_equality(const ProgramDraft& draft, ConstructionTypeRef type) noexcept -> bool;
 
 auto decide_unary_operator(
@@ -198,6 +218,12 @@ auto decide_binary_operator(
     bool operands_compatible,
     bool equality_capable
 ) noexcept -> OperatorDecision;
+
+auto cast_uses_cpp(
+    const ProgramDraft& draft,
+    ConstructionTypeRef source,
+    ConstructionTypeRef target
+) noexcept -> bool;
 
 auto decide_cast(
     const ProgramDraft& draft,
@@ -226,6 +252,7 @@ auto decide_text_method(
     std::string_view name,
     std::size_t argument_count
 ) noexcept -> TextMethodDecision;
+
 auto decide_text_property(std::string_view name) noexcept -> TextIntrinsicDecision;
 
 auto decide_unary_operator(
@@ -233,6 +260,7 @@ auto decide_unary_operator(
     UnaryOperator operation,
     TypeID operand
 ) noexcept -> OperatorDecision;
+
 auto decide_binary_operator(
     const CanonicalTypeStore& types,
     BinaryOperator operation,
@@ -241,12 +269,14 @@ auto decide_binary_operator(
     bool compatible,
     bool equality
 ) noexcept -> OperatorDecision;
+
 auto decide_cast(
     const CanonicalTypeStore& types,
     TypeID source,
     TypeID target,
     bool numeric_enum
 ) noexcept -> CastDecision;
+
 auto type_supports_equality(
     const CanonicalTypeStore& types,
     const DeclarationStore& declarations,

@@ -120,7 +120,7 @@ public:
     auto try_canonicalize_declared_type(ConstructionTypeRef type) noexcept -> std::optional<TypeID>;
     auto canonicalize_declared_type(ConstructionTypeRef type) noexcept -> TypeID;
     auto type_copy(TypeID type) const noexcept -> CanonicalType override;
-    auto read_borrows_storage(TypeID type) const noexcept -> bool override;
+    auto read_borrows_storage(ConstructionTypeRef type) const noexcept -> bool override;
     auto intern_constant(ConstantFact fact) noexcept -> ConstantID;
     auto display_names(TypeID type) const noexcept -> ExecutionDisplayNames override;
 
@@ -131,7 +131,7 @@ public:
         -> std::optional<std::vector<EnumCaseTypes>> override;
 
     auto constant(ConstantID constant) const noexcept -> const ConstantFact& override;
-    auto failure_set_copy(FailureSetID failures) const noexcept -> FailureSet;
+    auto failure_set_copy(FailureSetID failures) const noexcept -> FailureSet override;
     auto intern_failure_set(std::vector<TypeID> members) noexcept -> FailureSetID;
     auto empty_failure_set() noexcept -> FailureSetID;
 
@@ -140,7 +140,7 @@ public:
 
     auto validate_failure_members() noexcept -> AnalysisResult<void>;
     auto append_construction_type(ConstructionType type) noexcept -> TypeTermID;
-    auto construction_type_copy(TypeTermID type) const noexcept -> ConstructionType;
+    auto construction_type_copy(TypeTermID type) const noexcept -> ConstructionType override;
     auto reserve_generic_declaration() noexcept -> GenericDeclarationID;
 
     auto define_generic_declaration(
@@ -152,7 +152,15 @@ public:
         -> GenericDeclarationDefinition;
 
     auto intern_generic_type(GenericTypeExpression expression) noexcept -> GenericTypeID;
-    auto generic_type_copy(GenericTypeID id) const noexcept -> GenericTypeExpression;
+    auto generic_type_copy(GenericTypeID id) const noexcept -> GenericTypeExpression override;
+
+    auto generic_member_types(GenericTypeID type) const noexcept
+        -> std::optional<std::vector<ConstructionTypeRef>> override;
+
+    auto cache_generic_record_fields(
+        GenericTypeID type,
+        std::vector<ConstructionTypeRef> fields
+    ) noexcept -> void;
 
     auto validate_generic_definitions(
         std::optional<GenericDeclarationID> root = std::nullopt
@@ -348,7 +356,8 @@ public:
     auto construction_callable_contract_copy(CallableID id) const noexcept
         -> ConstructionCallableContract;
 
-    auto callable_signature_copy(CallableSignatureID id) const noexcept -> CallableSignature;
+    auto callable_signature_copy(CallableSignatureID id) const noexcept
+        -> CallableSignature override;
 
     auto callable_shape(ConstructionTypeRef type) const noexcept
         -> std::optional<ConstructionCallableShape>;

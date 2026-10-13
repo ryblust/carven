@@ -126,9 +126,8 @@ auto ProgramDraft::type_copy(TypeID type) const noexcept -> CanonicalType {
     return storage.types.copy(type);
 }
 
-auto ProgramDraft::read_borrows_storage(TypeID type) const noexcept -> bool {
-    return query_type_contents(storage.types, storage.declarations.construction_view(), type)
-        .read_borrows_storage();
+auto ProgramDraft::read_borrows_storage(ConstructionTypeRef type) const noexcept -> bool {
+    return query_type_contents(*this, type).read_borrows_storage();
 }
 
 auto ProgramDraft::intern_constant(ConstantFact fact) noexcept -> ConstantID {

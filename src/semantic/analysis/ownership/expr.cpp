@@ -7,10 +7,42 @@ import :semantic.semir.vector;
 import :support.invariant;
 import std;
 
+auto OwnershipBodyAnalyzer::opaque_callable_targets(
+    ConstructionTypeRef type,
+    ProgramOriginID origin
+) const noexcept -> OwnershipRelationships {
+    auto result = OwnershipRelationships {};
+    auto path = OwnershipProjectionPath {};
+    const auto collect = [&](this auto&& self, ConstructionTypeRef reference) noexcept -> void {
+        const auto& shape = analysis.model.shape(reference);
+        if (const auto* array = std::get_if<ConstructionArrayTypeValue>(&shape)) {
+            if (array->extent == 0uz) {
+                return;
+            }
+            path.push_back(std::nullopt);
+            self(array->element);
+            path.pop_back();
+        } else if (const auto* tuple = std::get_if<ConstructionTupleTypeValue>(&shape)) {
+            for (const auto [index, element] : std::views::enumerate(tuple->elements)) {
+                path.push_back(static_cast<std::size_t>(index));
+                self(element);
+                path.pop_back();
+            }
+        } else if (std::holds_alternative<CallableViewTypeValue>(shape)
+                   || std::holds_alternative<ClosureTypeValue>(shape)) {
+            result.edit().callable_loans.push_back(
+                {path, std::nullopt, std::nullopt, origin, false}
+            );
+        }
+    };
+    collect(type);
+    return result;
+}
+
 auto OwnershipBodyAnalyzer::selected_access_kind(const SemanticExpression& source) const noexcept
     -> OwnershipAccessKind {
     if (const auto* index = std::get_if<SemIndex>(&source.value)) {
-        if (std::holds_alternative<AnalysisVectorType>(
+        if (std::holds_alternative<GenericVectorType>(
                 analysis.model.shape(index->source->type.construction())
             )) {
             return OwnershipAccessKind::Structural;
@@ -38,7 +70,7 @@ auto OwnershipBodyAnalyzer::complete_place(
         normal.storage = binding_places(binding->binding, normal.state);
     }
     if (normal.storage.empty()) {
-        normal.value = {};
+        normal.value = opaque_callable_targets(source.type.construction(), source.origin);
         return;
     }
     normal.value = {};
@@ -162,16 +194,6 @@ auto OwnershipBodyAnalyzer::finish_expression(
     OwnershipNormal& normal,
     bool direct
 ) noexcept -> void {
-    if (source.category == SemanticValueCategory::Value
-        && source.selects_storage()
-        && normal.storage.empty()
-        && analysis.contents(source.type.construction()).contains_callable_view) {
-        diagnose(
-            DiagnosticCode::TypeCallableViewEscape,
-            "an indirect target cannot establish a Carven callable borrow",
-            source.origin
-        );
-    }
     if (!source.selects_storage() && source.category != SemanticValueCategory::Place) {
         normal.storage.clear();
         if (const auto found = facts.temporaries.find(std::addressof(source));
@@ -902,6 +924,18 @@ auto OwnershipBodyAnalyzer::expression(
                             );
                             return;
                         }
+                        if (storage.empty()) {
+                            diagnose(
+                                DiagnosticCode::TypeCallableViewEscape,
+                                "an indirect target cannot establish a Carven callable borrow",
+                                source.origin
+                            );
+                            merge_relationships(
+                                flow.normal->value,
+                                nest_relationships(opaque_callable_targets(to, source.origin), path)
+                            );
+                            return;
+                        }
                         for (auto element : storage) {
                             element.path.insert(element.path.end(), path.begin(), path.end());
                             flow.normal->value.edit().callable_loans.push_back(
@@ -946,6 +980,16 @@ auto OwnershipBodyAnalyzer::expression(
                     // Equal view types copy the target description. They do not
                     // borrow the intermediate view's storage.
                     if (adaptation.kind == CallableAdaptationKind::CopyTarget) {
+                        co_return {};
+                    }
+                    if (adaptation.borrows_storage() && backing.empty()) {
+                        diagnose(
+                            DiagnosticCode::TypeCallableViewEscape,
+                            "an indirect target cannot establish a Carven callable borrow",
+                            source.origin
+                        );
+                        flow.normal->value =
+                            opaque_callable_targets(source.type.construction(), source.origin);
                         co_return {};
                     }
                     auto storage = std::vector<OwnershipStorageLoan>();
@@ -1263,7 +1307,14 @@ auto OwnershipBodyAnalyzer::expression(
                                                 std::optional<OwnershipPlace> capture_owner
                                             ) noexcept -> ContinuationTask<std::monostate> {
                             use(target, flow.normal->state, source.origin, true);
-                            if (function.has_value()) {
+                            const auto opaque = std::ranges::any_of(
+                                target.view().callable_loans,
+                                [](const auto& loan) static noexcept {
+                                    return !loan.backing && !loan.callable;
+                                }
+                            );
+                            if (function.has_value()
+                                && (!opaque || !target.view().captures.empty())) {
                                 auto next = call(
                                     *function,
                                     target,
@@ -1275,7 +1326,9 @@ auto OwnershipBodyAnalyzer::expression(
                                 join_normal_ownership(invoked.normal, next.normal);
 
                                 append_ownership_exits(invoked, next);
-                                co_return {};
+                                if (!opaque) {
+                                    co_return {};
+                                }
                             }
                             for (const auto& loan : target.view().callable_loans) {
                                 if (loan.backing.has_value()) {
@@ -1305,12 +1358,32 @@ auto OwnershipBodyAnalyzer::expression(
                                 } else if (loan.callable.has_value()) {
                                     (co_await self({}, loan.callable, std::nullopt));
                                 } else {
-                                    join_normal_ownership(invoked.normal, flow.normal);
-                                    append_failures(
-                                        invoked,
-                                        value.callee_failures.reference(),
-                                        flow.normal->state
+                                    const auto signature = [&]() noexcept {
+                                        if (function) {
+                                            return program.declarations()
+                                                .callable(*function)
+                                                .signature;
+                                        }
+                                        const auto* view = std::get_if<CallableViewTypeValue>(
+                                            &program.types()
+                                                 .type(value.callee->type.resolved())
+                                                 .value
+                                        );
+                                        if (!view) {
+                                            invariant_violation(
+                                                "opaque call requires a callable view"
+                                            );
+                                        }
+                                        return view->signature;
+                                    }();
+                                    auto next = call_contract(
+                                        program.callable_signatures().signature(signature),
+                                        parameters,
+                                        flow.normal->state,
+                                        source.origin
                                     );
+                                    join_normal_ownership(invoked.normal, next.normal);
+                                    append_ownership_exits(invoked, next);
                                 }
                             }
                             co_return {};

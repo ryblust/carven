@@ -22,6 +22,14 @@ auto address(T& value) noexcept -> T* {
     return std::addressof(value);
 }
 
+inline auto roundtrip(void* address) noexcept -> void* {
+    return address;
+}
+
+inline auto roundtrip(const void* address) noexcept -> const void* {
+    return address;
+}
+
 inline auto overload(const std::int32_t*) noexcept -> std::int32_t {
     return 1;
 }

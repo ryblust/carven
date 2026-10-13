@@ -18,6 +18,10 @@ types and constants from their owned expressions. `BodyType` and `BodyFailures` 
 construction or resolved facts; their accessors explicitly select the required stage.
 Published bodies expose only const access to the completed tree.
 
+Closed declared callable shapes become canonical types during source type resolution.
+Generic pointer expressions retain a pending pointee type and its access until
+publication resolves them after ordinary type and failure completion.
+
 Provenance resolves an origin directly to `ProgramSourceID` and `Span`.
 Only diagnostic transport converts that identity to the source manager domain.
 
@@ -44,13 +48,17 @@ insertion-order IDs. Floating identity uses bits; numeric equality remains separ
 ## Type contents
 
 `SemIRProgram` owns immutable `TypeContents` computed after storage topology
-validation. Containment facts can coexist and propagate according to each
-property's storage and borrowing rules. String storage containment excludes
-zero-length array elements. Read queries derive storage-borrowing
-and value-snapshot guarantees from these facts. Native value containment contributes to the same storage-borrowing query.
-Source Read parameters retain native holders through const references, including
-native values contained in Carven aggregates. C++ still selects native copy and
-destruction operations for owned construction and transfer.
+validation. Canonical, construction, and rigid types share one shape rule and
+worklist for content propagation. Their readers supply nominal members; generic
+record construction and analysis consume the same cached member types.
+Containment facts can coexist and propagate according to each property's storage
+and borrowing rules. String storage containment excludes zero-length array
+elements. Read queries derive storage-borrowing and value-snapshot guarantees
+from these facts. Opaque native value containment
+contributes to the same storage-borrowing query; compiler-known C string pointers
+are value snapshots. Native Read uses C++ copy and destruction traits to select
+const values or references. Retained native holders use const references through
+the call chain.
 
 Published-program consumers read these facts through an identity-checked query.
 Static execution during construction queries the draft's type facts, including

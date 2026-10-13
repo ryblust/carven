@@ -72,3 +72,24 @@ test "Pointers: native qualifiers aliases and incomplete targets retain their ty
     let owned: ptr<i32> = output;
     check(::pointer_probe::pair(owned, &&owned));
 }
+
+fn write_roundtrip(address: ptr<&void>) -> ptr<&void> {
+    return ::pointer_probe::roundtrip(address);
+}
+
+fn read_roundtrip(address: ptr<void>) -> ptr<void> {
+    return ::pointer_probe::roundtrip(address);
+}
+
+test "Pointer access: native void pointer protocols retain typed object access" {
+    var value = 7;
+    let erased = addressof(&value) as ptr<&void>;
+    let returned = write_roundtrip(erased);
+    let restored = returned as ptr<&i32>;
+    if restored == nullptr { fail("native protocol lost its address"); }
+    *restored = 19;
+    let read = read_roundtrip(returned as ptr<void>) as ptr<i32>;
+    if read == nullptr { fail("native protocol lost its Read address"); }
+    check(*read == 19 && value == 19);
+    check(read == addressof(value));
+}

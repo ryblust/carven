@@ -1,6 +1,7 @@
 import "bindings/read_policy.hpp" using read_policy::{
     Trivial,
     Borrowed,
+    Derived,
     MoveOnly,
     FreshSource,
     FreshTarget,
@@ -9,10 +10,7 @@ import "bindings/read_policy.hpp" using read_policy::{
     borrowed_reference,
 };
 
-fn trivial_read(value: Trivial, marker: i32) -> i32 {
-    let _ = marker;
-    return value.value;
-}
+fn trivial_read(value: Trivial, _: i32) -> i32 => value.value;
 
 private enum Payload {
     Value(MoveOnly),
@@ -59,10 +57,7 @@ test "Constant projections construct their selected value independently" {
     check(value == 7);
 }
 
-fn borrowed_read(value: Borrowed, marker: i32) -> i32 {
-    let _ = marker;
-    return value.value;
-}
+fn borrowed_read(value: Borrowed, _: i32) -> i32 => value.value;
 
 fn change_trivial(&value: Trivial) -> i32 {
     value.value = 9;
@@ -74,7 +69,17 @@ fn change_borrowed(&value: Borrowed) -> i32 {
     return 0;
 }
 
+private fn native_scalar_read(value: ::std::int32_t, _: i32) -> i32 => value as i32;
+
+private fn increment_scalar(&value: i32) -> i32 {
+    value += 1;
+    return 0;
+}
+
 test "Native Read snapshots before later arguments in direct and view calls" {
+    var scalar = 7;
+    check(native_scalar_read(scalar, increment_scalar(&scalar)) == 7);
+    check(scalar == 8);
     var value = Trivial { 7 };
     check(trivial_read(value, change_trivial(&value)) == 7);
     value.value = 7;
@@ -82,28 +87,52 @@ test "Native Read snapshots before later arguments in direct and view calls" {
     check(view(value, change_trivial(&value)) == 7);
     value.value = 7;
     check(trivial_read(trivial_reference(&value), change_trivial(&value)) == 7);
-    value.value = 7;
-    check(view(trivial_reference(&value), change_trivial(&value)) == 7);
 }
 
-test "Nontrivial Native Read retains source storage in direct and view calls" {
+private struct ReadHolder {
+    value: MoveOnly
+}
+
+private fn move_only_read(value: MoveOnly, _: i32) -> i32 => value.value;
+
+private fn change_move_only(&value: MoveOnly) -> i32 {
+    value.value = 9;
+    return 0;
+}
+
+private fn redirect_read(&selected: ptr<MoveOnly>, next: ptr<MoveOnly>) -> i32 {
+    selected = next;
+    return 0;
+}
+
+test "Native Read borrows nontrivial storage across later arguments" {
     var value = Borrowed { 7 };
     let direct_result = borrowed_read(value, change_borrowed(&value));
     check(direct_result == 9);
-    value.value = 7;
-    check(borrowed_read(value, change_borrowed(&value)) == 9);
     value.value = 7;
     let view: fn(Borrowed, i32) -> i32 = borrowed_read;
     check(view(value, change_borrowed(&value)) == 9);
     value.value = 7;
     check(borrowed_read(borrowed_reference(&value), change_borrowed(&value)) == 9);
     check(borrowed_read(Borrowed { 11 }, 0) == 11);
+    var derived = Derived { Borrowed { 7 } };
+    check(borrowed_read(derived, change_borrowed(&derived)) == 9);
+
+    var holder = ReadHolder { value: MoveOnly { 7 } };
+    check(move_only_read(holder.value, change_move_only(&holder.value)) == 9);
+    let other: MoveOnly = MoveOnly { 11 };
+    var selected: ptr<MoveOnly> = addressof(holder.value);
+    if selected == nullptr { fail("missing Read source"); }
+    check(move_only_read(*selected, redirect_read(&selected, addressof(other))) == 9);
+    check(selected == addressof(other));
 }
 
 fn fresh_read(value: FreshTarget) -> i32 => value.value;
 fn source_fresh() -> FreshSource => FreshSource { 19 };
 
-test "Read conversions preserve fresh native rvalue capability" {
+test "Read conversions preserve named const access and fresh native rvalue capability" {
+    var named = FreshSource { 23 };
+    check(fresh_read(named) == 123);
     check(fresh_read(FreshSource { 13 }) == 13);
     check(fresh_read(make_fresh()) == 17);
     check(fresh_read(source_fresh()) == 19);

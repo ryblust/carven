@@ -116,20 +116,26 @@ character array or a Carven `str`. Copies retain access to program-lifetime stor
 
 C strings support constant initialization, function calls, local copies,
 assignment, and Take during static execution. Freezing preserves their
-bytes and pointer type, including in supported aggregates. Each emitted pointer
-refers to program-lifetime storage; pointer identity across translation units is unspecified.
+bytes and pointer type, including in supported aggregates. Identical complete
+byte contents share immutable program-lifetime backing within one linkage domain,
+including across generated modules and artifacts. Copies and repeated literals
+therefore preserve the same address. Imported C++ pointers retain their provider's storage contract.
+Read arguments of the compiler-known C string type copy the address during
+argument evaluation.
 
 Printing treats C strings as text: top-level bytes are verbatim, while nested
 text is quoted and escaped. Static execution and interpretation read retained
 C string bytes for display and default text formatting. Reading unknown native
-memory, comparing C string pointers, and
-observing their addresses are outside the evaluator's supported operations.
+memory and directly comparing external C string pointers remain outside the
+evaluator's supported operations. A known C string can explicitly convert to
+`ptr<void>` for address comparison and formatting with an empty specification or
+`p`.
 C string literal patterns are rejected.
 
 Native interpolation uses the C++ string formatter. Address formatting requires
 an explicit conversion to a pointer type with a pointer formatter, such as
-`const void*`. Contextual typing preserves the external `const char*` type;
-conversions follow the external conversion rules below.
+`const void*`. Contextual typing preserves the external `const char*` type.
+Erasure to `ptr<void>` preserves the C string address and Read access.
 
 ```carven
 import <cstdio> using std::printf;
@@ -281,11 +287,12 @@ The generated signatures use the same C++ representations as Carven functions:
 | Async completion contract | Cold `carven::runtime::execution::AsyncOperation<Result, Failures...>` |
 
 Async imports and exports use the [async borrowing and host contracts](async.md#native-providers-and-hosts).
-Native-containing Read uses `carven::runtime::ReadArg<T>` unless the callable
-retains the parameter holder across the call boundary; retained holders use
-`const T&`. ReadArg selects a const value for trivial copy construction and
-destruction, and a const reference otherwise. The native callee's own signature
-still controls its C++ parameter initialization. Async providers must capture
+Read uses `const T&` for owned Carven storage, closures, and parameter holders
+retained across the call boundary, and const values for other pure Carven types.
+Other native-containing Read parameters use `carven::runtime::ReadArg<T>`, which
+selects a const value for trivial copy construction and destruction, and a const
+reference otherwise. The native callee's own signature still controls its C++
+parameter initialization. Async providers must capture
 builtin scalar Read values by value; native-containing Read holders remain
 borrowed until the cold operation closes.
 

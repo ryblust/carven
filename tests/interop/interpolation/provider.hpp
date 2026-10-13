@@ -1,6 +1,7 @@
 #pragma once
 
 #include <format>
+#include <memory>
 #include <string_view>
 #include <type_traits>
 
@@ -105,5 +106,26 @@ struct std::formatter<interpolation_probe::ContextValue> final : std::formatter<
             context.arg(0)
         );
         return std::formatter<int>::format(first, context);
+    }
+};
+
+template<typename Value>
+    requires requires (const Value& value) { value.format_identity; }
+struct std::formatter<Value> final : std::formatter<bool> {
+    auto format(const Value& value, std::format_context& context) const {
+        const auto original = std::visit_format_arg(
+            [](auto argument) noexcept -> const void* {
+                if constexpr (std::is_same_v<decltype(argument), const void*>) {
+                    return argument;
+                } else {
+                    return nullptr;
+                }
+            },
+            context.arg(0)
+        );
+        return std::formatter<bool>::format(
+            original != nullptr && std::addressof(value) != original,
+            context
+        );
     }
 };

@@ -32,9 +32,13 @@ containing full expression; saving the address does not extend its lifetime.
 must be available and locally proven non-null. Target access comes from the
 pointer type, independently of the slot's binding access. `let value = *p`
 performs ordinary value initialization; C++ checks native copyability. `&*p`
-passes a writable target to an ordinary Write parameter. `&&*p` is rejected:
-the target is not an owned Carven binding. Existing callable-borrow boundaries
+passes a writable target to an ordinary Write parameter. `&&*p` is rejected: the
+target is not an owned Carven binding. Existing callable-borrow boundaries
 remain in force; an indirect address does not establish a tracked borrow.
+Reading an existing callable view copies its target description. Adapting an
+indirectly read capturing closure into a new view still requires tracked backing
+storage. An indirect call does not reconstruct capture relationships or
+establish the lifetimes of objects reached through those captures.
 
 For the same target type, `ptr<&T>` can become `ptr<T>` in a value context:
 initialization, assignment, field or element construction, Read arguments,
@@ -52,12 +56,44 @@ caller's slot and require the complete pointer type to match. Take parameters
 also require an exact type, transfer the address value, and make its source
 owner unavailable. Take does not zero other aliases or release the target.
 
-`nullptr` needs a concrete pointer type context, including in an explicitly
-typed `const`. There is no independent null type. Pointers support `==` and
-`!=` with `nullptr` and with pointers to the same target type. They have no
-implicit boolean conversion, ordering, arithmetic, direct indexing, integer
-conversion. `addressof` is the Carven address-of operation for an addressable
-place.
+`nullptr` needs a pointer type context, including in an explicitly typed
+`const`. There is no independent null type. Pointers support `==` and `!=` with
+`nullptr` and with pointers to the same target type. They have no implicit
+boolean conversion, ordering, arithmetic, direct indexing, integer conversion.
+
+## Erasure, comparison, and display
+
+Explicit `as ptr<void>` erases an object pointer's target type. Write pointers
+may erase to `ptr<&void>` or narrow to `ptr<void>`; Read pointers may erase only
+to `ptr<void>`. Explicit `as ptr<T>` restores a target type with the same access
+rule. Both conversions preserve the address and target lifetime. Carven callable
+values are objects and follow this rule. A C string's compiler-known external
+`const char*` type can erase to `ptr<void>`.
+
+Native conversions use C++ `static_cast`. Using a restored pointer requires the
+appropriate alignment, object type, aliasing, and lifetime. The conversion itself
+does not access or construct an object. Static and interpreted dereference
+select a live object of the requested type at the retained address; an unavailable
+object or type relation produces an execution diagnostic.
+
+Pointer equality compares addresses. Static and interpreted execution retain
+storage origins and subobject paths, and establish address relations from known
+layout. A standard-layout struct shares its address with its first field,
+recursively. The executor establishes this property for Carven structs containing
+numeric, bool, char, pointer, and such struct fields. Array containers, tuple
+members, and text buffers have representation-dependent address relationships;
+an unestablished relation produces an execution diagnostic. Native equality uses
+the generated C++ representation.
+
+Erased pointers accept an empty format specification or `p`. Static execution
+formats non-null pointers as `const@nonnull` and null pointers as `const@null`.
+These fixed strings carry no object identity and can participate in ordinary
+text computation and constant publication. Interpreted runtime uses
+execution-local address labels such as `interp@object#N`; equal addresses have
+the same label. Interpreted address display requires an established address key;
+an unavailable key produces an execution diagnostic. Native runtime uses the C++
+pointer formatter. Formatting neither extends storage lifetime nor establishes
+that a target can be dereferenced.
 
 ## Local non-null checks
 

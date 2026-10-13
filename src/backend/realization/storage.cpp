@@ -194,9 +194,9 @@ auto BodyRealizer::ExpressionBuilder::emit(
     if (use == PreparedUse::ReadBorrow
         || use == PreparedUse::ReadArgument
         || use == PreparedUse::ConstPlace
-        || use == PreparedUse::AddressValue) {
+        || use == PreparedUse::ReadPointer) {
         const auto type = owner.context.lower_type(source(fragment).operation.type.resolved());
-        if (use == PreparedUse::AddressValue && !saved(fragment)) {
+        if (use == PreparedUse::ReadPointer && !saved(fragment)) {
             result = TargetExpr {
                 .value =
                     TargetStaticCastExpr {.type = type, .operand = target_child(std::move(result))}
@@ -217,7 +217,7 @@ auto BodyRealizer::ExpressionBuilder::value_binding(PreparedUse use) noexcept
     switch (use) {
         case PreparedUse::ReadBorrow:
         case PreparedUse::ReadArgument:
-        case PreparedUse::AddressValue:
+        case PreparedUse::ReadPointer:
         case PreparedUse::OperandValue:
         case PreparedUse::ConstPlace:   return TargetVariableBinding::ConstValue;
         case PreparedUse::WritePlace:

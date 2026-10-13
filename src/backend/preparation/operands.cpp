@@ -40,14 +40,11 @@ auto BodyPreparation::operands(
         );
         const auto contents = semantic.type_contents(input.expression.type.resolved());
         if (input.access == AccessMode::Read
-            && (requires_stable_storage
-                || contents.contains_operation_owner
-                || contents.contains_storage_owner
-                || contents.contains_closure_owner)) {
+            && (requires_stable_storage || contents.contains_carven_owner())) {
             prepared.use = PreparedUse::ConstPlace;
         } else if (input.access == AccessMode::Read
-                   && builtin != nullptr
-                   && builtin->kind != BuiltinType::String) {
+                   && ((builtin != nullptr && builtin->kind != BuiltinType::String)
+                       || prepared.use == PreparedUse::ReadPointer)) {
             prepared.use = PreparedUse::OperandValue;
         } else if (input.access == AccessMode::Read && prepared.use == PreparedUse::ReadBorrow) {
             prepared.use = PreparedUse::ReadArgument;
@@ -94,7 +91,7 @@ auto BodyPreparation::operands(
             },
             [&](const SemDereference& value) noexcept {
                 visit_semantic_children(value, [&](const SemanticExpression& input) noexcept {
-                    add(input, PreparedUse::AddressValue);
+                    add(input, PreparedUse::OperandValue);
                 });
             },
             [&](const SemAddressOf& value) noexcept {

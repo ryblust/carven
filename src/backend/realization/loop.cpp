@@ -193,13 +193,45 @@ auto BodyRealizer::lower_range(const SemRangeLoop& value, LoweringStmtBuilder& d
     const auto* range =
         std::get_if<RangeTypeValue>(&context.semantic().types().type(source.type.resolved()).value);
     const auto range_value = range != nullptr;
-    auto iterable = scope.accept((co_await operand(
-        {.expression = std::addressof(value.source),
-         .use = range_value                      ? PreparedUse::OperandValue
-             : value.access == AccessMode::Write ? PreparedUse::WritePlace
-                                                 : PreparedUse::ReadBorrow,
-         .demand = PreparedDemand::Value}
-    )));
+    const auto borrowed = preparation.borrowed_array_elements(value);
+    auto iterable = std::optional<TargetExpr>();
+    if (!borrowed.empty()) {
+        const auto element = context.lower_type(
+            std::get<ArrayTypeValue>(context.semantic().types().type(source.type.resolved()).value)
+                .element
+        );
+        const auto constant = context.target().intern_type(
+            {.value =
+                 TargetIntrinsicType {
+                     .symbol = TargetSymbol::StdAddConst,
+                     .type_argument_ids = {element}
+                 },
+             .const_qualified = false}
+        );
+        auto addresses = std::vector<TargetExpr>();
+        for (const auto& source : borrowed) {
+            const auto binding = std::get<SemBinding>(source.value).binding;
+            addresses.push_back(call_expression(
+                intrinsic_expression(TargetSymbol::StdAddressof),
+                target_expressions(binding_expression(binding))
+            ));
+        }
+        iterable = TargetExpr {
+            .value = TargetArrayExpr {
+                .element_type_id = context.pointer_type(constant),
+                .extent = target_child(integer_expression(borrowed.size())),
+                .elements = std::move(addresses)
+            }
+        };
+    } else {
+        iterable = scope.accept((co_await operand(
+            {.expression = std::addressof(value.source),
+             .use = range_value                      ? PreparedUse::OperandValue
+                 : value.access == AccessMode::Write ? PreparedUse::WritePlace
+                                                     : PreparedUse::ReadBorrow,
+             .demand = PreparedDemand::Value}
+        )));
+    }
     if (!scope.continues()) {
         destination.scope(std::move(scope));
         co_return {};
@@ -256,6 +288,18 @@ auto BodyRealizer::lower_range(const SemRangeLoop& value, LoweringStmtBuilder& d
     };
     const auto outer_loop = std::exchange(current_loop, continuation);
     auto iteration = LoweringStmtBuilder();
+    if (!borrowed.empty() && value.binding) {
+        iteration.declare(
+            TargetVariableStmt {
+                .binding = TargetVariableBinding::ConstReference,
+                .maybe_unused = true,
+                .local = binding_locals.at(*value.binding),
+                .type = context.lower_type(metadata.binding(*value.binding).type),
+                .initializer = dereference_expression(name_expression(index))
+            },
+            false
+        );
+    }
     if (bounds && value.binding) {
         declare_binding(*value.binding, name_expression(index), iteration);
     }
@@ -295,13 +339,15 @@ auto BodyRealizer::lower_range(const SemRangeLoop& value, LoweringStmtBuilder& d
     } else {
         scope.emit(generated_statement(
             TargetRangeForStmt {
-                .binding = value.access == AccessMode::Write
-                    ? TargetVariableBinding::MutableReference
-                    : !value.binding.has_value() ? TargetVariableBinding::ConstReference
-                                                 : TargetVariableBinding::MutableValue,
+                .binding = !borrowed.empty()            ? TargetVariableBinding::ConstValue
+                    : value.access == AccessMode::Write ? TargetVariableBinding::MutableReference
+                    : !value.binding.has_value()        ? TargetVariableBinding::ConstReference
+                                                        : TargetVariableBinding::MutableValue,
                 .maybe_unused = true,
-                .local = value.binding.has_value() ? binding_locals.at(*value.binding) : index,
-                .type = value.binding.has_value()
+                .local =
+                    !borrowed.empty() || !value.binding ? index : binding_locals.at(*value.binding),
+                .type = !borrowed.empty() ? context.intrinsic_type(TargetSymbol::Auto)
+                    : value.binding.has_value()
                     ? (value.access == AccessMode::Write
                            ? context.intrinsic_type(TargetSymbol::Auto)
                            : context.lower_parameter(

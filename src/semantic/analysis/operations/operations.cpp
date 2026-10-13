@@ -41,6 +41,45 @@ auto builtin_type(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
     return builtin == nullptr ? std::nullopt : std::optional(builtin->kind);
 }
 
+auto known_cstring(const CanonicalTypeValue& source) noexcept -> bool {
+    const auto* native = std::get_if<CppTypeValue>(&source);
+    return native && std::holds_alternative<CppConstCharPointerType>(native->form);
+}
+
+auto canonical_pointer_shape(const CanonicalType& type) noexcept -> std::optional<PointerShape> {
+    const auto* pointer = std::get_if<PointerTypeValue>(&type.value);
+    return pointer
+        ? std::optional(PointerShape {.target = pointer->target, .access = pointer->access})
+        : std::nullopt;
+}
+
+auto decide_pointer_cast(
+    std::optional<PointerShape> from,
+    std::optional<PointerShape> to,
+    bool narrowing,
+    bool cstring,
+    std::optional<BuiltinType> pointee,
+    std::optional<BuiltinType> source_pointee
+) noexcept -> std::optional<CastKind> {
+    if (!to) {
+        return std::nullopt;
+    }
+    if (from && narrowing) {
+        return CastKind::PointerRead;
+    }
+    if (pointee == BuiltinType::Void
+        && ((from && (to->access == PointerAccess::Read || from->access == PointerAccess::Write))
+            || (cstring && to->access == PointerAccess::Read))) {
+        return CastKind::PointerErase;
+    }
+    if (from
+        && source_pointee == BuiltinType::Void
+        && (to->access == PointerAccess::Read || from->access == PointerAccess::Write)) {
+        return CastKind::PointerRestore;
+    }
+    return std::nullopt;
+}
+
 auto operation_error(std::string_view message, DiagnosticCode code) noexcept
     -> std::unexpected<OperationDiagnostic> {
     return std::unexpected(OperationDiagnostic {.message = message, .code = code});
@@ -163,123 +202,92 @@ auto array_shape(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
                               );
 }
 
-auto shapes_compatible(
+enum class TypeRelation { Shape, Storage };
+
+using FailureEqualities = std::vector<std::pair<ConstructionFailureRef, ConstructionFailureRef>>;
+
+auto match_types(
     const ProgramDraft& draft,
-    ConstructionTypeRef left,
-    ConstructionTypeRef right,
-    std::flat_set<std::pair<ConstructionTypeRef, ConstructionTypeRef>>& visited
-) noexcept -> bool {
-    if (left == right) {
-        return true;
-    }
-    if (!visited.emplace(left, right).second) {
-        return true;
-    }
-
-    const auto unwrapped_left = unwrap_type_alias(draft, left);
-    const auto unwrapped_right = unwrap_type_alias(draft, right);
-    if (unwrapped_left != left || unwrapped_right != right) {
-        return shapes_compatible(draft, unwrapped_left, unwrapped_right, visited);
-    }
-    const auto operation_success =
-        [&](ConstructionTypeRef type) noexcept -> std::optional<ConstructionTypeRef> {
-        if (const auto* concrete = std::get_if<TypeID>(&type)) {
-            const auto canonical = draft.type_copy(*concrete);
-            if (const auto* operation = std::get_if<OperationTypeValue>(&canonical.value)) {
-                return operation->success;
-            }
-        } else if (const auto* term = std::get_if<TypeTermID>(&type)) {
-            const auto construction = draft.construction_type_copy(*term);
-            if (const auto* operation =
-                    std::get_if<ConstructionOperationTypeValue>(&construction.value)) {
-                return operation->success;
-            }
+    ConstructionTypeRef source,
+    ConstructionTypeRef target,
+    TypeRelation relation
+) noexcept -> std::optional<FailureEqualities> {
+    auto visited = std::flat_set<std::pair<ConstructionTypeRef, ConstructionTypeRef>>();
+    auto failures = FailureEqualities();
+    const auto match = [&](this auto&& self,
+                           ConstructionTypeRef left,
+                           ConstructionTypeRef right) noexcept -> bool {
+        left = unwrap_type_alias(draft, left);
+        right = unwrap_type_alias(draft, right);
+        if (left == right || !visited.emplace(left, right).second) {
+            return true;
         }
-        if (const auto* generic = std::get_if<GenericTypeID>(&type)) {
-            const auto expression = draft.generic_type_copy(*generic);
-            if (const auto* operation = std::get_if<GenericOperationType>(&expression)) {
-                return operation->success;
+        const auto left_operation = operation_shape(draft, left);
+        const auto right_operation = operation_shape(draft, right);
+        if (left_operation || right_operation) {
+            if (!left_operation
+                || !right_operation
+                || !self(left_operation->success, right_operation->success)) {
+                return false;
             }
+            failures.emplace_back(left_operation->failures, right_operation->failures);
+            return true;
         }
-        return std::nullopt;
+        const auto left_array = array_shape(draft, left);
+        const auto right_array = array_shape(draft, right);
+        if (left_array || right_array) {
+            return left_array
+                && right_array
+                && left_array->extent == right_array->extent
+                && self(left_array->element, right_array->element);
+        }
+        const auto left_tuple = tuple_elements(draft, left);
+        const auto right_tuple = tuple_elements(draft, right);
+        if (left_tuple || right_tuple) {
+            return left_tuple && right_tuple && std::ranges::equal(*left_tuple, *right_tuple, self);
+        }
+        const auto left_slice = slice_element(draft, left);
+        const auto right_slice = slice_element(draft, right);
+        if (left_slice || right_slice) {
+            return left_slice && right_slice && self(*left_slice, *right_slice);
+        }
+        const auto left_pointer = pointer_shape(draft, left);
+        const auto right_pointer = pointer_shape(draft, right);
+        if (left_pointer || right_pointer) {
+            return left_pointer
+                && right_pointer
+                && left_pointer->access == right_pointer->access
+                && self(left_pointer->target, right_pointer->target);
+        }
+        const auto lhs = draft.callable_shape(left);
+        const auto rhs = draft.callable_shape(right);
+        if (lhs || rhs) {
+            if (!lhs || !rhs) {
+                return false;
+            }
+            if (lhs->owning_type && rhs->owning_type) {
+                return lhs->owning_type == rhs->owning_type;
+            }
+            if (relation == TypeRelation::Storage && (lhs->owning_type || rhs->owning_type)) {
+                return false;
+            }
+            if (lhs->parameters.size() != rhs->parameters.size()
+                || !self(lhs->result, rhs->result)) {
+                return false;
+            }
+            for (const auto [a, b] : std::views::zip(lhs->parameters, rhs->parameters)) {
+                if (a.stage != b.stage || a.access != b.access || !self(a.type, b.type)) {
+                    return false;
+                }
+            }
+            failures.emplace_back(lhs->failures, rhs->failures);
+            return true;
+        }
+        const auto* lhs_type = std::get_if<TypeID>(&left);
+        const auto* rhs_type = std::get_if<TypeID>(&right);
+        return lhs_type && rhs_type && draft.type_copy(*lhs_type) == draft.type_copy(*rhs_type);
     };
-    const auto left_operation = operation_success(left);
-    const auto right_operation = operation_success(right);
-    if (left_operation || right_operation) {
-        return left_operation
-            && right_operation
-            && shapes_compatible(draft, *left_operation, *right_operation, visited);
-    }
-    const auto left_array = array_shape(draft, left);
-    const auto right_array = array_shape(draft, right);
-    if (left_array.has_value() || right_array.has_value()) {
-        return left_array.has_value()
-            && right_array.has_value()
-            && left_array->extent == right_array->extent
-            && shapes_compatible(draft, left_array->element, right_array->element, visited);
-    }
-
-    const auto left_tuple = tuple_elements(draft, left);
-    const auto right_tuple = tuple_elements(draft, right);
-    if (left_tuple || right_tuple) {
-        return left_tuple
-            && right_tuple
-            && std::ranges::equal(
-                   *left_tuple,
-                   *right_tuple,
-                   [&](ConstructionTypeRef a, ConstructionTypeRef b) noexcept {
-                       return shapes_compatible(draft, a, b, visited);
-                   }
-            );
-    }
-
-    const auto left_slice = slice_element(draft, left);
-    const auto right_slice = slice_element(draft, right);
-    if (left_slice || right_slice) {
-        return left_slice
-            && right_slice
-            && shapes_compatible(draft, *left_slice, *right_slice, visited);
-    }
-
-    const auto left_pointer = pointer_shape(draft, left);
-    const auto right_pointer = pointer_shape(draft, right);
-    if (left_pointer || right_pointer) {
-        return left_pointer
-            && right_pointer
-            && left_pointer->access == right_pointer->access
-            && shapes_compatible(draft, left_pointer->target, right_pointer->target, visited);
-    }
-
-    const auto left_callable = draft.callable_shape(left);
-    const auto right_callable = draft.callable_shape(right);
-    if (left_callable.has_value() || right_callable.has_value()) {
-        if (!left_callable.has_value() || !right_callable.has_value()) {
-            return false;
-        }
-        if (left_callable->owning_type.has_value() && right_callable->owning_type.has_value()) {
-            return left_callable->owning_type == right_callable->owning_type;
-        }
-        if (left_callable->parameters.size() != right_callable->parameters.size()
-            || !shapes_compatible(draft, left_callable->result, right_callable->result, visited)) {
-            return false;
-        }
-        return std::ranges::equal(
-            left_callable->parameters,
-            right_callable->parameters,
-            [&](const auto& left_parameter, const auto& right_parameter) noexcept {
-                return left_parameter.stage == right_parameter.stage
-                    && left_parameter.access == right_parameter.access
-                    && shapes_compatible(draft, left_parameter.type, right_parameter.type, visited);
-            }
-        );
-    }
-
-    const auto* left_concrete = std::get_if<TypeID>(&left);
-    const auto* right_concrete = std::get_if<TypeID>(&right);
-    if (left_concrete == nullptr || right_concrete == nullptr) {
-        return false;
-    }
-    return draft.type_copy(*left_concrete) == draft.type_copy(*right_concrete);
+    return match(source, target) ? std::optional(std::move(failures)) : std::nullopt;
 }
 
 } // namespace
@@ -516,7 +524,30 @@ auto pointer_narrows(
         && to
         && from->access == PointerAccess::Write
         && to->access == PointerAccess::Read
-        && unwrap_type_alias(draft, from->target) == unwrap_type_alias(draft, to->target);
+        && type_shapes_compatible(draft, from->target, to->target);
+}
+
+auto constrain_invariant_type(
+    ProgramDraft& draft,
+    ConstructionTypeRef source,
+    ConstructionTypeRef target,
+    ProgramOriginID origin
+) noexcept -> bool {
+    const auto failures = match_types(draft, source, target, TypeRelation::Storage);
+    if (!failures) {
+        return false;
+    }
+    for (const auto& [left, right] : *failures) {
+        if (std::holds_alternative<FailureSetID>(left)
+            && std::holds_alternative<FailureSetID>(right)
+            && left != right) {
+            return false;
+        }
+    }
+    for (const auto& [left, right] : *failures) {
+        draft.require_equal_failures(left, right, origin);
+    }
+    return true;
 }
 
 auto type_shapes_compatible(
@@ -524,8 +555,7 @@ auto type_shapes_compatible(
     ConstructionTypeRef left,
     ConstructionTypeRef right
 ) noexcept -> bool {
-    auto visited = std::flat_set<std::pair<ConstructionTypeRef, ConstructionTypeRef>>();
-    return shapes_compatible(draft, left, right, visited);
+    return match_types(draft, left, right, TypeRelation::Shape).has_value();
 }
 
 auto make_array_type(
@@ -564,23 +594,14 @@ auto make_slice_type(ProgramDraft& draft, ConstructionTypeRef element) noexcept
 auto make_pointer_type(
     ProgramDraft& draft,
     ConstructionTypeRef target,
-    PointerAccess access,
-    ProgramOriginID origin
-) noexcept -> AnalysisResult<ConstructionTypeRef> {
+    PointerAccess access
+) noexcept -> ConstructionTypeRef {
     target = unwrap_type_alias(draft, target);
     if (std::holds_alternative<TypeTermID>(target)) {
         const auto concrete = draft.try_canonicalize_declared_type(target);
-        if (!concrete) {
-            return std::unexpected(draft.diagnostics().error(
-                DiagnosticBuilder(
-                    DiagnosticCode::TypeUnresolved,
-                    "addressof target requires a determined type and failure contract"
-                )
-                    .primary(draft.source_span(origin))
-                    .build()
-            ));
+        if (concrete) {
+            target = *concrete;
         }
-        target = *concrete;
     }
     if (const auto* concrete = std::get_if<TypeID>(&target)) {
         return ConstructionTypeRef(
@@ -1019,14 +1040,65 @@ auto decide_binary_operator(
     );
 }
 
+auto cast_uses_cpp(
+    const ProgramDraft& draft,
+    ConstructionTypeRef source,
+    ConstructionTypeRef target
+) noexcept -> bool {
+    source = unwrap_type_alias(draft, source);
+    target = unwrap_type_alias(draft, target);
+    const auto* from = std::get_if<TypeID>(&source);
+    const auto source_type = from ? std::optional(draft.type_copy(*from)) : std::nullopt;
+    const auto pointer = pointer_shape(draft, target);
+    if (source_type
+        && known_cstring(source_type->value)
+        && pointer
+        && builtin_type(draft, pointer->target) == BuiltinType::Void) {
+        return false;
+    }
+    const auto external = [&](ConstructionTypeRef type) noexcept {
+        if (const auto* concrete = std::get_if<TypeID>(&type)) {
+            return std::holds_alternative<CppTypeValue>(draft.type_copy(*concrete).value);
+        }
+        if (const auto* generic = std::get_if<GenericTypeID>(&type)) {
+            const auto shape = draft.generic_type_copy(*generic);
+            return std::holds_alternative<GenericCppNamedType>(shape)
+                || std::holds_alternative<GenericCppQueryType>(shape);
+        }
+        return false;
+    };
+    return external(source) || external(target);
+}
+
 auto decide_cast(
     const ProgramDraft& facts,
     ConstructionTypeRef source,
     ConstructionTypeRef target,
     bool numeric_enum
 ) noexcept -> CastDecision {
-    if (pointer_narrows(facts, source, target)) {
-        return CastKind::PointerRead;
+    source = unwrap_type_alias(facts, source);
+    target = unwrap_type_alias(facts, target);
+    if (source == target) {
+        return CastKind::Identity;
+    }
+    const auto from = pointer_shape(facts, source);
+    const auto to = pointer_shape(facts, target);
+    if (from
+        && to
+        && from->access == to->access
+        && type_shapes_compatible(facts, from->target, to->target)) {
+        return CastKind::Identity;
+    }
+    const auto* source_type = std::get_if<TypeID>(&source);
+    if (const auto pointer = decide_pointer_cast(
+            from,
+            to,
+            pointer_narrows(facts, source, target),
+            source_type && known_cstring(facts.type_copy(*source_type).value),
+            to ? builtin_type(facts, to->target) : std::nullopt,
+            from ? builtin_type(facts, from->target) : std::nullopt
+        )) {
+        return *pointer;
     }
     return decide_builtin_cast(
         source == target,
@@ -1067,14 +1139,24 @@ auto decide_cast(
     TypeID target,
     bool numeric_enum
 ) noexcept -> CastDecision {
-    const auto* from = std::get_if<PointerTypeValue>(&facts.type(source).value);
-    const auto* to = std::get_if<PointerTypeValue>(&facts.type(target).value);
-    if (from
-        && to
-        && from->target == to->target
-        && from->access == PointerAccess::Write
-        && to->access == PointerAccess::Read) {
-        return CastKind::PointerRead;
+    if (source == target) {
+        return CastKind::Identity;
+    }
+    const auto from = canonical_pointer_shape(facts.type(source));
+    const auto to = canonical_pointer_shape(facts.type(target));
+    if (const auto pointer = decide_pointer_cast(
+            from,
+            to,
+            from
+                && to
+                && from->target == to->target
+                && from->access == PointerAccess::Write
+                && to->access == PointerAccess::Read,
+            known_cstring(facts.type(source).value),
+            to ? builtin_type(facts, std::get<TypeID>(to->target)) : std::nullopt,
+            from ? builtin_type(facts, std::get<TypeID>(from->target)) : std::nullopt
+        )) {
+        return *pointer;
     }
     return decide_builtin_cast(
         source == target,

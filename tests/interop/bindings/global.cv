@@ -28,6 +28,13 @@ test "C++ global names: explicit roots bypass Carven names" {
     check(local.local == 8);
 }
 
+test "C++ casts: same-type conversion constructs an independent object" {
+    let original = ::global_native::Value { 7 };
+    check(!::global_native::distinct_object(original, original));
+    check(::global_native::distinct_object(original as ::global_native::Value, original));
+    check(original.value == 7);
+}
+
 test "C++ global names: implementation fragments can provide declarations" {
     check(::global_fragment_value() == 23);
 }

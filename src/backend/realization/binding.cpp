@@ -21,10 +21,7 @@ import std;
 
 auto BodyRealizer::needs_cleanup(TypeID type) const noexcept -> bool {
     const auto contents = context.semantic().type_contents(type);
-    return contents.contains_operation_owner
-        || contents.contains_native_value
-        || contents.contains_storage_owner
-        || contents.contains_closure_owner;
+    return contents.contains_carven_owner() || contents.contains_native_value;
 }
 
 auto BodyRealizer::binding_expression(LocalBindingID id) noexcept -> TargetExpr {

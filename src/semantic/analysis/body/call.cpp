@@ -325,14 +325,10 @@ auto BodyElaborator::call_expression(
             const auto pointer = make_pointer_type(
                 draft(),
                 place->expression.type.construction(),
-                selected.access == AccessMode::Write ? PointerAccess::Write : PointerAccess::Read,
-                origin(ast.expression(argument_id).span)
+                selected.access == AccessMode::Write ? PointerAccess::Write : PointerAccess::Read
             );
-            if (!pointer) {
-                co_return std::unexpected(pointer.error());
-            }
             auto result = make_built(
-                *pointer,
+                pointer,
                 SemAddressOf {.source = UniqueIndirect(std::move(place->expression))},
                 span,
                 std::move(pending)

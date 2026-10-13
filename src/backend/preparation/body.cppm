@@ -6,8 +6,8 @@ import :semantic.semir.program;
 import :semantic.semir.structured;
 import std;
 
-// ReadBorrow observes an object; AddressValue reads a pointer slot. Neither
-// requires a C++ local declaration. Realization chooses storage at boundaries.
+// ReadBorrow observes an object. ReadPointer presents an address snapshot as
+// a const lvalue for Read argument queries. Realization chooses storage at boundaries.
 // ReadArgument applies the source parameter policy when saving an argument.
 // OperandValue reads a completed value without requiring mutable access.
 // Consume requires transferable owned storage when realization saves a value.
@@ -18,7 +18,7 @@ import std;
 enum class PreparedUse {
     ReadBorrow,
     ReadArgument,
-    AddressValue,
+    ReadPointer,
     OperandValue,
     ProjectionPlace,
     WritePlace,
@@ -64,6 +64,9 @@ public:
     auto requires_coroutine_context(const SemanticRegion& source) const noexcept -> bool;
     auto children(LifetimeRegionID lifetime) const noexcept -> std::span<const LocalBindingID>;
 
+    auto borrowed_array_elements(const SemRangeLoop& loop) const noexcept
+        -> std::span<const SemanticExpression>;
+
 private:
     auto operands(
         const SemanticExpression& source,
@@ -76,6 +79,7 @@ private:
     auto argument(const SemCallArgument& source) const noexcept -> PreparedOperand;
     const SemIRProgram& semantic;
     const SemIRBody& metadata;
+    std::flat_set<LocalBindingID> unstable;
     std::unordered_map<const SemanticExpression*, ExpressionSummary> summaries;
     std::unordered_map<const SemanticRegion*, bool> region_contexts;
     std::map<LifetimeRegionID, std::vector<LocalBindingID>> child_bindings;

@@ -522,7 +522,12 @@ public:
         ConstructionTypeRef target,
         Span span
     ) noexcept -> AnalysisResult<void> {
-        if (source != target) {
+        if (!constrain_invariant_type(
+                program,
+                source,
+                target,
+                program.append_source_origin(program.module_source(source_module_id), span)
+            )) {
             return std::unexpected(fail(
                 span,
                 DiagnosticCode::TypeMismatch,
@@ -544,10 +549,29 @@ public:
             return {};
         }
         const auto source = type(value);
-        if (!type_shapes_compatible(program, source, expected)) {
+        if (!constrain_invariant_type(
+                program,
+                source,
+                expected,
+                program.append_source_origin(program.module_source(source_module_id), span)
+            )) {
             return std::unexpected(
                 fail(span, DiagnosticCode::TypeMismatch, "expression has an incompatible type")
             );
+        }
+        if (source != expected) {
+            auto converted = construct_cast(
+                *this,
+                CastKind::Identity,
+                expected,
+                std::move(value),
+                std::nullopt,
+                span
+            );
+            if (!converted) {
+                return std::unexpected(converted.error());
+            }
+            value = std::move(*converted);
         }
         return {};
     }

@@ -32,42 +32,6 @@ const TestSuite suite([] static noexcept {
             expect(diagnostics.empty());
         };
 
-    "Address-of: indirect callable Read cannot establish a tracked borrow"_test =
-        [] static noexcept {
-            constexpr auto sources = std::array<std::string_view, 3> {
-                R"(
-                    fn identity(value: i32) -> i32 => value;
-                    fn rejected() {
-                        let callback: fn(i32) -> i32 = identity;
-                        let pointer = addressof(callback);
-                        if pointer != nullptr { let selected = *pointer; let _ = selected; }
-                    }
-                )",
-                R"(
-                    fn identity(value: i32) -> i32 => value;
-                    fn rejected() {
-                        let callback: fn(i32) -> i32 = identity;
-                        let pointer = addressof(callback);
-                        if pointer != nullptr { let result = (*pointer)(1); let _ = result; }
-                    }
-                )",
-                R"(
-                    fn identity(value: i32) -> i32 => value;
-                    fn rejected() {
-                        let callbacks: [fn(i32) -> i32; 2] = [identity, identity];
-                        let pointer = addressof(callbacks);
-                        if pointer != nullptr { let selected = (*pointer)[0]; let _ = selected; }
-                    }
-                )",
-            };
-            for (const auto source : sources) {
-                expect_diagnostic(
-                    analyze_test_errors(std::string(source)),
-                    DiagnosticCode::TypeCallableViewEscape
-                );
-            }
-        };
-
     "Address-of: callable indexing retains tracked array and slice backing"_test =
         [] static noexcept {
             const auto diagnostics = analyze_test_errors(R"(
@@ -111,19 +75,6 @@ const TestSuite suite([] static noexcept {
                     DiagnosticCode::TypeCallableViewEscape
                 );
             }
-        };
-
-    "Address-of: an inferred callable failure contract is not frozen by taking an address"_test =
-        [] static noexcept {
-            const auto diagnostics = analyze_test_errors(R"(
-                fn identity(value: i32) -> i32 => value;
-                fn inferred() {
-                    let callback = identity;
-                    let pointer = addressof(callback);
-                    let _ = pointer;
-                }
-            )");
-            expect_diagnostic(diagnostics, DiagnosticCode::TypeUnresolved);
         };
 });
 

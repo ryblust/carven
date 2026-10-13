@@ -120,109 +120,9 @@ auto BodyElaborator::try_require_invariant_type(
     ConstructionTypeRef target,
     Span span
 ) noexcept -> bool {
-    if (is_cpp_type(source) || is_cpp_type(target)) {
-        return true;
-    }
-    auto failure_equalities =
-        std::vector<std::pair<ConstructionFailureRef, ConstructionFailureRef>>();
-    const auto array_shape =
-        [&](ConstructionTypeRef type) noexcept -> std::optional<SequenceShape> {
-        const auto shape = sequence_shape(draft(), type);
-        return shape && shape->kind == SequenceShapeKind::Array ? shape : std::nullopt;
-    };
-    const auto callable_view_contract =
-        [&](ConstructionTypeRef type) noexcept -> std::optional<ConstructionCallableContract> {
-        const auto shape = draft().callable_shape(type);
-        return shape && !shape->owning_type ? draft().callable_contract(type) : std::nullopt;
-    };
-    const auto invariant = [&](this auto&& self,
-                               ConstructionTypeRef left,
-                               ConstructionTypeRef right) noexcept -> bool {
-        left = unwrap_type_alias(draft(), left);
-        right = unwrap_type_alias(draft(), right);
-        if (left == right) {
-            return true;
-        }
-        const auto left_operation = operation_shape(left);
-        const auto right_operation = operation_shape(right);
-        if (left_operation || right_operation) {
-            if (!left_operation
-                || !right_operation
-                || !self(left_operation->success, right_operation->success)) {
-                return false;
-            }
-            failure_equalities.emplace_back(left_operation->failures, right_operation->failures);
-            return true;
-        }
-        const auto left_slice = slice_element(draft(), left);
-        const auto right_slice = slice_element(draft(), right);
-        if (left_slice || right_slice) {
-            return left_slice && right_slice && self(*left_slice, *right_slice);
-        }
-        const auto left_tuple = tuple_elements(draft(), left);
-        const auto right_tuple = tuple_elements(draft(), right);
-        if (left_tuple || right_tuple) {
-            if (!left_tuple || !right_tuple || left_tuple->size() != right_tuple->size()) {
-                return false;
-            }
-            for (const auto [index, element] : std::views::enumerate(*left_tuple)) {
-                if (!self(element, (*right_tuple)[index])) {
-                    return false;
-                }
-            }
-            return true;
-        }
-        const auto left_array = array_shape(left);
-        const auto right_array = array_shape(right);
-        if (left_array.has_value() || right_array.has_value()) {
-            return left_array.has_value()
-                && right_array.has_value()
-                && left_array->extent == right_array->extent
-                && self(left_array->element, right_array->element);
-        }
-        const auto left_pointer = pointer_shape(draft(), left);
-        const auto right_pointer = pointer_shape(draft(), right);
-        if (left_pointer || right_pointer) {
-            return left_pointer
-                && right_pointer
-                && left_pointer->access == right_pointer->access
-                && self(left_pointer->target, right_pointer->target);
-        }
-        const auto left_view = callable_view_contract(left);
-        const auto right_view = callable_view_contract(right);
-        if (left_view.has_value() || right_view.has_value()) {
-            if (!left_view.has_value()
-                || !right_view.has_value()
-                || left_view->parameters.size() != right_view->parameters.size()
-                || !self(left_view->result, right_view->result)) {
-                return false;
-            }
-            for (auto index = 0uz; index < left_view->parameters.size(); ++index) {
-                if (left_view->parameters[index].stage != right_view->parameters[index].stage
-                    || left_view->parameters[index].access != right_view->parameters[index].access
-                    || !self(
-                        left_view->parameters[index].type,
-                        right_view->parameters[index].type
-                    )) {
-                    return false;
-                }
-            }
-            failure_equalities.emplace_back(left_view->failures, right_view->failures);
-            return true;
-        }
-        const auto* left_type = std::get_if<TypeID>(&left);
-        const auto* right_type = std::get_if<TypeID>(&right);
-        return left_type != nullptr
-            && right_type != nullptr
-            && draft().type_copy(*left_type) == draft().type_copy(*right_type);
-    };
-    if (!invariant(source, target)) {
-        return false;
-    }
-    for (const auto& [left, right] : failure_equalities) {
-        draft().require_equal_failures(left, right, origin(span));
-    }
-    return true;
+    return is_cpp_type(source)
+        || is_cpp_type(target)
+        || constrain_invariant_type(draft(), source, target, origin(span));
 }
 
 auto BodyElaborator::type_mismatch(
@@ -261,7 +161,7 @@ auto BodyElaborator::require_adaptation(
     }
     const auto shape = draft().callable_shape(target);
     if (!shape || shape->owning_type) {
-        return {};
+        return require_invariant_type(source, target, span);
     }
     const auto view = draft().callable_contract(target);
     if (!view) {

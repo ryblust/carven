@@ -7,6 +7,11 @@ import std;
 
 // Text borrows completed input storage through the synchronous formatting operation.
 // Monostate means unavailable or unsupported, independently of any execution value.
+// Supplied only by semantic execution; native preparation cannot fold addresses.
+struct BuiltinPointerDisplay final {
+    std::string_view representation;
+};
+
 using BuiltinFormatValue = std::variant<
     std::monostate,
     IntegerConstant,
@@ -14,7 +19,8 @@ using BuiltinFormatValue = std::variant<
     F64Constant,
     BooleanConstant,
     CharacterConstant,
-    std::string_view>;
+    std::string_view,
+    BuiltinPointerDisplay>;
 
 enum class BuiltinFormatFailureKind { Unsupported, Limit };
 

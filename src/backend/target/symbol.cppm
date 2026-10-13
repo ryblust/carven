@@ -119,6 +119,7 @@ enum class TargetSymbol {
     StdTypeIdentity,
     StdReferenceWrapper,
     StdAddressof,
+    StdToArray,
     StdBitCast,
     StdIsFinite,
     StdGetIf,

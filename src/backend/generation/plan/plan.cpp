@@ -85,6 +85,7 @@ TargetNamePlan::TargetNamePlan(
     ProgramIdentity semantic_identity,
     std::vector<TargetModuleNames> modules,
     TargetName generated_namespace,
+    TargetName domain_namespace,
     std::vector<TargetEntityName> structures,
     std::vector<TargetEntityName> enumerations,
     std::vector<std::optional<TargetEntityName>> callables,
@@ -98,6 +99,7 @@ TargetNamePlan::TargetNamePlan(
     : source_identity(semantic_identity),
       target_modules(std::move(modules)),
       target_generated_namespace(std::move(generated_namespace)),
+      target_domain_namespace(std::move(domain_namespace)),
       target_structure_names(std::move(structures)),
       target_enumeration_names(std::move(enumerations)),
       target_callable_names(std::move(callables)),
@@ -641,7 +643,7 @@ auto TargetNamePlan::constant_identifier(ConstantID constant) const noexcept
         "target constant name used an unknown constant"
     );
     if (!name) {
-        invariant_violation("target constant name requires frozen slice backing");
+        invariant_violation("target constant name requires persistent backing");
     }
     return *name;
 }
@@ -654,4 +656,8 @@ auto TargetNamePlan::module_support_name(
     auto components = std::vector<TargetIdentifier>(prefix.begin(), prefix.end());
     components.push_back(identifier);
     return TargetName::globally_qualified(std::move(components));
+}
+
+auto TargetNamePlan::domain_namespace() const noexcept -> const TargetName& {
+    return target_domain_namespace;
 }

@@ -9,8 +9,9 @@ foundations are listed separately.
 ## Contents
 
 - [TEMPLATE.md](TEMPLATE.md): proposal structure and field guidance.
-- [design-directions.md](design-directions.md): candidates without standalone proposals, including
-  multi-field consuming decomposition, richer failure payloads, and infrastructure.
+- [example-polish-implementation-plan.md](example-polish-implementation-plan.md):
+  cross-domain delivery plan for the three examples, standard-library additions,
+  native bridging, and coordination with the Carven Xmake rules repository.
 - Other Markdown files: one design domain's unfinished work, keeping related
   syntax, semantics, compiler representation, and lowering together.
 
@@ -46,7 +47,7 @@ developed representation and validation criteria.
 | Dynamic values | [Closures and callable views](../docs/language/functions.md), fixed-signature indirect calls, operation values | Nominal erased holding, conformance, existential packaging, and dispatch |
 | Dynamic ownership | [String](../docs/language/text.md), [Vector](../docs/language/aggregates.md#owning-vectors), and async owners | General Unique/Shared owners, allocation policy, and factory construction |
 | Semantic execution | [Structured executor](../docs/compiler/analysis/evaluation.md), specialization, compound constants, and byte traversal | Direct structured initializer/extent roots, scalar traversal, address/literal policy, and reference graphs |
-| Compiler optimization | [Prepared formatting and output](../docs/compiler/backend/builtins.md), known-value paths, [workspace caches](../tools/workspace/README.md), shared native library producers | Further measured reuse, parallelism, storage/delivery, constant output, and formatting experiments |
+| Compiler optimization | [Prepared formatting and output](../docs/compiler/backend/builtins.md), [stable-owner Read traversal](../docs/compiler/backend/preparation.md#body-summaries-and-storage-observations), known-value paths, [workspace caches](../tools/workspace/README.md), shared native library producers | Further measured reuse, parallelism, storage/delivery, constant output, and formatting experiments |
 | Frontend analysis | Top-level recovery, owned complete analysis, retained snapshots, limited observations after semantic errors, strict publication | Lossless damaged syntax, independent partial types, semantic queries, request control, and worker isolation |
 | Data representation | Declaration-order records, recursive tuples, variant-based enums/failures | Target layout facts, native forms, field ordering, compact carriers, and collection representations |
 | Uninitialized storage | [Native direct/delayed construction](../docs/compiler/backend/realization.md) | Source destinations, completion evidence, partial initialization, and library cleanup ownership |
@@ -99,8 +100,8 @@ scope is selected separately, with a defined contract and validation criteria.
 - Remove completed sections once implementation and permanent documentation are
   complete; delete proposals with no unfinished scope. Keep only the current
   constraints needed to understand remaining decisions.
-  Consolidate candidates without a developed design into design directions, retaining
-  relevant constraints, activation conditions, and validation requirements.
+  Keep deferred constraints with the design that consumes them; omit speculative
+  feature inventories without a concrete problem or decision.
   Update inbound links when moving or removing material.
   Keep the remaining document self-contained.
 

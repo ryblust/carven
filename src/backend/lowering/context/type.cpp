@@ -124,22 +124,10 @@ auto ModuleLowering::lower_parameter(
     const auto base = lower_type(type, scope);
     const auto* builtin = std::get_if<BuiltinTypeValue>(&semantic().types().type(type).value);
     switch (access) {
-        case AccessMode::Read:
-            if (const auto contents = semantic().type_contents(type); requires_stable_storage
-                || contents.contains_operation_owner
-                || contents.contains_storage_owner
-                || contents.contains_closure_owner) {
+        case AccessMode::Read: {
+            const auto contents = semantic().type_contents(type);
+            if (requires_stable_storage || contents.contains_carven_owner()) {
                 return reference_type(base, true);
-            }
-            if (semantic().type_contents(type).contains_native_value) {
-                return target().intern_type({
-                    .value =
-                        TargetIntrinsicType {
-                            .symbol = TargetSymbol::RuntimeReadArg,
-                            .type_argument_ids = {base},
-                        },
-                    .const_qualified = false,
-                });
             }
             if (builtin != nullptr) {
                 return intrinsic_type(builtin_symbol(builtin->kind), true);
@@ -147,18 +135,20 @@ auto ModuleLowering::lower_parameter(
             return target().intern_type({
                 .value =
                     TargetIntrinsicType {
-                        .symbol = TargetSymbol::StdAddConst,
+                        .symbol = contents.contains_native_value ? TargetSymbol::RuntimeReadArg
+                                                                 : TargetSymbol::StdAddConst,
                         .type_argument_ids = {base},
                     },
                 .const_qualified = false,
             });
+        }
         case AccessMode::Write: return reference_type(base);
         case AccessMode::Take:  return base;
     }
     std::unreachable();
 }
 
-auto ModuleLowering::function_type(
+auto ModuleLowering::function_ref_type(
     CallableSignatureID id,
     bool stops_test,
     TypeNameScope scope,
@@ -177,7 +167,7 @@ auto ModuleLowering::function_type(
     }
     return {
         .value =
-            TargetFunctionType {
+            TargetFunctionRefType {
                 .parameters = std::move(parameters),
                 .result = lower_signature_result(id, stops_test, scope),
             },
@@ -491,7 +481,7 @@ auto ModuleLowering::lower_type(TypeID id, TypeNameScope scope) noexcept -> Targ
             },
             [&](const FunctionTypeValue& value) noexcept -> TargetType {
                 const auto& callable = semantic().declarations().callable(value.callable);
-                return function_type(
+                return function_ref_type(
                     callable.signature,
                     semantic().may_stop_test(value.callable),
                     scope,
@@ -510,7 +500,7 @@ auto ModuleLowering::lower_type(TypeID id, TypeNameScope scope) noexcept -> Targ
                 };
             },
             [&](const CallableViewTypeValue& value) noexcept -> TargetType {
-                return function_type(value.signature, true, scope);
+                return function_ref_type(value.signature, true, scope);
             },
         }
     );

@@ -49,12 +49,23 @@ const async fn cancellation() -> bool {
     return cancelled && !continued;
 }
 
+const async fn read_temporary_owners() -> bool {
+    let original = "object" as String;
+    var text: String = {};
+    for value in [original, original] {
+        await yield_once();
+        text.append(value);
+    }
+    return text.as_str() == "objectobject";
+}
+
 const replaced = await replacement();
 const cancelled = await cancellation();
 
 const {
     await equivalent();
     assert(replaced && cancelled);
+    assert(await read_temporary_owners());
 }
 
 async fn aggregate() -> bool {
@@ -67,5 +78,6 @@ async fn aggregate() -> bool {
 
 export async fn run_owners() {
     await equivalent();
+    assert(await read_temporary_owners());
     println(await replacement() && await cancellation() && await aggregate());
 }

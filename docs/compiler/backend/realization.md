@@ -84,20 +84,20 @@ constructs directly in final storage.
 
 Read operands whose types are value snapshots need no separate temporary backing.
 The published type-contents query excludes storage owners, closures, and native
-values from this case. Sequencing still saves earlier values before later effects;
-place projections and borrowed owners retain their storage requirements.
+values from this case. Sequencing completes value snapshots and dynamic place
+selection before later effects; borrowed owners retain their storage requirements.
 `ReadArgument` applies the source parameter policy at an argument evaluation
 barrier; `ReadBorrow` preserves delegated native observation. Required stable
 storage uses `ConstPlace`. For native query results, `ReadArgumentStorage<Query>`
-applies ReadArg to reference results and owns value results, keeping fresh backing
-alive without delaying a trivial snapshot until the final call. Implicit native
-conversions in Read position retain complete source backing and use
-`ReadConversionStorage<Parameter, Source>`: standard storage-compatible reference
-conversions preserve identity, while value parameters and conversions requiring a
-new object own their converted value. Explicit casts and owning consumers use
-ordinary value construction. The original native query supplies delivery category
+applies ReadArg to reference results at the argument evaluation barrier and owns
+value results. Implicit native conversions in Read position retain complete source
+backing through `ConstPlace`. `ReadConversionStorage<Parameter, Source>` selects
+storage: standard storage-compatible reference conversions preserve identity;
+value parameters and conversions requiring a new object own their converted
+value. Explicit casts and owning consumers use ordinary value construction.
+The original native query supplies delivery category
 for a fresh source; named storage always supplies a const lvalue. Compatible
-storage uses const access even for a fresh source, while a genuinely new target
+storage uses const access even for a fresh source, while a new target
 retains an original rvalue conversion capability. Hidden native backing preserves
 its query qualification; Read qualification applies at consumption.
 Only a native producer's own query determines its result category. A conversion

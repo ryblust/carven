@@ -185,6 +185,8 @@ struct FieldProjection final {
 enum class CastKind {
     Identity,
     PointerRead,
+    PointerErase,
+    PointerRestore,
     IntegerToInteger,
     IntegerToBool,
     BoolToInteger,

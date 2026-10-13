@@ -117,6 +117,44 @@ const fn read_aliases_and_snapshots() -> i32 {
     return array_result * 10 + scalar_result;
 }
 
+const fn read_tuple<T>(value: (T, i32), _: i32) -> i32 => value.1;
+
+const fn change_tuple<T>(&value: (T, i32)) -> i32 {
+    value.1 = 9;
+    return 0;
+}
+
+struct ReadProduct<T> {
+    value: T,
+    state: i32
+}
+
+const fn read_product<T>(value: ReadProduct<T>, _: i32) -> i32 => value.state;
+
+const fn change_product<T>(&value: ReadProduct<T>) -> i32 {
+    value.state = 9;
+    return 0;
+}
+
+const fn wrap_read<T>(&&value: T) -> ReadProduct<T> => {
+    value: &&value,
+    state: 7
+};
+
+const fn read_tuple_observations() -> i32 {
+    let callable = assignment_keeps_address;
+    let pointer = addressof(callable);
+    var snapshot = (pointer, 7);
+    var borrowed = ([pointer], 7);
+    let first = read_tuple(snapshot, change_tuple(&snapshot));
+    let second = read_tuple(borrowed, change_tuple(&borrowed));
+    var snapshot_product = wrap_read(&&snapshot);
+    var borrowed_product = wrap_read(&&borrowed);
+    let third = read_product(snapshot_product, change_product(&snapshot_product));
+    let fourth = read_product(borrowed_product, change_product(&borrowed_product));
+    return first * 1000 + second * 100 + third * 10 + fourth;
+}
+
 const fn retain_rows(rows: [[i32; 2]]) -> [[i32; 2]] => rows;
 
 const fn read_returned_slice_element() -> i32 {
@@ -139,22 +177,93 @@ const fn observe_write_order() -> i32 {
     return result * 10 + value;
 }
 
-const test "Pointers: local graph and aliases execute in the static stage" {
-    check(run_local_cycle() == 8);
-    check(relink_local_nodes() == 31);
-    check(assignment_keeps_address() == 5);
-    check(read_temporary_array_address() == 1);
-    check(read_aliases_and_snapshots() == 71);
-    check(read_returned_slice_element() == 7);
-    check(observe_write_order() == 99);
+struct AccessPair {
+    first: i32,
+    second: i32,
 }
 
-test "Pointers: local graph and aliases execute at runtime" {
+const fn restored_access() -> bool {
+    var pair = AccessPair {
+        first: 3,
+        second: 7
+    };
+    let erased = addressof(&pair) as ptr<&void>;
+    let restored = erased as ptr<&AccessPair>;
+    let first = erased as ptr<&i32>;
+    if restored == nullptr || first == nullptr { return false; }
+    *first = 11;
+    restored->second = 13;
+    let whole = (addressof(pair.first) as ptr<void>) as ptr<AccessPair>;
+    if whole == nullptr { return false; }
+    return whole->first
+        == 11
+        && whole->second == 13
+        && (restored as ptr<void>) == (first as ptr<void>);
+}
+
+const fn restored_array_element() -> bool {
+    var pairs = [
+        AccessPair {
+            first: 2,
+            second: 5
+        }
+    ];
+    let view = pairs.slice();
+    let erased = addressof(view[0]) as ptr<void>;
+    let first = erased as ptr<i32>;
+    let restored = (addressof(view[0].first) as ptr<void>) as ptr<AccessPair>;
+    if first == nullptr || restored == nullptr { return false; }
+    return *first == 2 && restored->second == 5;
+}
+
+const fn restore_pointer_object<T>(address: ptr<void>, witness: ptr<T>) -> ptr<T> {
+    let _ = witness;
+    return address as ptr<T>;
+}
+
+const fn restored_cstring_pointer_object() -> bool {
+    let text = c"123";
+    let address = addressof(text) as ptr<void>;
+    let restored = restore_pointer_object(address, addressof(text));
+    if restored == nullptr { return false; }
+    return (*restored as ptr<void>) == (text as ptr<void>);
+}
+
+const fn restored_address() -> bool {
+    let value = 7;
+    let erased = addressof(value) as ptr<void>;
+    let converted = erased as ptr<bool>;
+    return converted != nullptr && (converted as ptr<void>) == erased;
+}
+
+const test "Pointers: object access and address identity execute in the static stage" {
     check(run_local_cycle() == 8);
     check(relink_local_nodes() == 31);
     check(assignment_keeps_address() == 5);
     check(read_temporary_array_address() == 1);
     check(read_aliases_and_snapshots() == 71);
+    check(read_tuple_observations() == 7979);
     check(read_returned_slice_element() == 7);
     check(observe_write_order() == 99);
+    check(restored_access());
+    check(restored_address());
+    check(restored_array_element());
+    check(restored_cstring_pointer_object());
+    check(((nullptr as ptr<void>) as ptr<i32>) == nullptr);
+}
+
+test "Pointers: object access and address identity execute at runtime" {
+    check(run_local_cycle() == 8);
+    check(relink_local_nodes() == 31);
+    check(assignment_keeps_address() == 5);
+    check(read_temporary_array_address() == 1);
+    check(read_aliases_and_snapshots() == 71);
+    check(read_tuple_observations() == 7979);
+    check(read_returned_slice_element() == 7);
+    check(observe_write_order() == 99);
+    check(restored_access());
+    check(restored_address());
+    check(restored_array_element());
+    check(restored_cstring_pointer_object());
+    check(((nullptr as ptr<void>) as ptr<i32>) == nullptr);
 }

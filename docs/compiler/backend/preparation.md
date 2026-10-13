@@ -30,6 +30,17 @@ containing binding. The proof is body-wide: exposure excludes an owner or Take
 binding throughout the body. Write iteration bindings alias mutable elements and
 retain storage observations; Read iteration uses the resolved-type snapshot policy.
 
+Read traversal of a temporary array can borrow stable local owners containing
+Carven storage. Preparation uses the same body-wide writable-exposure facts and
+excludes native values, borrowed views, callable contents, and operation owners.
+Loop bodies requiring a coroutine context or containing closures or operation
+owners retain element storage. Address formation, source calls, native operations,
+and delegated formatting also retain it. Known-text and builtin writer format
+plans consume values; their operand effects remain checked. Identity observation
+is checked separately from execution and snapshot requirements. Eligible traversal
+uses a C++ array of const element pointers and binds each element through a const
+reference.
+
 Captures can change when a callback replaces the enclosing closure. They, Write
 parameters, native values, and types with borrowed or owned backing retain their
 storage-observation obligations. A stable slice descriptor does not make its

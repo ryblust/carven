@@ -195,7 +195,7 @@ auto AnalysisModelView::compute_shape(ConstructionTypeRef type) const noexcept
                 } else if constexpr (std::same_as<Shape, SliceTypeValue>) {
                     return ConstructionSliceTypeValue {shape.element};
                 } else if constexpr (std::same_as<Shape, VectorTypeValue>) {
-                    return AnalysisVectorType {shape.element};
+                    return GenericVectorType {shape.element};
                 } else if constexpr (std::same_as<Shape, PointerTypeValue>) {
                     return AnalysisPointerType {shape.target, shape.access};
                 } else if constexpr (std::same_as<Shape, OperationTypeValue>) {
@@ -225,8 +225,6 @@ auto AnalysisModelView::compute_shape(ConstructionTypeRef type) const noexcept
                 return ConstructionTupleTypeValue {std::move(elements)};
             } else if constexpr (std::same_as<Shape, GenericSliceType>) {
                 return ConstructionSliceTypeValue {shape.element};
-            } else if constexpr (std::same_as<Shape, GenericVectorType>) {
-                return AnalysisVectorType {shape.element};
             } else if constexpr (std::same_as<Shape, GenericPointerType>) {
                 return AnalysisPointerType {shape.target, shape.access};
             } else if constexpr (std::same_as<Shape, GenericOperationType>) {
@@ -258,72 +256,24 @@ auto AnalysisModelView::contents(ConstructionTypeRef type) const noexcept -> Typ
     if (const auto found = content_facts.find(type); found != content_facts.end()) {
         return found->second;
     }
-    auto indices = std::map<ConstructionTypeRef, std::size_t>();
-    auto reachable = std::vector<ConstructionTypeRef>();
-    auto masks = std::vector<unsigned>();
-    auto dependents = std::vector<std::vector<TypeContentDependent>>();
-    const auto intern = [&](ConstructionTypeRef value) noexcept {
-        const auto [found, inserted] = indices.try_emplace(value, reachable.size());
-        if (inserted) {
-            reachable.push_back(value);
-            masks.push_back(0u);
-            dependents.emplace_back();
-        }
-        return found->second;
-    };
-    const auto root = intern(type);
-    for (auto index = 0uz; index < reachable.size(); ++index) {
-        const auto current = reachable[index];
-        if (const auto* concrete = std::get_if<TypeID>(&current)) {
-            masks[index] = program.type_contents(*concrete).mask();
-            continue;
-        }
-        const auto generic = std::get<GenericTypeID>(current);
-        if (const auto* concrete = std::get_if<TypeID>(&generics.generic_type(generic))) {
-            masks[index] = program.type_contents(*concrete).mask();
-            continue;
-        }
-        const auto depend = [&](ConstructionTypeRef child, unsigned mask) noexcept {
-            const auto position = intern(child);
-            dependents[position].push_back({index, mask});
-        };
-        shape(current).visit([&](const auto& value) noexcept {
-            using Shape = std::remove_cvref_t<decltype(value)>;
-            if constexpr (std::same_as<Shape, GenericTypeParameter>) {
-                masks[index] = parametric_value_content;
-            } else if constexpr (std::same_as<Shape, ConstructionArrayTypeValue>) {
-                masks[index] = storage_owner_content;
-                depend(
-                    value.element,
-                    value.extent == 0u ? all_type_contents
-                            & ~(string_storage_content | storage_view_content
-                                | parametric_value_content)
-                                       : all_type_contents
-                );
-            } else if constexpr (std::same_as<Shape, ConstructionTupleTypeValue>) {
-                for (const auto element : value.elements) {
-                    depend(element, all_type_contents);
-                }
-            } else if constexpr (std::same_as<Shape, GenericNominalApplication>) {
-                for (const auto field : fields(generic)) {
-                    depend(field, all_type_contents);
-                }
-            } else if constexpr (std::same_as<Shape, ConstructionSliceTypeValue>) {
-                masks[index] = storage_view_content;
-                depend(value.element, callable_view_content);
-            } else if constexpr (std::same_as<Shape, AnalysisVectorType>) {
-                masks[index] = storage_owner_content;
-                depend(value.element, all_type_contents);
-            } else if constexpr (std::same_as<Shape, ConstructionOperationTypeValue>) {
-                masks[index] = operation_owner_content;
+    const auto facts = collect_type_contents(
+        std::array {type},
+        [&](ConstructionTypeRef current, auto depend) noexcept -> unsigned {
+            if (const auto concrete = concrete_type(current)) {
+                return program.type_contents(*concrete).mask();
             }
-        });
+            return shape(current).visit([&](const auto& value) noexcept {
+                const auto members = [&](const auto&) noexcept {
+                    return fields(std::get<GenericTypeID>(current));
+                };
+                return type_content_mask(value, members, depend);
+            });
+        }
+    );
+    for (const auto& [reference, contents] : facts) {
+        content_facts.emplace(reference, contents);
     }
-    const auto facts = solve_type_content_graph(std::move(masks), dependents);
-    for (const auto [index, value] : std::views::enumerate(reachable)) {
-        content_facts.emplace(value, facts[index]);
-    }
-    return facts[root];
+    return facts.front().second;
 }
 
 auto AnalysisModelView::fields(GenericTypeID type) const noexcept

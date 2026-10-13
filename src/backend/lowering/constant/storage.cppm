@@ -10,11 +10,10 @@ import std;
 
 enum class ConstantStorageRole { Elements, Object };
 
-// One module owns content-named backing storage within an artifact. The
-// initializer and every reference use that module context.
+// Content-named backing storage belongs to one target scope within an artifact.
 class ConstantStorage final {
 public:
-    ConstantStorage(const TargetNamePlan& names, ModuleID module_id) noexcept;
+    ConstantStorage(const TargetNamePlan& names, TargetName scope) noexcept;
     ConstantStorage(const ConstantStorage&) = delete;
     ConstantStorage(ConstantStorage&&) = default;
     auto operator=(const ConstantStorage&) -> ConstantStorage& = delete;
@@ -36,7 +35,7 @@ public:
 
 private:
     const TargetNamePlan& target_names;
-    ModuleID module_id;
+    TargetName scope;
     std::set<std::pair<ConstantID, ConstantStorageRole>> materialized;
     std::vector<TargetItem> items;
 };

@@ -523,7 +523,7 @@ auto OwnershipBodyAnalyzer::range(const SemRangeLoop& value, OwnershipState stat
                                       result.normal->state
                                   );
     if (!range_value) {
-        const auto sequence_value = std::holds_alternative<AnalysisVectorType>(
+        const auto sequence_value = std::holds_alternative<GenericVectorType>(
             analysis.model.shape(iterable.type.construction())
         );
         for (const auto& selected : sequence_value ? elements : result.normal->storage) {
@@ -549,6 +549,12 @@ auto OwnershipBodyAnalyzer::range(const SemRangeLoop& value, OwnershipState stat
     feedback_origin = value.body->origin;
     auto initial_elements = OwnershipRelationships {};
     if (slice_value) {
+        if (elements.empty()) {
+            const auto& slice = std::get<ConstructionSliceTypeValue>(
+                analysis.model.shape(iterable.type.construction())
+            );
+            initial_elements = opaque_callable_targets(slice.element, iterable.origin);
+        }
         for (const auto& selected : elements) {
             merge_relationships(
                 initial_elements,

@@ -84,7 +84,8 @@ auto convert_intrinsic_argument(
                 extent,
                 std::move(operands),
                 std::move(state),
-                span
+                span,
+                target
             );
             if (!converted) {
                 return std::unexpected(converted.error());
@@ -94,6 +95,12 @@ auto convert_intrinsic_argument(
         }
     }
     if (pointer_narrows(site.draft(), source, target)) {
+        const auto from = pointer_shape(site.draft(), source);
+        const auto to = pointer_shape(site.draft(), target);
+        if (auto checked = site.require_invariant_storage(from->target, to->target, span);
+            !checked) {
+            return std::unexpected(checked.error());
+        }
         auto known = std::optional<ConstantID>();
         if constexpr (Site::mode == ExpressionMode::Body) {
             const auto normalized_target = unwrap_type_alias(site.draft(), target);

@@ -382,6 +382,11 @@ access, whole-owner transfer, and a finite expansion rule. Dynamic heterogeneous
 indexing additionally needs an explicit sum result. Builtin `when_all` already
 forms ordered products from concrete operands and requires no such source feature.
 
+Consuming decomposition must evaluate the complete source once and make its owner
+unavailable. Define the disposition of every field, including unused fields and
+borrowed backing, on success, failure, and rejected patterns. No usable partially
+moved owner may remain.
+
 ## Implementation and validation
 
 Deliver the chosen capability identities, declarations, definition-site operations,
@@ -403,7 +408,6 @@ representation in the contract.
   [functions](../docs/language/functions.md#parameterized-functions), and
   [failure sets](../docs/language/failures.md#failure-set-parameters): implemented rules.
 - [Dynamic values](dynamic-values.md): runtime holding and dispatch.
-- [Design directions](design-directions.md): reflection and binary distribution.
 - [Compiler optimization](compiler-optimization.md#workspace-reuse): further workspace and persistent reuse experiments.
 - [Generic declaration construction](../src/semantic/analysis/decl/generic.cpp): implemented parameter kinds and rejection of class operations.
 - [Generic analysis tests](../tests/internal/semantic/analysis/generics.cpp): definition checking, concrete applications, and finite formation.

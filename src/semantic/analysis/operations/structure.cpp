@@ -152,16 +152,20 @@ auto record_shape(ProgramDraft& draft, ConstructionTypeRef type) noexcept
         return std::nullopt;
     }
     auto fields = std::vector<ConstructionStructField>();
-    for (const auto& field : record->fields) {
-        fields.push_back(
-            {field.name,
-             draft.substitute_generic_type(
-                 field.type,
-                 application->definition,
-                 application->arguments
-             ),
-             field.origin}
-        );
+    auto types = draft.generic_member_types(*generic);
+    if (!types) {
+        types = std::vector<ConstructionTypeRef>();
+        for (const auto& field : record->fields) {
+            types->push_back(draft.substitute_generic_type(
+                field.type,
+                application->definition,
+                application->arguments
+            ));
+        }
+        draft.cache_generic_record_fields(*generic, *types);
+    }
+    for (const auto& [field, type] : std::views::zip(record->fields, *types)) {
+        fields.push_back({field.name, type, field.origin});
     }
     return RecordShape {*generic, record->kind, record->contract.name, std::move(fields)};
 }

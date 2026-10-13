@@ -31,10 +31,6 @@ struct AnalysisPointerType final {
     PointerAccess access;
 };
 
-struct AnalysisVectorType final {
-    ConstructionTypeRef element;
-};
-
 using AnalysisTypeShape = std::variant<
     BuiltinTypeValue,
     StructTypeValue,
@@ -42,7 +38,7 @@ using AnalysisTypeShape = std::variant<
     ConstructionArrayTypeValue,
     ConstructionTupleTypeValue,
     ConstructionSliceTypeValue,
-    AnalysisVectorType,
+    GenericVectorType,
     RangeTypeValue,
     AnalysisPointerType,
     FunctionTypeValue,

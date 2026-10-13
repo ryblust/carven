@@ -62,6 +62,14 @@ numeric operand context selection. It may require constructing the right operand
 first when the left is a direct unsuffixed literal. Typed operations retain
 source operand order for execution.
 
+Shape matching and invariant storage checks share one structural type traversal.
+Storage identity requires matching nominal types, pointer access, array extents,
+and callable parameters, results, and failures. `constrain_invariant_type`
+registers failure equalities during inference. Callable array elements may adapt
+to views; other elements require invariant storage. Permission narrowing changes
+only the outer pointer access. Conversions retain their checked destination type,
+including contextual array-to-slice construction.
+
 ### Default initialization
 
 `semir.initialization` defines default availability and native-construction

@@ -334,7 +334,7 @@ auto BodyRealizer::ExpressionBuilder::complete_awaited(
                     TargetSymbol::Auto,
                     use == PreparedUse::ReadArgument
                         || use == PreparedUse::ConstPlace
-                        || use == PreparedUse::AddressValue
+                        || use == PreparedUse::ReadPointer
                         || use == PreparedUse::OperandValue
                         || (use == PreparedUse::Consume && scalar(operation_type->success))
                 )),

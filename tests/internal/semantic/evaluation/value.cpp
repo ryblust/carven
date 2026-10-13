@@ -68,9 +68,9 @@ const TestSuite suite([] static noexcept {
                     .supported = true
                 },
                 Scenario {
-                    .name = "unresolved construction is not canonical admission",
+                    .name = "construction array admits supported elements",
                     .type = construction,
-                    .supported = false
+                    .supported = true
                 },
             };
             each(scenarios, &Scenario::name, [&](const Scenario& scenario) noexcept {

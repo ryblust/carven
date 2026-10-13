@@ -33,7 +33,9 @@ auto scalar(const SemIRProgram& semantic, TypeID type) noexcept -> bool {
             semantic.declarations().enumeration(enumeration->enumeration).representation
         );
     }
-    return false;
+    const auto* native = std::get_if<CppTypeValue>(&value);
+    return std::holds_alternative<PointerTypeValue>(value)
+        || (native && std::holds_alternative<CppConstCharPointerType>(native->form));
 }
 
 } // namespace
@@ -271,7 +273,7 @@ auto evaluation_rule(const SemIRProgram& semantic, const SemanticExpression& exp
                 );
             },
             [&](const SemDereference&) noexcept { return required; },
-            [&](const SemAddressOf&) noexcept { return required; },
+            [&](const SemAddressOf& value) noexcept { return operands(*value.source); },
             [&](const SemField& value) noexcept { return operands(*value.source); },
             [&](const SemTupleElement& value) noexcept { return operands(*value.source); },
             [&](const SemIndex& value) noexcept {

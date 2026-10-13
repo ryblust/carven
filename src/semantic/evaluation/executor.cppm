@@ -252,7 +252,7 @@ private:
     auto bounded_value(ExecutionValue value, ProgramOriginID origin) noexcept
         -> ExecutionResult<ExecutionValue>;
 
-    auto default_value(TypeID type, ProgramOriginID origin) noexcept
+    auto default_value(ConstructionTypeRef type, ProgramOriginID origin) noexcept
         -> ExecutionTask<ExecutionValue>;
 
     auto fail(
@@ -296,6 +296,22 @@ private:
         CopyMode mode = CopyMode::Value
     ) noexcept -> ExecutionResult<ExecutionValue>;
 
+    auto deliver_value(
+        ExecutionValue& value,
+        ConstructionTypeRef target,
+        ProgramOriginID origin,
+        std::size_t depth = 0uz
+    ) noexcept -> ExecutionResult<void>;
+
+    auto check_callable_adaptation(
+        ConstructionTypeRef source,
+        ConstructionTypeRef target,
+        ProgramOriginID origin
+    ) noexcept -> ExecutionResult<void>;
+
+    auto pointer_display(const ExecutionValue& value, ProgramOriginID origin) noexcept
+        -> ExecutionResult<std::optional<std::string>>;
+
     auto retained_storage(ConstantID id, ProgramOriginID origin) noexcept
         -> ExecutionResult<ExecutionPlace>;
 
@@ -320,7 +336,7 @@ private:
         std::size_t depth = 0uz
     ) noexcept -> ExecutionResult<ExecutionValue>;
 
-    auto check_aggregate_size(TypeID type, ProgramOriginID origin) noexcept
+    auto check_aggregate_size(ConstructionTypeRef type, ProgramOriginID origin) noexcept
         -> ExecutionResult<void>;
 
     auto type(ConstructionTypeRef type, ProgramOriginID origin) noexcept -> ExecutionResult<TypeID>;
@@ -379,7 +395,10 @@ private:
     ) noexcept -> ExecutionResult<ExecutionValue>;
 
     template<typename Result>
-    static auto normal_result(ExecutionResult<ExecutionValue>&& result) noexcept
+    auto normal_result(
+        ExecutionResult<ExecutionValue>&& result,
+        const SemanticExpression& source
+    ) noexcept
         -> std::conditional_t<
             std::same_as<Result, ExecutionValue>,
             ExecutionResult<ExecutionValue>&&,
@@ -388,7 +407,7 @@ private:
     template<typename Result>
     auto control_result(
         ExecutionResult<ExecutionCompletion>&& result,
-        ProgramOriginID origin
+        const SemanticExpression& source
     ) noexcept
         -> std::conditional_t<
             std::same_as<Result, ExecutionCompletion>,
@@ -519,7 +538,8 @@ private:
     ExecutionTypeShapes shapes;
     ExecutionMemory memory;
     std::map<ConstantID, ExecutionPlace> retained_backings;
-    std::map<TypeID, bool> storage_reads;
+    std::map<ProgramSpellingID, ExecutionPlace> retained_cstring_backings;
+    std::map<ConstructionTypeRef, bool> storage_reads;
     std::map<ProgramSpellingID, ExecutionText> retained_text;
     // The arena outlives every slot and frame; source memory outlives arena frames.
     std::list<ExecutionLogicalTask> tasks;

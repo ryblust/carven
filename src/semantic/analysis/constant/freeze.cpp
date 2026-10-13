@@ -44,7 +44,12 @@ auto freeze_value(
     const auto* aggregate = std::get_if<ExecutionAggregateValue>(&value);
     const auto* enumeration = std::get_if<ExecutionEnumValue>(&value);
     if (aggregate || enumeration) {
-        const auto type = aggregate ? aggregate->type : enumeration->type;
+        const auto reference = aggregate ? aggregate->type : ConstructionTypeRef(enumeration->type);
+        const auto* concrete = std::get_if<TypeID>(&reference);
+        if (!concrete) {
+            return std::nullopt;
+        }
+        const auto type = *concrete;
         const auto enum_case = enumeration ? std::optional(enumeration->enum_case) : std::nullopt;
         const auto children = execution_elements(value);
         const auto canonical = draft.type_copy(type);

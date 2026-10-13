@@ -1,7 +1,57 @@
 import .construction using initialization_argument;
 import .control using Failure;
 
-import "lifetimes/lifetimes.hpp" using lifetime_probe::{ mark, reset, matches, FixedOwner, event };
+import "lifetimes/lifetimes.hpp" using lifetime_probe::{
+    mark,
+    reset,
+    matches,
+    FixedOwner,
+    CopyOwner,
+    event,
+};
+
+private struct NativeSnapshot {
+    text: String,
+    native: CopyOwner
+}
+
+test "Read traversal: native address observations retain the independent element object" {
+    let original = "object" as String;
+    for value in [original] {
+        check(::std::addressof(value) != ::std::addressof(original));
+        check(value.as_str() == original.as_str());
+    }
+}
+
+test "Read traversal: native fields retain observable copies and cleanup on early exit" {
+    let original = NativeSnapshot {
+        text: "text",
+        native: CopyOwner { 11 }
+    };
+    reset();
+    for value in [original, original] {
+        if value.text.is_empty() { continue; }
+        break;
+    }
+    check(matches("111 111 -11 -11 "));
+    reset();
+    var visits = 0;
+    try {
+        for value in [
+                original,
+                NativeSnapshot {
+                    text: "next",
+                    native: CopyOwner { initialization_argument(false)? }
+                }
+            ] {
+            visits += 1;
+        }
+    } catch {
+        Failure(_) => {},
+    }
+    check(visits == 0);
+    check(matches("111 2 -11 "));
+}
 
 private fn selected_snapshot(
     flag: bool,

@@ -44,13 +44,8 @@ template<typename Parameter, typename OriginalQuery, typename Source>
 constexpr auto read_conversion(Source& source) noexcept
     -> ReadConversionStorage<Parameter, Source> {
     using Storage = ReadConversionStorage<Parameter, Source>;
-    if constexpr (read_storage_compatible<Parameter, Source>) {
-        if constexpr (std::is_reference_v<Storage>) {
-            return std::as_const(source);
-        } else {
-            return static_cast<Storage>(std::as_const(source));
-        }
-    } else if constexpr (std::is_lvalue_reference_v<OriginalQuery>) {
+    if constexpr (read_storage_compatible<Parameter, Source>
+                  || std::is_lvalue_reference_v<OriginalQuery>) {
         return static_cast<Storage>(std::as_const(source));
     } else {
         return static_cast<Storage>(std::forward<OriginalQuery>(source));

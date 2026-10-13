@@ -8,11 +8,13 @@ struct Trivial final {
     std::int32_t value;
 };
 
-struct Borrowed final {
+struct Borrowed {
     std::int32_t value;
 
     ~Borrowed() {}
 };
+
+struct Derived final : Borrowed {};
 
 struct MoveOnly final {
     std::int32_t value;
@@ -35,7 +37,9 @@ struct FreshSource final {
 
     operator FreshTarget() && noexcept { return FreshTarget {value}; }
 
-    operator FreshTarget() const& = delete;
+    operator FreshTarget() const& noexcept { return FreshTarget {value + 100}; }
+
+    operator FreshTarget() & noexcept { return FreshTarget {value + 200}; }
 };
 
 inline auto make_fresh() noexcept -> FreshSource {

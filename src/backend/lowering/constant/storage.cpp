@@ -7,21 +7,27 @@ import :backend.target.decl;
 import :support.invariant;
 import std;
 
-ConstantStorage::ConstantStorage(const TargetNamePlan& names, ModuleID module_id) noexcept
+ConstantStorage::ConstantStorage(const TargetNamePlan& names, TargetName scope) noexcept
     : target_names(names),
-      module_id(module_id) {}
+      scope(
+          TargetName::globally_qualified(
+              std::vector<TargetIdentifier>(scope.components().begin(), scope.components().end())
+          )
+      ) {}
 
 auto ConstantStorage::find(ConstantID id, ConstantStorageRole role) const noexcept
     -> std::optional<TargetName> {
-    return materialized.contains({id, role})
-        ? std::optional(target_names.module_support_name(
-              module_id,
-              TargetIdentifier::from_spelling(
-                  std::string(target_names.constant_identifier(id).spelling())
-                  + (role == ConstantStorageRole::Object ? "_value" : "_backing")
-              )
-          ))
-        : std::nullopt;
+    if (!materialized.contains({id, role})) {
+        return std::nullopt;
+    }
+    auto name = scope;
+    name.append(
+        TargetIdentifier::from_spelling(
+            std::string(target_names.constant_identifier(id).spelling())
+            + (role == ConstantStorageRole::Object ? "_value" : "_backing")
+        )
+    );
+    return name;
 }
 
 auto ConstantStorage::empty() const noexcept -> bool {
@@ -35,13 +41,14 @@ auto ConstantStorage::append(
     ConstantStorageRole role
 ) noexcept -> TargetName {
     if (!materialized.insert({id, role}).second) {
-        invariant_violation("constant storage was materialized more than once in a module");
+        invariant_violation("constant storage was materialized more than once in a target scope");
     }
     const auto identifier = TargetIdentifier::from_spelling(
         std::string(target_names.constant_identifier(id).spelling())
         + (role == ConstantStorageRole::Object ? "_value" : "_backing")
     );
-    auto name = target_names.module_support_name(module_id, identifier);
+    auto name = scope;
+    name.append(identifier);
     items.push_back(target_lowering_item(
         TargetDecl {TargetVariableDecl {
             .name = identifier,

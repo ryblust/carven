@@ -13,9 +13,8 @@ and development guidance for the current checkout.
 | [Development](development/README.md) | Coding conventions, validation, and design principles |
 
 Runnable programs live in [examples](../examples/README.md); unfinished designs
-live in [proposals](../proposals/README.md), with additional candidates in
-[design directions](../proposals/design-directions.md). Craft APIs and Xmake
-procedures are documented alongside their sources.
+live in [proposals](../proposals/README.md). Craft APIs and Xmake procedures are
+documented alongside their sources.
 
 The language tutorial introduces concepts in learning order. Grammar and the
 topic references define source rules. Compiler documentation describes their

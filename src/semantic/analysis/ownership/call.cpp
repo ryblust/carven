@@ -279,28 +279,42 @@ auto OwnershipBodyAnalyzer::call(
 ) noexcept -> OwnershipFlow {
     const auto target_id = program.declarations().body_for_callable(callable);
     if (!target_id.has_value()) {
-        auto result =
-            OwnershipFlow {.normal = OwnershipNormal {std::move(state), {}, {}}, .exits = {}};
         const auto& contract = program.callable_signatures().signature(
             program.declarations().callable(callable).signature
         );
-        // Native Write may replace its selected backing. The provider owns
-        // hidden relationships; source-visible loans still constrain this access.
-        for (const auto& [parameter, argument] : std::views::zip(contract.parameters, arguments)) {
-            if (parameter.access != AccessMode::Write) {
-                continue;
-            }
-            if (argument.alias.has_value()) {
-                check_storage_write(result.normal->state, *argument.alias, origin);
-            }
-            for (const auto& target : argument.storage) {
-                check_storage_write(result.normal->state, target, origin);
-            }
-        }
-        append_failures(result, contract.failures, result.normal->state);
-        return result;
+        return call_contract(contract, arguments, std::move(state), origin);
     }
     return call_body(*target_id, captures, capture_owner, arguments, std::move(state), origin);
+}
+
+auto OwnershipBodyAnalyzer::call_contract(
+    const CallableSignature& contract,
+    std::span<const OwnershipCallArgument> arguments,
+    OwnershipState state,
+    ProgramOriginID origin
+) noexcept -> OwnershipFlow {
+    auto result = OwnershipFlow {
+        .normal =
+            OwnershipNormal {
+                std::move(state),
+                opaque_callable_targets(contract.result, origin),
+                {}
+            },
+        .exits = {}
+    };
+    for (const auto& [parameter, argument] : std::views::zip(contract.parameters, arguments)) {
+        if (parameter.access != AccessMode::Write) {
+            continue;
+        }
+        if (argument.alias) {
+            check_storage_write(result.normal->state, *argument.alias, origin);
+        }
+        for (const auto& target : argument.storage) {
+            check_storage_write(result.normal->state, target, origin);
+        }
+    }
+    append_failures(result, contract.failures, result.normal->state);
+    return result;
 }
 
 auto OwnershipBodyAnalyzer::call_body(

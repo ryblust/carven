@@ -59,7 +59,7 @@ struct ExecutionPlace final {
 // A slice borrows elements of one live array, Vector, or text backing. Copying it copies the coordinate,
 // not its backing storage. A sub-slice advances offset within the same owner.
 struct ExecutionSlice final {
-    TypeID type;
+    ConstructionTypeRef type;
     ExecutionPlace backing;
     std::size_t offset;
     std::size_t extent;
@@ -147,7 +147,7 @@ private:
 };
 
 struct ExecutionPointer final {
-    TypeID type;
+    ConstructionTypeRef type;
     std::optional<ExecutionPlace> target;
 };
 
@@ -159,7 +159,7 @@ struct ExecutionFunction final {
 struct ExecutionValue;
 
 struct ExecutionAggregateValue final {
-    TypeID type;
+    ConstructionTypeRef type;
     std::vector<ExecutionValue> elements;
     // Logical capacity for growable owners; host vector allocation is not observable.
     std::size_t capacity = 0;
@@ -221,10 +221,11 @@ auto execution_text(
     const ExecutionMemory* memory = nullptr
 ) noexcept -> std::optional<ExecutionTextObservation>;
 
-enum class ExecutionComparisonFailure { StepLimit, ExpiredText, Unsupported };
+enum class ExecutionComparisonFailure { StepLimit, ExpiredText, UnknownAddress, Unsupported };
 
+// Memory supplies address relations for pointer values; fact-only equality needs no storage.
 auto execution_equal(
-    const ConstantValueReader& values,
+    const ExecutionValueAccess& values,
     const ExecutionValue& left,
     const ExecutionValue& right,
     std::size_t& steps,
@@ -250,7 +251,7 @@ auto transfer_owned_text(ExecutionValue& value) noexcept -> void;
 // A stable read view over either retained children or execution-owned slots.
 struct ExecutionCompoundView final {
     auto size() const noexcept -> std::size_t;
-    TypeID type;
+    ConstructionTypeRef type;
     std::optional<EnumCaseID> enum_case;
     std::variant<std::span<const ConstantID>, std::span<const ExecutionValue>, ExecutionByteView>
         elements;

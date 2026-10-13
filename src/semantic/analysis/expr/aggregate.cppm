@@ -359,7 +359,8 @@ auto construct_slice_value(
     std::optional<std::uint64_t> extent,
     std::vector<SemCallArgument> operands,
     typename Site::OperandState state,
-    Span span
+    Span span,
+    std::optional<ConstructionTypeRef> expected = std::nullopt
 ) noexcept -> ExpressionResult<typename Site::Value> {
     const auto contract = slice_intrinsic_contract(intrinsic);
     const auto shape = sequence_shape(site.draft(), receiver_type);
@@ -377,6 +378,9 @@ auto construct_slice_value(
         result_type = site.draft().builtin_type(*builtin);
     } else if (shape->kind != SequenceShapeKind::Slice) {
         result_type = make_slice_type(site.draft(), shape->element);
+    }
+    if (expected) {
+        result_type = *expected;
     }
     auto result_extent = std::optional<std::uint64_t>();
     auto known = std::optional<ConstantID>();

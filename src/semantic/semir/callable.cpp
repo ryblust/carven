@@ -20,37 +20,118 @@ auto callable_identity(const SemIRProgram& program, TypeID type) noexcept
     return std::nullopt;
 }
 
-auto callable_adaptation(const SemIRProgram& program, TypeID from, TypeID to) noexcept
-    -> CallableAdaptation {
-    if (from == to) {
-        return {.kind = CallableAdaptationKind::CopyTarget, .callable = std::nullopt};
-    }
-    while (const auto* array = std::get_if<ArrayTypeValue>(&program.types().type(to).value)) {
-        const auto* source = std::get_if<ArrayTypeValue>(&program.types().type(from).value);
-        if (source == nullptr || source->extent != array->extent) {
+auto query_callable_adaptation(
+    const ExecutionValueAccess& values,
+    ConstructionTypeRef from,
+    ConstructionTypeRef to
+) noexcept -> std::optional<CallableAdaptation> {
+    const auto copy =
+        CallableAdaptation {.kind = CallableAdaptationKind::CopyTarget, .callable = std::nullopt};
+    const auto array_type = [&](ConstructionTypeRef type) noexcept {
+        return visit_execution_type(
+            values,
+            type,
+            [](const auto& shape) static noexcept -> std::optional<ConstructionArrayTypeValue> {
+                using Shape = std::remove_cvref_t<decltype(shape)>;
+                if constexpr (std::same_as<Shape, ArrayTypeValue>
+                              || std::same_as<Shape, ConstructionArrayTypeValue>
+                              || std::same_as<Shape, GenericArrayType>) {
+                    return ConstructionArrayTypeValue {
+                        .element = shape.element,
+                        .extent = shape.extent
+                    };
+                }
+                return std::nullopt;
+            }
+        );
+    };
+    for (;;) {
+        from = execution_type_reference(values, from);
+        to = execution_type_reference(values, to);
+        if (from == to) {
+            return copy;
+        }
+        const auto array = array_type(to);
+        if (!array) {
+            break;
+        }
+        const auto source = array_type(from);
+        if (!source || source->extent != array->extent) {
             invariant_violation("callable array adaptation requires matching shapes");
+        }
+        if (array->extent == 0u) {
+            return copy;
         }
         from = source->element;
         to = array->element;
     }
-    if (!std::holds_alternative<CallableViewTypeValue>(program.types().type(to).value)) {
-        invariant_violation("callable adaptation requires a view destination");
+    const auto view_failures = [&](ConstructionTypeRef type) noexcept {
+        return visit_execution_type(
+            values,
+            type,
+            [&](const auto& shape) noexcept -> std::optional<ConstructionFailureRef> {
+                using Shape = std::remove_cvref_t<decltype(shape)>;
+                if constexpr (std::same_as<Shape, CallableViewTypeValue>) {
+                    return values.callable_signature_copy(shape.signature).failures;
+                } else if constexpr (std::same_as<Shape, ConstructionCallableViewTypeValue>) {
+                    return shape.failures;
+                }
+                return std::nullopt;
+            }
+        );
+    };
+    const auto target_failures = view_failures(to);
+    if (!target_failures) {
+        // Non-callable leaves have already passed invariant storage checking.
+        return copy;
     }
-    const auto& source = program.types().type(from).value;
-    const auto callable = callable_identity(program, from);
-    if (std::holds_alternative<FunctionTypeValue>(source)) {
-        return {.kind = CallableAdaptationKind::FunctionTarget, .callable = callable};
+    if (const auto source_failures = view_failures(from)) {
+        const auto* target_set = std::get_if<FailureSetID>(&*target_failures);
+        if (*source_failures == *target_failures
+            || (target_set && values.failure_set_copy(*target_set).members.empty())) {
+            return copy;
+        }
+        if (!target_set || !std::holds_alternative<FailureSetID>(*source_failures)) {
+            return std::nullopt;
+        }
+        return CallableAdaptation {
+            .kind = CallableAdaptationKind::BorrowObject,
+            .callable = std::nullopt
+        };
     }
-    if (std::holds_alternative<ClosureTypeValue>(source)) {
-        const auto body = program.declarations().body_for_callable(*callable);
+    return visit_execution_type(
+        values,
+        from,
+        [](const auto& shape) static noexcept -> std::optional<CallableAdaptation> {
+            using Shape = std::remove_cvref_t<decltype(shape)>;
+            if constexpr (std::same_as<Shape, FunctionTypeValue>
+                          || std::same_as<Shape, ClosureTypeValue>) {
+                return CallableAdaptation {
+                    .kind = std::same_as<Shape, FunctionTypeValue>
+                        ? CallableAdaptationKind::FunctionTarget
+                        : CallableAdaptationKind::BorrowObject,
+                    .callable = shape.callable
+                };
+            }
+            invariant_violation("callable adaptation requires a callable source");
+        }
+    );
+}
+
+auto callable_adaptation(const SemIRProgram& program, TypeID from, TypeID to) noexcept
+    -> CallableAdaptation {
+    auto result = query_callable_adaptation(PublishedConstantValues(program), from, to);
+    if (!result) {
+        invariant_violation("published callable adaptation has unresolved copy identity");
+    }
+    if (result->borrows_storage() && result->callable) {
+        const auto body = program.declarations().body_for_callable(*result->callable);
         if (!body) {
             invariant_violation("closure adaptation requires a completed body");
         }
         if (program.bodies().body(*body).inputs().captures.empty()) {
-            return {.kind = CallableAdaptationKind::StatelessClosure, .callable = callable};
+            result->kind = CallableAdaptationKind::StatelessClosure;
         }
-    } else if (!std::holds_alternative<CallableViewTypeValue>(source)) {
-        invariant_violation("callable adaptation requires a callable source");
     }
-    return {.kind = CallableAdaptationKind::BorrowObject, .callable = callable};
+    return *result;
 }

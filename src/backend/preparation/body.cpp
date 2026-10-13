@@ -1,6 +1,7 @@
 module carven:backend.preparation.body.impl;
 
 import :backend.preparation.body;
+import :backend.preparation.format;
 import :semantic.semir.children;
 import :semantic.semir.decl;
 import :semantic.semir.delegation;
@@ -164,8 +165,8 @@ struct PreparationVisitor final {
 
 BodyPreparation::BodyPreparation(const SemIRProgram& semantic, BodyID body) noexcept
     : semantic(semantic),
-      metadata(semantic.bodies().body(body)) {
-    const auto unstable = unstable_bindings(semantic, metadata);
+      metadata(semantic.bodies().body(body)),
+      unstable(unstable_bindings(semantic, metadata)) {
     const auto callable = semantic.declarations().callable_for_body(metadata.id());
     const auto async_body = callable
         && semantic.callable_signatures()
@@ -271,6 +272,71 @@ auto BodyPreparation::body() const noexcept -> const SemIRBody& {
     return metadata;
 }
 
+auto BodyPreparation::borrowed_array_elements(const SemRangeLoop& loop) const noexcept
+    -> std::span<const SemanticExpression> {
+    const auto* array = std::get_if<SemArray>(&operation(loop.source).value);
+    if (loop.access != AccessMode::Read
+        || !array
+        || array->elements.empty()
+        || requires_coroutine_context(*loop.body)) {
+        return {};
+    }
+    const auto element =
+        std::get<ArrayTypeValue>(semantic.types().type(loop.source.type.resolved()).value).element;
+    if (loop.binding && metadata.binding(*loop.binding).type != element) {
+        return {};
+    }
+    const auto contents = semantic.type_contents(element);
+    if (!contents.contains_storage_owner
+        || contents.contains_native_value
+        || contents.contains_storage_view
+        || contents.contains_operation_owner
+        || contents.contains_closure_owner
+        || contents.contains_callable_view) {
+        return {};
+    }
+    // Local owners without writable exposure stay unchanged throughout the body.
+    for (const auto& element : array->elements) {
+        const auto* binding = std::get_if<SemBinding>(&element.value);
+        if (!binding
+            || unstable.contains(binding->binding)
+            || !std::holds_alternative<OwnerBindingStorage>(
+                metadata.binding(binding->binding).storage
+            )) {
+            return {};
+        }
+    }
+    auto may_observe_storage = false;
+    // Execution and pending-read summaries do not prove identity unobservable.
+    // Keep address formation and opaque consumers alongside the existing
+    // type-content and coroutine-context facts, without inspecting callees.
+    visit_semantic_nodes(*loop.body, [&](const auto& node) noexcept {
+        using Node = std::remove_cvref_t<decltype(node)>;
+        if constexpr (std::same_as<Node, SemanticExpression>) {
+            if (may_observe_storage) {
+                return;
+            }
+            const auto contents = semantic.type_contents(node.type.resolved());
+            may_observe_storage |= contents.contains_operation_owner
+                || contents.contains_closure_owner
+                || std::holds_alternative<SemAddressOf>(node.value)
+                || std::holds_alternative<SemCall>(node.value)
+                || std::holds_alternative<SemCpp>(node.value)
+                || std::holds_alternative<SemCppCall>(node.value);
+            if (!may_observe_storage && std::holds_alternative<SemFormat>(node.value)) {
+                const auto prepared = prepare_operation(semantic, node);
+                const auto* format = std::get_if<PreparedFormat>(prepared.get());
+                if (!format) {
+                    invariant_violation("format operation requires a prepared format");
+                }
+                // Native formatters can inspect the original argument objects.
+                may_observe_storage = std::holds_alternative<PreparedDelegatedFormat>(*format);
+            }
+        }
+    });
+    return may_observe_storage ? std::span<const SemanticExpression>() : array->elements;
+}
+
 auto BodyPreparation::operation(const SemanticExpression& source) noexcept
     -> const SemanticExpression& {
     auto* selected = std::addressof(source);
@@ -338,7 +404,7 @@ auto BodyPreparation::argument(const SemCallArgument& source) const noexcept -> 
     } else if (std::holds_alternative<PointerTypeValue>(
                    semantic.types().type(source.expression.type.resolved()).value
                )) {
-        use = PreparedUse::AddressValue;
+        use = PreparedUse::ReadPointer;
     }
     return operand(source.expression, use);
 }

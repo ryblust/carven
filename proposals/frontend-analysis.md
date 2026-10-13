@@ -271,6 +271,8 @@ Do not equate every dependency cycle with an error. Recursive declarations use
 reservations; recursive inference and effects use explicit strongly connected
 components and domain-specific solving. Only cycles forbidden by a source rule
 produce source diagnostics. An unexpected scheduler cycle is an internal fault.
+A parallel scheduler must detect or prevent cycles in cross-query waits;
+per-query completion state alone does not establish that waiting can make progress.
 
 Query cache keys use document/module identity, an owner-relative item identity,
 and tracked inputs. Snapshot-local node numbers are not cross-edit identities.

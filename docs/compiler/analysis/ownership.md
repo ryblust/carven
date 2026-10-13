@@ -58,10 +58,16 @@ relationships, not the source object's identity. Read parameters, patterns, and
 range bindings use the shared resolved-type storage policy. Guaranteed value Read parameters
 copy contained relationships without retaining the source holder identity;
 borrowing Read parameters retain selected objects, including multiple possible
-backing objects of a slice. Analysis conservatively tracks native-containing Read
+backing objects of a slice. Analysis conservatively tracks opaque native Read
 holders without inspecting C++ copy traits. The backend selects ordinary native
 parameter snapshots or references through `ReadArg<T>`; patterns and ranges retain
 their selected native storage.
+
+Callable values read without tracked storage carry opaque target markers through
+array and tuple projections. Existing views can be copied and invoked; a new
+target borrow requires tracked backing. Calls without a known target body apply
+the signature's Write accesses and failure contract without reconstructing hidden
+captures.
 
 After the existing ownership fixed point closes, symbolic definition summaries
 publish `ReadPassingFacts` for holders retained through results, failures, or
@@ -364,9 +370,13 @@ Ownership availability and pointer slot facts follow those successors.
 ## Pointer nullability
 
 Pointer nullability analyzes structured operations locally and merges slot facts
-across normal and abrupt exits. Indirect places check address availability and target
-access without assigning a local owner to the referent. Pointer targets are
-leaves for owned-content, loan-content, and infinite-size containment queries.
+across normal and abrupt exits. Comparisons with pure null operands refine
+stable slots on their corresponding edges. Pure null operands are null constants
+and pointer defaults; a computed null result does not establish that its
+evaluation left another slot unchanged. Indirect places check address
+availability and target access without assigning a local owner to the referent.
+Pointer targets are leaves for owned-content, loan-content, and infinite-size
+containment queries.
 
 Retained constants denote immutable program-lifetime storage. Local static
 bindings have the same backing lifetime as module constants; their source lexical

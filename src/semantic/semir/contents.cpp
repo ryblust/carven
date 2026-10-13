@@ -1,10 +1,10 @@
 module carven:semantic.semir.contents.impl;
 
+import :semantic.semir.constant_access;
 import :semantic.semir.contents;
 import :semantic.semir.decl;
 import :semantic.semir.type;
 import :support.invariant;
-import :support.visit;
 import std;
 
 namespace {
@@ -13,123 +13,43 @@ template<typename Types, typename Declarations>
 auto solve_type_contents(
     const Types& types,
     const Declarations& declarations,
-    std::span<const TypeID> roots
-) noexcept -> std::vector<TypeContents> {
+    std::span<const ConstructionTypeRef> roots
+) noexcept -> std::vector<std::pair<ConstructionTypeRef, TypeContents>> {
     if (types.owner() != declarations.owner()) {
         invariant_violation("type contents inputs belong to different programs");
     }
-    auto indices = std::map<TypeID, std::size_t>();
-    auto reachable = std::vector<TypeID>();
-    auto dependents = std::vector<std::vector<TypeContentDependent>>();
-    auto contents = std::vector<unsigned>();
-    const auto intern = [&](TypeID type) noexcept {
-        const auto [entry, inserted] = indices.try_emplace(type, reachable.size());
-        if (inserted) {
-            reachable.push_back(type);
-            dependents.emplace_back();
-            contents.push_back(0u);
-        }
-        return entry->second;
-    };
-    auto root_indices = std::vector<std::size_t>();
-    for (const auto type : roots) {
-        root_indices.push_back(intern(type));
-    }
-    for (auto index = 0uz; index < reachable.size(); ++index) {
-        const auto depend = [&](ConstructionTypeRef type, unsigned mask) noexcept {
-            const auto* concrete = std::get_if<TypeID>(&type);
-            if (concrete == nullptr) {
-                invariant_violation("type contents query requires completed declaration fields");
+    const auto members = [&](const auto& shape) noexcept -> std::vector<ConstructionTypeRef> {
+        auto result = std::vector<ConstructionTypeRef>();
+        using Shape = std::remove_cvref_t<decltype(shape)>;
+        if constexpr (std::same_as<Shape, StructTypeValue>) {
+            for (const auto& field : declarations.structure(shape.structure).fields) {
+                result.push_back(field.type);
             }
-            const auto child = intern(*concrete);
-            dependents[child].push_back({.index = index, .mask = mask});
-        };
+        } else if constexpr (std::same_as<Shape, EnumTypeValue>) {
+            for (const auto id : declarations.enumeration(shape.enumeration).cases) {
+                for (const auto field : declarations.enum_case(id).payload_types) {
+                    result.push_back(field);
+                }
+            }
+        }
+        return result;
+    };
+    return collect_type_contents(roots, [&](ConstructionTypeRef reference, auto depend) noexcept {
+        const auto* concrete = std::get_if<TypeID>(&reference);
+        if (!concrete) {
+            invariant_violation("type contents query requires completed declaration fields");
+        }
         const auto& canonical = [&]() noexcept -> decltype(auto) {
             if constexpr (std::same_as<Types, CanonicalTypeStore>) {
-                return types.type(reachable[index]);
+                return types.type(*concrete);
             } else {
-                return types.copy(reachable[index]);
+                return types.copy(*concrete);
             }
         }();
-        canonical.value.visit(
-            Overloaded {
-                [&](const OperationTypeValue&) noexcept {
-                    contents[index] = operation_owner_content;
-                },
-                [&](const ClosureTypeValue&) noexcept { contents[index] = closure_owner_content; },
-                [&](const CallableViewTypeValue&) noexcept {
-                    contents[index] = callable_view_content;
-                },
-                [&](const VectorTypeValue& value) noexcept {
-                    contents[index] = storage_owner_content;
-                    depend(value.element, all_type_contents);
-                },
-                [&](const ArrayTypeValue& value) noexcept {
-                    contents[index] = storage_owner_content;
-                    depend(
-                        value.element,
-                        value.extent == 0u
-                            ? all_type_contents & ~(string_storage_content | storage_view_content)
-                            : all_type_contents
-                    );
-                },
-                [&](const StructTypeValue& value) noexcept {
-                    const auto& declaration = declarations.structure(value.structure);
-                    for (const auto& field : declaration.fields) {
-                        depend(field.type, all_type_contents);
-                    }
-                },
-                [&](const TupleTypeValue& value) noexcept {
-                    for (const auto element : value.elements) {
-                        depend(element, all_type_contents);
-                    }
-                },
-                [&](const EnumTypeValue& value) noexcept {
-                    const auto& declaration = declarations.enumeration(value.enumeration);
-                    for (const auto case_id : declaration.cases) {
-                        const auto& member = declarations.enum_case(case_id);
-                        for (const auto element : member.payload_types) {
-                            depend(element, all_type_contents);
-                        }
-                    }
-                },
-                [&](const SliceTypeValue& value) noexcept {
-                    contents[index] = storage_view_content;
-                    depend(value.element, callable_view_content);
-                },
-                [&](const BuiltinTypeValue& value) noexcept {
-                    if (value.kind == BuiltinType::String) {
-                        contents[index] = storage_owner_content | string_storage_content;
-                    } else if (value.kind == BuiltinType::Str
-                               || value.kind == BuiltinType::StrCharsView) {
-                        contents[index] = storage_view_content;
-                    }
-                },
-                [&](const CppTypeValue& value) noexcept {
-                    contents[index] = native_value_content;
-                    if (const auto* named = std::get_if<CppNamedType>(&value.form)) {
-                        for (const auto argument : named->arguments) {
-                            depend(argument, callable_view_content);
-                        }
-                    }
-                },
-                []<typename Value>(const Value&) static noexcept {
-                    static_assert(
-                        std::same_as<Value, PointerTypeValue>
-                        || std::same_as<Value, RangeTypeValue>
-                        || std::same_as<Value, FunctionTypeValue>
-                    );
-                },
-            }
-        );
-    }
-    const auto solved = solve_type_content_graph(std::move(contents), dependents);
-    auto result = std::vector<TypeContents>();
-    result.reserve(roots.size());
-    for (const auto index : root_indices) {
-        result.push_back(solved[index]);
-    }
-    return result;
+        return canonical.value.visit([&](const auto& shape) noexcept {
+            return type_content_mask(shape, members, depend);
+        });
+    });
 }
 
 } // namespace
@@ -138,21 +58,26 @@ auto compute_type_contents(
     const CanonicalTypeStore& types,
     const DeclarationStore& declarations
 ) noexcept -> std::vector<TypeContents> {
-    auto roots = std::vector<TypeID>();
+    auto roots = std::vector<ConstructionTypeRef>();
     roots.reserve(types.size());
     for (const auto [id, type] : types.entries()) {
         static_cast<void>(type);
         roots.push_back(id);
     }
-    return solve_type_contents(types, declarations, roots);
+    auto result = std::vector<TypeContents>();
+    for (const auto& [type, contents] : solve_type_contents(types, declarations, roots)) {
+        static_cast<void>(type);
+        result.push_back(contents);
+    }
+    return result;
+}
+
+auto TypeContents::contains_carven_owner() const noexcept -> bool {
+    return contains_operation_owner || contains_storage_owner || contains_closure_owner;
 }
 
 auto TypeContents::read_borrows_storage() const noexcept -> bool {
-    return contains_parametric_value
-        || contains_operation_owner
-        || contains_storage_owner
-        || contains_closure_owner
-        || contains_native_value;
+    return contains_parametric_value || contains_carven_owner() || contains_native_value;
 }
 
 auto TypeContents::read_is_value_snapshot() const noexcept -> bool {
@@ -164,7 +89,61 @@ auto query_type_contents(
     DeclarationConstructionView declarations,
     TypeID type
 ) noexcept -> TypeContents {
-    return solve_type_contents(types, declarations, std::array {type}).front();
+    return solve_type_contents(types, declarations, std::array {ConstructionTypeRef(type)})
+        .front()
+        .second;
+}
+
+auto query_type_contents(const ExecutionValueAccess& values, ConstructionTypeRef type) noexcept
+    -> TypeContents {
+    return collect_type_contents(
+               std::array {type},
+               [&](ConstructionTypeRef reference, auto depend) noexcept {
+                   const auto members =
+                       [&](const auto& shape) noexcept -> std::vector<ConstructionTypeRef> {
+                       auto result = std::vector<ConstructionTypeRef>();
+                       using Shape = std::remove_cvref_t<decltype(shape)>;
+                       if constexpr (std::same_as<Shape, StructTypeValue>) {
+                           const auto fields = values.struct_field_types(shape.structure);
+                           if (!fields) {
+                               invariant_violation(
+                                   "execution contents require completed declaration fields"
+                               );
+                           }
+                           result.assign(fields->begin(), fields->end());
+                       } else if constexpr (std::same_as<Shape, EnumTypeValue>) {
+                           const auto cases = values.enum_case_types(shape.enumeration);
+                           if (!cases) {
+                               invariant_violation(
+                                   "execution contents require completed declaration fields"
+                               );
+                           }
+                           for (const auto& item : *cases) {
+                               result.insert(
+                                   result.end(),
+                                   item.payload_types.begin(),
+                                   item.payload_types.end()
+                               );
+                           }
+                       } else if constexpr (std::same_as<Shape, GenericNominalApplication>) {
+                           const auto fields =
+                               values.generic_member_types(std::get<GenericTypeID>(reference));
+                           if (!fields) {
+                               invariant_violation(
+                                   "execution contents require checked generic members"
+                               );
+                           }
+                           result = *fields;
+                       }
+                       return result;
+                   };
+                   return visit_execution_type(values, reference, [&](const auto& shape) noexcept {
+                       return type_content_mask(shape, members, depend);
+                   });
+               }
+    )
+        .front()
+        .second;
 }
 
 auto solve_type_content_graph(

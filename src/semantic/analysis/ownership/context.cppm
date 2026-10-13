@@ -641,6 +641,9 @@ private:
         ProgramOriginID origin
     ) noexcept -> void;
 
+    auto opaque_callable_targets(ConstructionTypeRef type, ProgramOriginID origin) const noexcept
+        -> OwnershipRelationships;
+
     auto selected_access_kind(const SemanticExpression& source) const noexcept
         -> OwnershipAccessKind;
 
@@ -704,6 +707,13 @@ private:
         CallableID callable,
         const OwnershipRelationships& captures,
         std::optional<OwnershipPlace> capture_owner,
+        std::span<const OwnershipCallArgument> arguments,
+        OwnershipState state,
+        ProgramOriginID origin
+    ) noexcept -> OwnershipFlow;
+
+    auto call_contract(
+        const CallableSignature& contract,
         std::span<const OwnershipCallArgument> arguments,
         OwnershipState state,
         ProgramOriginID origin

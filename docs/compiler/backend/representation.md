@@ -105,24 +105,25 @@ Read parameters and Read argument temporaries preserve Carven array, Vector,
 String, and closure storage, including storage in Carven aggregate fields,
 through const references. Lowering uses the resolved type-contents query
 shared with ownership analysis. Other pure Carven Read parameters use const
-values. Types containing native C++ values by value use
-`runtime::ReadArg<T>`, which selects a const value for trivially copy-constructed
-and destroyed types and a const reference otherwise. The type-contents query
+values. Other types containing native C++ values by value use `runtime::ReadArg<T>`,
+which selects a const value for trivially copy-constructed and destroyed types
+and a const reference otherwise. The type-contents query
 propagates native value containment through array elements, tuple slots, struct fields,
 and enum payloads; pointer and slice targets do not contribute. Native template
 arguments alone leave the instantiated type's
 storage contents unknown. No size threshold participates in the trait policy.
 
-`ReadArg` delegates native copy and destruction classification to C++ traits.
-Carven supplies storage-borrow and stable-address requirements from its semantic
-facts. Container layout and argument passing are separate choices: a storage
-optimization preserves this policy and its snapshot and borrow observations.
+Semantic facts select known value snapshots and required storage borrows directly.
+`ReadArg` delegates unknown native copy and destruction properties to C++ traits.
+Declarations and saved source Read arguments use the same policy. Direct C++ calls
+preserve their delegated access categories in both type queries and argument
+expressions; C++ performs overload resolution and parameter initialization.
 
 Published `ReadPassingFacts` identifies parameter holders that remain reachable
 through returned values or writes to external state. Those parameters use const
 references at declarations, definitions, imports, exports, and argument storage.
 Async native-containing Read inputs carry this requirement from cold construction.
-Callable views retain ordinary ReadArg parameter types and evaluation timing;
+Callable views retain the ordinary Read parameter policy and evaluation timing;
 semantic admission rejects incompatible stable-storage target adaptation.
 Pattern and range Read bindings borrow native holders directly from their subject.
 
@@ -250,10 +251,17 @@ representation selection. Restricted query shapes have structural equality for
 type interning; general target expressions remain move-only and have no equality
 protocol.
 
-C string constants have an intrinsic external `const char*` type. Lowering emits
-their decoded bytes as a narrow C++ string literal converted to a pointer, so
-calls and deduction receive the declared pointer type with program-lifetime storage.
-Ordinary string literals retain `std::string_view` realization.
+C string constants have an intrinsic external `const char*` type. Their complete
+contents select linkage-domain backing: a content-named `inline constexpr` array
+constructed by `std::to_array` from a narrow C++ literal, including its trailing
+NUL. Lowering refers to its `.data()`, preserving pointer type in calls and
+deduction. The same domain and contents select one address across generated
+modules and artifacts. Ordinary string literals retain `std::string_view`
+realization.
+
+Pointer casts, comparisons, and address-of contribute only their operand effects.
+Address dereference consumes a pointer snapshot. C string pointers use value
+Read, while opaque native values retain their delegated storage policy.
 
 Artifact-local query aliases name shared queries without changing their type or
 value category.

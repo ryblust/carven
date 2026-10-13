@@ -7,23 +7,44 @@ and canonical facts.
 
 ## Execution interfaces
 
-In `semantic/evaluation`, `value` owns execution representations, text and compound
-read views, and equality over execution values. `shape` caches compound nesting
-depth and slot counts for resource accounting, independently of execution
-admission. Counts saturate at the element limit plus one; size checks use that
-count separately. Incomplete declarations and types beyond
-the depth limit, including containment cycles, produce no cache entry. Cached subtrees
-remain subject to the caller's nesting depth. `operation` supplies
-checked scalar operations and retained-input queries. `freeze` interns completed
-results. `semantic.format.builtin` supplies the bounded builtin formatter to both
-execution and backend preparation. It accepts numeric values, bools, chars, borrowed
-text, and an unavailable-input alternative. Callers adapt their input storage and
-supply a byte budget. Execution translates failures into diagnostics and accounts
-for work; optional preparation uses runtime formatting on failure.
-`execution` defines execution entries and their call context; `executor` owns
-execution state, with `expr`, `control`, `text`, and `vector` implementation slices.
-`memory` owns addressable objects and resolves their projections. `limits`
-names resource bounds.
+In `semantic/evaluation`, `value` owns execution representations, text and
+compound read views, and equality over execution values. `shape` caches compound
+nesting depth and slot counts for resource accounting, independently of
+execution admission. Counts saturate at the element limit plus one; size checks
+use that count separately. Incomplete declarations and types beyond the depth
+limit, including containment cycles, produce no cache entry. Cached subtrees
+remain subject to the caller's nesting depth. `operation` supplies checked
+scalar operations and retained-input queries. `freeze` interns completed
+results. `semantic.format.builtin` supplies the bounded builtin formatter to
+both execution and backend preparation. It accepts numeric values, bools, chars,
+borrowed text, borrowed pointer-display text, and an unavailable-input
+alternative. Callers adapt their input storage and supply a byte budget.
+Execution translates failures into diagnostics and accounts for work; optional
+preparation uses runtime formatting on failure. `execution` defines execution
+entries and their call context; `executor` owns execution state, with `expr`,
+`control`, `text`, and `vector` implementation slices. `memory` owns addressable
+objects and resolves their projections. `limits` names resource bounds.
+
+Object-pointer erasure and restoration use `SemCast` with
+`CastKind::PointerErase` and `CastKind::PointerRestore`. Construction and
+publication share the type and access rule; native realization emits
+`static_cast`. Execution preserves storage coordinates through these casts.
+Dereference uses `ExecutionMemory::access_address` to select a live object of the
+requested type, including established standard-layout first-field relations.
+Known C strings select backing by their canonical contents.
+
+`ExecutionMemory::same_address` compares established address relations;
+`address_key` supplies coordinates for interpreted pointer display. These queries
+use the stored object's type and preserve its access path. Struct first-field
+relations apply inside selected array elements. Text byte backing retains byte
+access independently of its String owner's address. An unestablished relation
+produces an execution diagnostic.
+
+`SemanticExecutionContext::stage` selects erased-pointer display. Static
+execution supplies fixed null/non-null text; interpreted execution supplies local
+address labels. `BuiltinPointerDisplay` borrows that text during bounded
+formatting. Backend preparation consumes frozen values, which contain no
+execution address labels.
 
 Value and structured control contexts share operation execution, step accounting,
 and capability checks. Value contexts receive normal-completion values; structured
@@ -214,23 +235,45 @@ Nested loops compose projection paths. Loop exits release their bindings and
 retained temporary storage, including early returns and execution failures.
 
 Evaluator state and call stacks belong to one static root and end with that
-request. Existing `ConstantID` values borrow retained inputs. Computed `ConstantAtom`
-values remain execution-local and cannot carry compound storage; they hold scalar
-data or a retained text identity. `ExecutionValue` is move-only: host movement
-transports execution results, while `copy_value` performs language copying and
-accounts for aggregate and text work. Atoms, coordinates and immutable text handles
-remain copyable.
-`ExecutionTextStorage` privately holds owned bytes or a borrowed retained spelling.
-The move-only `ExecutionOwnedText` encapsulates String ownership;
-`ExecutionText` shares immutable content, weakly borrows String storage, or retains
-an `ExecutionSlice` coordinate into byte storage. `as_str` preserves the borrow
-without copying bytes or charging text work.
-String copying creates fresh storage;
-source Take and mutation replace its storage identity, whereas host moves preserve
-it. Releasing that storage expires its weak borrowers. Formatting,
-queries, and equality read text without freezing it. At the initializer boundary,
-eligible text results retain their bytes before execution storage is released.
-Their canonical types remain `str` for views and `String` for owners.
+request. Existing `ConstantID` values borrow retained inputs. Computed
+`ConstantAtom` values remain execution-local and cannot carry compound storage;
+they hold scalar data or a retained text identity. `ExecutionValue` is
+move-only: host movement transports execution results, while `copy_value`
+performs language copying and accounts for aggregate and text work. Atoms,
+coordinates and immutable text handles remain copyable.
+
+Pointers, aggregates, slices, and callable values retain `ConstructionTypeRef`
+during inference. `visit_execution_type` reads canonical, construction, and
+generic shapes through `ExecutionValueAccess`. Admission, resource accounting,
+initialization, and Read storage selection use those shapes. Each normally
+completed expression delivers its checked type through `deliver_value`, including
+aggregate children. Slice detachment copies elements through the slice's element
+type while preserving the borrowed backing. Freezing requires canonical types;
+non-null execution pointers cannot freeze.
+Generic record construction retains checked member types in the shared generic
+shape cache. Execution delivery and contents queries consume those members;
+unavailable member information produces an execution diagnostic.
+
+`query_callable_adaptation` supplies copy and target-borrow classification to
+execution, ownership analysis, and backend preparation. Read array arguments
+preserve source storage for copying adaptations. Direct function targets and
+same-type callable views execute without borrowing a callable object. Widening
+an existing view requires backing that execution values do not represent;
+unresolved copy identity also produces an execution diagnostic. A checked
+adaptation to an empty failure set establishes identity through its subset
+constraint. Empty arrays require no element target.
+
+`ExecutionTextStorage` privately holds owned bytes or a borrowed retained
+spelling. The move-only `ExecutionOwnedText` encapsulates String ownership;
+`ExecutionText` shares immutable content, weakly borrows String storage, or
+retains an `ExecutionSlice` coordinate into byte storage. `as_str` preserves the
+borrow without copying bytes or charging text work. String copying creates fresh
+storage; source Take and mutation replace its storage identity, whereas host
+moves preserve it. Releasing that storage expires its weak borrowers.
+Formatting, queries, and equality read text without freezing it. At the
+initializer boundary, eligible text results retain their bytes before execution
+storage is released. Their canonical types remain `str` for views and `String`
+for owners.
 
 `ExecutionMemory` owns a weak identity index and registers one `TextBytes` backing
 per text identity on demand. Each execution domain keeps its own byte coordinates.

@@ -9,6 +9,14 @@ inline auto global_point() noexcept -> GlobalPoint {
 
 namespace global_native {
 
+struct Value final {
+    std::int32_t value;
+};
+
+inline auto distinct_object(const Value& converted, const Value& original) noexcept -> bool {
+    return &converted != &original;
+}
+
 inline auto sum(const GlobalPoint& point) noexcept -> std::int32_t {
     return point.x + point.y;
 }

@@ -1,5 +1,62 @@
 struct LoopStepFailure {}
 
+const fn read_temporary_values() -> String {
+    let first = "first" as String;
+    let second = "second" as String;
+    var result: String = {};
+    var index = 0;
+    for value in [first, second, first] {
+        ++index;
+        if index == 2 { continue; }
+        result.append_format(f"{value}");
+        if index == 3 { break; }
+    }
+    return &&result;
+}
+
+const fn read_temporary_snapshots() -> String {
+    var first = "old" as String;
+    let second = "tail" as String;
+    var result: String = {};
+    for value in [first, second] {
+        first.clear();
+        result.append(value);
+    }
+    first = "alias" as String;
+    let address = addressof(&first);
+    for value in [first] {
+        address->clear();
+        result.append(value);
+    }
+    return &&result;
+}
+
+const fn separate_read_object(value: String, original: ptr<String>) -> bool {
+    return addressof(value) != original;
+}
+
+const fn read_temporary_identity() -> bool {
+    let original = "object" as String;
+    let address = addressof(original);
+    var separate = true;
+    for value in [original, original] {
+        separate = separate && separate_read_object(value, address);
+    }
+    return separate;
+}
+
+const test "Read traversal: temporary elements retain values through source writes and exits" {
+    check(read_temporary_values().as_str() == "firstfirst");
+    check(read_temporary_snapshots().as_str() == "oldtailalias");
+    check(read_temporary_identity());
+}
+
+test "Read traversal: native temporary elements retain snapshots through source writes and exits" {
+    check(read_temporary_values().as_str() == "firstfirst");
+    check(read_temporary_snapshots().as_str() == "oldtailalias");
+    check(read_temporary_identity());
+}
+
 fn record_loop_effect(&trace: i32, result: i32) -> i32 {
     trace += 1;
     return result;

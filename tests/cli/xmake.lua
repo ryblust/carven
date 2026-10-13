@@ -62,6 +62,21 @@ local case_specs = {
                 output_files = {"emit/input.cpp", "emit/crafts/demo/helper.cpp", "emit/crafts/demo/unrelated.cpp"}},
         },
     },
+    ["commands/pointer_display/unavailable"] = {
+        case_dir = "commands/pointer_display",
+        inputs = {"unavailable.cv"},
+        args = {"interpret", "--explicit-inputs", "unavailable.cv"}, exit_code = 1,
+        stdout_contains = {"element=const@nonnull"},
+        stderr_contains = {"CV-INTERPRET-EXECUTION", "pointer address representation is not known during execution"},
+    },
+    ["commands/pointer_display/addresses"] = {
+        case_dir = "commands/pointer_display",
+        inputs = {"input.cv"},
+        args = {"interpret", "--explicit-inputs", "input.cv"},
+        stdout_ordered = {"local=const@nonnull", "cstring=const@nonnull", "123", "null=const@null",
+            "local=interp@object#", "cstring=interp@object#", "123", "null=interp@null"},
+        stdout_not_contains = {"0x"},
+    },
     ["commands/cstring_text"] = {
         inputs = {"input.cv"},
         args = {"interpret", "--explicit-inputs", "input.cv"}, stdout = "stdout.txt", stderr = "stderr.txt",
@@ -371,6 +386,7 @@ local interpretation = {
     fixtures = {
         ["../../../language/functions/interpreted_runtime.cv"] = "shared.cv",
         ["../../../language/types/pointer_graph.cv"] = "local_graph.cv",
+        ["../../../language/types/pointer_delivery.cv"] = "pointer_delivery.cv",
         ["../../../language/text/backing_identity.cv"] = "text_backing.cv",
         ["../../../language/async/scheduling.cv"] = "async_scheduling.cv",
         ["../../../language/async/waiting.cv"] = "async_waiting.cv",
@@ -392,6 +408,8 @@ local interpretation = {
         ["shared-runtime"] = {args = {"interpret", "--tests", "shared.cv"}, stdout_contains = {"shared runtime test\n"},
             stderr_contains = {"tests: 1 passed; 0 failed"}},
         ["pointer-graph"] = {args = {"interpret", "--tests", "local_graph.cv"},
+            stderr_contains = {"tests: 1 passed; 0 failed"}},
+        ["pointer-delivery"] = {args = {"interpret", "--tests", "pointer_delivery.cv"},
             stderr_contains = {"tests: 1 passed; 0 failed"}},
         ["text-backing"] = {args = {"interpret", "--tests", "text_backing.cv"},
             stderr_contains = {"tests: 1 passed; 0 failed"}},

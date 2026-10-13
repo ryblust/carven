@@ -646,7 +646,8 @@ auto plan_names(
     const auto constant_values = PublishedConstantValues(semantic);
     for (const auto constant : semantic.constants().entries()) {
         if (constant_has_storage(constant_values, constant.id)
-            || std::holds_alternative<SliceConstant>(constant.value.value)) {
+            || std::holds_alternative<SliceConstant>(constant.value.value)
+            || std::holds_alternative<CStringConstant>(constant.value.value)) {
             request_name(
                 "carven_constant_",
                 constant_content_key(semantic, constant.id),
@@ -725,6 +726,7 @@ auto plan_names(
         semantic.identity(),
         take_total(std::move(modules), "target name plan did not name every module"),
         generated_namespace,
+        domain_namespace,
         take_total(std::move(structure_names), "target name plan did not name every structure"),
         take_total(std::move(enumeration_names), "target name plan did not name every enumeration"),
         std::move(callable_names),

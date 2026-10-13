@@ -46,8 +46,10 @@ auto BodyRealizer::ExpressionBuilder::source(const Fragment& fragment) const noe
 auto BodyRealizer::ExpressionBuilder::scalar(TypeID id) const noexcept -> bool {
     const auto& type = owner.context.semantic().types().type(id).value;
     const auto* builtin = std::get_if<BuiltinTypeValue>(&type);
+    const auto* native = std::get_if<CppTypeValue>(&type);
     return (builtin != nullptr && builtin->kind != BuiltinType::String)
-        || std::holds_alternative<PointerTypeValue>(type);
+        || std::holds_alternative<PointerTypeValue>(type)
+        || (native && std::holds_alternative<CppConstCharPointerType>(native->form));
 }
 
 auto BodyRealizer::ExpressionBuilder::names_storage(const PreparedOperation& value) const noexcept
@@ -621,7 +623,7 @@ auto BodyRealizer::ExpressionBuilder::build(
     if (read_conversion) {
         // Conversion into an owning value and binding a Read parameter are
         // different consumers of the same checked native conversion.
-        inputs.front().use = PreparedUse::ReadBorrow;
+        inputs.front().use = PreparedUse::ConstPlace;
     }
     for (auto& input : inputs) {
         if (input.use == PreparedUse::ProjectionPlace) {

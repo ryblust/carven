@@ -395,7 +395,6 @@ require disproportionate complexity.
 - [Benchmarks](../benchmarks/README.md) and [testing](../docs/development/testing.md): measurement and validation commands.
 - [Realization](../docs/compiler/backend/realization.md) and [known results](../docs/compiler/analysis/semir.md#known-results-and-execution-requirements): current semantic boundaries.
 - [Uninitialized storage](uninitialized-storage.md): construction-destination contracts for direct delivery.
-- [Infrastructure candidates](design-directions.md#deferred-infrastructure): concurrent semantic queries and independent execution IR.
 - [Workspace API](../tools/workspace/README.md),
   [compiler architecture](../docs/compiler/README.md), and
   [CLI](../docs/toolchain/cli.md): implemented reuse, source-library generation, and invocation boundaries.

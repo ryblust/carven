@@ -86,10 +86,17 @@ cross-thread tests belong only to a selected concurrency contract. Vector elemen
 admission for either owner additionally needs conditional copying and relocation
 of move-only elements.
 
+Owner-bearing failure types retain the current Copy admission requirement.
+For admitted payloads containing Shared owners, validate retained backing and final
+release through throwing, propagation, matching, rejected guards, handler failure,
+and rethrow. Catch bindings must preserve the original failure while further
+matching or rethrow can still use it.
+
 ## References
 
 - [Owning vectors](../docs/language/aggregates.md#owning-vectors) and
   [String](../docs/language/text.md): implemented builtin storage owners.
 - [Async](../docs/language/async.md): implemented operation ownership and cancellation.
 - [Pointers](../docs/language/pointers.md): current nonowning handles.
+- [Failures](../docs/language/failures.md): Copy admission and caught-payload lifetime.
 - [Uninitialized storage](uninitialized-storage.md): proposed construction destinations and cleanup handoff.

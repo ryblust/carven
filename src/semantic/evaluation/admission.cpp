@@ -6,62 +6,76 @@ import std;
 
 auto supported_execution_type(const ExecutionValueAccess& values, ConstructionTypeRef type) noexcept
     -> bool {
-    const auto* id = std::get_if<TypeID>(&type);
-    if (!id) {
-        return false;
-    }
-    auto pending = std::vector<TypeID> {*id};
-    auto visited = std::set<TypeID>();
+    auto pending = std::vector<ConstructionTypeRef> {type};
+    auto visited = std::set<ConstructionTypeRef>();
     while (!pending.empty()) {
-        const auto current = pending.back();
+        const auto current = execution_type_reference(values, pending.back());
         pending.pop_back();
         if (!visited.insert(current).second) {
             continue;
         }
-        const auto canonical = values.type_copy(current);
-        if (const auto* sequence = std::get_if<VectorTypeValue>(&canonical.value)) {
-            pending.push_back(sequence->element);
-        } else if (const auto* array = std::get_if<ArrayTypeValue>(&canonical.value)) {
-            pending.push_back(array->element);
-        } else if (const auto* tuple = std::get_if<TupleTypeValue>(&canonical.value)) {
-            pending.insert(pending.end(), tuple->elements.begin(), tuple->elements.end());
-        } else if (const auto* structure = std::get_if<StructTypeValue>(&canonical.value)) {
-            const auto fields = values.struct_field_types(structure->structure);
-            if (!fields) {
-                return false;
-            }
-            pending.insert(pending.end(), fields->begin(), fields->end());
-        } else if (const auto* enumeration = std::get_if<EnumTypeValue>(&canonical.value)) {
-            const auto cases = values.enum_case_types(enumeration->enumeration);
-            if (!cases) {
-                return false;
-            }
-            for (const auto& item : *cases) {
-                pending.insert(pending.end(), item.payload_types.begin(), item.payload_types.end());
-            }
-        } else if (std::holds_alternative<OperationTypeValue>(canonical.value)) {
-            // Execution-local affine descriptors have no frozen representation.
-        } else if (std::holds_alternative<PointerTypeValue>(canonical.value)
-                   || std::holds_alternative<SliceTypeValue>(canonical.value)
-                   || std::holds_alternative<FunctionTypeValue>(canonical.value)
-                   || std::holds_alternative<CallableViewTypeValue>(canonical.value)
-                   || std::holds_alternative<RangeTypeValue>(canonical.value)) {
-            // Views do not contain their targets' storage.
-        } else if (const auto* cpp = std::get_if<CppTypeValue>(&canonical.value)) {
-            if (!std::holds_alternative<CppConstCharPointerType>(cpp->form)) {
-                return false;
-            }
-        } else if (const auto* builtin = std::get_if<BuiltinTypeValue>(&canonical.value)) {
-            if (!builtin_is_numeric(builtin->kind)
-                && !simd_layout(builtin->kind)
-                && builtin->kind != BuiltinType::Bool
-                && builtin->kind != BuiltinType::Char
-                && builtin->kind != BuiltinType::Str
-                && builtin->kind != BuiltinType::String
-                && builtin->kind != BuiltinType::Void) {
-                return false;
-            }
-        } else {
+        const auto supported =
+            visit_execution_type(values, current, [&](const auto& shape) noexcept {
+                using Shape = std::remove_cvref_t<decltype(shape)>;
+                if constexpr (std::same_as<Shape, ArrayTypeValue>
+                              || std::same_as<Shape, ConstructionArrayTypeValue>
+                              || std::same_as<Shape, GenericArrayType>
+                              || std::same_as<Shape, VectorTypeValue>
+                              || std::same_as<Shape, GenericVectorType>) {
+                    pending.push_back(shape.element);
+                    return true;
+                } else if constexpr (std::same_as<Shape, TupleTypeValue>
+                                     || std::same_as<Shape, ConstructionTupleTypeValue>
+                                     || std::same_as<Shape, GenericTupleType>) {
+                    pending.insert(pending.end(), shape.elements.begin(), shape.elements.end());
+                    return true;
+                } else if constexpr (std::same_as<Shape, StructTypeValue>) {
+                    const auto fields = values.struct_field_types(shape.structure);
+                    if (!fields) {
+                        return false;
+                    }
+                    pending.insert(pending.end(), fields->begin(), fields->end());
+                    return true;
+                } else if constexpr (std::same_as<Shape, EnumTypeValue>) {
+                    const auto cases = values.enum_case_types(shape.enumeration);
+                    if (!cases) {
+                        return false;
+                    }
+                    for (const auto& item : *cases) {
+                        pending.insert(
+                            pending.end(),
+                            item.payload_types.begin(),
+                            item.payload_types.end()
+                        );
+                    }
+                    return true;
+                } else if constexpr (std::same_as<Shape, CppTypeValue>) {
+                    return std::holds_alternative<CppConstCharPointerType>(shape.form);
+                } else if constexpr (std::same_as<Shape, BuiltinTypeValue>) {
+                    return builtin_is_numeric(shape.kind)
+                        || simd_layout(shape.kind)
+                        || shape.kind == BuiltinType::Bool
+                        || shape.kind == BuiltinType::Char
+                        || shape.kind == BuiltinType::Str
+                        || shape.kind == BuiltinType::String
+                        || shape.kind == BuiltinType::Void;
+                } else {
+                    // Views and operation descriptors do not contain target storage.
+                    return std::same_as<Shape, PointerTypeValue>
+                        || std::same_as<Shape, GenericPointerType>
+                        || std::same_as<Shape, SliceTypeValue>
+                        || std::same_as<Shape, ConstructionSliceTypeValue>
+                        || std::same_as<Shape, GenericSliceType>
+                        || std::same_as<Shape, FunctionTypeValue>
+                        || std::same_as<Shape, CallableViewTypeValue>
+                        || std::same_as<Shape, ConstructionCallableViewTypeValue>
+                        || std::same_as<Shape, RangeTypeValue>
+                        || std::same_as<Shape, OperationTypeValue>
+                        || std::same_as<Shape, ConstructionOperationTypeValue>
+                        || std::same_as<Shape, GenericOperationType>;
+                }
+            });
+        if (!supported) {
             return false;
         }
     }
