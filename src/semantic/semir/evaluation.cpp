@@ -8,12 +8,12 @@ import :semantic.semir.evaluation;
 import :semantic.semir.ids;
 import :semantic.semir.operation;
 import :semantic.semir.program;
-import :semantic.semir.vector;
 import :semantic.semir.simd;
 import :semantic.semir.slice;
 import :semantic.semir.structured;
 import :semantic.semir.text;
 import :semantic.semir.type;
+import :semantic.semir.vector;
 import :support.visit;
 import std;
 
@@ -22,7 +22,8 @@ namespace {
 auto scalar(const SemIRProgram& semantic, TypeID type) noexcept -> bool {
     const auto& value = semantic.types().type(type).value;
     if (const auto* builtin = std::get_if<BuiltinTypeValue>(&value)) {
-        return builtin_is_integer(builtin->kind)
+        return builtin_is_numeric(builtin->kind)
+            || builtin->kind == BuiltinType::Void
             || builtin->kind == BuiltinType::Bool
             || builtin->kind == BuiltinType::Char
             || builtin->kind == BuiltinType::Str
@@ -260,8 +261,19 @@ auto evaluation_rule(const SemIRProgram& semantic, const SemanticExpression& exp
                             }
                             return rule;
                         },
-                        [&](const FloatIntrinsic&) noexcept {
-                            return operands(value.operands.front().expression);
+                        [&](const FloatIntrinsic& family) noexcept {
+                            if (family == FloatIntrinsic::Clamp) {
+                                return required;
+                            }
+                            auto rule = EvaluationRule {
+                                .action = EvaluationAction::Operands,
+                                .operands = {}
+                            };
+                            for (const auto& [index, operand] :
+                                 std::views::enumerate(value.operands)) {
+                                rule.operands[index] = &operand.expression;
+                            }
+                            return rule;
                         },
                         [&](const VectorIntrinsicOperation&) noexcept { return required; },
                         [&](const TextIntrinsic& family) noexcept {
@@ -285,7 +297,9 @@ auto evaluation_rule(const SemIRProgram& semantic, const SemanticExpression& exp
                 return operands(*value.begin, std::addressof(*value.end));
             },
             [&](const SemArray&) noexcept { return required; },
-            [&](const SemTuple&) noexcept { return required; },
+            [&](const SemTuple& value) noexcept {
+                return value.elements.empty() ? none : required;
+            },
             [&](const SemArrayAdopt&) noexcept { return required; },
             [&](const SemStruct&) noexcept { return required; },
             [&](const SemEnumCase&) noexcept { return required; },

@@ -1,0 +1,253 @@
+import .utf.scan using { UTF8State, push_utf8, feed_utf8, check_utf8_complete };
+
+export enum UTF8ErrorKind {
+    InvalidLead,
+    InvalidContinuation,
+    Overlong,
+    Surrogate,
+    TooLarge,
+    Truncated
+}
+
+export struct UTF8Error {
+    kind: UTF8ErrorKind,
+    offset: usize,
+    sequence_start: usize
+}
+
+export struct UnicodeScalarError {
+    value: u32
+}
+
+export const fn char_from_u32(value: u32) -> char throw UnicodeScalarError {
+    return match value {
+        0xd800..=0xdfff | 0x110000.. => throw UnicodeScalarError { value: value },
+        _ => char::from_u32_unchecked(value),
+    };
+}
+
+export const fn from_utf8(bytes: [u8]) -> str throw UTF8Error {
+    validate_utf8(bytes)?;
+    return str::from_utf8_unchecked(bytes);
+}
+
+export class UTF8Validator {
+    state: UTF8State,
+
+    const fn new() -> UTF8Validator => { state: {} };
+
+    // A rejected byte leaves the caller's state unchanged.
+    const fn push(&self, byte: u8) throw UTF8Error => push_utf8(&self.state, byte)?;
+
+    // A block boundary can split a scalar; check_complete checks for a pending scalar.
+    const fn feed(&self, bytes: [u8]) throw UTF8Error => feed_utf8(&self.state, bytes)?;
+
+    const fn check_complete(self) throw UTF8Error => check_utf8_complete(self.state)?;
+
+    const fn is_complete(self) -> bool => self.state.remaining == 0;
+
+    const fn processed_bytes(self) -> usize => self.state.offset;
+}
+
+export const fn validate_utf8(bytes: [u8]) throw UTF8Error {
+    var state = UTF8State {};
+    feed_utf8(&state, bytes)?;
+    check_utf8_complete(state)?;
+}
+
+export struct UTF8Encoded {
+    bytes: [u8; 4],
+    width: usize,
+}
+
+export enum UTF8DecodeResult {
+    End,
+    Scalar(char, usize),
+}
+
+export const fn decode_utf8_prefix(bytes: [u8]) -> UTF8DecodeResult throw UTF8Error {
+    var state = UTF8State {};
+    var scalar: u32 = 0;
+    for byte in bytes {
+        push_utf8(&state, byte)?;
+        if state.offset == 1 {
+            scalar = match byte {
+                ..0x80 => byte as u32,
+                0x80..0xe0 => (byte & 31) as u32,
+                0xe0..0xf0 => (byte & 15) as u32,
+                0xf0.. => (byte & 7) as u32,
+            };
+        } else {
+            scalar = (scalar << 6) | ((byte & 63) as u32);
+        }
+        if state.remaining == 0 { return .Scalar(char::from_u32_unchecked(scalar), state.offset); }
+    }
+    check_utf8_complete(state)?;
+    return .End;
+}
+
+private const fn continuation(value: u32, const shift: u32) -> u8 {
+    let payload = (value >> shift) & 63;
+    return (0x80 | payload) as u8;
+}
+
+export const fn encode_utf8(character: char) -> UTF8Encoded {
+    let value = character as u32;
+    return match value {
+        ..=0x7f => {
+            bytes: [value as u8, 0, 0, 0],
+            width: 1,
+        },
+        0x80..=0x7ff => {
+            bytes: [(0xc0 | (value >> 6)) as u8, continuation(value, 0), 0, 0],
+            width: 2,
+        },
+        0x800..=0xffff => {
+            bytes: [
+                (0xe0 | (value >> 12)) as u8,
+                continuation(value, 6),
+                continuation(value, 0),
+                0
+            ],
+            width: 3,
+        },
+        0x10000.. => {
+            bytes: [
+                (0xf0 | (value >> 18)) as u8,
+                continuation(value, 12),
+                continuation(value, 6),
+                continuation(value, 0),
+            ],
+            width: 4,
+        },
+    };
+}
+
+// Bind the encoding result before retaining this view; it borrows that result.
+export const fn encoded_bytes(encoded: UTF8Encoded) -> [u8] {
+    assert(encoded.width >= 1 && encoded.width <= 4);
+    return encoded.bytes.slice(0, encoded.width);
+}
+
+export const fn to_string(bytes: [u8]) -> String throw UTF8Error {
+    return str::from_utf8(bytes)? as String;
+}
+
+export enum TextError {
+    OutOfBounds,
+    NotCharBoundary,
+    EmptySeparator
+}
+
+export struct Split {
+    found: bool,
+    before: str,
+    after: str
+}
+
+private const fn boundary(text: str, offset: usize) -> bool {
+    return offset == text.byte_length() || (text.bytes[offset] & 0xc0) != 0x80;
+}
+
+// Offsets are UTF-8 byte offsets. The result borrows the original text.
+export const fn substring(text: str, start: usize, end: usize) -> str throw TextError {
+    if start > end || end > text.byte_length() { throw TextError::OutOfBounds; }
+    if !boundary(text, start) || !boundary(text, end) { throw TextError::NotCharBoundary; }
+    return str::from_utf8_unchecked(text.bytes.slice(start, end));
+}
+
+export const fn starts_with(text: str, prefix: str) -> bool {
+    if prefix.byte_length() > text.byte_length() { return false; }
+    for index in 0..prefix.byte_length() {
+        if text.bytes[index] != prefix.bytes[index] { return false; }
+    }
+    return true;
+}
+
+export const fn split_once(text: str, separator: str) -> Split throw TextError {
+    if separator.is_empty() { throw TextError::EmptySeparator; }
+    if separator.byte_length() <= text.byte_length() {
+        for start in 0usize..=text.byte_length() - separator.byte_length() {
+            var matches = true;
+            for offset in 0..separator.byte_length() {
+                if text.bytes[start + offset] != separator.bytes[offset] {
+                    matches = false;
+                    break;
+                }
+            }
+            if matches {
+                return {
+                    found: true,
+                    before: str::from_utf8_unchecked(text.bytes.slice(0, start)),
+                    after: str::from_utf8_unchecked(
+                        text.bytes.slice(start + separator.byte_length(), text.byte_length())
+                    )
+                };
+            }
+        }
+    }
+    return {
+        found: false,
+        before: text,
+        after: ""
+    };
+}
+
+// The returned fields own their content; empty fields are retained.
+export const fn split(text: str, separator: str) -> Vector<String> throw TextError {
+    var parts: Vector<String> = [];
+    var remaining = text;
+    while {
+        let part = split_once(remaining, separator)?;
+        parts.push(part.before as String);
+        if !part.found { return &&parts; }
+        remaining = part.after;
+    }
+}
+
+export enum SplitField {
+    Value(str),
+    End
+}
+
+// Keep the same source and separator for one traversal. Only offsets are stored.
+export class SplitCursor {
+    offset: usize,
+    finished: bool,
+
+    const fn new() -> SplitCursor => {
+        offset: 0,
+        finished: false
+    };
+
+    const fn next(&self, text: str, separator: str) -> SplitField throw TextError {
+        if separator.is_empty() { throw TextError::EmptySeparator; }
+        if self.finished { return .End; }
+        let part = split_once(substring(text, self.offset, text.byte_length())?, separator)?;
+        if part.found {
+            self.offset += part.before.byte_length() + separator.byte_length();
+        } else {
+            self.finished = true;
+        }
+        return .Value(part.before);
+    }
+}
+
+// LF and CRLF delimit lines. A final delimiter does not add a phantom line.
+export const fn lines(text: str) -> Vector<String> {
+    var result: Vector<String> = [];
+    var start: usize = 0;
+    for end in 0..text.byte_length() {
+        if text.bytes[end] != 0x0a { continue; }
+        var limit = end;
+        if limit > start && text.bytes[limit - 1] == 0x0d { --limit; }
+        result.push(str::from_utf8_unchecked(text.bytes.slice(start, limit)) as String);
+        start = end + 1;
+    }
+    if start < text.byte_length() {
+        result.push(
+            str::from_utf8_unchecked(text.bytes.slice(start, text.byte_length())) as String
+        );
+    }
+    return &&result;
+}

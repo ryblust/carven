@@ -52,8 +52,9 @@ public:
     StaticExecutionContext(
         StaticStage& stage,
         std::optional<ExecutionRoot> root = std::nullopt,
-        ExecutionOutputMode output = ExecutionOutputMode::Write
+        StaticEvaluationPurpose purpose = StaticEvaluationPurpose::Execute
     ) noexcept;
+    auto host_effects_rejection() const noexcept -> std::optional<std::string_view> override;
     auto function_for_callable(CallableID callable) const noexcept
         -> std::optional<FunctionID> override;
     auto bind_call(
@@ -64,7 +65,7 @@ public:
     ) noexcept -> ContinuationTask<std::expected<CallableID, ExecutionCallFailure>> override;
     auto freeze(ExecutionValue value) noexcept -> std::optional<ConstantID> override;
     auto prepare_call(CallableID callable, ProgramOriginID origin) noexcept
-        -> ContinuationTask<std::expected<ExecutionBody, ExecutionCallFailure>> override;
+        -> ContinuationTask<std::expected<ExecutionCallTarget, ExecutionCallFailure>> override;
     auto report(const ExecutionEvent& event) noexcept -> void override;
     auto failure() const noexcept -> std::optional<AnalysisFailure>;
     auto write(ExecutionOutputStream stream, std::string_view bytes) noexcept -> void override;
@@ -73,23 +74,34 @@ private:
     StaticStage& stage;
     ProgramDraft& draft;
     const std::optional<ExecutionRoot> root;
-    ExecutionOutputMode output;
+    StaticEvaluationPurpose purpose;
     std::optional<AnalysisFailure> reported_failure;
 };
 
 StaticExecutionContext::StaticExecutionContext(
     StaticStage& stage,
     std::optional<ExecutionRoot> root,
-    ExecutionOutputMode output
+    StaticEvaluationPurpose purpose
 ) noexcept
     : stage(stage),
       draft(stage.draft()),
       root(root),
-      output(output) {}
+      purpose(purpose) {}
+
+auto StaticExecutionContext::host_effects_rejection() const noexcept
+    -> std::optional<std::string_view> {
+    if (draft.host_effects() == HostEffects::Deny) {
+        return "this analysis does not permit host input, clock sampling, or waiting";
+    }
+    if (purpose == StaticEvaluationPurpose::ResolveType) {
+        return "a type dependency query cannot observe host state; evaluate the value in an explicit const root first";
+    }
+    return std::nullopt;
+}
 
 auto StaticExecutionContext::write(ExecutionOutputStream stream, std::string_view bytes) noexcept
     -> void {
-    if (output == ExecutionOutputMode::Write) {
+    if (purpose == StaticEvaluationPurpose::Execute) {
         draft.write_output(stream, bytes);
     }
 }
@@ -158,7 +170,18 @@ auto StaticExecutionContext::bind_call(
 }
 
 auto StaticExecutionContext::prepare_call(CallableID callable, ProgramOriginID origin) noexcept
-    -> ContinuationTask<std::expected<ExecutionBody, ExecutionCallFailure>> {
+    -> ContinuationTask<std::expected<ExecutionCallTarget, ExecutionCallFailure>> {
+    if (const auto implementation = draft.callable_implementation_copy(callable)) {
+        const auto result = [&]() noexcept {
+            return std::get<TypeID>(draft.construction_callable_contract_copy(callable).result);
+        };
+        if (const auto* parser = std::get_if<NumberParseImplementation>(&*implementation)) {
+            co_return ExecutionBuiltinCall {.result = result(), .implementation = *parser};
+        }
+        if (const auto* provided = std::get_if<ProvidedFunctionImplementation>(&*implementation)) {
+            co_return ExecutionBuiltinCall {.result = result(), .implementation = *provided};
+        }
+    }
     const auto failure_event = [&](ExecutionReason reason, std::string message) noexcept {
         return ExecutionEvent {
             .origin = origin,
@@ -546,9 +569,9 @@ auto StaticStage::instance(
 
 auto StaticStage::evaluate(
     const SemanticExpression& expression,
-    ExecutionOutputMode output
+    StaticEvaluationPurpose purpose
 ) noexcept -> AnalysisTask<ExecutionValue> {
-    auto context = StaticExecutionContext(*this, std::nullopt, output);
+    auto context = StaticExecutionContext(*this, std::nullopt, purpose);
     co_return delivered(
         program,
         context,

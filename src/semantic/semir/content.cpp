@@ -174,6 +174,20 @@ auto ContentWriter::callable(CallableID id) noexcept -> ContentTask {
         }
         co_return {};
     }
+    if (const auto* provided = std::get_if<ProvidedFunctionImplementation>(
+            &declarations.callable(id).implementation
+        )) {
+        token("provided callable");
+        number(static_cast<std::uint64_t>(provided->function));
+        co_return {};
+    }
+    if (const auto* parser =
+            std::get_if<NumberParseImplementation>(&declarations.callable(id).implementation)) {
+        token("number parser");
+        co_await signature(declarations.callable(id).signature);
+        co_await constant(parser->invalid);
+        co_return {};
+    }
     const auto body = declarations.body_for_callable(id);
     if (!body) {
         invariant_violation("unnamed callable has no body provenance");

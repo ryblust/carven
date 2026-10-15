@@ -50,9 +50,9 @@ be serialized.
 | `definition` | A source declaration or the selected local import alias. |
 | `references` | Recorded occurrences of a resolved declaration across the selected project, including its declaration. |
 
-Hover and definition select the document's transitive import closure through the
-frontend source dependency discovery, including configured prerequisites of
-provided contracts and duration literals. Semantic analysis checks the required
+Hover and definition select the document's transitive source closure through
+frontend dependency discovery, including standard-source defaults and associated
+entries such as `stdin` and `str::from_utf8`. Semantic analysis checks the required
 contracts when they are used. Their diagnostics, captured output, and versions describe
 that selection. A target outside the project returns no result or analysis owner.
 Semantic and reference queries analyze the complete caller-selected project.

@@ -48,7 +48,7 @@ auto simd_layout(BuiltinType owner) noexcept -> std::optional<SIMDLayout> {
 
 namespace {
 
-enum class SIMDSlot { Vector, Mask, Element, Bits, Index, Boolean, Array, Slice };
+enum class SIMDSlot { Vector, Mask, Element, Bits, Index, Boolean, Array, Indices, Slice };
 
 struct IntrinsicContract final {
     SIMDIntrinsic intrinsic;
@@ -131,6 +131,16 @@ inline constexpr auto contracts = std::array {
         .arity = 3uz,
         .result = SIMDSlot::Vector,
         .static_input = std::nullopt
+    },
+    IntrinsicContract {
+        .intrinsic = SIMDIntrinsic::Swizzle,
+        .name = "swizzle",
+        .factory = false,
+        .bytes_only = false,
+        .inputs = {SIMDSlot::Vector, SIMDSlot::Indices},
+        .arity = 2uz,
+        .result = SIMDSlot::Vector,
+        .static_input = 1uz
     },
     IntrinsicContract {
         .intrinsic = SIMDIntrinsic::Lookup,
@@ -320,6 +330,8 @@ auto simd_contract(
             case SIMDSlot::Boolean: return BuiltinType::Bool;
             case SIMDSlot::Array:
                 return SIMDShape {.element = layout->element, .extent = layout->width};
+            case SIMDSlot::Indices:
+                return SIMDShape {.element = BuiltinType::U8, .extent = layout->width};
             case SIMDSlot::Slice:
                 return SIMDShape {.element = layout->element, .extent = std::nullopt};
         }

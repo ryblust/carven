@@ -1,5 +1,3 @@
-import std::simd using { u8x16, u8x32, mask32 };
-
 // Bit n denotes byte n; matching plans are derived from this set at compilation.
 export struct ByteSet {
     words: [u64; 4],

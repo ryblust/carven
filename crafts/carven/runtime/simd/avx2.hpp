@@ -183,6 +183,15 @@ CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL div_floats(Value<Bytes> a, Value<Bytes>
     }
 }
 
+template<std::size_t Bytes>
+CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL sqrt_floats(Value<Bytes> value) noexcept -> Value<Bytes> {
+    if constexpr (Bytes == 16) {
+        return _mm_castps_si128(_mm_sqrt_ps(_mm_castsi128_ps(value)));
+    } else {
+        return _mm256_castps_si256(_mm256_sqrt_ps(_mm256_castsi256_ps(value)));
+    }
+}
+
 template<int Predicate, std::size_t Bytes>
 CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL compare_floats(Value<Bytes> a, Value<Bytes> b) noexcept
     -> Value<Bytes> {

@@ -11,6 +11,8 @@ struct Void final {
     auto operator==(const Void&) const noexcept -> bool = default;
 };
 
+auto carven_inline_value(Void*) noexcept -> std::true_type;
+
 template<typename Result>
 using NativeValue = std::conditional_t<std::is_void_v<Result>, Void, Result>;
 

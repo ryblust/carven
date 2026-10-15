@@ -1,74 +1,34 @@
 module carven:test.internal.semantic.analysis.duration_literals;
 
 import :diagnostics.code;
-import :frontend.program.parse;
-import :semantic.analyze;
-import :semantic.semir.constant;
-import :semantic.semir.decl;
-import :semantic.semir.program;
-import :source.batch;
-import :source.manager;
-import :source.module_path;
 import :test.harness.diagnostics;
 import :test.harness.framework;
+import :test.internal.compiler.diagnostics.fixture;
 import std;
 
 namespace {
 
 auto check_duration(
     std::string_view source,
-    std::optional<std::int64_t> ticks,
-    std::optional<DiagnosticCode> rejection = std::nullopt,
-    std::string_view standard = "export struct Duration { nanoseconds: i64 }"
+    std::optional<DiagnosticCode> rejection = std::nullopt
 ) noexcept -> void {
-    auto sources = SourceManager();
-    const auto application = sources.append_virtual("duration.cv", std::string(source));
-    const auto duration = sources.append_virtual("std_duration.cv", std::string(standard));
-    require(application.has_value() && duration.has_value());
-    const auto inputs = std::array {
-        SourceModuleInput {
-            .source_id = *application,
-            .module_path = *CanonicalModulePath::from_value("duration")
+    constexpr auto modules = std::to_array<std::string_view>({"time"});
+    with_compiled_source(
+        source,
+        [&](const auto&, const auto& result) noexcept {
+            if (!expect_equal(result.has_value(), !rejection).note("source = ", source)) {
+                return;
+            }
+            if (rejection) {
+                expect_diagnostic(result.error(), *rejection).note("source = ", source);
+            }
         },
-        SourceModuleInput {
-            .source_id = *duration,
-            .module_path = *CanonicalModulePath::from_value("crafts.carven.std.time.duration")
-        }
-    };
-    auto syntax = parse_program(sources, SourceBatch {.modules = inputs});
-    require(syntax.has_value()).note("source = ", source);
-    auto result = analyze(std::move(*syntax));
-    if (!expect_equal(result.has_value(), !rejection).note("source = ", source)) {
-        return;
-    }
-    if (rejection) {
-        expect_diagnostic(result.error(), *rejection).note("source = ", source);
-        return;
-    }
-    if (!ticks) {
-        return;
-    }
-    const auto& program = result->value;
-    auto count = 0uz;
-    for (const auto [id, declaration] : program.declarations().module_constants()) {
-        static_cast<void>(id);
-        ++count;
-        const auto& value = program.constants().constant(declaration.value);
-        const auto* fields = std::get_if<StructConstant>(&value.value);
-        if (fields && !expect_equal(fields->fields.size(), 1uz)) {
-            continue;
-        }
-        const auto& scalar = fields ? program.constants().constant(fields->fields.front()) : value;
-        const auto* integer = std::get_if<IntegerConstant>(&scalar.value);
-        if (expect(integer != nullptr)) {
-            expect_equal(integer->as_signed(), *ticks).note("source = ", source);
-        }
-    }
-    expect_equal(count, 1uz);
+        modules
+    );
 }
 
 const TestSuite suite([] static noexcept {
-    "Duration literals: exact scaling and signed bounds form ordinary records"_test =
+    "Duration literals: exact scaling and signed bounds preserve nanoseconds"_test =
         [] static noexcept {
             struct Case final {
                 std::string_view literal;
@@ -92,12 +52,11 @@ const TestSuite suite([] static noexcept {
             for (const auto& input : cases) {
                 check_duration(
                     std::format(
-                        "import std::time.duration using Duration; const value = {}; "
-                        "fn runtime() -> Duration {{ return {}; }}",
+                        "import std::time using Duration; const value: Duration = {}; "
+                        "const {{ assert(value.nanoseconds == {}i64); }}",
                         input.literal,
-                        input.literal
-                    ),
-                    input.ticks
+                        input.ticks
+                    )
                 );
             }
         };
@@ -105,10 +64,9 @@ const TestSuite suite([] static noexcept {
     "Duration literals: wildcard imports and const functions share the ordinary value"_test =
         [] static noexcept {
             check_duration(
-                "import std::time.duration using *; "
+                "import std::time using *; "
                 "const fn delay() -> Duration { return 2ms; } "
-                "const ticks = delay().nanoseconds;",
-                2'000'000
+                "const { assert(delay().nanoseconds == 2000000); }"
             );
         };
 
@@ -123,46 +81,35 @@ const TestSuite suite([] static noexcept {
               "18446744073709551616ns"}) {
             check_duration(
                 std::format("const value = {};", literal),
-                std::nullopt,
-                DiagnosticCode::ConstLiteralRange
-            );
-            check_duration(
-                std::format(
-                    "import std::time.duration using Duration; fn value() -> Duration {{ return {}; }}",
-                    literal
-                ),
-                std::nullopt,
                 DiagnosticCode::ConstLiteralRange
             );
         }
+        check_duration(
+            "import std::time using Duration; fn value() -> Duration { return 9223372037s; }",
+            DiagnosticCode::ConstLiteralRange
+        );
     };
 
     "Duration literals: fixed standard identity is independent of source bindings"_test =
         [] static noexcept {
-            check_duration("const value = 1ms; fn runtime() { let value = 2us; }", 1'000'000);
-            check_duration("struct Duration { nanoseconds: i64 } const value = 1ms;", 1'000'000);
             check_duration(
-                "const value: Duration = 1ms;",
-                std::nullopt,
-                DiagnosticCode::TypeUnresolved
+                "const value = 1ms; const { assert(value.nanoseconds == 1000000); } "
+                "fn runtime() { let value = 2us; }"
             );
             check_duration(
+                "struct Duration { nanoseconds: i64 } const value = 1ms; "
+                "const { assert(value.nanoseconds == 1000000); }"
+            );
+            check_duration("const value: Duration = 1ms;", DiagnosticCode::TypeUnresolved);
+            check_duration(
                 "fn runtime() { let value: Duration = 1ms; }",
-                std::nullopt,
                 DiagnosticCode::TypeUnresolved
             );
             check_duration(
                 "struct Duration { nanoseconds: i64 } const value: Duration = 1ms;",
-                std::nullopt,
                 DiagnosticCode::TypeMismatch
             );
-            check_duration(
-                "const value = 1ms;",
-                std::nullopt,
-                DiagnosticCode::TypeMismatch,
-                "export struct Duration { nanoseconds: i32 }"
-            );
-            check_duration("const value: i64 = 1ms;", std::nullopt, DiagnosticCode::TypeMismatch);
+            check_duration("const value: i64 = 1ms;", DiagnosticCode::TypeMismatch);
         };
 });
 

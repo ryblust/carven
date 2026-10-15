@@ -3,6 +3,7 @@ module carven:backend.lowering.context.impl;
 import :backend.generation.names;
 import :backend.generation.plan;
 import :backend.lowering.context;
+import :backend.target.symbol;
 import :semantic.semir.decl;
 import :source.provenance;
 import :support.invariant;
@@ -205,6 +206,20 @@ auto ModuleLowering::enumeration_name(EnumID id, TypeNameScope scope) noexcept -
     );
 }
 
+auto ModuleLowering::callable_expression(CallableID id) noexcept -> TargetExpr {
+    const auto& implementation = semantic().declarations().callable(id).implementation;
+    if (const auto* provided = std::get_if<ProvidedFunctionImplementation>(&implementation)) {
+        auto symbol = TargetSymbol::ProvidedReadInput;
+        switch (provided->function) {
+            case ProvidedFunction::ReadInput:    symbol = TargetSymbol::ProvidedReadInput; break;
+            case ProvidedFunction::MonotonicNow: symbol = TargetSymbol::ProvidedMonotonicNow; break;
+            case ProvidedFunction::WaitUntil:    symbol = TargetSymbol::ProvidedWaitUntil; break;
+        }
+        return intrinsic_expression(symbol);
+    }
+    return name_expression(callable_name(id));
+}
+
 auto ModuleLowering::callable_name(CallableID id) noexcept -> TargetName {
     const auto provider = names().callable_owner(id);
     const auto placement = target_definition_placement(semantic(), id);
@@ -214,7 +229,9 @@ auto ModuleLowering::callable_name(CallableID id) noexcept -> TargetName {
     if (placement != TargetDefinitionPlacement::Use) {
         artifact_lowering.require_interface(provider);
     }
-    return names().callable_name(module_id, id);
+    // The source callee is resolved already; C++ argument-dependent lookup
+    // must not add native overloads with the same spelling.
+    return names().callable_name(std::nullopt, id);
 }
 
 auto ModuleLowering::closure_type_name(CallableID id, TypeNameScope scope) noexcept -> TargetName {
@@ -277,8 +294,8 @@ auto ArtifactLowering::next_definition() noexcept -> std::optional<CallableID> {
 }
 
 auto ModuleLowering::payload_enum(EnumID id) noexcept -> const TargetPayloadEnumNames& {
-    const auto provider = semantic().declarations().enumeration(id).module_id;
-    artifact_lowering.require_interface(provider);
+    const auto& declaration = semantic().declarations().enumeration(id);
+    artifact_lowering.require_interface(declaration.module_id);
     return names().payload_enum(id);
 }
 

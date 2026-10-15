@@ -52,6 +52,19 @@ retain native C++ `void`. Constant products and decomposition execute and freeze
 during semantic specialization. Runtime products preserve evaluation, failure,
 address, and cleanup obligations; C++ optimizes their native storage and layout.
 
+Types proven safe for incidental value transport publish an inline-storage
+contract. Generated nominal forward declarations carry a matching
+`carven_inline_value(T*)` declaration in the type's namespace. Its return type
+records the published type-contents result; runtime queries use unevaluated ADL,
+without calling the function. Canonical runtime value representations supply the
+same contract, and structural carriers compose their element contracts. The fact
+is available before use and agrees across translation units.
+
+Async completion uses this contract for both success and failure alternatives.
+Proven values reside in the completion carrier; other payloads retain independent
+storage. Native constructibility and trivial-copy traits do not establish this
+transport proof. Source-visible transfers still use their ordinary delivery policy.
+
 ## Constants and default values
 
 Calls executed in the static stage and direct constant expressions arrive as completed

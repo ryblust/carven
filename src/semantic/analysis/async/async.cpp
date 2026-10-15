@@ -4,7 +4,6 @@ import :diagnostics.builder;
 import :diagnostics.code;
 import :semantic.analysis.async;
 import :semantic.analysis.model;
-import :semantic.analysis.types.standard;
 import :semantic.semir.children;
 import :semantic.semir.decl;
 import :semantic.semir.traversal;
@@ -13,29 +12,6 @@ import :source.text;
 import :support.invariant;
 import :support.visit;
 import std;
-
-namespace {
-
-auto resolve_timeout_contract(
-    ProgramDraft& draft,
-    AnalysisCatalogView catalog,
-    ConstructionRequests& requests,
-    ProgramModuleID module,
-    Span span
-) noexcept -> AnalysisTask<TimeoutContract> {
-    auto types = std::vector<TypeID>();
-    for (const auto record : provided_contract_dependencies(ProvidedExport::Timeout)) {
-        auto type =
-            co_await resolve_standard_record(draft, catalog, requests, module, span, record);
-        if (!type) {
-            co_return std::unexpected(type.error());
-        }
-        types.push_back(*type);
-    }
-    co_return TimeoutContract {types[0], types[1], types[2]};
-}
-
-} // namespace
 
 auto provided_async_builtin(ProvidedExport identity) noexcept -> std::optional<AsyncBuiltin> {
     if (identity == ProvidedExport::CancelRequested) {
@@ -69,11 +45,9 @@ auto provided_async_builtin(ProvidedExport identity) noexcept -> std::optional<A
 }
 
 auto resolve_async_builtin(
-    ProgramDraft& draft,
-    AnalysisCatalogView catalog,
     ConstructionRequests& requests,
-    ProgramModuleID module,
     AsyncBuiltin builtin,
+    ProgramModuleID requester,
     Span span
 ) noexcept -> AnalysisTask<ResolvedStaticCallable> {
     if (const auto* intrinsic = std::get_if<AsyncIntrinsic>(&builtin)) {
@@ -82,27 +56,36 @@ auto resolve_async_builtin(
     if (const auto* policy = std::get_if<AsyncCompositionPolicy>(&builtin)) {
         co_return *policy;
     }
-    auto contract = co_await resolve_timeout_contract(draft, catalog, requests, module, span);
-    if (!contract) {
-        co_return std::unexpected(contract.error());
+    auto duration = co_await requests.standard_type(StandardDeclaration::Duration, requester, span);
+    if (!duration) {
+        co_return std::unexpected(duration.error());
     }
-    co_return *contract;
+    auto timeout = co_await requests.standard_type(StandardDeclaration::Timeout, requester, span);
+    if (!timeout) {
+        co_return std::unexpected(timeout.error());
+    }
+    auto range = co_await requests.standard_type(StandardDeclaration::RangeError, requester, span);
+    if (!range) {
+        co_return std::unexpected(range.error());
+    }
+    co_return TimeoutContract {*duration, *timeout, *range};
 }
 
 namespace {
 
 enum class ValueAdmission { Satisfied, Rejected, Dependent };
 
-auto scalar(const AnalysisModelView& model, ConstructionTypeRef type) noexcept -> ValueAdmission {
+auto builtin_value(const AnalysisModelView& model, ConstructionTypeRef type) noexcept
+    -> ValueAdmission {
     const auto& shape = model.shape(type);
     if ((std::holds_alternative<GenericTypeParameter>(shape))) {
         return ValueAdmission::Dependent;
     }
-    const auto* builtin = std::get_if<BuiltinTypeValue>(&shape);
-    return builtin
-            && (builtin_is_numeric(builtin->kind)
-                || builtin->kind == BuiltinType::Bool
-                || builtin->kind == BuiltinType::Char)
+    if (!std::holds_alternative<BuiltinTypeValue>(shape)) {
+        return ValueAdmission::Rejected;
+    }
+    const auto contents = model.contents(type);
+    return contents.read_is_value_snapshot() && !contents.contains_storage_view
         ? ValueAdmission::Satisfied
         : ValueAdmission::Rejected;
 }
@@ -122,7 +105,7 @@ auto admitted_value(
     while (!pending.empty()) {
         const auto next = pending.back();
         pending.pop_back();
-        if (!seen.insert(next).second || scalar(model, next) == ValueAdmission::Satisfied) {
+        if (!seen.insert(next).second || builtin_value(model, next) == ValueAdmission::Satisfied) {
             continue;
         }
         const auto& value = model.shape(next);
@@ -131,8 +114,7 @@ auto admitted_value(
             continue;
         }
         if (const auto* builtin = std::get_if<BuiltinTypeValue>(&value)) {
-            if (builtin->kind == BuiltinType::Void
-                || (owning && builtin->kind == BuiltinType::String)) {
+            if (owning && builtin->kind == BuiltinType::String) {
                 continue;
             }
             return ValueAdmission::Rejected;
@@ -244,7 +226,7 @@ auto analyze_async_contracts(
             }
             if (rejected(
                     parameter.access == AccessMode::Write
-                        ? scalar(model, parameter.type)
+                        ? builtin_value(model, parameter.type)
                         : admitted_value(
                               model,
                               parameter.type,
@@ -256,7 +238,7 @@ auto analyze_async_contracts(
                 diagnose(
                     origin,
                     DiagnosticCode::AsyncOwnership,
-                    "async inputs require value or native borrowed Read, scalar Write, or referent-free owning Take"
+                    "async inputs require value or native borrowed Read, builtin value Write, or referent-free owning Take"
                 );
             }
         }

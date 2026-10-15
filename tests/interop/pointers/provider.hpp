@@ -89,6 +89,9 @@ inline auto readonly_fixed() noexcept -> const Fixed* {
 inline auto output(std::int32_t** slot) noexcept -> void {
     *slot = &first;
 }
+
+auto output_adapter() noexcept -> std::int32_t*;
+
 struct Incomplete;
 
 inline auto opaque_address() noexcept -> void* {

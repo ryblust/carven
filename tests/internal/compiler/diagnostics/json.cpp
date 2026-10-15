@@ -9,24 +9,21 @@ import std;
 namespace {
 
 constexpr auto json_modules = std::to_array<std::string_view>({
-    "json.error",
+    "core",
+    "json",
     "json.node",
     "json.parse",
     "json.serialize",
     "json.string",
     "json.syntax",
-    "json.value",
-    "number.parse",
     "simd.bytes",
     "simd.scan",
+    "utf",
     "utf.block",
-    "utf.error",
     "utf.scan",
-    "utf.validation",
 });
 
-constexpr auto json_imports = "import std::json.value using Value; "
-                              "import std::json.error using ValueError; ";
+constexpr auto json_imports = "import std::json using { Value, ValueError }; ";
 
 const TestSuite suite([] static noexcept {
     "JSON craft: borrowed keys prevent removing object members"_test = [] static noexcept {

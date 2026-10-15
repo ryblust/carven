@@ -49,6 +49,11 @@ auto ExecutionEvent::termination() const noexcept -> ExecutionTermination {
     std::unreachable();
 }
 
+auto SemanticExecutionContext::host_effects_rejection() const noexcept
+    -> std::optional<std::string_view> {
+    return std::nullopt;
+}
+
 auto SemanticExecutionContext::stage() const noexcept -> ExecutionStage {
     return ExecutionStage::Static;
 }

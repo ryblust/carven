@@ -1,8 +1,7 @@
-import std::number.parse using { ParseError, parse };
-import std::utf.text using { from_utf8, split_once, split, starts_with, TextError };
-import std::utf.error using UTF8Error;
-import std::json.value using Value;
-import std::json.error using ValueError;
+import std::core using NumberParseError;
+import std::io using ByteLines;
+import std::json using { ValueError, Value };
+import std::utf using { UTF8Error, split_once, starts_with, SplitCursor, TextError };
 
 enum Level {
     Info,
@@ -14,7 +13,7 @@ enum RecordError {
     Shape,
     UnknownLevel,
     Latency,
-    InvalidLatency(ParseError),
+    InvalidLatency(NumberParseError),
     InvalidText(UTF8Error),
     TextProcessing(TextError)
 }
@@ -38,6 +37,8 @@ struct Rules {
     secret_marker: String
 }
 
+const maximum_latency_ms: u64 = 60000;
+
 const rules: Rules = {
     slow_ms: 30,
     secret_marker: "token="
@@ -58,14 +59,20 @@ private const fn level(text: str) -> Level throw RecordError => match text {
 private const fn redact(text: str) -> String throw TextError {
     var result: String = {};
     var first = true;
-    for word in split(text, " ")? {
-        if !first { result.push(' '); }
-        first = false;
-        if starts_with(word, rules.secret_marker) {
-            result.append(rules.secret_marker);
-            result.append("[redacted]");
-        } else {
-            result.append(word);
+    var cursor = SplitCursor::new();
+    while {
+        match cursor.next(text, " ")? {
+            .End => break,
+            .Value(word) => {
+                if !first { result.push(' '); }
+                first = false;
+                if starts_with(word, rules.secret_marker) {
+                    result.append(rules.secret_marker);
+                    result.append("[redacted]");
+                } else {
+                    result.append(word);
+                }
+            },
         }
     }
     return &&result;
@@ -73,20 +80,20 @@ private const fn redact(text: str) -> String throw TextError {
 
 fn parse_record(bytes: [u8]) -> Record throw RecordError {
     try {
-        let text = from_utf8(bytes)?;
+        let text = str::from_utf8(bytes)?;
         let first = split_once(text, " ")?;
         if !first.found { throw RecordError::Shape; }
         let second = split_once(first.after, " ")?;
         if !second.found || second.before.is_empty() { throw RecordError::Shape; }
-        let milliseconds = parse<u64>(second.before)?;
-        if milliseconds > 60000 { throw RecordError::Latency; }
+        let milliseconds = u64::parse(second.before)?;
+        if milliseconds > maximum_latency_ms { throw RecordError::Latency; }
         return {
             level: level(first.before)?,
             milliseconds: milliseconds,
             message: redact(second.after)?,
         };
     } catch {
-        ParseError(error) => throw RecordError::InvalidLatency(error),
+        NumberParseError(error) => throw RecordError::InvalidLatency(error),
         UTF8Error(error) => throw RecordError::InvalidText(error),
         TextError(error) => throw RecordError::TextProcessing(error),
     }
@@ -94,26 +101,28 @@ fn parse_record(bytes: [u8]) -> Record throw RecordError {
 
 fn analyze(bytes: [u8]) -> Report {
     var report: Report = {};
-    var start: usize = 0;
-    for end in 0usize..=bytes.length() {
-        if end != bytes.length() && bytes[end] != 0x0a { continue; }
-        var limit = end;
-        if limit > start && bytes[limit - 1] == 0x0d { --limit; }
-        if limit != start {
-            try {
-                let record = parse_record(bytes.slice(start, limit))?;
-                ++report.accepted;
-                match record.level {
-                    .Info => {},
-                    .Warning => { ++report.warnings; },
-                    .Error => { ++report.errors; },
+    var lines = ByteLines::new();
+    while {
+        match lines.next(bytes) {
+            .End => break,
+            .Line(start, end, _) => {
+                var limit = end;
+                if limit > start && bytes[limit - 1] == 0x0d { --limit; }
+                if limit == start { continue; }
+                try {
+                    let record = parse_record(bytes.slice(start, limit))?;
+                    ++report.accepted;
+                    match record.level {
+                        .Info => {},
+                        .Warning => { ++report.warnings; },
+                        .Error => { ++report.errors; },
+                    }
+                    if record.milliseconds >= rules.slow_ms { report.slow.push(record.message); }
+                } catch {
+                    RecordError(_) => { ++report.rejected; },
                 }
-                if record.milliseconds >= rules.slow_ms { report.slow.push(record.message); }
-            } catch {
-                RecordError(_) => { ++report.rejected; },
-            }
+            },
         }
-        start = end + 1;
     }
     return &&report;
 }
@@ -173,10 +182,7 @@ test "log validation rejects invalid fields and UTF-8 without losing valid input
         "INFO 60000 boundary\nINFO 60001 too slow\nDEBUG 1 unknown\nINFO\nINFO -1 negative\n".bytes
     );
     check(report.accepted == 1 && report.rejected == 4 && report.slow[0] == "boundary");
-    var bytes: Vector<u8> = [];
-    for byte in "INFO 1 ".bytes {
-        bytes.push(byte);
-    }
+    var bytes = Vector<u8>::from_slice("INFO 1 ".bytes);
     bytes.push(0xff);
     bytes.push(0x0a);
     check(analyze(bytes).rejected == 1);
@@ -200,6 +206,16 @@ test "log validation rejects invalid fields and UTF-8 without losing valid input
                 .InvalidLatency(detail) => detail == .Invalid,
                 _ => false
             },
+        }
+    );
+}
+
+const test "Log redaction: preserve leading adjacent and trailing spaces" {
+    check(
+        try {
+            redact("  token=abc  ready ")? == "  token=[redacted]  ready " && redact("")? == ""
+        } catch {
+            TextError(_) => false
         }
     );
 }

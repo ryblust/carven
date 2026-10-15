@@ -1,0 +1,160 @@
+import std::async using Operation;
+import std::utf using UTF8Error;
+
+export enum IOError {
+    System(i32),
+    InputTooLarge(usize),
+    InvalidUTF8(UTF8Error)
+}
+
+export enum Read<T> {
+    Data(T),
+    End
+}
+
+private const async fn bytes(mode: u8, limit: usize) -> (Vector<u8>, bool) throw IOError {
+    let (data, end, system_code, limited) = await read_input(mode, limit);
+    if system_code != 0 { throw IOError::System(system_code); }
+    if limited { throw IOError::InputTooLarge(limit); }
+    return (&&data, end);
+}
+
+private const fn decode(data: [u8]) -> String throw IOError => try {
+    str::from_utf8(data)? as String
+} catch {
+    UTF8Error(error) => throw IOError::InvalidUTF8(error)
+};
+
+private const async fn chunk(limit: usize) -> Read<Vector<u8>> throw IOError {
+    let (data, end) = await bytes(0, limit)?;
+    if end { return .End; }
+    return .Data(&&data);
+}
+
+private const async fn all(limit: usize) -> Vector<u8> throw IOError {
+    let (data, _) = await bytes(2, limit)?;
+    return &&data;
+}
+
+private const async fn text(limit: usize) -> String throw IOError {
+    let (data, _) = await bytes(2, limit)?;
+    return decode(data)?;
+}
+
+private const async fn line(limit: usize) -> Read<String> throw IOError {
+    let (data, end) = await bytes(1, limit)?;
+    if end { return .End; }
+    var length = data.length();
+    if length != 0 && data[length - 1] == 0x0a {
+        --length;
+        if length != 0 && data[length - 1] == 0x0d { --length; }
+    }
+    return .Data(decode(data.slice(0, length))?);
+}
+
+export class Stdin {
+    line_limit: usize,
+
+    const fn new() -> Stdin => { line_limit: ~0usize };
+
+    const fn with_line_limit(self, limit: usize) -> Stdin {
+        var configured = self;
+        configured.line_limit = limit;
+        return configured;
+    }
+
+    const fn read(self, max_bytes: usize) -> Operation<Read<Vector<u8>>, throw IOError> {
+        let _ = self;
+        return chunk(max_bytes);
+    }
+
+    const fn read_all(self, limit: usize) -> Operation<Vector<u8>, throw IOError> {
+        let _ = self;
+        return all(limit);
+    }
+
+    const fn read_text(self, limit: usize) -> Operation<String, throw IOError> {
+        let _ = self;
+        return text(limit);
+    }
+
+    const fn read_line(self) -> Operation<Read<String>, throw IOError> => line(self.line_limit);
+}
+
+export const fn stdin() -> Stdin => Stdin::new();
+
+export enum FrameError {
+    TooLong(usize),
+    Truncated,
+    Finished
+}
+
+export enum LineBoundary {
+    Line(usize, usize, bool),
+    End
+}
+
+// Boundaries exclude LF, retain CR, and never validate text.
+export class ByteLines {
+    offset: usize,
+
+    const fn new() -> ByteLines => { offset: 0 };
+
+    const fn next(&self, bytes: [u8]) -> LineBoundary {
+        assert(self.offset <= bytes.length());
+        if self.offset == bytes.length() { return .End; }
+        let start = self.offset;
+        for end in start..bytes.length() {
+            if bytes[end] == 0x0a {
+                self.offset = end + 1;
+                return .Line(start, end, true);
+            }
+        }
+        self.offset = bytes.length();
+        return .Line(start, bytes.length(), false);
+    }
+}
+
+export class LineFramer {
+    pending: Vector<u8>,
+    limit: usize,
+    strip_cr: bool,
+    finished: bool,
+
+    const fn new(limit: usize, strip_cr: bool) -> LineFramer => {
+        pending: [],
+        limit: limit,
+        strip_cr: strip_cr,
+        finished: false
+    };
+
+    const fn feed(&self, bytes: [u8]) -> Vector<Vector<u8>> throw FrameError {
+        if self.finished { throw FrameError::Finished; }
+        var records: Vector<Vector<u8>> = [];
+        for byte in bytes {
+            if byte == 0x0a {
+                var length = self.pending.length();
+                if self.strip_cr && length != 0 && self.pending[length - 1] == 0x0d { --length; }
+                records.push(&&Vector<u8>::from_slice(self.pending.slice(0, length)));
+                self.pending.clear();
+            } else {
+                if self.pending.length() == self.limit {
+                    self.finished = true;
+                    throw FrameError::TooLong(self.limit);
+                }
+                self.pending.push(byte);
+            }
+        }
+        return &&records;
+    }
+
+    const fn finish(&self, allow_partial: bool) -> Read<Vector<u8>> throw FrameError {
+        if self.finished { throw FrameError::Finished; }
+        self.finished = true;
+        if self.pending.is_empty() { return .End; }
+        if !allow_partial { throw FrameError::Truncated; }
+        let record = self.pending;
+        self.pending.clear();
+        return .Data(&&record);
+    }
+}

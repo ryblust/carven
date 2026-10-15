@@ -1,4 +1,5 @@
 local inputs = {
+    ["utf-errors"] = io.readfile(path.join(os.projectdir(), "tests", "language", "io", "utf_errors.txt"), {encoding = "binary"}),
     lines = "a\r\n\n世界\nlast",
     empty = "",
     bytes = string.char(0, 255, 97),
@@ -25,7 +26,7 @@ function main(target)
     -- EOF, errors, and prefetched bytes belong to a process input cursor.
     -- Reuse the binary while starting each independent input in a fresh process.
     for _, name in ipairs({
-        "lines", "empty", "bytes", "text", "limit", "line-limit", "invalid", "invalid-text", "io-error", "cold-fifo",
+        "lines", "empty", "bytes", "text", "limit", "line-limit", "invalid", "invalid-text", "utf-errors", "io-error", "cold-fifo",
         "partial-cancel", "fragmented-crlf", "fragmented-utf8",
     }) do
         run(target, name)

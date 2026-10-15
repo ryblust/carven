@@ -1,0 +1,7 @@
+import "providers/generated_child.hpp";
+
+import(cpp) fn generated_namespace_child() -> i32;
+
+test "Provider support: descendant modules retain ordinary source names" {
+    check(generated_namespace_child() == 9);
+}

@@ -1,8 +1,5 @@
-import std::json.error using { JSONError, JSONErrorKind, ValueError };
-import std::json.string using decode_string;
-import std::json.validation using validate;
-import std::json.value using Value;
-import std::utf.error using UTF8Error;
+import std::json using { JSONError, JSONErrorKind, ValueError, decode_string, validate, Value };
+import std::utf using UTF8Error;
 
 test "JSON: decoded strings own independent Unicode text" {
     try {

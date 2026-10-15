@@ -65,12 +65,17 @@ tools.
 Use `./xmakew` on POSIX systems or `.\xmakew.ps1` in Windows PowerShell for
 repository commands.
 
-Save this Hello World as `main.cv` in the repository root. It uses the builtin
-`println`:
+Save this as `main.cv` in the repository root:
 
 ```cv
-// main.cv
-println("Hello World");
+const fn twice(value: i32) -> i32 => value * 2;
+
+test "twice" {
+    check(twice(21) == 42);
+}
+
+const answer = twice(21);
+println(answer);
 ```
 
 From the repository root, build the compiler and run the example:
@@ -80,32 +85,18 @@ From the repository root, build the compiler and run the example:
 ./xmakew run carven main.cv
 ```
 
-It prints `Hello World`. Bare source invocation compiles and runs a native program
-using a native C++ toolchain.
+It prints `42`. `answer` is computed during compilation. Bare source invocation
+compiles and runs a native program using a native C++ toolchain.
 
-A source file can also include tests. Save this as `demo.cv` in the same directory:
-
-```cv
-// demo.cv
-fn twice(value: i32) -> i32 => value * 2;
-
-test "twice" {
-    check(twice(21) == 42);
-}
-
-println(twice(21));
-```
-
-Run the program or select its runtime tests using the same source file:
+Run the same file's tests through native or interpreted execution:
 
 ```shell
-./xmakew run carven demo.cv
-./xmakew run carven --tests demo.cv
-./xmakew run carven interpret --tests demo.cv
+./xmakew run carven --tests main.cv
+./xmakew run carven interpret --tests main.cv
 ```
 
-The program prints `42`. With `--tests`, the driver runs the tests instead of the
-program entry and reports their results. Compile-time execution and
+With `--tests`, the driver runs the tests instead of the program entry and
+reports their results. Compile-time execution and
 `const test` still run during analysis. Add `--timings` to see time spent in each
 command stage.
 
@@ -145,17 +136,17 @@ and link it with their native providers.
 
 Generated programs do not require Xmake. Invoke Carven with the application
 `.cv` sources; installed Crafts are collected automatically. Then compile and
-link the generated `.cpp` files with a C++20 or newer toolchain. Pass the generated
-output directory and the Carven `crafts/` directory as C++ include roots.
+link the generated `.cpp` files and native providers with a C++20 or newer
+toolchain. Pass the generated output directory and the Carven `crafts/` directory
+as C++ include roots.
 
 Using the same `main.cv` from above, with an installed `carven` on `PATH`, run:
 
 ```shell
 carven compile -o out main.cv
 clang++ -std=c++20 -Iout -I/path/to/carven/crafts \
-    out/main.cpp out/crafts/carven/std/utf/*.cpp \
-    out/crafts/carven/std/simd/*.cpp -o out/hello-carven
-./out/hello-carven
+    out/main.cpp -o out/main
+./out/main
 ```
 
 Replace `/path/to/carven/crafts` with the installed directory beside the
@@ -165,18 +156,13 @@ compiler. From the repository root, build the same file with the local compiler:
 ```shell
 ./xmakew run carven compile -o out/manual main.cv
 clang++ -std=c++20 -Iout/manual -Icrafts \
-    out/manual/main.cpp out/manual/crafts/carven/std/utf/*.cpp \
-    out/manual/crafts/carven/std/simd/*.cpp \
-    -o out/manual/hello-carven
-./out/manual/hello-carven
+    out/manual/main.cpp -o out/manual/main
+./out/manual/main
 ```
 
-The commands above include the generated implementations for the bundled UTF
-and SIMD Crafts. A `main.cv` that imports `std::utf.text` uses the same source
-collection; there is no need to pass
-`/path/to/carven/crafts/carven/std/utf/*.cv` explicitly.
-When additional Crafts are installed, include their generated implementations
-and native providers in the C++ build as well.
+This example uses header-only runtime support, so only `main.cpp` needs to be
+compiled. Programs using other modules or native APIs must include the
+generated implementations and native providers required by those dependencies.
 
 Name imported application `.cv` files outside Crafts roots in the Carven
 invocation. Supply any native `.cpp` files, include directories, and libraries

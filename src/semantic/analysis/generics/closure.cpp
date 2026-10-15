@@ -9,6 +9,7 @@ import std;
 
 auto ProgramDraft::normalize_generic_environment(
     std::span<const GenericArgument> arguments,
+    ProgramOriginID origin,
     const FailureSolution* failures
 ) noexcept -> std::optional<CanonicalGenericEnvironment> {
     const auto closed_failure =
@@ -115,11 +116,11 @@ auto ProgramDraft::normalize_generic_environment(
                 return intern_type({.value = CppTypeValue {.form = std::move(concrete)}});
             }
         } else if (const auto* nominal = std::get_if<GenericNominalApplication>(&shape)) {
-            const auto environment = normalize_generic_environment(nominal->arguments, failures);
+            const auto environment =
+                normalize_generic_environment(nominal->arguments, origin, failures);
             if (environment) {
-                const auto source = generic_declaration_contract_copy(nominal->definition);
                 const auto instance =
-                    instantiate_generic_nominal(nominal->definition, *environment, source.origin);
+                    instantiate_generic_nominal(nominal->definition, *environment, origin);
                 if (instance) {
                     return *instance;
                 }
@@ -366,7 +367,8 @@ auto ProgramDraft::close_generic_calls() noexcept -> AnalysisResult<void> {
                 }
                 preview.emplace(std::move(*solved));
             }
-            const auto environment = normalize_generic_environment(call->environment, &*preview);
+            const auto environment =
+                normalize_generic_environment(call->environment, expression.origin, &*preview);
             if (!environment) {
                 pending = expression.origin;
                 return;

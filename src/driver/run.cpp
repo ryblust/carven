@@ -214,6 +214,10 @@ auto run_native_command(std::string_view executable, std::span<const char* const
         native_args.append_range(native_sources);
         native_args.insert(native_args.end(), {"-o", binary});
     }
+#ifdef _WIN32
+    // The installed Crafts inventory includes the TCP adapter on every native run.
+    native_args.push_back(msvc ? "ws2_32.lib" : "-lws2_32");
+#endif
     const auto compiled = run_process(std::move(native_args));
     if (!compiled) {
         return emit_driver_error(compiled.error());

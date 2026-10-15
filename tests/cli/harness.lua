@@ -11,7 +11,7 @@ local function remove_prefix(value, prefix)
 end
 
 local step_fields = {
-    args = true, exit_code = true, run_timeout = true, installed_toolchain = true,
+    args = true, exit_code = true, run_timeout = true, installed_toolchain = true, stdin = true, stdin_bytes = true,
     installed_inputs = true, absolute_inputs = true,
     stdout = true, stdout_contains = true, stdout_ordered = true,
     stdout_unordered = true, stdout_not_contains = true,
@@ -19,7 +19,7 @@ local step_fields = {
     stderr_not_contains = true, output_files = true, absent_files = true,
     file_contains = true, file_not_contains = true,
 }
-local case_fields = {inputs = true, fixtures = true, project = true, steps = true, case_dir = true}
+local case_fields = {inputs = true, fixtures = true, project = true, steps = true, case_dir = true, standard_modules = true}
 for field in pairs(step_fields) do case_fields[field] = true end
 
 local function check_fields(value, allowed, label)
@@ -128,6 +128,13 @@ function main(target, opt, case_specs, execution)
         end
     end
 
+    local standard_inputs = {}
+    for _, module in ipairs(case_spec.standard_modules or {}) do
+        local filename = path.join("crafts", "carven", "std", module:gsub("%.", "/") .. ".cv")
+        copy_fixture(path.join(os.projectdir(), filename), filename)
+        table.insert(standard_inputs, filename)
+    end
+
     local failures = {}
     local streams = {stdout = {}, stderr = {}}
     local program = path.absolute(execution and target:targetfile()
@@ -137,6 +144,9 @@ function main(target, opt, case_specs, execution)
         local stderr_file = path.join(work_dir, ".stderr-" .. index)
         local step_program = program
         local args = table.clone(step.args)
+        for _, filename in ipairs(standard_inputs) do
+            table.insert(args, filename)
+        end
         if step.installed_toolchain then
             local prefix = path.join(work_dir, "installation", "crafts", "toolchain with spaces")
             step_program = path.join(prefix, "bin", path.filename(program))
@@ -146,9 +156,9 @@ function main(target, opt, case_specs, execution)
                 os.mkdir(path.directory(step_program))
                 os.cp(program, step_program)
                 local installed_crafts = path.join(prefix, "crafts", "carven")
-                os.mkdir(path.join(installed_crafts, "std", "utf"))
-                os.cp(path.join(os.projectdir(), "crafts", "carven", "std", "utf", "scalar.cv"),
-                    path.join(installed_crafts, "std", "utf", "scalar.cv"))
+                os.mkdir(installed_crafts)
+                io.writefile(path.join(installed_crafts, "fixture.cv"),
+                    "export const fn scalar() -> u32 => 65;\n")
             end
             for _, source in ipairs(step.installed_inputs or {}) do
                 table.insert(args, (path.join(prefix, "crafts", source):gsub("\\", "/")))
@@ -157,9 +167,15 @@ function main(target, opt, case_specs, execution)
         for _, source in ipairs(step.absolute_inputs or {}) do
             table.insert(args, (path.join(work_dir, source):gsub("\\", "/")))
         end
+        local stdin_file = step.stdin and case_path(step.stdin) or nil
+        if step.stdin_bytes then
+            stdin_file = path.join(work_dir, ".stdin-" .. index)
+            io.writefile(stdin_file, step.stdin_bytes, {encoding = "binary"})
+        end
         local exit_code, run_error = os.execv(step_program, args, {
             try = true, timeout = step.run_timeout or 30000, curdir = work_dir,
             stdout = stdout_file, stderr = stderr_file,
+            stdin = stdin_file,
         })
         local stdout = normalize_newlines(os.isfile(stdout_file) and io.readfile(stdout_file) or "")
         local stderr = normalize_newlines(os.isfile(stderr_file) and io.readfile(stderr_file) or "")

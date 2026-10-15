@@ -275,6 +275,11 @@ auto ConstFunctionValidator::check_call(
         reject(origin, "cannot prove compile-time capability of indirect call target");
         return;
     }
+    if (const auto implementation = draft.callable_implementation_copy(*target); implementation
+        && (std::holds_alternative<NumberParseImplementation>(*implementation)
+            || std::holds_alternative<ProvidedFunctionImplementation>(*implementation))) {
+        return;
+    }
     const auto function = draft.function_for_callable(*target);
     if (!function) {
         reject(origin, "call target has no compile-time provider");
@@ -355,10 +360,6 @@ auto ConstFunctionValidator::check_body(const StructuredBodyDraft& body) noexcep
                         return;
                     }
                     if (expression->operation_reachable) {
-                        if (std::holds_alternative<SemColdTimeout>(expression->value)) {
-                            reject(expression->origin, "timeout requires a native clock");
-                            return;
-                        }
                         const auto reason =
                             std::holds_alternative<SemGenericCall>(expression->value)
                             ? std::optional<std::string_view>()

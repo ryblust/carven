@@ -380,6 +380,7 @@ private:
 
     auto construction_requests() noexcept -> ConstructionRequests&;
     auto resolve_duration_type(Span span) noexcept -> AnalysisTask<TypeID>;
+    auto resolve_number_parser(BuiltinType number, Span span) noexcept -> AnalysisTask<CallableID>;
 
     auto resolve_type_qualifier(ASTExprID expression) noexcept
         -> AnalysisTask<std::optional<ConstructionTypeRef>>;

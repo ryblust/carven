@@ -1,4 +1,4 @@
-import std::utf.error using UTF8Error;
+import std::utf using UTF8Error;
 
 export struct UTF8Rejection {
     bytes: [u8; 5],

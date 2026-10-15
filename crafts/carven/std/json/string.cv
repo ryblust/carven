@@ -1,5 +1,4 @@
-import .error using JSONError;
-
+import std::json using JSONError;
 import std::simd.scan using { one_of, byte_range, set_union, find_from };
 
 // The payload ends the ordinary byte run; offset advances past the terminator.
@@ -128,31 +127,4 @@ const fn next_string_part(bytes: [u8], &offset: usize) -> StringPart throw JSONE
     offset = end + 1;
     if byte == 0x22 { return .End(end); }
     return .Escape(end, read_escape(bytes, &offset)?);
-}
-
-// Exactly one quoted string. The result owns independent decoded storage.
-export const fn decode_string(text: str) -> String throw JSONError {
-    var offset: usize = 0;
-    begin_string(text.bytes, &offset)?;
-    var result = String {};
-    while {
-        let start = offset;
-        match next_string_part(text.bytes, &offset)? {
-            .End(end) => {
-                if offset != text.byte_length() {
-                    throw JSONError {
-                        kind:.TrailingInput,
-                        offset: offset
-                    };
-                }
-                // Quotes and escapes are ASCII boundaries in valid UTF-8.
-                result.append(str::from_utf8_unchecked(text.bytes.slice(start, end)));
-                return &&result;
-            },
-            .Escape(end, character) => {
-                result.append(str::from_utf8_unchecked(text.bytes.slice(start, end)));
-                result.push(character);
-            },
-        }
-    }
 }

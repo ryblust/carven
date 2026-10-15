@@ -24,12 +24,11 @@ import :semantic.analysis.names;
 import :semantic.analysis.operations;
 import :semantic.analysis.program;
 import :semantic.analysis.source.builder;
+import :semantic.analysis.stage.session;
 import :semantic.analysis.types;
 import :semantic.analysis.types.display;
-import :semantic.analysis.types.standard;
 import :semantic.analysis.validation;
 import :semantic.evaluation.operation;
-import :semantic.evaluation.output;
 import :semantic.semir.decl;
 import :semantic.semir.structured;
 import :semantic.semir.traversal;
@@ -250,7 +249,7 @@ auto BodyElaborator::compute_static_binding(LocalBindingID binding) noexcept
     const auto published_type = initializer.type.construction();
     auto result = co_await construction_requests().stage().evaluate(
         initializer,
-        ExecutionOutputMode::Discard
+        StaticEvaluationPurpose::ResolveType
     );
     if (!result) {
         co_return std::unexpected(result.error());
@@ -340,15 +339,14 @@ auto BodyElaborator::construction_requests() noexcept -> ConstructionRequests& {
     return batch->requests;
 }
 
+auto BodyElaborator::resolve_number_parser(BuiltinType number, Span span) noexcept
+    -> AnalysisTask<CallableID> {
+    co_return co_await construction_requests().number_parser(number, source_module_id, span);
+}
+
 auto BodyElaborator::resolve_duration_type(Span span) noexcept -> AnalysisTask<TypeID> {
-    co_return co_await resolve_standard_record(
-        draft(),
-        catalog(),
-        construction_requests(),
-        source_module_id,
-        span,
-        StandardRecord::Duration
-    );
+    co_return co_await construction_requests()
+        .standard_type(StandardDeclaration::Duration, source_module_id, span);
 }
 
 auto BodyElaborator::resolve_static_callable(std::string_view name, Span span) noexcept
@@ -365,13 +363,14 @@ auto BodyElaborator::resolve_static_callable(std::string_view name, Span span) n
     }
     const auto* selected_symbol = catalog().symbol(*selected);
     if (const auto* provided = std::get_if<ProvidedExport>(&*selected)) {
+        if (const auto callable = draft().provided_callable(*provided)) {
+            co_return std::optional<ResolvedStaticCallable>(*callable);
+        }
         if (const auto builtin = provided_async_builtin(*provided)) {
             auto resolved = co_await resolve_async_builtin(
-                draft(),
-                catalog(),
                 construction_requests(),
-                source_module_id,
                 *builtin,
+                source_module_id,
                 span
             );
             if (!resolved) {

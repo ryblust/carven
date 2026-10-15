@@ -1,0 +1,24 @@
+import std::io using { IOError, Read };
+
+const {
+    let input = stdin().with_line_limit(2);
+    var rejected = false;
+    try {
+        let _ = await input.read_line()?;
+    } catch {
+        IOError(error) => {
+            rejected = match error {
+                .InputTooLarge(limit) => limit == 2,
+                _ => false
+            };
+        }
+    }
+    assert(rejected);
+    assert(
+        match await input.with_line_limit(8).read_line()? {
+            .Data(text) => text == "abcd",
+            .End => false
+        }
+    );
+    println("limit");
+}

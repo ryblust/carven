@@ -72,7 +72,8 @@ auto analyze_compilation(
         options.capture_output || options.output ? ExecutionOutput(capture) : ExecutionOutput {},
         options.timings,
         options.collect_source_observations ? SourceAnalysisOutput(collect)
-                                            : SourceAnalysisOutput {}
+                                            : SourceAnalysisOutput {},
+        options.host_effects
     );
     if (analyzed) {
         result.semantic_program.emplace(std::move(analyzed->value));

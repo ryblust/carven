@@ -1,12 +1,16 @@
 module carven:backend.lower.impl;
 
+import :backend.generation.names;
 import :backend.generation.plan;
 import :backend.lower;
 import :backend.lowering.context;
 import :backend.lowering.decl;
 import :backend.target;
+import :backend.target.builder;
+import :backend.target.decl;
 import :backend.target.item;
 import :backend.target.name;
+import :backend.target.type;
 import :backend.target.unit;
 import :semantic.semir.decl;
 import :semantic.semir.ids;
@@ -60,7 +64,7 @@ auto lower_interface(ArtifactLowering& context, const TargetInterfaceArtifact& s
             active = &context.module_context(planned.module_id);
         }
         auto& module_context = *active;
-        module_items.push_back(lower_forward_declaration(module_context, planned.declaration));
+        append_items(module_items, lower_forward_declarations(module_context, planned.declaration));
     }
     flush();
 
@@ -120,6 +124,69 @@ auto lower_cpp_api_header(
         )),
         .epilogue = {},
     };
+}
+
+auto lower_cpp_provider_header(
+    ArtifactLowering& context,
+    const TargetCppProviderHeaderArtifact& schedule
+) noexcept -> TargetUnitSections {
+    auto& module = context.module_context(schedule.module_id);
+    const auto& semantic = context.semantic();
+    auto items = std::vector<TargetItem>();
+    for (const auto id : schedule.providers) {
+        const auto& function = semantic.declarations().function(id);
+        const auto& callable = semantic.declarations().callable(function.callable);
+        const auto& signature = semantic.callable_signatures().signature(callable.signature);
+        auto aliases = std::vector<TargetItem>();
+        const auto alias = [&](std::string name, TargetTypeID type) noexcept {
+            aliases.push_back(target_lowering_item(
+                TargetDecl {TargetTypeAlias {
+                    .name = TargetIdentifier::from_spelling(name),
+                    .type = type,
+                }}
+            ));
+        };
+        alias("Result", module.lower_type(signature.result, TypeNameScope::Global));
+        const auto completion =
+            module.lower_signature_result(callable.signature, false, TypeNameScope::Global);
+        alias("Completion", completion);
+        for (const auto [index, parameter] : std::views::enumerate(signature.parameters)) {
+            alias(
+                std::format("Parameter{}", index),
+                module.lower_type(parameter.type, TypeNameScope::Global)
+            );
+        }
+        for (const auto [index, failure] :
+             std::views::enumerate(context.plan().failure_abi().members(signature.failures))) {
+            alias(
+                std::format("Failure{}", index),
+                module.lower_type(failure, TypeNameScope::Global)
+            );
+        }
+        const auto& path =
+            semantic.provenance()
+                .module_record(
+                    semantic.declarations().module_decl(schedule.module_id).provenance_module
+                )
+                .path;
+        auto components = std::vector<TargetIdentifier> {
+            TargetIdentifier::from_spelling("carven"),
+            TargetIdentifier::from_spelling("providers")
+        };
+        for (const auto& component : path.components()) {
+            components.push_back(public_target_identifier(component));
+        }
+        // Public source identifiers cannot encode to this synthetic component.
+        // Keep callable aliases separate from namespaces for descendant modules.
+        components.push_back(TargetIdentifier::from_spelling("cv_escaped_functions"));
+        components.push_back(
+            public_target_identifier(semantic.provenance().spelling(function.name))
+        );
+        items.push_back(
+            namespace_item(TargetName::from_components(std::move(components)), std::move(aliases))
+        );
+    }
+    return {.preamble = {}, .body = std::move(items), .epilogue = {}};
 }
 
 auto lower_module(
@@ -191,6 +258,9 @@ auto lower_artifact(const PlannedCompilation& compilation, TargetArtifactID arti
             },
             [&](const TargetCppAPIHeaderArtifact& artifact) noexcept {
                 return lower_cpp_api_header(context, artifact);
+            },
+            [&](const TargetCppProviderHeaderArtifact& artifact) noexcept {
+                return lower_cpp_provider_header(context, artifact);
             },
             [&](const TargetModuleImplementationArtifact& artifact) noexcept {
                 return lower_module(context, artifact);

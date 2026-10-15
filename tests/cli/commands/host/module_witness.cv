@@ -1,0 +1,15 @@
+import std::io using IOError;
+
+const async fn width() -> usize throw IOError {
+    return match await stdin().read_line()? {
+        .Data(text) => text.byte_length(),
+        .End => 0
+    };
+}
+
+const n = await width()?;
+
+fn main() {
+    let values: [i32; n] = [0];
+    println(n, values.length());
+}

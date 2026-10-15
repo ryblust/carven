@@ -5,27 +5,30 @@ export struct IOError {
     code: i32
 }
 
-export(cpp) fn make_io_error(code: i32) -> IOError => { code: code };
-
 #[cpp] ---
-#include <carven/api/tests/interop/async/bridge.hpp>
-using BridgeIOError = decltype(carven::api::tests::interop::async::bridge::make_io_error(0));
-auto bridge_read_byte(const async_bridge::Context&) noexcept
-    -> carven::runtime::execution::AsyncOperation<std::int32_t, BridgeIOError>;
-auto bridge_write_byte(const async_bridge::Context&, std::int32_t) noexcept
-    -> carven::runtime::execution::AsyncOperation<void, BridgeIOError>;
-auto bridge_trivial_byte(const async_bridge::TrivialContext&, std::int32_t) noexcept
-    -> carven::runtime::execution::AsyncOperation<std::int32_t, BridgeIOError>;
-auto bridge_note(const async_bridge::Context&, std::int32_t) noexcept -> void;
-auto bridge_native_character(std::int32_t, bool) noexcept
-    -> carven::runtime::execution::AsyncOperation<char32_t, BridgeIOError>;
+#include "async/bridge_provider.hpp"
 ---
 
-import(cpp) async fn bridge_read_byte(context: Context) -> i32 throw IOError;
-import(cpp) async fn bridge_write_byte(context: Context, value: i32) throw IOError;
-import(cpp) async fn bridge_trivial_byte(context: TrivialContext, marker: i32) -> i32 throw IOError;
-import(cpp) async fn bridge_native_character(value: i32, fail: bool) -> char throw IOError;
-import(cpp) fn bridge_note(context: Context, stage: i32);
+import(cpp) async fn bridge_read_byte(
+    context: Context
+) -> i32 throw IOError = ::async_bridge::bridge_read_byte;
+
+import(cpp) async fn bridge_write_byte(
+    context: Context,
+    value: i32
+) throw IOError = ::async_bridge::bridge_write_byte;
+
+import(cpp) async fn bridge_trivial_byte(
+    context: TrivialContext,
+    marker: i32
+) -> i32 throw IOError = ::async_bridge::bridge_trivial_byte;
+
+import(cpp) async fn bridge_native_character(
+    value: i32,
+    fail: bool
+) -> char throw IOError = ::async_bridge::bridge_native_character;
+
+import(cpp) fn bridge_note(context: Context, stage: i32) = ::async_bridge::bridge_note;
 
 export(cpp) async fn source_read(context: Context) -> i32 throw IOError => await bridge_read_byte(
     context

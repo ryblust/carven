@@ -245,9 +245,21 @@ auto fold_constant_expression(
             operation.operation.visit([&](auto& intrinsic) noexcept {
                 using Intrinsic = std::remove_cvref_t<decltype(intrinsic)>;
                 if constexpr (std::same_as<Intrinsic, FloatIntrinsic>) {
-                    retain(
-                        evaluate_float_intrinsic_constant_value(draft, intrinsic, receiver, *type)
-                    );
+                    auto inputs = std::vector<ConstantFact>();
+                    for (const auto& operand : operation.operands) {
+                        if (!operand.expression.constant) {
+                            return;
+                        }
+                        inputs.push_back(draft.constant(*operand.expression.constant));
+                    }
+                    auto evaluated =
+                        evaluate_float_intrinsic_constant_value(draft, intrinsic, inputs, *type);
+                    // A bounds precondition fails only when the call executes.
+                    if (!evaluated
+                        && evaluated.error() == ConstantEvaluationFailure::InvalidClampBounds) {
+                        return;
+                    }
+                    retain(std::move(evaluated));
                 } else if constexpr (std::same_as<Intrinsic, TextIntrinsic>) {
                     retain(
                         evaluate_text_intrinsic_constant_value(draft, intrinsic, receiver, *type)

@@ -4,6 +4,7 @@ import :compiler.analysis;
 import :driver.analysis;
 import :driver.diagnostic;
 import :driver.sources;
+import :semantic.evaluation.execution;
 import :source.batch;
 import :source.manager;
 import :source.text;
@@ -47,6 +48,7 @@ auto load_and_analyze_sources(
             .timings = timings,
             .collect_source_observations = false,
             .capture_output = false,
+            .host_effects = HostEffects::Allow,
         }
     );
     if (!result.diagnostics().empty()) {

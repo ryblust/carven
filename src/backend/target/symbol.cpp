@@ -240,12 +240,12 @@ auto target_symbol_info(TargetSymbol symbol) noexcept -> TargetSymbolInfo {
         case TargetSymbol::RuntimeObserveComparison:
             return runtime_symbol_info(
                 "::carven::runtime::observe_comparison",
-                "carven/runtime/diagnostics/report.hpp"
+                "carven/runtime/diagnostics/observe.hpp"
             );
         case TargetSymbol::RuntimeObserveShortCircuit:
             return runtime_symbol_info(
                 "::carven::runtime::observe_short_circuit",
-                "carven/runtime/diagnostics/report.hpp"
+                "carven/runtime/diagnostics/observe.hpp"
             );
         case TargetSymbol::RuntimeDisplayWriter:
             return runtime_symbol_info(
@@ -410,6 +410,46 @@ auto target_symbol_info(TargetSymbol symbol) noexcept -> TargetSymbolInfo {
                 "::carven::runtime::integer_negate",
                 "carven/runtime/numeric/numeric.hpp"
             );
+        case TargetSymbol::RuntimeFloatAbs:
+            return runtime_symbol_info(
+                "::carven::runtime::float_abs",
+                "carven/runtime/numeric/float.hpp"
+            );
+        case TargetSymbol::RuntimeFloatMin:
+            return runtime_symbol_info(
+                "::carven::runtime::float_min",
+                "carven/runtime/numeric/float.hpp"
+            );
+        case TargetSymbol::RuntimeFloatMax:
+            return runtime_symbol_info(
+                "::carven::runtime::float_max",
+                "carven/runtime/numeric/float.hpp"
+            );
+        case TargetSymbol::RuntimeFloatClamp:
+            return runtime_symbol_info(
+                "::carven::runtime::float_clamp",
+                "carven/runtime/numeric/float.hpp"
+            );
+        case TargetSymbol::ProvidedReadInput:
+            return runtime_symbol_info(
+                "::carven::runtime::io::read_input",
+                "carven/runtime/io/stdin.hpp"
+            );
+        case TargetSymbol::ProvidedMonotonicNow:
+            return runtime_symbol_info(
+                "::carven::runtime::execution::now",
+                "carven/runtime/execution/time.hpp"
+            );
+        case TargetSymbol::ProvidedWaitUntil:
+            return runtime_symbol_info(
+                "::carven::runtime::execution::sleep_until",
+                "carven/runtime/execution/time.hpp"
+            );
+        case TargetSymbol::RuntimeParseNumber:
+            return runtime_symbol_info(
+                "::carven::runtime::parse_number",
+                "carven/runtime/numeric/parse.hpp"
+            );
         case TargetSymbol::RuntimeIntegerAdd:
             return runtime_symbol_info(
                 "::carven::runtime::integer_add",
@@ -482,7 +522,9 @@ auto target_symbol_info(TargetSymbol symbol) noexcept -> TargetSymbolInfo {
             );
         case TargetSymbol::StdRemoveCVRef:
             return symbol_info("::std::remove_cvref_t", "type_traits");
-        case TargetSymbol::StdAddConst: return symbol_info("::std::add_const_t", "type_traits");
+        case TargetSymbol::StdAddConst:  return symbol_info("::std::add_const_t", "type_traits");
+        case TargetSymbol::StdTrueType:  return symbol_info("::std::true_type", "type_traits");
+        case TargetSymbol::StdFalseType: return symbol_info("::std::false_type", "type_traits");
         case TargetSymbol::StdTypeIdentity:
             return symbol_info("::std::type_identity_t", "type_traits");
         case TargetSymbol::StdReferenceWrapper:
@@ -492,6 +534,7 @@ auto target_symbol_info(TargetSymbol symbol) noexcept -> TargetSymbolInfo {
         case TargetSymbol::StdGetIf:     return symbol_info("::std::get_if", "variant");
         case TargetSymbol::StdDeclval:   return symbol_info("::std::declval", "utility");
         case TargetSymbol::StdForward:   return symbol_info("::std::forward", "utility");
+        case TargetSymbol::StdSqrt:      return symbol_info("::std::sqrt", "cmath");
         case TargetSymbol::StdIsFinite:  return symbol_info("::std::isfinite", "cmath");
         case TargetSymbol::StdBitCast:   return symbol_info("::std::bit_cast", "bit");
         case TargetSymbol::StdMove:      return symbol_info("::std::move", "utility");

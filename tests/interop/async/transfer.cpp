@@ -1,6 +1,5 @@
-#include "transfer.hpp"
+#include "transfer_provider.hpp"
 
-#include <carven/api/tests/interop/async/bridge.hpp>
 #include <carven/api/tests/interop/async/transfer.hpp>
 
 #include <algorithm>
@@ -21,7 +20,7 @@ namespace api = carven::api::tests::interop::async::transfer;
 
 using async_transfer::Context;
 using async_interop::PipeQueue;
-using IOError = decltype(carven::api::tests::interop::async::bridge::make_io_error(0));
+using IOError = async_transfer::providers::transfer_read::Failure0;
 
 constexpr auto data = std::array {
     std::byte {0},

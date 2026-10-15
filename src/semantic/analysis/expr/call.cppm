@@ -9,12 +9,13 @@ import :semantic.analysis.expr.member;
 import :semantic.analysis.expr.numeric;
 import :semantic.analysis.expr.result;
 import :semantic.analysis.expr.scope;
-import :semantic.analysis.expr.vector;
 import :semantic.analysis.expr.simd;
 import :semantic.analysis.expr.text;
+import :semantic.analysis.expr.vector;
 import :semantic.analysis.operations;
 import :semantic.semir.structured;
 import :semantic.semir.type;
+import :source.standard;
 import :source.text;
 import std;
 
@@ -86,6 +87,25 @@ auto interpret_call(
             if (const auto* builtin = std::get_if<BuiltinTypeValue>(&canonical.value)) {
                 const auto kind = builtin->kind;
                 const auto name = site.spelling(member->name_span);
+                const auto receiver = kind == BuiltinType::Char
+                    ? std::optional(StandardAssociatedReceiver::Character)
+                    : kind == BuiltinType::Str ? std::optional(StandardAssociatedReceiver::Text)
+                    : builtin_is_numeric(kind) ? std::optional(StandardAssociatedReceiver::Number)
+                                               : std::nullopt;
+                if (const auto* entry =
+                        receiver ? find_standard_associated(*receiver, name) : nullptr) {
+                    if (entry->kind == StandardAssociatedKind::SourceFunction) {
+                        co_return co_await site.standard_call(source, entry->declaration, span);
+                    }
+                    if (source.arguments.size() != 1uz) {
+                        co_return std::unexpected(site.fail(
+                            span,
+                            DiagnosticCode::TypeMethodCallArity,
+                            "number parsing requires one text argument"
+                        ));
+                    }
+                    co_return co_await site.number_parse_call(source, kind, span);
+                }
                 if (const auto intrinsic = simd_member(kind, name, true)) {
                     co_return co_await construct_simd_call(
                         site,
@@ -146,6 +166,26 @@ auto interpret_call(
         if (!operand.has_value()) {
             co_return std::unexpected(operand.error());
         }
+        const auto floating = decide_float_method(
+            site.draft(),
+            site.type(*operand),
+            site.spelling(member->name_span),
+            source.arguments.size()
+        );
+        if (!floating) {
+            co_return std::unexpected(
+                site.fail(span, floating.error().code, std::string(floating.error().message))
+            );
+        }
+        if (floating->has_value()) {
+            co_return co_await construct_float_call(
+                site,
+                **floating,
+                std::move(*operand),
+                source.arguments,
+                span
+            );
+        }
         for (const auto kind :
              {BuiltinType::U8x16,
               BuiltinType::Mask16,
@@ -173,20 +213,6 @@ auto interpret_call(
                     span
                 );
             }
-        }
-        const auto floating = decide_float_method(
-            site.draft(),
-            site.type(*operand),
-            site.spelling(member->name_span),
-            source.arguments.size()
-        );
-        if (!floating) {
-            co_return std::unexpected(
-                site.fail(span, floating.error().code, std::string(floating.error().message))
-            );
-        }
-        if (floating->has_value()) {
-            co_return construct_float_query(site, **floating, std::move(*operand), span);
         }
         const auto sequence = decide_vector_method(
             site.draft(),

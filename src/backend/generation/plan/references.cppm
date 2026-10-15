@@ -31,7 +31,8 @@ auto target_owner_module(const SemIRProgram& semantic, DeclarationRef declaratio
 
 auto collect_target_references(
     const SemIRProgram& semantic,
-    std::span<const std::vector<DeclarationRef>> surface_declarations
+    std::span<const std::vector<DeclarationRef>> surface_declarations,
+    std::span<const FunctionID> providers
 ) noexcept -> TargetReferenceFacts;
 
 auto target_nominal_dependencies(

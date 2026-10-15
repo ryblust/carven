@@ -37,7 +37,8 @@ auto validate_cpp_provider(
     ProgramModuleID module_id,
     const ASTFunctionDecl& function
 ) noexcept -> AnalysisResult<void> {
-    if (!std::holds_alternative<ASTCppImportForm>(function.implementation)) {
+    const auto* imported = std::get_if<ASTCppImportForm>(&function.implementation);
+    if (imported == nullptr || imported->target) {
         return {};
     }
 

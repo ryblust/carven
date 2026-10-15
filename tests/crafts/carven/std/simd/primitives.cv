@@ -1,10 +1,9 @@
-import std::simd using { u8x16, mask16, f32x4, mask4, u8x32, mask32, f32x8, mask8 };
-
 // Narrow logical types remain usable beside the craft's wider default blocks.
 export const fn verify_narrow_primitives() -> bool {
     let bytes: [u8; 16] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
     let value = u8x16::from_array(bytes);
     assert(value.to_array() == bytes);
+    assert(value.swizzle([15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0]).lane(0) == 15);
     assert((value >= 8).bits() == 0xff00);
     assert(((value + 255) - 255 == value).all());
     assert(value.extract(value + 16, 9).lane(15) == 24);
@@ -16,7 +15,18 @@ export const fn verify_narrow_primitives() -> bool {
     assert(mask16::prefix(16).all());
     let floats = f32x4::from_array([1.0, -2.0, 3.0, -4.0]);
     assert((floats < 0.0).bits() == 10);
+    assert(floats.swizzle([3, 1, 3, 0]).to_array() == [-4.0, -2.0, -4.0, 1.0]);
     assert((floats * 2.0 / 2.0 == floats).all());
+    let magnitudes = f32x4::from_array([-1.0, 4.0, -9.0, 16.0]).abs().sqrt();
+    let finite: mask4 = magnitudes.is_finite();
+    assert(finite.all());
+    assert(
+        magnitudes.min(2.0).max(f32x4::from_array([0.0, 3.0, 0.0, 3.0])).clamp(
+                0.0,
+                f32x4::from_array([1.0, 2.0, 3.0, 4.0])
+            ).to_array()
+            == [1.0, 2.0, 2.0, 3.0]
+    );
     assert(floats.extract(floats, 4).to_array() == floats.to_array());
     assert(mask4::from_bits(0xf8).bits() == 8);
     assert(mask4::from_bits(8).first_or(99) == 3);

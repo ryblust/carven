@@ -108,7 +108,7 @@ craft directory, whose captured contents are checked by the same manifest.
 
 ### JSON API validation
 
-`./xmakew bench json` measures `std::json.validation::validate_bytes` on event
+`./xmakew bench json` measures `validate_bytes` from `std::json` on event
 batches and catalog responses with 1, 32 and 256 records. Each input has valid,
 trailing-syntax, truncated and invalid-UTF variants. The run checks outcome kinds
 and exact byte offsets, then calibrates each outcome to a 20 ms interval before

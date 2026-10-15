@@ -254,20 +254,23 @@ FailureTypeDiagnosticNames::FailureTypeDiagnosticNames(
 }
 
 auto FailureTypeDiagnosticNames::name(TypeID type) const noexcept -> std::string {
-    const auto qualify = [&](const auto& declaration) noexcept {
-        const auto module_decl = declarations.module_decl(declaration.module_id);
+    const auto qualify = [&](ModuleID module, ProgramSpellingID name) noexcept {
+        const auto module_decl = declarations.module_decl(module);
         return std::format(
             "{}.{}",
             provenance.module_path_copy(module_decl.provenance_module).value(),
-            provenance.spelling_copy(declaration.name)
+            provenance.spelling_copy(name)
         );
     };
     const auto canonical = types.copy(type);
     if (const auto* structure = std::get_if<StructTypeValue>(&canonical.value)) {
-        return qualify(declarations.structure(structure->structure));
+        const auto declaration = declarations.structure(structure->structure);
+        return qualify(declaration.module_id, declaration.name);
     }
     if (const auto* enumeration = std::get_if<EnumTypeValue>(&canonical.value)) {
-        return qualify(declarations.enumeration(enumeration->enumeration));
+        const auto declaration = declarations.enumeration(enumeration->enumeration);
+
+        return qualify(declaration.module_id, declaration.name);
     }
     invariant_violation("failure diagnostic requires a nominal type");
 }

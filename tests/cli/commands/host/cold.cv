@@ -1,0 +1,18 @@
+import std::time using { sleep, RangeError };
+
+const {
+    let _ = stdin().read_line();
+    let _ = sleep(86400s);
+}
+
+const line = await stdin().read_line()?;
+
+const {
+    assert(
+        match line {
+            .Data(text) => text == "x",
+            .End => false
+        }
+    );
+    println("cold");
+}

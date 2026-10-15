@@ -1,7 +1,7 @@
 #include "pipe.hpp"
 
 #include <carven/runtime/execution/child.hpp>
-#include <carven/std/time/native.hpp>
+#include <carven/runtime/execution/time.hpp>
 
 #include <array>
 #include <cerrno>
@@ -320,8 +320,8 @@ auto timed_read(PipeQueue& queue, Pipe& pipe, bool data_ready, Observation& obse
     auto buffer = std::array<std::byte, 1> {};
     auto input = scope.start(read(queue, pipe.reader(), buffer, observed));
     const auto deadline =
-        carven_time_now_nanoseconds() + (data_ready ? 3600000000000ll : 1000000ll);
-    auto timer = scope.start(carven_time_wait_until_nanoseconds(deadline));
+        carven::runtime::execution::now() + (data_ready ? 3600000000000ll : 1000000ll);
+    auto timer = scope.start(carven::runtime::execution::sleep_until(deadline));
     const auto selected = co_await async::wait_ready(input, timer);
     bool matched;
     if (data_ready) {

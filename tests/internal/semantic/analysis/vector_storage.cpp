@@ -80,8 +80,7 @@ const TestSuite suite([] static noexcept {
              }) {
             expect_diagnostic(analyze_test_errors(text), DiagnosticCode::TypeVectorElement);
         }
-        static_cast<void>(analyze_test_program(R"(import std::simd using u8x16;
-
+        static_cast<void>(analyze_test_program(R"(
             struct Borrowed { text: str }
             struct Node<T> { value: T, children: Vector<Node<T>> }
             fn use(values: Vector<ptr<Borrowed>>, nodes: Node<String>) {}

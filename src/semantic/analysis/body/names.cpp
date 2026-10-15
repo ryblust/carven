@@ -92,6 +92,16 @@ auto BodyElaborator::select_name(const ASTNameExpr& name, Span span) noexcept
     }
     const auto* selected_symbol = catalog().symbol(*selected);
     if (const auto* provided = std::get_if<ProvidedExport>(&*selected)) {
+        if (const auto callable = draft().provided_callable(*provided)) {
+            co_return BuiltExpression {
+                .storage = UniqueIndirect {BodyExpressionStorage {
+                    active_builder().callable_expression(*callable, origin(span))
+                }},
+                .pending_failures = {},
+                .takeable = false,
+                .completes = true
+            };
+        }
         const auto builtin = [&]() noexcept -> std::optional<BuiltinFunction> {
             switch (*provided) {
                 case ProvidedExport::Print:     return BuiltinFunction::Print;
@@ -116,11 +126,9 @@ auto BodyElaborator::select_name(const ASTNameExpr& name, Span span) noexcept
         }
         if (const auto async = provided_async_builtin(*provided)) {
             auto resolved = co_await resolve_async_builtin(
-                draft(),
-                catalog(),
                 construction_requests(),
-                source_module_id,
                 *async,
+                source_module_id,
                 span
             );
             if (!resolved) {

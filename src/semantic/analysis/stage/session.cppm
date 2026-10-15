@@ -3,11 +3,13 @@ module carven:semantic.analysis.stage.session;
 import :semantic.analysis.construction.requests;
 import :semantic.analysis.diagnostics;
 import :semantic.analysis.program;
-import :semantic.evaluation.output;
 import :semantic.evaluation.value;
 import :semantic.semir.decl;
 import :semantic.semir.structured;
 import std;
+
+// Type resolution may inspect a constant before its declaration executes.
+enum class StaticEvaluationPurpose { Execute, ResolveType };
 
 enum class StageResource { Nodes, Iterations, Instances };
 
@@ -50,7 +52,7 @@ public:
     // Executes an expression that reads no local binding.
     auto evaluate(
         const SemanticExpression& expression,
-        ExecutionOutputMode output = ExecutionOutputMode::Write
+        StaticEvaluationPurpose purpose = StaticEvaluationPurpose::Execute
     ) noexcept -> AnalysisTask<ExecutionValue>;
 
     // Executes a body that belongs to the static stage as a whole: a const

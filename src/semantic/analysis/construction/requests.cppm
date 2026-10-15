@@ -3,10 +3,11 @@ module carven:semantic.analysis.construction.requests;
 import :semantic.analysis.catalog;
 import :semantic.analysis.diagnostics;
 import :semantic.semir.generic;
-import :semantic.semir.structured;
 import :semantic.semir.ids;
+import :semantic.semir.structured;
 import :semantic.semir.type;
 import :source.provenance.ids;
+import :source.standard;
 import :source.text;
 
 class ProgramConstruction;
@@ -15,6 +16,19 @@ class StaticStage;
 // Borrowed completion port. Its coordinator outlives every request and continuation.
 class ConstructionRequests final {
 public:
+    auto standard_type(
+        StandardDeclaration declaration,
+        ProgramModuleID requester,
+        Span span
+    ) noexcept -> AnalysisTask<TypeID>;
+    auto number_parser(BuiltinType number, ProgramModuleID requester, Span span) noexcept
+        -> AnalysisTask<CallableID>;
+    auto standard_function(
+        StandardDeclaration function,
+        ProgramModuleID requester,
+        Span span
+    ) noexcept -> AnalysisTask<FunctionID>;
+
     auto ensure_declaration(CatalogSymbolID id, ProgramModuleID requester, Span span) noexcept
         -> AnalysisTask<void>;
 
@@ -43,6 +57,12 @@ public:
     auto stage() noexcept -> StaticStage&;
 
 private:
+    auto standard_declaration(
+        StandardDeclaration declaration,
+        ProgramModuleID requester,
+        Span span
+    ) noexcept -> AnalysisTask<CatalogSymbolID>;
+
     explicit ConstructionRequests(ProgramConstruction& owner) noexcept;
     ProgramConstruction& owner;
 

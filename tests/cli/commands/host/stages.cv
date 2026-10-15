@@ -1,0 +1,36 @@
+import std::io using { IOError, Read };
+import std::time using { TimePoint, RangeError, Timeout, sleep, timeout };
+
+const async fn one() -> String throw IOError {
+    return match await stdin().read_line()? {
+        .Data(value) => value,
+        .End => ""
+    };
+}
+
+const sampled = TimePoint::now();
+const first = await one()?;
+const second = await one()?;
+
+const {
+    assert(sampled.has_passed());
+    let point = TimePoint::after(1ms)?;
+    await point.wait();
+    assert(point.has_passed());
+    await sleep(1ms)?;
+    println("static", first, second);
+}
+
+async fn main() throw IOError + RangeError + Timeout {
+    let current = TimePoint::now();
+    assert(!current.is_before(sampled));
+    assert(sampled.has_passed());
+    let third = await timeout(one(), 100ms)?;
+    println("runtime", third);
+    assert(
+        match await stdin().read_line()? {
+            .End => true,
+            .Data(_) => false
+        }
+    );
+}

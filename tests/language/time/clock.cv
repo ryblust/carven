@@ -1,0 +1,36 @@
+import std::time using { TimePoint, RangeError };
+
+test "Time: monotonic time points compare without exposing their epoch" {
+    let first = TimePoint::now();
+    let second = TimePoint::now();
+    check(!second.is_before(first));
+    check(first.has_passed());
+    try {
+        check(TimePoint::after(0ns)?.has_passed());
+        check(TimePoint::after(-1ns)?.has_passed());
+        let later = first.shifted(1ns)?;
+        check(first.is_before(later));
+        check(!later.is_before(first));
+    } catch {
+        RangeError(_) => fail("nearby time points must be representable"),
+    }
+}
+
+test "Time: time point arithmetic rejects positive and negative overflow" {
+    let current = TimePoint::now();
+    var rejected = 0;
+    try {
+        let first = current.shifted(9223372036854775807ns)?;
+        let second = first.shifted(9223372036854775807ns)?;
+        let _ = second.shifted(9223372036854775807ns)?;
+    } catch {
+        RangeError(_) => { ++rejected; },
+    }
+    try {
+        let first = current.shifted(-9223372036854775808ns)?;
+        let _ = first.shifted(-9223372036854775808ns)?;
+    } catch {
+        RangeError(_) => { ++rejected; },
+    }
+    check(rejected == 2);
+}

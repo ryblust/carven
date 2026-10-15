@@ -2,7 +2,7 @@
 
 - **Status:** Draft
 - **Implementation:** Not started
-- **Scope:** Dynamic object owners, allocation policy, and construction in owned storage
+- **Scope:** Dynamic and native resource owners, allocation policy, construction in owned storage, and operation-specific container capabilities
 
 ## Current boundary
 
@@ -91,6 +91,65 @@ For admitted payloads containing Shared owners, validate retained backing and fi
 release through throwing, propagation, matching, rejected guards, handler failure,
 and rethrow. Catch bindings must preserve the original failure while further
 matching or rethrow can still use it.
+
+## NET-02 — Source-owned TCP resources
+
+The selected consumer is an outbound TCP client connecting to a literal IPv4
+address and port, transferring bytes, and closing. The implemented
+[`std::net`](../docs/language/net.md) borrows host-owned,
+address-stable native connections. Source-owned connect and Stream remain
+unimplemented. Listen/accept, DNS, TLS, and cross-thread transfer require their
+own consumers and contracts.
+
+The source owner must be noncopyable, support whole-owner transfer only when no
+borrow survives, and propagate that capability through containing values. Its
+view must retain a checked relationship to that owner. A hidden native pointer
+inside an ordinary source struct does not establish that relationship.
+
+| State or transition | Required source contract | Existing support and gap |
+| --- | --- | --- |
+| Creating → open or failed | A cold connect operation publishes one owner only after success; failure/cancellation closes the pending socket | Runtime cancellation and native RAII exist; source construction into noncopyable owner storage needs explicit capability facts |
+| Open → transferred | Whole-owner Take invalidates the old binding; any retained view or cold operation prevents transfer | Take and retained-holder checks exist; native resource capability and backing relationships must propagate through source values |
+| Open → cold read/write | Creating an Operation retains the view's owner; dropping an unstarted operation releases its borrow without I/O | Ordinary Operation holder checks exist; the native pointer's pointee is currently a host obligation |
+| Open → active | One read and one write can coexist; another same-direction operation fails with Conflict | Implemented by the native adapter; a source owner must remain stable while providers can reach it |
+| Active → cancelling → open | Cancellation completes only after provider registration and buffer access end | Implemented by structured close and the adapter; releasing the owner early must be rejected in source |
+| Open → closed | Explicit close consumes exclusive access and is idempotent; pending operations must first be cancelled and drained | Native close reports Conflict while pending; a future source wrapper must make drain ordering explicit |
+| Closed → read/write | Return Closed without accessing a released socket | Implemented for host views |
+| Open/closed → destroyed | Exactly one socket release; no reachable provider survives destruction | Native RAII enforces the host contract; source destruction and borrow checks need the owner facts above |
+
+Native wrappers currently rely on C++ copyability and host lifetime contracts.
+[`network_owner.cv`](../tests/interop/rejections/pointers/network_owner.cv)
+passes Carven analysis; C++ rejects the deleted copy constructor. The shared
+`ConnectionView` nominal supports existing cold-operation holder checks, while
+the pointed-to socket's lifetime remains the host's responsibility.
+
+Implement owner capability facts and explicit backing relations before exposing
+source-owned connect. Select the finite native-resource declaration mechanism
+within this proposal; a general Unique API, user destructor hooks, and public
+concepts are not prerequisites. Validation must reject copies, transfers and
+scope exits with outstanding cold/active borrows, and verify failed construction,
+unstarted drops, cancellation, repeated close, and exactly-once native release.
+
+## Deferred container capabilities
+
+### VEC-01 — Move-only Vector elements
+
+- **Reason deferred:** Current consumers use copyable elements and fixed async
+  composition. Internal capability checks can evolve independently of public concepts.
+- **Reactivation condition:** A concrete move-only container consumer, or the
+  finite dynamic composition described in [structured async](structured-async.md).
+
+Check copying, transfer, relocation, destruction, and retained borrowing at each
+Vector operation. Runtime growth and push already transfer elements; copying,
+assignment, and `from_slice` require copyable elements. Whole-owner transfer does
+not copy its elements. Operation elements additionally retain parameter borrows;
+admission needs source capability propagation, extraction/access checks, cleanup,
+and static-execution rules. The container does not start or cancel operations.
+
+Native, borrowed, and callable elements have separate lifetime requirements.
+Removing a type blacklist without the corresponding analysis is insufficient.
+Validate accepted transfers, rejected copies, growth, destruction, and retained
+borrows through the selected consumer before widening other element families.
 
 ## References
 

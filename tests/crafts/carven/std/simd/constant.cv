@@ -17,7 +17,6 @@ import .primitives using {
     verify_byte_sums,
 };
 
-import std::simd using u8x32;
 import std::simd.scan using { byte_range, match_set, count_where, find_from, prefix_where };
 
 const digits = byte_range(0x30, 0x39);

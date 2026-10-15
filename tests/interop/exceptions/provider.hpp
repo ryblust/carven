@@ -1,7 +1,15 @@
 #pragma once
 
 #include <format>
+#include <cstdint>
 #include <string_view>
+
+inline auto imported_exception(bool fail) -> std::int32_t {
+    if (fail) {
+        throw std::format_error("imported provider failure");
+    }
+    return 42;
+}
 
 struct FormatProbe final {
     bool invalid_utf8;

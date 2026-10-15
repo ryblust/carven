@@ -399,11 +399,14 @@ auto Specializer::expression(SemanticExpression& source) noexcept -> AnalysisTas
                     std::get<TypeID>(intrinsic->operands.front().expression.type.construction()),
                     [&](TypeID type) noexcept { return draft.type_copy(type); }
                 );
-                const auto* integer =
-                    std::get_if<IntegerConstant>(&draft.constant(*constant).value);
-                if (!integer
-                    || integer->negative()
-                    || integer->magnitude() >= simd_static_limit(*operation, owner)) {
+                if (!simd_static_control_valid(
+                        *operation,
+                        owner,
+                        draft.constant(*constant),
+                        [&](ConstantID id) noexcept -> const ConstantFact& {
+                            return draft.constant(id);
+                        }
+                    )) {
                     co_return std::unexpected(
                         draft.diagnostics().error(DiagnosticBuilder(
                                                       DiagnosticCode::ConstIndexBounds,

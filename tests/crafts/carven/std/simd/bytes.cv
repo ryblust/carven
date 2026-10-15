@@ -1,4 +1,4 @@
-import std::simd using { mask4, u8x32, u8x32 as Bytes, mask32 };
+import std::simd using { u8x32, u8x32 as Bytes };
 
 import std::simd.bytes using {
     block_count,
@@ -7,12 +7,7 @@ import std::simd.bytes using {
     find_byte,
     ascii_digit,
     ascii_prefix,
-    json_whitespace,
     ascii_lower,
-    shift_in,
-    swizzle,
-    store,
-    store_partial,
 };
 
 private const fn reversed_lanes() -> [u8; 32] {
@@ -84,9 +79,9 @@ export const fn verify_vectors() -> bool {
         assert((active ^ active).any() == false);
     }
     const reverse = reversed_lanes();
-    assert(swizzle(v, reverse).to_array() == reverse);
+    assert(v.swizzle(reverse).to_array() == reverse);
     const duplicate = u8x32::splat(3).to_array();
-    assert((swizzle(v, duplicate) == 3).all());
+    assert((v.swizzle(duplicate) == 3).all());
     let indices = u8x32::splat(255).with_lane(0, 15).with_lane(1, 32);
     let selected = v.lookup(indices);
     assert(selected.lane(0) == 15);
@@ -97,14 +92,6 @@ export const fn verify_vectors() -> bool {
         assert(mixed.lane(0) == (offset as u8));
         assert(mixed.lane(31) == ((offset + 31) as u8));
     }
-    assert(shift_in(v, v + 32, 3).lane(0) == 29);
-    var out: [u8; 32] = {};
-    store(v, &out);
-    assert(out == input);
-    store_partial(v + 16, &out, 3);
-    assert(out[0] == 16 && out[2] == 18 && out[3] == 3);
-    store_partial(v, &out, 0);
-    assert(out[0] == 16);
     return true;
 }
 
@@ -113,10 +100,6 @@ export const fn verify_classification() -> bool {
         let scalar = byte as u8;
         let v = u8x32::splat(scalar);
         assert(ascii_digit(v).all() == (scalar >= 0x30 && scalar <= 0x39));
-        assert(
-            json_whitespace(v).all()
-                == (scalar == 0x20 || scalar == 0x09 || scalar == 0x0a || scalar == 0x0d)
-        );
         var expected = scalar;
         if scalar >= 0x41 && scalar <= 0x5a { expected += 0x20; }
         assert((ascii_lower(v) == expected).all());

@@ -1,0 +1,9 @@
+import demo::api using answer;
+
+fn main() {
+    println("source", answer(false));
+}
+
+test "source branch in a mixed Craft" {
+    check(answer(false) == 42);
+}

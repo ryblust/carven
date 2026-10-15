@@ -1,6 +1,6 @@
-import std::utf.scalar using { char_from_u32, UnicodeScalarError };
+import carven::fixture using scalar;
 import demo::value using answer;
 
-fn main() throw UnicodeScalarError {
-    println(char_from_u32(65)? as u32, answer());
+fn main() {
+    println(char::from_u32_unchecked(scalar()) as u32, answer());
 }

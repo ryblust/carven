@@ -1,6 +1,7 @@
 module carven:semantic.semir.decl.impl;
 
 import :semantic.semir.decl;
+import :semantic.semir.delegation;
 import :source.provenance;
 import :support.invariant;
 import std;
@@ -79,7 +80,11 @@ auto implementation_body_id(const CallableImplementation& implementation) noexce
                       || std::same_as<Value, ClosureBodyImplementation>) {
             return value.body;
         } else {
-            static_assert(std::same_as<Value, CppImportImplementation>);
+            static_assert(
+                std::same_as<Value, CppImportImplementation>
+                || std::same_as<Value, NumberParseImplementation>
+                || std::same_as<Value, ProvidedFunctionImplementation>
+            );
             return std::nullopt;
         }
     });
@@ -289,6 +294,14 @@ auto DeclarationConstructionView::callable_signature(CallableID id) const noexce
 auto DeclarationConstructionView::callable_implementation(CallableID id) const noexcept
     -> CallableImplementation {
     return declaration_builder->callable_implementations.copy_defined(id);
+}
+
+auto DeclarationConstructionView::try_callable_implementation(CallableID id) const noexcept
+    -> std::optional<CallableImplementation> {
+    if (!declaration_builder->callable_implementations.is_defined(id)) {
+        return std::nullopt;
+    }
+    return callable_implementation(id);
 }
 
 auto DeclarationConstructionView::module_count() const noexcept -> std::size_t {
@@ -534,14 +547,14 @@ auto DeclarationBuilder::define(StructID id, ConstructionStructDeclaration decla
         "structure used a foreign module"
     );
     require_provenance_owner(
-        declaration.name.owner(),
-        provenance_identity,
-        "structure used a foreign spelling"
-    );
-    require_provenance_owner(
         declaration.origin.owner(),
         provenance_identity,
         "structure used a foreign origin"
+    );
+    require_provenance_owner(
+        declaration.name.owner(),
+        provenance_identity,
+        "structure used a foreign spelling"
     );
     for (const auto& field : declaration.fields) {
         validate_construction_type(field.type, program_identity);
@@ -563,14 +576,14 @@ auto DeclarationBuilder::define(EnumID id, EnumDeclaration declaration) noexcept
     require_open_construction();
     require_owner(declaration.module_id.owner(), program_identity, "enum used a foreign module");
     require_provenance_owner(
-        declaration.name.owner(),
-        provenance_identity,
-        "enum used a foreign spelling"
-    );
-    require_provenance_owner(
         declaration.origin.owner(),
         provenance_identity,
         "enum used a foreign origin"
+    );
+    require_provenance_owner(
+        declaration.name.owner(),
+        provenance_identity,
+        "enum used a foreign spelling"
     );
     require_ids_owner(
         std::span<const EnumCaseID>(declaration.cases),
@@ -733,6 +746,14 @@ auto DeclarationBuilder::complete_callable(
             require_owner(value.body->owner(), program_identity, "callable used a foreign body");
         } else if constexpr (std::same_as<Value, ClosureBodyImplementation>) {
             require_owner(value.body.owner(), program_identity, "callable used a foreign body");
+        } else if constexpr (std::same_as<Value, NumberParseImplementation>) {
+            require_owner(
+                value.invalid.owner(),
+                program_identity,
+                "number parser used a foreign enum case"
+            );
+        } else if constexpr (std::same_as<Value, ProvidedFunctionImplementation>) {
+            // Its signature owns all type and failure facts.
         } else {
             static_assert(std::same_as<Value, CppImportImplementation>);
             require_provenance_owner(
@@ -740,6 +761,14 @@ auto DeclarationBuilder::complete_callable(
                 provenance_identity,
                 "C++ import callable used a foreign origin"
             );
+            require_owner(
+                value.target.context_module.owner(),
+                program_identity,
+                "C++ import target used a foreign module"
+            );
+            if (value.target.lookup != CppNameLookup::Global || !valid_cpp_name(value.target)) {
+                invariant_violation("C++ import target must be a global qualified name");
+            }
         }
     });
     callable_implementations.define(id, implementation);

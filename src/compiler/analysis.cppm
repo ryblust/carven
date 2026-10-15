@@ -3,6 +3,7 @@ module carven:compiler.analysis;
 import :diagnostics.diagnostic;
 import :frontend.program.parse;
 import :semantic.analysis.source;
+import :semantic.evaluation.execution;
 import :semantic.evaluation.output;
 import :semantic.semir.program;
 import :source.batch;
@@ -20,6 +21,7 @@ struct CompilationAnalysisOptions final {
     TimingOutput timings;
     bool collect_source_observations;
     bool capture_output;
+    HostEffects host_effects;
 };
 
 // Owns a complete analysis transaction, including failed-source diagnostics.
@@ -67,6 +69,7 @@ auto analyze_compilation(
         {.output = {},
          .timings = {},
          .collect_source_observations = false,
-         .capture_output = false},
+         .capture_output = false,
+         .host_effects = HostEffects::Deny},
     std::span<const ParsedSourceInput> parsed = {}
 ) noexcept -> CompilationAnalysis;

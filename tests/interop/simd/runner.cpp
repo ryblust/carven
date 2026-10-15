@@ -1,5 +1,6 @@
 #include <carven/runtime/simd/simd.hpp>
 
+#include <carven/api/tests/interop/simd/contracts.hpp>
 #include <carven/generated/carven-test-runner.hpp>
 
 #include "provider.hpp"
@@ -10,6 +11,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <limits>
 #include <span>
 #include <string_view>
 
@@ -148,6 +150,10 @@ auto main(int argc, char** argv) noexcept -> int {
         static_cast<void>(simd::U8x16::splat(0).with_lane(16, 1, site));
     } else if (operation == "prefix") {
         static_cast<void>(simd::Mask16::prefix(17, site));
+    } else if (operation == "clamp-unordered") {
+        carven::api::tests::interop::simd::contracts::discard_clamp(
+            std::numeric_limits<float>::quiet_NaN()
+        );
     }
     return 1;
 }

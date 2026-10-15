@@ -7,6 +7,7 @@
 #endif
 
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -171,6 +172,16 @@ template<std::size_t Bytes>
 CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL div_floats(Value<Bytes> a, Value<Bytes> b) noexcept
     -> Value<Bytes> {
     return map<float, Bytes>(a, b, [](auto a, auto b) noexcept { return a / b; });
+}
+
+template<std::size_t Bytes>
+CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL sqrt_floats(Value<Bytes> value) noexcept -> Value<Bytes> {
+    auto lanes = std::array<float, Bytes / sizeof(float)>();
+    store<Bytes>(lanes.data(), value);
+    for (auto& lane : lanes) {
+        lane = std::sqrt(lane);
+    }
+    return load<Bytes>(lanes.data());
 }
 
 // Ordered comparisons: every comparison involving NaN is false.

@@ -10,6 +10,7 @@ import :semantic.analysis.program;
 import :semantic.analysis.source;
 import :semantic.analysis.source.builder;
 import :semantic.analyze;
+import :semantic.evaluation.execution;
 import :semantic.evaluation.output;
 import :semantic.semir.program;
 import :support.timing;
@@ -19,7 +20,8 @@ auto analyze(
     SyntaxProgram syntax,
     ExecutionOutput output,
     TimingOutput timings,
-    SourceAnalysisOutput source_output
+    SourceAnalysisOutput source_output,
+    HostEffects host_effects
 ) noexcept -> std::expected<Diagnosed<SemIRProgram>, Diagnostics> {
     const auto scope = TimingScope(timings, TimingStage::SemanticAnalysis);
     auto observations = std::optional<SourceAnalysisBuilder>();
@@ -33,7 +35,8 @@ auto analyze(
             diagnostics,
             output,
             observations ? std::addressof(*observations) : nullptr,
-            timings
+            timings,
+            host_effects
         );
 
         {

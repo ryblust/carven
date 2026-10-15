@@ -1,0 +1,70 @@
+import std::io using Read;
+import <carven/std/net/native.hpp>;
+
+export struct ConnectionView {
+    native: ::carven::standard::net::View
+}
+
+export(cpp) fn borrow(native: ::carven::standard::net::View) -> ConnectionView => {
+    native: native
+};
+
+export enum NetError {
+    System(i32),
+    Closed,
+    Conflict,
+    NoProgress
+}
+
+private import(cpp) async fn native_read(
+    connection: ::carven::standard::net::View,
+    limit: usize
+) -> ::carven::standard::net::ReadResult = ::carven::standard::net::read;
+
+private import(cpp) async fn native_write(
+    connection: ::carven::standard::net::View,
+    &&bytes: Vector<u8>,
+    offset: usize
+) -> ::carven::standard::net::WriteResult = ::carven::standard::net::write;
+
+private fn validate(kind: u8, code: i32) throw NetError {
+    match kind {
+        0 => {},
+        1 => throw NetError::System(code),
+        2 => throw NetError::Closed,
+        3 => throw NetError::Conflict,
+        _ => assert(false),
+    }
+}
+
+export async fn read(
+    connection: ConnectionView,
+    max_bytes: usize
+) -> Read<Vector<u8>> throw NetError {
+    assert(max_bytes > 0);
+    var result = await native_read(connection.native, max_bytes);
+    validate(result.error as u8, result.code as i32)?;
+    if result.end { return .End; }
+    return .Data((&result).take_bytes() as Vector<u8>);
+}
+
+export async fn write(connection: ConnectionView, &&bytes: Vector<u8>) -> usize throw NetError {
+    if bytes.is_empty() { return 0; }
+    let result = await native_write(connection.native, &&bytes, 0);
+    validate(result.error as u8, result.code as i32)?;
+    return result.count as usize;
+}
+
+export async fn write_all(connection: ConnectionView, &&bytes: Vector<u8>) throw NetError {
+    var pending = &&bytes;
+    let length = pending.length();
+    var offset: usize = 0;
+    while offset < length {
+        var result = await native_write(connection.native, &&pending, offset);
+        validate(result.error as u8, result.code as i32)?;
+        let count = result.count as usize;
+        if count == 0 { throw NetError::NoProgress; }
+        offset += count;
+        pending = (&result).take_bytes() as Vector<u8>;
+    }
+}

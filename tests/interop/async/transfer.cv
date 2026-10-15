@@ -3,13 +3,7 @@ import std::async using yield_once;
 import "async/transfer.hpp" using async_transfer::Context;
 
 #[cpp] ---
-#include <carven/api/tests/interop/async/bridge.hpp>
-using TransferIOError = decltype(carven::api::tests::interop::async::bridge::make_io_error(0));
-auto transfer_read(const async_transfer::Context&) noexcept
-    -> carven::runtime::execution::AsyncOperation<std::int32_t, TransferIOError>;
-auto transfer_write(const async_transfer::Context&, std::int32_t, std::int32_t) noexcept
-    -> carven::runtime::execution::AsyncOperation<std::int32_t, TransferIOError>;
-auto transfer_copy_buffer(const async_transfer::Context&, const async_transfer::Context&, std::int32_t) noexcept -> void;
+#include "async/transfer_provider.hpp"
 ---
 
 import(cpp) async fn transfer_read(context: Context) -> i32 throw IOError;

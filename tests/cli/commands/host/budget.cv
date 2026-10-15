@@ -1,0 +1,5 @@
+const bytes = await stdin().read_all(100000)?;
+
+const {
+    println(bytes.length());
+}

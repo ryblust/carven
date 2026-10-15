@@ -1,7 +1,5 @@
-import std::json.error using { JSONError, ValueError };
-import std::json.string using decode_string;
-import std::json.value using Value;
-import std::utf.error using UTF8Error;
+import std::json using { JSONError, ValueError, decode_string, Value };
+import std::utf using UTF8Error;
 
 private const fn edited_document(text: str) -> String throw JSONError + ValueError {
     var document = Value::parse(text)?;
@@ -28,14 +26,16 @@ private const expected = r#"{"items":["你好😀",42],"enabled":true}"#;
 private const edited = edited_document(input)?;
 private const decoded = decode_string(r#""a\u0000\uD83D\uDE00""#)?;
 private const compact = Value::parse_bytes(r#"{ "valid": true }"#.bytes)?.to_json()?;
+private const number = Value::parse("1.25e2")?.as_f64()?;
 
 const test "JSON constant: parsing and owned edits produce frozen text" {
     check(edited == expected);
     check(decoded == "a\u{0}😀");
     check(compact == r#"{"valid":true}"#);
+    check(number == 125.0);
 }
 
-const test "JSON constant: parsing preserves syntax and encoding failures" {
+const test "JSON constant: syntax encoding and conversion failures retain their types" {
     var syntax_rejected = false;
     try {
         let _ = Value::parse("[1,]")?;
@@ -54,4 +54,12 @@ const test "JSON constant: parsing preserves syntax and encoding failures" {
         JSONError(_) => {},
     }
     check(encoding_rejected);
+    let conversion_rejected = try {
+        let _ = Value::parse("1e400")?.as_f64()?;
+        false
+    } catch {
+        JSONError(_) => false,
+        ValueError(error) => error == .NumberConversion,
+    };
+    check(conversion_rejected);
 }

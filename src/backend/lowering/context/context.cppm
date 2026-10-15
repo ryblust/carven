@@ -100,6 +100,7 @@ public:
         -> TargetName;
 
     auto callable_name(CallableID id) noexcept -> TargetName;
+    auto callable_expression(CallableID id) noexcept -> TargetExpr;
 
     auto closure_type_name(CallableID id, TypeNameScope scope = TypeNameScope::Module) noexcept
         -> TargetName;

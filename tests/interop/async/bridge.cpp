@@ -1,4 +1,4 @@
-#include "bridge.hpp"
+#include "bridge_provider.hpp"
 
 #include <carven/api/tests/interop/async/bridge.hpp>
 #include <carven/runtime/execution/child.hpp>
@@ -27,7 +27,7 @@ using async_bridge::Context;
 using async_bridge::Observations;
 using async_bridge::TrivialContext;
 using async_interop::PipeQueue;
-using IOError = decltype(api::make_io_error(0));
+using IOError = async_bridge::providers::bridge_read_byte::Failure0;
 
 auto check(bool condition, const char* message) noexcept -> void {
     if (!condition) {

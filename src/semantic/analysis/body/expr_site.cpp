@@ -773,6 +773,60 @@ auto BodyExprSite::associated_reference(StructID owner, Span name_span) noexcept
     co_return (co_await body.class_operation(owner, spelling(name_span), false, name_span));
 }
 
+auto BodyExprSite::standard_call(
+    const ASTCallExpr& source,
+    StandardDeclaration function,
+    Span span
+) noexcept -> ExpressionTask<Value> {
+    auto function_id =
+        co_await construction_requests().standard_function(function, module_id(), span);
+    if (!function_id) {
+        co_return std::unexpected(function_id.error());
+    }
+    auto ready =
+        co_await construction_requests().ensure_function_signature(*function_id, module_id(), span);
+    if (!ready) {
+        co_return std::unexpected(ready.error());
+    }
+    auto callee_id = source.callee;
+    while (const auto* group = std::get_if<ASTGroupExpr>(&syntax().expression(callee_id).value)) {
+        callee_id = group->expression;
+    }
+    observe_function(
+        *function_id,
+        std::get<ASTMemberExpr>(syntax().expression(callee_id).value).name_span
+    );
+    const auto target = draft().function_declaration_copy(*function_id).callable;
+    auto callee = body.make_built(
+        draft().intern_type({.value = FunctionTypeValue {target}}),
+        SemCallable {.callable = target},
+        span
+    );
+    co_return co_await body.call_expression(source, span, std::move(callee));
+}
+
+auto BodyExprSite::number_parse_call(
+    const ASTCallExpr& source,
+    BuiltinType number,
+    Span span
+) noexcept -> ExpressionTask<Value> {
+    auto target = co_await resolve_number_parser(number, span);
+    if (!target) {
+        co_return std::unexpected(target.error());
+    }
+    auto callee = body.make_built(
+        draft().intern_type({.value = FunctionTypeValue {*target}}),
+        SemCallable {.callable = *target},
+        span
+    );
+    co_return co_await body.call_expression(source, span, std::move(callee));
+}
+
+auto BodyExprSite::resolve_number_parser(BuiltinType number, Span span) noexcept
+    -> AnalysisTask<CallableID> {
+    co_return co_await body.resolve_number_parser(number, span);
+}
+
 auto BodyExprSite::native_associated_reference(
     ConstructionTypeRef type,
     Span name_span,
@@ -945,4 +999,13 @@ auto BodyElaborator::await_expression(const ASTPrefixExpr& source, Span span) no
 auto BodyExprSite::await_expression(const ASTPrefixExpr& source, Span span) noexcept
     -> ExpressionTask<Value> {
     co_return co_await body.await_expression(source, span);
+}
+
+auto BodyExprSite::observe_function(FunctionID function, Span name) noexcept -> void {
+    const auto callable = draft().function_declaration_copy(function).callable;
+    body.observe_source(
+        name,
+        body.catalog().declaration_location(draft(), body.catalog().function_symbol(function)),
+        draft().intern_type({.value = FunctionTypeValue {callable}})
+    );
 }

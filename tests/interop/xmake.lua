@@ -20,8 +20,10 @@ for _, domain in ipairs({
 end
 table.insert(interop_sources, path.join(interop_dir, "harness", "runner.cpp"))
 table.insert(interop_sources, path.join(interop_dir, "printing", "structural.cv"))
+table.insert(interop_sources, path.join(interop_dir, "providers", "generated", "generated_record", "Result.cv"))
 
 local rejection_cases = {
+    ["pointers/network_owner"] = {"deleted constructor", "Connection"},
     ["construction/folded_narrowing"] = {"cannot be narrowed", "unsigned char"},
     ["construction/read_narrowing"] = {"cannot be narrowed", "unsigned char"},
     ["contracts/result"] = {"no viable conversion", "contract_text"},
@@ -51,7 +53,7 @@ target("carven-test-interop")
         "divide", "remainder", "shift", "width", "index",
         "slice-index", "slice-negative", "slice-range", "slice-reversed",
         "slice-known-length", "slice-known-empty", "slice-known-format",
-        "unicode", "unicode-export", "contract-stop"
+        "unicode", "unicode-export", "contract-stop", "math-reversed"
     }) do
         add_tests(operation, {group = "interop"})
     end
@@ -93,7 +95,7 @@ for _, variant in ipairs({
         add_files(path.join(interop_dir, "simd", "utf.cpp"))
         add_tests("behavior", {group = "interop", run_timeout = 30000})
         if not variant.portable then
-            for _, operation in ipairs({"load", "load-partial", "lane", "with-lane", "prefix"}) do
+            for _, operation in ipairs({"load", "load-partial", "lane", "with-lane", "prefix", "clamp-unordered"}) do
                 add_tests(operation, {group = "interop", run_timeout = 30000})
             end
         end
@@ -119,10 +121,13 @@ target("carven-test-interop-compilation")
         add_tests(name, {group = "interop"})
     end
     add_tests("library-consumer", {group = "interop", run_timeout = 30000})
+    add_tests("toolchain-consumer", {group = "interop", run_timeout = 300000})
     on_test(function (target, opt)
         local name = opt.name:match("^[^/]+/(.+)$") or opt.name
         if name == "library-consumer" then
             import("harness.library", {rootdir = interop_dir}).main(target)
+        elseif name == "toolchain-consumer" then
+            import("harness.toolchain", {rootdir = interop_dir}).main()
         else
             import("harness.compile", {rootdir = interop_dir})(target, name, rejection_cases[name])
         end
@@ -134,6 +139,7 @@ for _, mode in ipairs({
         "copy", "move", "function", "format-throw", "format-utf8",
         "append-format-throw", "print-inner-throw", "print-later-throw",
         "async-body", "async-awaiter", "async-success",
+        "import-success", "import-throw",
     }},
     {standard = "c++23", suffix = "-cxx23", operations = {"print-later-throw"}},
 }) do
@@ -153,7 +159,7 @@ for _, mode in ipairs({
             local operation = opt.name:match("([^/]+)$")
             local prefixes = {["print-inner-throw"] = "", ["print-later-throw"] = "42 "}
             import("harness.process", {rootdir = interop_dir})(
-                target, {operation}, 73, operation, prefixes[operation])
+                target, {operation}, operation == "import-success" and 0 or 73, operation, prefixes[operation])
             return true
         end)
     target_end()
@@ -177,6 +183,7 @@ target("carven-test-interop-print")
 target_end()
 
 local async_outputs = {
+    net = "network: pass\n",
     timer = "cold: pass\nimmediate: pass\nfuture: pass\nsiblings: pass\n"
         .. "pre-cancel: pass\ncancelled-close: pass\ncommitted: pass\nrearm: pass\nmulti-source: pass\n",
     cleanup = "async lexical cleanup passed\n",
@@ -197,6 +204,7 @@ target("carven-test-interop-async")
     set_languages("c++20")
     add_includedirs(interop_dir)
     add_files(path.join(interop_dir, "async", "runner.cpp"))
+    add_files(path.join(interop_dir, "async", "net.cv"), path.join(interop_dir, "async", "net.cpp"))
     add_files(path.join(interop_dir, "async", "timer.cpp"))
     add_files(path.join(interop_dir, "async", "ownership.cv"))
     add_files(path.join(interop_dir, "async", "cleanup.cv"))

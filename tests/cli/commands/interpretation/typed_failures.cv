@@ -1,3 +1,5 @@
+import std::utf using UTF8Error;
+
 enum Failure {
     Invalid(i32),
     Empty
@@ -30,3 +32,18 @@ let success = try {
 };
 
 println(success);
+
+fn view(bytes: [u8]) -> str throw UTF8Error => str::from_utf8(bytes)?;
+
+println(view([65u8, 66])?);
+
+let invalid = [0xffu8];
+
+let offset = try {
+    let _ = view(invalid)?;
+    99usize
+} catch {
+    UTF8Error(error) => error.offset,
+};
+
+println(offset);

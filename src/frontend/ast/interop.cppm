@@ -37,8 +37,14 @@ struct ASTCppExportForm final {
     Span span;
 };
 
+struct ASTCppFunctionTarget final {
+    Span span;
+    std::vector<Span> components;
+};
+
 struct ASTCppImportForm final {
     Span span;
+    std::optional<ASTCppFunctionTarget> target;
 };
 
 struct ASTCppSourceFragment final {

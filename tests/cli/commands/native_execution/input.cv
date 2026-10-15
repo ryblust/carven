@@ -1,4 +1,4 @@
-import std::utf.scalar using { char_from_u32, UnicodeScalarError };
+import carven::fixture using scalar;
 import demo::api using answer;
 
 const fn prepare() {
@@ -22,9 +22,9 @@ test "unselected test entry" {
 
 struct Failure {}
 
-fn main(args) throw Failure + UnicodeScalarError {
+fn main(args) throw Failure {
     println("running", prepared);
-    println(char_from_u32(65)?);
+    println(char::from_u32_unchecked(scalar()));
     println(answer());
     for argument in args {
         println(argument);

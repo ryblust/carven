@@ -13,7 +13,8 @@ inline constexpr auto string_storage_content = 16u;
 inline constexpr auto operation_owner_content = 32u;
 inline constexpr auto storage_view_content = 64u;
 inline constexpr auto parametric_value_content = 128u;
-inline constexpr auto all_type_contents = 255u;
+inline constexpr auto value_storage_constraint = 256u;
+inline constexpr auto all_type_contents = 511u;
 
 struct TypeContentDependent final {
     std::size_t index;
@@ -41,6 +42,11 @@ struct TypeContents final {
     // Rigid definition value with relationships described by its input role.
     bool contains_parametric_value;
 
+    // Internal value transport is proven only for plain data. This conservative
+    // constraint also propagates through zero-length arrays; it does not deny
+    // source transfer or require a particular storage layout for other values.
+    bool has_value_storage_constraint;
+
     auto mask() const noexcept -> unsigned;
 
     auto contains_carven_owner() const noexcept -> bool;
@@ -49,6 +55,7 @@ struct TypeContents final {
     auto read_borrows_storage() const noexcept -> bool;
     // Read is a value snapshot with no owned Carven storage or opaque native value.
     auto read_is_value_snapshot() const noexcept -> bool;
+    auto can_store_inline() const noexcept -> bool;
 };
 
 auto compute_type_contents(
@@ -82,16 +89,18 @@ auto type_content_mask(const Shape& shape, Members members, Depend depend) noexc
     if constexpr (std::same_as<Shape, OperationTypeValue>
                   || std::same_as<Shape, ConstructionOperationTypeValue>
                   || std::same_as<Shape, GenericOperationType>) {
-        return operation_owner_content;
+        return operation_owner_content | value_storage_constraint;
     } else if constexpr (std::same_as<Shape, ClosureTypeValue>) {
-        return closure_owner_content;
+        return closure_owner_content | value_storage_constraint;
+    } else if constexpr (std::same_as<Shape, FunctionTypeValue>) {
+        return value_storage_constraint;
     } else if constexpr (std::same_as<Shape, CallableViewTypeValue>
                          || std::same_as<Shape, ConstructionCallableViewTypeValue>) {
-        return callable_view_content;
+        return callable_view_content | value_storage_constraint;
     } else if constexpr (std::same_as<Shape, VectorTypeValue>
                          || std::same_as<Shape, GenericVectorType>) {
         depend(shape.element, all_type_contents);
-        return storage_owner_content;
+        return storage_owner_content | value_storage_constraint;
     } else if constexpr (std::same_as<Shape, ArrayTypeValue>
                          || std::same_as<Shape, ConstructionArrayTypeValue>
                          || std::same_as<Shape, GenericArrayType>) {
@@ -118,13 +127,13 @@ auto type_content_mask(const Shape& shape, Members members, Depend depend) noexc
                          || std::same_as<Shape, ConstructionSliceTypeValue>
                          || std::same_as<Shape, GenericSliceType>) {
         depend(shape.element, callable_view_content);
-        return storage_view_content;
+        return storage_view_content | value_storage_constraint;
     } else if constexpr (std::same_as<Shape, BuiltinTypeValue>) {
         if (shape.kind == BuiltinType::String) {
-            return storage_owner_content | string_storage_content;
+            return storage_owner_content | string_storage_content | value_storage_constraint;
         }
         if (shape.kind == BuiltinType::Str || shape.kind == BuiltinType::StrCharsView) {
-            return storage_view_content;
+            return storage_view_content | value_storage_constraint;
         }
     } else if constexpr (std::same_as<Shape, CppTypeValue>) {
         if (std::holds_alternative<CppConstCharPointerType>(shape.form)) {
@@ -135,16 +144,16 @@ auto type_content_mask(const Shape& shape, Members members, Depend depend) noexc
                 depend(argument, callable_view_content);
             }
         }
-        return native_value_content;
+        return native_value_content | value_storage_constraint;
     } else if constexpr (std::same_as<Shape, GenericCppNamedType>) {
         for (const auto argument : shape.arguments) {
             depend(argument, callable_view_content);
         }
-        return native_value_content;
+        return native_value_content | value_storage_constraint;
     } else if constexpr (std::same_as<Shape, GenericCppQueryType>) {
-        return native_value_content;
+        return native_value_content | value_storage_constraint;
     } else if constexpr (std::same_as<Shape, GenericTypeParameter>) {
-        return parametric_value_content;
+        return parametric_value_content | value_storage_constraint;
     }
     return 0u;
 }

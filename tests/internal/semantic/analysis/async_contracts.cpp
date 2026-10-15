@@ -9,6 +9,7 @@ import :source.manager;
 import :source.module_path;
 import :test.harness.diagnostics;
 import :test.harness.framework;
+import :test.internal.source.fixture;
 import std;
 
 namespace {
@@ -21,7 +22,8 @@ struct ContractCase final {
 
 auto check_contract_modules(
     const ContractCase& input,
-    std::span<const std::pair<std::string_view, std::string_view>> modules
+    std::span<const std::pair<std::string_view, std::string_view>> modules,
+    std::span<const std::string_view> standard_modules = {}
 ) noexcept -> void {
     auto sources = SourceManager();
     const auto application = sources.append_virtual("contracts.cv", std::string(input.source));
@@ -37,6 +39,7 @@ auto check_contract_modules(
         require(id.has_value());
         inputs.push_back({.source_id = *id, .module_path = *CanonicalModulePath::from_value(path)});
     }
+    append_standard_sources(sources, inputs, standard_modules);
     auto syntax = parse_program(sources, SourceBatch {.modules = inputs});
     if (!expect(syntax.has_value()).note("source = ", input.source)) {
         return;
@@ -71,24 +74,16 @@ auto check_contract(const ContractCase& input) noexcept -> void {
 }
 
 auto check_timeout_contract(const ContractCase& input) noexcept -> void {
-    constexpr auto modules = std::array {
-        std::pair<std::string_view, std::string_view> {
-            "crafts.carven.std.time.duration",
-            "export struct Duration { nanoseconds: i64 } export struct RangeError {}"
-        },
-        std::pair<std::string_view, std::string_view> {
-            "crafts.carven.std.time.timeout",
-            "export struct Timeout {}"
-        },
-    };
+    constexpr auto standard_modules = std::to_array<std::string_view>({"time"});
     auto source = std::string(
-        "import std::time.duration using { Duration, RangeError }; "
-        "import std::time.timeout using Timeout; "
+        "import std::time using { Duration, RangeError }; "
+        "import std::time using Timeout; "
     );
     source += input.source;
     check_contract_modules(
         ContractCase {.name = input.name, .source = source, .rejection = input.rejection},
-        modules
+        {},
+        standard_modules
     );
 }
 
@@ -1022,29 +1017,6 @@ const {
 }
 )",
                     .rejection = std::nullopt
-                },
-                ContractCase {
-                    .name = "positive static deadline requires unavailable clock execution",
-                    .source = R"(import std::time using timeout;
-
-const async fn leaf() -> i32 => 7;
-const {
-    try { let _ = await timeout(leaf(), Duration { nanoseconds: 1 })?; }
-    catch { Timeout(_) => {}, RangeError(_) => {} }
-}
-)",
-                    .rejection = DiagnosticCode::ConstAdmission
-                },
-                ContractCase {
-                    .name = "const definitions cannot promise native clock capability",
-                    .source = R"(import std::time using timeout;
-
-const async fn leaf() -> i32 => 7;
-const async fn run() -> i32 throw Timeout + RangeError {
-    return await timeout(leaf(), Duration {})?;
-}
-)",
-                    .rejection = DiagnosticCode::ConstAdmission
                 },
             };
             each(cases, &ContractCase::name, check_timeout_contract);

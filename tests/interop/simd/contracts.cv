@@ -6,6 +6,10 @@ import(cpp) fn simd_guarded_tails() -> usize;
 import(cpp) fn simd_utf8_encodings() -> bool;
 import(cpp) fn simd_utf8_guarded() -> bool;
 
+export(cpp) fn discard_clamp(lower: f32) {
+    f32x8::splat(0.0).clamp(f32x8::splat(0.0).with_lane(7, lower), 1.0);
+}
+
 test "Runtime UTF-8: encodings satisfy Unicode bounds across blocks and tails" {
     check(simd_utf8_encodings());
 }

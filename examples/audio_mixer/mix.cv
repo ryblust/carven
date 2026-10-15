@@ -1,6 +1,4 @@
 import std::simd.floats using { block_count, load_block };
-import std::simd using f32x8;
-import <cmath>;
 
 struct Gains {
     voice: f32,
@@ -17,15 +15,13 @@ struct Mix {
     samples: Vector<f32>,
     clipped: usize,
     peak: f32,
-    energy: f32,
+    energy: f64,
 }
 
-const fn preset() -> Gains => {
+const gains: Gains = {
     voice: 1.0,
     music: 0.5
 };
-
-const gains = preset();
 
 // Mixing stays the same in static execution and native SIMD execution.
 const fn mix(voice: [f32], music: [f32], gain: Gains) -> Mix throw MixError {
@@ -34,34 +30,33 @@ const fn mix(voice: [f32], music: [f32], gain: Gains) -> Mix throw MixError {
         throw MixError::Gain;
     }
     var output: Mix = {};
+    output.samples.reserve(voice.length());
     for index in 0..block_count(voice) {
         let left = load_block(voice, index * 8);
         let right = load_block(music, index * 8);
         let combined = left.value * gain.voice + right.value * gain.music;
-        let lanes = combined.to_array();
+        // Inspect the original values before clipping can hide overflow.
+        if ((~combined.is_finite()) & left.active).any() { throw MixError::NonFinite; }
         // Include active lanes: the final block may contain fewer than eight samples.
-        output.clipped += (((combined > 1.0) | (combined < -1.0)) & left.active).count();
-        let bounded = (combined > 1.0).select(
-            f32x8::splat(1.0),
-            (combined < -1.0).select(f32x8::splat(-1.0), combined)
-        );
+        output.clipped += ((combined.abs() > 1.0) & left.active).count();
+        let bounded = combined.clamp(-1.0, 1.0);
+        // Extract bounded values for storage and ordered scalar statistics.
         let samples = bounded.to_array();
         for lane in 0..left.length {
-            if !lanes[lane].is_finite() { throw MixError::NonFinite; }
             let value = samples[lane];
             output.samples.push(value);
-            output.energy += value * value;
-            let magnitude = if value < 0.0 { -value } else { value };
-            if magnitude > output.peak { output.peak = magnitude; }
+            let wide = value as f64;
+            output.energy += wide * wide;
+            output.peak = output.peak.max(value.abs());
         }
     }
     return &&output;
 }
 
-fn rms(value: Mix) -> f32 => if value.samples.is_empty() {
+const fn rms(value: Mix) -> f64 => if value.samples.is_empty() {
     0.0
 } else {
-    ::std::sqrt(value.energy / (value.samples.length() as f32)) as f32
+    (value.energy / (value.samples.length() as f64)).sqrt()
 };
 
 private const fn verify_tail() -> bool throw MixError {
@@ -155,4 +150,23 @@ test "mixing rejects nonfinite gains and overflowing samples" {
         MixError(error) => error == .NonFinite
     };
     check(invalid && overflow);
+}
+
+test "mixing reports the root mean square" {
+    check(
+        try {
+            let value = mix(
+                [0.3f32, -0.4],
+                [0.0f32; 2],
+                {
+                    voice: 1.0,
+                    music: 0.0
+                }
+            )?;
+            let result = rms(value);
+            result > 0.35355 && result < 0.35356
+        } catch {
+            MixError(_) => false
+        }
+    );
 }

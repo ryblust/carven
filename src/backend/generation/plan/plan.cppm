@@ -192,6 +192,13 @@ struct TargetCppAPIHeaderArtifact final {
     std::vector<TargetArtifactID> interface_dependencies;
 };
 
+struct TargetCppProviderHeaderArtifact final {
+    std::string logical_path;
+    ModuleID module_id;
+    std::vector<FunctionID> providers;
+    std::vector<TargetArtifactID> interface_dependencies;
+};
+
 struct TargetModuleImplementationArtifact final {
     std::string logical_path;
     TargetModuleSchedule schedule;
@@ -211,6 +218,7 @@ struct TargetTestEntryArtifact final {
 using TargetArtifactPlan = std::variant<
     TargetInterfaceArtifact,
     TargetCppAPIHeaderArtifact,
+    TargetCppProviderHeaderArtifact,
     TargetModuleImplementationArtifact,
     TargetTestRunnerHeaderArtifact,
     TargetTestEntryArtifact>;

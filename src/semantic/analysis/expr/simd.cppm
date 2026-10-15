@@ -11,6 +11,28 @@ import :semantic.semir.structured;
 import std;
 
 template<typename Site>
+auto construct_simd_splat(
+    Site& site,
+    SIMDLayout layout,
+    typename Site::Value input,
+    Span span
+) noexcept -> ExpressionResult<typename Site::Value> {
+    auto state = Site::operand_state();
+    auto scalar = site.consume_read(state, std::move(input), span);
+    if (!scalar) {
+        return std::unexpected(scalar.error());
+    }
+    auto operands = std::vector<SemCallArgument>();
+    operands.push_back({.access = AccessMode::Read, .expression = std::move(*scalar)});
+    return site.finish_constructed(
+        site.draft().builtin_type(layout.vector),
+        SemIntrinsic {.operation = SIMDIntrinsic::Splat, .operands = std::move(operands)},
+        std::move(state),
+        span
+    );
+}
+
+template<typename Site>
 auto construct_simd_call(
     Site& site,
     SIMDIntrinsic intrinsic,
@@ -82,10 +104,14 @@ auto construct_simd_call(
         if (contract.stages[operands.size()] == ParameterStage::Static) {
             if (value->constant) {
                 const auto& fact = site.draft().constant(*value->constant);
-                const auto* control = std::get_if<IntegerConstant>(&fact.value);
-                if (!control
-                    || control->negative()
-                    || control->magnitude() >= simd_static_limit(intrinsic, owner)) {
+                if (!simd_static_control_valid(
+                        intrinsic,
+                        owner,
+                        fact,
+                        [&](ConstantID id) noexcept -> const ConstantFact& {
+                            return site.draft().constant(id);
+                        }
+                    )) {
                     co_return std::unexpected(site.fail(
                         span,
                         DiagnosticCode::ConstIndexBounds,

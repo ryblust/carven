@@ -1,0 +1,126 @@
+import std::net using { read, write, write_all, NetError, ConnectionView };
+import std::async using { yield_once, close };
+import std::time using { timeout, Timeout };
+
+export(cpp) async fn transfer(
+    reader: ConnectionView,
+    writer: ConnectionView,
+    &&payload: Vector<u8>,
+    chunk: usize
+) -> bool throw NetError {
+    let empty: Vector<u8> = [];
+    if await write(writer, &&empty)? != 0 { return false; }
+    let copy = payload;
+    async let sending = write_all(writer, &&copy);
+    var offset: usize = 0;
+    var valid = true;
+    while offset < payload.length() {
+        match await read(reader, chunk)? {
+            .End => {
+                valid = false;
+                break;
+            },
+            .Data(bytes) => {
+                if bytes.is_empty() || bytes.length() > chunk {
+                    valid = false;
+                    break;
+                }
+                for byte in bytes {
+                    if offset >= payload.length() || byte != payload[offset] {
+                        valid = false;
+                        break;
+                    }
+                    ++offset;
+                }
+            },
+        }
+        if !valid { break; }
+    }
+    await sending?;
+    return valid && offset == payload.length();
+}
+
+export(cpp) async fn at_end(reader: ConnectionView) -> bool throw NetError {
+    return match await read(reader, 1)? {
+        .End => true,
+        .Data(_) => false
+    };
+}
+
+export(cpp) async fn duplex(first: ConnectionView, second: ConnectionView) -> bool throw NetError {
+    async let pending = read(first, 1);
+    await yield_once();
+    let request: Vector<u8> = [42];
+    await write_all(first, &&request)?;
+    let received = match await read(second, 1)? {
+        .Data(bytes) => bytes[0] == 42,
+        .End => false
+    };
+    let response: Vector<u8> = [17];
+    await write_all(second, &&response)?;
+    return match await pending? {
+        .Data(bytes) => received && bytes[0] == 17,
+        .End => false
+    };
+}
+
+export(cpp) async fn cancel_write(writer: ConnectionView, &&payload: Vector<u8>) -> bool {
+    async let pending = write_all(writer, &&payload);
+    await yield_once();
+    let second: Vector<u8> = [1];
+    let rejected = try {
+        let _ = await write(writer, &&second)?;
+        false
+    } catch {
+        NetError(error) => error == .Conflict
+    };
+    cancel pending;
+    await close(pending);
+    return rejected;
+}
+
+export(cpp) async fn conflict(reader: ConnectionView) -> bool {
+    async let pending = read(reader, 1);
+    await yield_once();
+    let rejected = try {
+        let _ = await read(reader, 1)?;
+        false
+    } catch {
+        NetError(error) => error == .Conflict
+    };
+    cancel pending;
+    await close(pending);
+    return rejected;
+}
+
+export(cpp) async fn timed_out(reader: ConnectionView) -> bool {
+    return try {
+        let _ = await timeout(read(reader, 1), 1ms)?;
+        false
+    } catch {
+        Timeout(_) => true,
+        _ => false
+    };
+}
+
+export(cpp) async fn closed(reader: ConnectionView) -> bool {
+    return try {
+        let _ = await read(reader, 1)?;
+        false
+    } catch {
+        NetError(error) => error == .Closed
+    };
+}
+
+export(cpp) async fn failed_write(writer: ConnectionView) -> bool {
+    let bytes: Vector<u8> = [1];
+    return try {
+        let _ = await write(writer, &&bytes)?;
+        false
+    } catch {
+        NetError(error) => match error {
+            .System(_) => true,
+            _ => false
+        }
+    };
+}

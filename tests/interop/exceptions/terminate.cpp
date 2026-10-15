@@ -11,6 +11,7 @@
 #include <carven/runtime/value/outcome.hpp>
 
 #include <carven/api/tests/interop/exceptions/precomputed.hpp>
+#include <carven/providers/tests/interop/exceptions/precomputed.hpp>
 
 #include "provider.hpp"
 
@@ -130,7 +131,16 @@ auto main(int argc, char** argv) -> int try {
         }
     }
     using Outcome = carven::runtime::Outcome<Foreign, Foreign>;
-    if (operation == "async-body") {
+    if (operation == "import-success") {
+        return carven::api::tests::interop::exceptions::precomputed::imported_native_failure(false)
+                == 42
+            ? 0
+            : 2;
+    } else if (operation == "import-throw") {
+        static_cast<void>(
+            carven::api::tests::interop::exceptions::precomputed::imported_native_failure(true)
+        );
+    } else if (operation == "async-body") {
         static_cast<void>(async::drive_root(async_body()));
     } else if (operation == "async-awaiter") {
         static_cast<void>(async::drive_root(async_awaiter()));

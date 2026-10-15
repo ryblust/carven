@@ -1,5 +1,3 @@
-import std::simd using u8x32;
-
 import std::simd.scan using {
     one_of,
     byte_range,

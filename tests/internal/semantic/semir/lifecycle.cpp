@@ -9,6 +9,7 @@ import :semantic.semir.body;
 import :semantic.semir.constant;
 import :semantic.semir.contents;
 import :semantic.semir.decl;
+import :semantic.semir.delegation;
 import :semantic.semir.identity;
 import :semantic.semir.ids;
 import :semantic.semir.program;
@@ -242,11 +243,25 @@ auto build_program(std::string_view module_name) noexcept -> BuiltProgram {
 
     active_builder.complete_callable(
         first_callable,
-        CppImportImplementation {.form_origin = origin}
+        CppImportImplementation {
+            .form_origin = origin,
+            .target = {
+                .context_module = module_id,
+                .lookup = CppNameLookup::Global,
+                .components = {"first"}
+            },
+        }
     );
     active_builder.complete_callable(
         second_callable,
-        CppImportImplementation {.form_origin = origin}
+        CppImportImplementation {
+            .form_origin = origin,
+            .target = {
+                .context_module = module_id,
+                .lookup = CppNameLookup::Global,
+                .components = {"second"}
+            },
+        }
     );
     auto finished = std::move(active_builder).finish();
     require(finished.has_value());

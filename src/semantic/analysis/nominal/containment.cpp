@@ -139,9 +139,17 @@ auto declaration_origin(ProgramDraft& draft, NominalDeclarationRef declaration) 
     return declaration.visit(
         Overloaded {
             [&](StructID id) noexcept {
+                if (const auto instance = draft.generic_nominal_instance_copy(id)) {
+                    return instance->origin;
+                }
                 return draft.construction_struct_declaration_copy(id).origin;
             },
-            [&](EnumID id) noexcept { return draft.enum_declaration_copy(id).origin; },
+            [&](EnumID id) noexcept {
+                if (const auto instance = draft.generic_nominal_instance_copy(id)) {
+                    return instance->origin;
+                }
+                return draft.enum_declaration_copy(id).origin;
+            },
         }
     );
 }

@@ -1,6 +1,6 @@
 # Types and context
 
-[Language](README.md)
+[Language](README.md) · [Standard capabilities](standard.md)
 
 This page defines type compatibility, inference, numeric operations, and borrowed
 slices.
@@ -10,6 +10,8 @@ slices.
 - [Type context and inference](#type-context-and-inference)
 - [Numeric types and conversions](#numeric-types-and-conversions)
 - [Read-only slices](#read-only-slices)
+- [Floating methods](#floating-methods)
+- [Numeric text parsing](#numeric-text-parsing)
 
 ## Types and compatibility
 
@@ -24,7 +26,8 @@ u8x16 mask16 f32x4 mask4 u8x32 mask32 f32x8 mask8
 ```
 
 Scalar and text names, `Vector`, and `Range` are defaults from `std::core`.
-Import SIMD names from `std::simd` and `Operation` from `std::async`. These are
+SIMD vector and mask names are defaults from `std::simd`; explicit imports and
+aliases remain available. Import `Operation` from `std::async`. These are
 ordinary bindings: declarations, imports, and type parameters can shadow them,
 and aliases preserve their canonical type identities. Runtime locals do not
 occupy type positions, but do shadow expression qualifiers. Only structural
@@ -33,7 +36,7 @@ occupy type positions, but do shadow expression qualifiers. Only structural
 `u8x16`, `mask16`, `f32x4`, `mask4`, `u8x32`, `mask32`, `f32x8`, and `mask8`
 are explicit fixed-width logical SIMD types.
 Their operators, memory contracts, and native backends are documented in the
-[SIMD craft](../../crafts/carven/std/simd/README.md).
+[SIMD reference](simd.md).
 
 Structures and enums are nominal: identity comes from the declaration, not
 from structural similarity. Arrays are identified by both element type and
@@ -193,14 +196,15 @@ host's native parsing, without an intermediate floating type. A literal outside
 the selected type's conversion range is rejected.
 
 Integer literals with `ns`, `us`, `ms`, or `s` suffixes produce the ordinary
-standard-library `Duration` struct without an import. Naming `Duration` in an
-annotation or constructor requires its ordinary import from `std::time.duration`.
+`Duration` struct declared in `std::time` without a type import. Naming `Duration` in an
+annotation or constructor requires its ordinary import from `std::time`.
 `100ms` has the same value as
 `Duration { nanoseconds: 100000000 }`; it is not a distinct numeric type.
 Scaling is checked at compilation and the result must fit signed `i64`
 nanoseconds. `-9223372036854775808ns` is admitted. Floating duration literals
 are not supported. Dynamic values use the ordinary checked constructors such
 as `milliseconds(value)?`.
+The [time reference](time.md) defines interval constructors, time points, and waits.
 
 Numeric types are otherwise compatible only with the identical
 canonical type. There is no implicit integer promotion, signedness conversion,
@@ -286,9 +290,77 @@ Extracting an element also retains any borrows inside that element. Temporary
 backing follows existing expression and retained-loop rules; storing a view
 does not extend its lifetime.
 
-The UTF standard library supplies validation and text
-construction from `[u8]`. Borrowed text retains the input storage relationship
-and follows the same lifetime and mutation checks as slices.
+[Checked text construction](text.md#checked-text-construction) validates `[u8]`
+and borrows its storage. The returned text follows the same lifetime and mutation
+checks as slices.
 
 Constant initializers can instead create slices with program-lifetime backing; see
 [Frozen constant slices](constants.md#frozen-constant-slices).
+
+## Floating methods
+
+`f32` and `f64` provide builtin value methods without imports. All methods use
+Read access and support constant initializers, `const fn`, interpretation, and
+native execution. Numeric arguments must have the receiver's precision;
+unsuffixed literals receive that expected type. Numeric results retain the
+receiver's precision.
+
+`f32x4` and `f32x8` provide the same methods per lane; their mask results and
+scalar broadcasting rules are defined in [SIMD floating methods](simd.md#floating-methods).
+
+| Method | Contract |
+| --- | --- |
+| `value.is_finite() -> bool` | False for NaN and either infinity |
+| `value.abs()` | Positive magnitude; either zero becomes +0; NaN remains NaN |
+| `value.min(other)` / `value.max(other)` | Propagate either NaN; equal numbers retain the receiver, including its zero sign |
+| `value.clamp(lower, upper)` | Assert `lower <= upper`, including ordered bounds; preserve a NaN value and return the selected bound or value |
+| `value.sqrt()` | Preserve signed zero and +infinity; negative nonzero inputs, -infinity, and NaN produce NaN |
+
+Equal clamp bounds are valid. Reversed or NaN bounds are assertion failures,
+including when the result is discarded; they are not typed failures. The receiver
+and explicit arguments evaluate once in source order before the operation.
+Methods require direct calls and do not produce first-class method values.
+
+Floating results follow the selected execution host's floating environment.
+Cross-target bit identity, NaN payloads, and non-default rounding modes are not
+guaranteed.
+
+## Numeric text parsing
+
+Every scalar integer type, including `isize` and `usize`, and `f32` and `f64`
+provide a builtin associated function `T::parse(text: str) -> T throw NumberParseError`.
+Calling the function and propagating its failure do not require importing the
+error type.
+`NumberParseError` is a standard-source nominal enum with one nullary case,
+`Invalid`. Import it from `std::core` when naming it in source.
+Aliases of numeric types provide the same factory. Parsing supports constant
+initializers, `const fn`, interpretation, and native execution.
+
+Parsing consumes the entire input and checks the requested type's range.
+Malformed, incomplete, empty, or unrepresentable input throws
+`NumberParseError::Invalid`. Use `?` to propagate the failure or `try/catch` to
+handle it, including during static execution. Unhandled failures leaving a static
+root follow the ordinary static execution diagnostic rules.
+
+Integer parsing uses base ten. Signed types accept an initial `-`; unsigned types
+reject it, including `-0`. Leading whitespace, a leading `+`, and trailing content
+are rejected. Floating parsing uses general decimal format with exponents and
+accepts infinity and NaN spellings. It preserves signed zero and parses directly
+in the requested precision. Call `is_finite()` when finite values are required.
+Parsing is locale-independent; application policies such as JSON number grammar
+and nonzero port numbers belong to their callers.
+
+```carven
+const port = u16::parse("8080")?;
+```
+
+An explicit failure contract names the imported type:
+
+```carven
+import std::core using NumberParseError;
+
+const fn parse_port(text: str) -> u16 throw NumberParseError => u16::parse(text)?;
+```
+
+The text input evaluates once with Read access. The result and error values do
+not borrow the input storage. Factories require direct calls.

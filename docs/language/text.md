@@ -1,11 +1,12 @@
 # Text and interpolation
 
-[Language](README.md)
+[Language](README.md) · [Standard capabilities](standard.md)
 
 This page defines Unicode values, owning text, borrowing, and interpolation.
 
 - [Unicode text](#unicode-text)
 - [String literals and multiline layout](#string-literals-and-multiline-layout)
+- [Checked text construction](#checked-text-construction)
 - [Unchecked text construction](#unchecked-text-construction)
 - [Owning String and text borrowing](#owning-string-and-text-borrowing)
 - [String interpolation](#string-interpolation)
@@ -15,7 +16,7 @@ This page defines Unicode values, owning text, borrowing, and interpolation.
 `char` is one immutable, copyable Unicode scalar value. It supports equality,
 inequality, and matching, but not numeric arithmetic, ordering, truthiness, or
 implicit numeric conversion. The explicit conversion `character as u32` yields
-its Unicode scalar number. The UTF library provides checked integer-to-char
+its Unicode scalar number. `char::from_u32` performs checked integer-to-char
 conversion.
 
 `str` is an immutable, copyable, value-passed UTF-8 view represented by a pointer
@@ -117,6 +118,24 @@ Escapes such as `\t` and `\u{20}` express content indentation independently of
 source indentation in ordinary and interpolated strings. Backslash line
 continuation and implicit adjacent-literal concatenation are not supported.
 
+## Checked text construction
+
+`char::from_u32(value: u32) -> char throw UnicodeScalarError` accepts Unicode scalar
+values. Surrogates U+D800 through U+DFFF and values above U+10FFFF fail with
+`UnicodeScalarError { value }`.
+
+`str::from_utf8(bytes: [u8]) -> str throw UTF8Error` validates the complete byte
+slice and returns a view of the same storage. Empty input is valid. The view
+retains its input's backing relationship: the storage must remain alive and
+unchanged while the view is used. Convert the result with `as String` when an
+independent owner is needed.
+
+Import `UnicodeScalarError`, `UTF8Error`, and `UTF8ErrorKind` from `std::utf` when
+naming them. UTF failures carry the first invalid byte offset and sequence start;
+the [UTF error contract](utf.md#error-and-streaming-contract)
+defines their kinds. Both constructors support static and ordinary execution,
+with the usual typed failure and result-retention rules.
+
 ## Unchecked text construction
 
 `char::from_u32_unchecked(value: u32) -> char` requires a Unicode scalar value:
@@ -129,8 +148,9 @@ These operations do not validate content. The caller must satisfy their content
 preconditions; violating them is outside the language's valid text contract.
 Carven checks argument types and tracks the returned text's backing through
 ordinary borrow analysis. Construction does not extend the backing lifetime.
-Use the UTF standard library's checked functions for input that has not been
-validated. Validation algorithms and their error types belong to that library.
+Use the [checked constructors](#checked-text-construction) for input that has
+not been validated. The [UTF APIs](utf.md) provide encoding, streaming validation,
+and text-processing algorithms.
 
 Both constructors are available in constant initializers, `const fn`, and
 interpretation. The executor checks their content preconditions when they execute

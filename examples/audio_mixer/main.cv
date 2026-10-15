@@ -1,13 +1,15 @@
 import .mix using { gains, mix, rms, MixError };
-import std::number.parse using { parse, ParseError };
-import std::utf.text using { split_once, TextError };
+import std::core using NumberParseError;
+import std::utf using { split_once, TextError };
 
 enum MixerError {
     UnknownArgument(String),
-    InvalidGain(ParseError),
+    InvalidGain(NumberParseError),
     InvalidOption(TextError),
     Mixing(MixError)
 }
+
+const usage = "Usage: audio-mixer [--logs] [--voice=NUMBER] [--music=NUMBER] [--help]";
 
 const voice: [f32; 10] = [0.5, -0.5, 1.0, -1.0, 0.0, 0.25, -0.25, 0.5, 0.75, -0.75];
 const music: [f32; 10] = [0.0, 0.0, 0.5, -0.5, 0.5, 0.5, -0.5, -0.5, 0.0, 0.0];
@@ -17,15 +19,26 @@ fn main(args) throw MixerError {
         var requested = gains;
         var logs = false;
         for argument in args {
+            if argument == "--help" {
+                println(usage);
+                return;
+            }
             if argument == "--logs" {
                 logs = true;
                 continue;
             }
             let option = split_once(argument, "=")?;
             match option.before {
-                "--voice" if option.found => { requested.voice = parse<f32>(option.after)?; },
-                "--music" if option.found => { requested.music = parse<f32>(option.after)?; },
-                _ => throw MixerError::UnknownArgument(argument as String),
+                "--voice" if option.found => {
+                    requested.voice = f32::parse(option.after)?;
+                },
+                "--music" if option.found => {
+                    requested.music = f32::parse(option.after)?;
+                },
+                _ => {
+                    eprintln(usage);
+                    throw MixerError::UnknownArgument(argument as String);
+                },
             }
         }
         let output = mix(voice, music, requested)?;
@@ -38,8 +51,17 @@ fn main(args) throw MixerError {
             println(output.samples);
         }
     } catch {
-        ParseError(error) => throw MixerError::InvalidGain(error),
-        TextError(error) => throw MixerError::InvalidOption(error),
-        MixError(error) => throw MixerError::Mixing(error),
+        NumberParseError(error) => {
+            eprintln(usage);
+            throw MixerError::InvalidGain(error);
+        },
+        TextError(error) => {
+            eprintln(usage);
+            throw MixerError::InvalidOption(error);
+        },
+        MixError(error) => {
+            if error == .Gain { eprintln(usage); }
+            throw MixerError::Mixing(error);
+        },
     }
 }

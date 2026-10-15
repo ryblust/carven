@@ -14,8 +14,8 @@ import :semantic.semir.structured;
 import :semantic.semir.table;
 import :semantic.semir.type;
 import :source.module_path;
-import :source.provenance.ids;
 import :source.provenance;
+import :source.provenance.ids;
 import :source.text;
 import :support.invariant;
 import :support.visit;
@@ -82,7 +82,9 @@ SemIRProgram::SemIRProgram(
       test_stops(std::move(test_stops)) {
     for (const auto entry : generic_declaration_store.entries()) {
         const auto& contract = entry.value;
+
         static_cast<void>(declaration_store.module_decl(contract.module_id));
+
         if (!compilation_provenance.view().contains(contract.name)
             || !compilation_provenance.view().contains(contract.origin)) {
             invariant_violation("generic declaration contract has foreign provenance");

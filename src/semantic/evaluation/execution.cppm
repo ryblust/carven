@@ -5,6 +5,7 @@ import :semantic.evaluation.operation;
 import :semantic.evaluation.output;
 import :semantic.evaluation.value;
 import :semantic.semir.body;
+import :semantic.semir.decl;
 import :semantic.semir.structured;
 import :support.task;
 import std;
@@ -156,11 +157,24 @@ struct ExecutionTraceEvent final {
     std::size_t depth;
 };
 
+// Input, clock sampling, and waiting require permission; output is routed separately.
+enum class HostEffects { Deny, Allow };
+
+// A call adapter derives this result from the callable's current signature.
+// Construction can execute builtin calls before canonical signatures are sealed.
+struct ExecutionBuiltinCall final {
+    TypeID result;
+    std::variant<NumberParseImplementation, ProvidedFunctionImplementation> implementation;
+};
+
+using ExecutionCallTarget = std::variant<ExecutionBody, ExecutionBuiltinCall>;
+
 class SemanticExecutionContext {
 public:
     virtual ~SemanticExecutionContext() = default;
 
     virtual auto stage() const noexcept -> ExecutionStage;
+    virtual auto host_effects_rejection() const noexcept -> std::optional<std::string_view>;
     virtual auto trace(const ExecutionTraceEvent&) noexcept -> void;
     virtual auto write(ExecutionOutputStream stream, std::string_view bytes) noexcept -> void = 0;
 
@@ -181,7 +195,7 @@ public:
     virtual auto freeze(ExecutionValue value) noexcept -> std::optional<ConstantID>;
 
     virtual auto prepare_call(CallableID callable, ProgramOriginID origin) noexcept
-        -> ContinuationTask<std::expected<ExecutionBody, ExecutionCallFailure>> = 0;
+        -> ContinuationTask<std::expected<ExecutionCallTarget, ExecutionCallFailure>> = 0;
 
     virtual auto report(const ExecutionEvent& event) noexcept -> void = 0;
 };

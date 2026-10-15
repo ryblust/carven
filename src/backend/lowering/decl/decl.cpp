@@ -15,6 +15,7 @@ import :backend.target.stmt;
 import :backend.target.symbol;
 import :backend.target.type;
 import :backend.target.unit;
+import :semantic.semir.contents;
 import :semantic.semir.decl;
 import :semantic.semir.ids;
 import :semantic.semir.program;
@@ -116,8 +117,8 @@ auto lower_declaration(
     return result;
 }
 
-auto lower_forward_declaration(ModuleLowering& context, NominalDeclarationRef declaration) noexcept
-    -> TargetItem {
+auto lower_forward_declarations(ModuleLowering& context, NominalDeclarationRef declaration) noexcept
+    -> std::vector<TargetItem> {
     auto value = declaration.visit(
         Overloaded {
             [&](StructID id) noexcept -> TargetDecl {
@@ -141,7 +142,62 @@ auto lower_forward_declaration(ModuleLowering& context, NominalDeclarationRef de
             },
         }
     );
-    return compiler_item(std::move(value), TargetCompilerReason::ArtifactScaffolding);
+    const auto type = declaration.visit(
+        Overloaded {
+            [&](StructID id) noexcept {
+                return context.named_type(TargetName {context.names().structure_identifier(id)});
+            },
+            [&](EnumID id) noexcept {
+                return context.named_type(TargetName {context.names().enumeration_identifier(id)});
+            },
+        }
+    );
+    const auto inline_value = declaration.visit(
+        Overloaded {
+            [&](StructID id) noexcept {
+                return std::ranges::all_of(
+                    context.semantic().declarations().structure(id).fields,
+                    [&](const auto& field) noexcept {
+                        return context.semantic().type_contents(field.type).can_store_inline();
+                    }
+                );
+            },
+            [&](EnumID id) noexcept {
+                return std::ranges::all_of(
+                    context.semantic().declarations().enumeration(id).cases,
+                    [&](EnumCaseID item) noexcept {
+                        return std::ranges::all_of(
+                            context.semantic().declarations().enum_case(item).payload_types,
+                            [&](TypeID type) noexcept {
+                                return context.semantic().type_contents(type).can_store_inline();
+                            }
+                        );
+                    }
+                );
+            },
+        }
+    );
+    auto result = std::vector<TargetItem>();
+    result.push_back(compiler_item(std::move(value), TargetCompilerReason::ArtifactScaffolding));
+    result.push_back(compiler_item(
+        TargetDecl {TargetFunctionDecl {
+            .name = TargetName {TargetIdentifier::from_spelling("carven_inline_value")},
+            .parameters = target_parameters({
+                .local = std::nullopt,
+                .type = context.pointer_type(type),
+                .default_value = std::nullopt,
+            }),
+            .result = context.intrinsic_type(
+                inline_value ? TargetSymbol::StdTrueType : TargetSymbol::StdFalseType
+            ),
+            .form = TargetFreeFunctionDeclaration {},
+            .constexpr_specifier = false,
+            .static_specifier = false,
+            .inline_specifier = false,
+        }},
+        TargetCompilerReason::ArtifactScaffolding
+    ));
+    return result;
 }
 
 auto lower_cpp_export_header_declaration(ModuleLowering& context, FunctionID function) noexcept
@@ -295,7 +351,7 @@ auto lower_module_schedule(
         });
     }
     for (const auto nominal : schedule.source_nominal_order) {
-        result.nominal_declarations.push_back(lower_forward_declaration(context, nominal));
+        append_items(result.nominal_declarations, lower_forward_declarations(context, nominal));
     }
     for (const auto nominal : schedule.source_nominal_order) {
         auto lowered = lower_declaration(

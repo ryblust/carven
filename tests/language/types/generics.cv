@@ -1,5 +1,3 @@
-import std::simd using u8x16;
-
 private struct Box<T> {
     value: T,
 }

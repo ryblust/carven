@@ -1,5 +1,3 @@
-import std::simd using { u8x32, mask32 };
-
 // Explicit 32-byte logical operations; no runtime dispatch.
 export struct ByteBlock {
     value: u8x32,
@@ -16,11 +14,11 @@ export const fn block_count(bytes: [u8]) -> usize {
 
 // offset may equal length: the returned block is empty and has no active lanes.
 export const fn load_block(bytes: [u8], offset: usize) -> ByteBlock {
-    assert(offset <= bytes.length());
+    let value = u8x32::load_partial(bytes, offset, 0);
     var count = bytes.length() - offset;
     if count > 32 { count = 32; }
     return {
-        value: u8x32::load_partial(bytes, offset, 0),
+        value: value,
         active: mask32::prefix(count),
         offset: offset,
         length: count
@@ -47,44 +45,10 @@ export const fn find_byte(bytes: [u8], needle: u8) -> usize {
 
 export const fn ascii_digit(bytes: u8x32) -> mask32 => (bytes >= 0x30) & (bytes <= 0x39);
 
-export const fn json_whitespace(bytes: u8x32) -> mask32 => (bytes == 0x20)
-    | (bytes == 0x09)
-    | (bytes == 0x0a)
-    | (bytes == 0x0d);
-
 export const fn ascii_lower(bytes: u8x32) -> u8x32 => ((bytes >= 0x41) & (bytes <= 0x5a)).select(
     bytes + 0x20,
     bytes
 );
-
-export const fn shift_in(previous: u8x32, current: u8x32, const count: usize) -> u8x32 {
-    return previous.extract(current, 32 - count);
-}
-
-private const fn checked_pattern(indices: [u8; 32]) -> [u8; 32] {
-    for index in indices {
-        assert(index < 32);
-    }
-    return indices;
-}
-
-export const fn swizzle(value: u8x32, const indices: [u8; 32]) -> u8x32 {
-    const checked = checked_pattern(indices);
-    return value.lookup(u8x32::from_array(checked));
-}
-
-// Writable fixed arrays are explicit. Read-only slices never grant write access.
-export const fn store(value: u8x32, &destination: [u8; 32]) {
-    destination = value.to_array();
-}
-
-export const fn store_partial(value: u8x32, &destination: [u8; 32], count: usize) {
-    assert(count <= 32);
-    let lanes = value.to_array();
-    for index in 0..count {
-        destination[index] = lanes[index];
-    }
-}
 
 // Return the length of the leading ASCII run. Short tails use ordinary scalar reads.
 export const fn ascii_prefix(bytes: [u8]) -> usize {

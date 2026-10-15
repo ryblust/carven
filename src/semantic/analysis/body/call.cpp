@@ -519,7 +519,8 @@ auto BodyElaborator::call_expression(
         }
         if (static_stage()) {
             const auto function = draft().function_for_callable(*target);
-            if (!function || !draft().function_declaration_copy(*function).is_const) {
+            const auto admitted = function && draft().function_declaration_copy(*function).is_const;
+            if (!admitted) {
                 co_return std::unexpected(fail(
                     span,
                     DiagnosticCode::ConstAdmission,
@@ -660,7 +661,8 @@ auto BodyElaborator::generic_call_expression(
         for (auto i = 0uz; i < count; ++i) {
             inferred[i] = explicit_environment[i];
         }
-        if (const auto canonical = draft().normalize_generic_environment(explicit_environment)) {
+        if (const auto canonical =
+                draft().normalize_generic_environment(explicit_environment, origin(span))) {
             explicit_canonical = *canonical;
         }
     }
@@ -745,7 +747,7 @@ auto BodyElaborator::generic_call_expression(
         }
         arguments.push_back(*argument);
     }
-    const auto canonical = draft().normalize_generic_environment(arguments);
+    const auto canonical = draft().normalize_generic_environment(arguments, origin(span));
     const auto all_concrete = canonical.has_value();
     const auto concrete = canonical.value_or(CanonicalGenericEnvironment());
     auto formed = draft().check_generic_type_formations(definition, arguments, origin(span));

@@ -101,14 +101,16 @@ admitted declarations and completed bodies. Observations do not establish progra
 validity. The recipient borrows one batch during delivery and copies retained
 records. An empty recipient performs no recording.
 
-`tools/workspace` is the analyzer and LSP session layer. It owns document revisions,
+`tools/workspace` supplies source workspace analysis. It owns document revisions,
 snapshots, query selections, navigation indexes, and bounded caches of complete
 analysis results. Bulk document updates validate and publish together, copying
 the document table once. Navigation selects a document's
-transitive source prerequisites, including imports and duration literals; semantic and reference queries use the explicit
-project selection. Every uncached selection reuses retained parsing and runs the
-complete semantic transaction and publication checks. Snapshots retain source
-revisions and query results
+transitive source dependencies, including standard-source default and associated
+entries; semantic and reference queries use the explicit project selection.
+Every uncached selection reuses retained parsing and runs the complete semantic
+transaction and publication checks. Workspace analysis captures static output
+and disables host input, clock sampling, and waits. Reaching such an operation
+produces a source diagnostic. Snapshots retain source revisions and query results
 independently of later document edits.
 The workspace API owns neither LSP transport nor Xmake build targets. CLI and
 workspace share the lower-level source, parsing, and analysis owners.
@@ -129,7 +131,7 @@ Carven establishes source types, coverage, evaluation order, ownership, and
 failure contracts. Static roots, `const` blocks, static tests, and
 interpretation execute shared semantic operations with separate admission and
 completion rules.
-Only explicit `const fn` bodies can be called in required contexts. After
+Required contexts call functions with an explicit `const fn` capability. After
 ordinary body construction, each `const fn` definition is checked for executor
 capability on its semantically reachable paths and for marked direct callees.
 The interpreter checks operation support on paths it executes. Execution and
@@ -170,9 +172,11 @@ execution when its results determine declaration types or array extents.
 | `crafts/carven/std/` | Standard-library APIs, algorithms, containers, and their native implementation support |
 
 Semantic execution owns host values, bounded display, and structured report
-data. Runtime components own their native implementations. Compiler source does
-not include runtime headers; backend symbol metadata describes the runtime
-dependencies of generated C++. Cross-mode tests check shared observable contracts.
+data. Compiler modules supply host input and clock access; the executor schedules
+readiness, cancellation, and timers. Native generated code uses runtime adapters
+and their driver. Backend symbol metadata describes generated C++ runtime
+dependencies. Cross-mode
+tests check the observable contracts of both execution implementations.
 
 The structured executor consumes typed semantic operations and an execution context.
 The analysis adapter supplies declaration completion and diagnostics. Evaluation
@@ -268,21 +272,34 @@ C++ representation.
 
 ## Craft implementation boundary
 
-Standard crafts express `.cv` implementations through Carven declarations and
-operations. Lowering supplies the native dependencies of language operations.
-Runtime header imports and runtime implementation names are reserved for C++
-support source.
+Standard entries combine compiler-provided declarations and ordinary source
+exports under one canonical module identity. Standard and user source modules
+use the same discovery, import resolution, completion, analysis, and publication
+path. Default and type-associated entries can select ordinary standard-source
+functions; those functions retain their source identity, body, and signature.
 
-A craft owns its library API and may include C++ implementation support alongside
-its source modules. That support may include runtime headers. Runtime provides
-shared language facilities and does not depend on standard crafts. The execution
-component owns operation completion, task scheduling, clock access, and timed
-waiting. Async lowering and the time craft consume its public entry; standard
-crafts do not own driver state or timer registrations.
+`Operation`, numeric and SIMD operations, and heterogeneous printing use
+compiler-provided contracts. Standard-source declarations own `Read<T>`,
+`Duration`, `RangeError`, `Timeout`, `NumberParseError`, UTF errors, input handles,
+and time points. Checked text construction, input error mapping, and public wait
+functions are source bodies. Duration literals, numeric parsing, and timeout
+composition select the standard declarations through ordinary catalog lookup and
+completion; compiler recognition of their roles does not define their types.
+Host input, clock sampling, and timer waits use provided operations local to the
+owning module. Library-specific native support, including networking's socket
+resources, belongs to its Craft.
 
-Standard and user crafts use the same type, ownership, static-execution, and
-publication rules. Library identity comes from resolved declarations. Native C++
-imports retain their delegated contracts.
+The compiler build does not depend on Crafts headers or native libraries.
+Programs being compiled can depend on standard source through ordinary source
+selection. Compiler support supplies host input and clock access; semantic
+execution adapts their results, applies budgets, and schedules continuations.
+Runtime support supplies native values and host operations for generated code.
+Source wrappers execute through the same semantic or generated call paths as
+other source functions.
+
+Source bodies retain the same type, access, ownership, failure, and execution
+rules across Standard and user Crafts. Native C++ imports retain their delegated
+contracts.
 
 ## Diagnostics and dependencies
 

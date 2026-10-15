@@ -1,5 +1,9 @@
 import "exceptions/provider.hpp";
 
+import(cpp) fn imported_exception(fail: bool) -> i32;
+
+export(cpp) fn imported_native_failure(fail: bool) -> i32 => imported_exception(fail);
+
 export(cpp) fn print_native_failure(invalid_utf8: bool) {
     println(42, f"{::make_format_probe(invalid_utf8)}");
 }

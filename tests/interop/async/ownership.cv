@@ -2,8 +2,7 @@ import .fixed using { run_fixed, ParentFailure };
 import .tail using run_tail;
 import .tracked using run_tracked;
 
-import std::time.duration using RangeError;
-import std::time.timeout using Timeout;
+import std::time using { RangeError, Timeout };
 
 export(cpp) async fn run_ownership() throw ParentFailure + Timeout + RangeError {
     await run_fixed()?;

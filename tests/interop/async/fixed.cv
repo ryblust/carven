@@ -1,7 +1,5 @@
 import std::async using { wait_ready, close };
-import std::time using timeout;
-import std::time.duration using RangeError;
-import std::time.timeout using Timeout;
+import std::time using { timeout, RangeError, Timeout };
 import "async/fixed.hpp";
 
 // These declarations publish scalar native results to source analysis without
@@ -14,6 +12,7 @@ import(cpp) fn fixed_trace() -> i32;
 import(cpp) fn fixed_identity_stable() -> i32;
 import(cpp) async fn fixed_cancel_on_destroy() -> i32;
 import(cpp) fn fixed_completion_cancel_observed() -> bool;
+import(cpp) async fn fixed_aligned_frames() -> bool;
 
 export struct ParentFailure {}
 
@@ -29,6 +28,7 @@ private async fn parent() -> ::Fixed throw ParentFailure {
 }
 
 export async fn run_fixed() throw ParentFailure + Timeout + RangeError {
+    assert(await fixed_aligned_frames());
     println(
         fixed_created(),
         fixed_destroyed(),

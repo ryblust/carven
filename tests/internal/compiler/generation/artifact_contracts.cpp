@@ -9,6 +9,7 @@ import :compiler.manifest;
 import :diagnostics.report;
 import :frontend.document;
 import :frontend.program.parse;
+import :semantic.evaluation.execution;
 import :source.batch;
 import :source.document;
 import :source.manager;
@@ -247,6 +248,7 @@ const TestSuite suite([] static noexcept {
                     .timings = staged_timings,
                     .collect_source_observations = false,
                     .capture_output = false,
+                    .host_effects = HostEffects::Allow,
                 },
                 parsed
             );

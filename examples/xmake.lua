@@ -22,10 +22,11 @@ Peak: 1.00; RMS: 0.652
 ]
 ]]},
     {name = "stream-collector", dir = "stream_collector", native = true, output = [[
-Collected 3 records; rejected feeds: 1; timed out: 1
-INFO 12 collector connected
-WARN 37 mixer token=demo clipped=2
-ERROR 42 upstream timed out
+Read 8 records; unique: 4; duplicates: 4
+alpha
+beta
+gamma
+delta
 ]]},
 }
 
@@ -46,7 +47,6 @@ for _, case in ipairs(cases) do
             if case.native then
                 add_includedirs(directory)
                 add_files(path.join(directory, "*.cpp"))
-                if is_plat("windows") then add_syslinks("ws2_32") end
             end
         end
         add_tests("output", {
@@ -67,12 +67,25 @@ target("carven-test-examples-behavior")
 target_end()
 table.insert(names, "carven-test-examples-behavior")
 
+target("carven-test-stream-collector")
+    set_default(false)
+    set_kind("binary")
+    set_languages("c++20")
+    add_rules("@carven/carven")
+    add_includedirs(path.join(examples_dir, "stream_collector"))
+    add_files(path.join(examples_dir, "stream_collector", "workflow.cv"))
+    add_files(path.join(examples_dir, "stream_collector", "stream.cpp"))
+    add_files(path.join(os.projectdir(), "tests", "examples", "stream_collector.cpp"))
+    add_tests("behavior", {group = "examples", run_timeout = 30000})
+target_end()
+table.insert(names, "carven-test-stream-collector")
+
 target("carven-test-examples")
     set_default(false)
     set_kind("phony")
     add_deps("carven-example-log-analyzer", "carven-example-audio-mixer", "carven-example-stream-collector")
     for _, name in ipairs({
-        "pipeline", "configuration", "stream-framing", "stream-incomplete", "stream-invalid-utf8", "stream-oversized",
+        "pipeline", "configuration", "arguments", "record-recovery",
     }) do
         add_tests(name, {group = "examples", run_timeout = 30000})
     end

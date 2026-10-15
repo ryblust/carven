@@ -1,10 +1,10 @@
 module carven:semantic.analysis.async;
 
-import :semantic.analysis.catalog;
 import :semantic.analysis.construction.requests;
 import :semantic.analysis.diagnostics;
 import :semantic.analysis.expr.scope;
 import :semantic.analysis.model;
+import :semantic.analysis.program;
 import :semantic.semir.async;
 import :semantic.semir.program;
 import :source.standard;
@@ -17,11 +17,9 @@ using AsyncBuiltin = std::variant<AsyncIntrinsic, AsyncCompositionPolicy, Timeou
 auto provided_async_builtin(ProvidedExport identity) noexcept -> std::optional<AsyncBuiltin>;
 
 auto resolve_async_builtin(
-    ProgramDraft& draft,
-    AnalysisCatalogView catalog,
     ConstructionRequests& requests,
-    ProgramModuleID module,
     AsyncBuiltin builtin,
+    ProgramModuleID requester,
     Span span
 ) noexcept -> AnalysisTask<ResolvedStaticCallable>;
 

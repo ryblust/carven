@@ -33,7 +33,9 @@ Directory symlinks are not recursively followed.
 `check`, `compile`, and `interpret` accept `--explicit-inputs` for callers that
 already own source selection. This mode reads exactly the named `.cv` files,
 without finding an installed toolchain or collecting either Crafts root. Supply
-every imported Carven module explicitly. All selected modules still undergo
+every source dependency explicitly, including standard declarations used by
+builtin operations and source functions selected through default names or
+associated entries. All selected modules still undergo
 ordinary analysis and compile-time execution. Build integrations and focused
 tests can reuse this boundary without repeating unrelated package analysis.
 
@@ -46,8 +48,8 @@ build system.
 
 ### Installed Crafts
 
-A Craft contains library sources prepared to build together. The project's
-`crafts/` directory holds installed Crafts. All `.cv` and `.cpp` files under the
+A Craft is a complete source package for a capability, prepared to build together.
+The project's `crafts/` directory holds installed Crafts. All `.cv` and `.cpp` files under the
 collected roots participate, including files in `examples/` and `tests/`
 subdirectories. Import declarations resolve module references within the collected
 batch. Official and third-party Crafts use the same rules.
@@ -94,6 +96,8 @@ and separate temporary object files. The compiler, SDK, and linker must be
 available in the current environment. POSIX and Windows process adapters invoke
 children directly, inheriting the working directory, environment, and standard
 streams. `CXX` is not split into shell words.
+Windows native execution links Winsock for the installed TCP craft (`ws2_32.lib`
+for MSVC-style drivers and `-lws2_32` otherwise).
 
 Generated files and the executable reside in a unique temporary directory,
 removed when the driver returns after execution or a handled failure. Carven
@@ -156,9 +160,9 @@ timing report adds the duration to this success message instead of printing it t
 
 ## Interpretation
 
-Interpretation executes a subset of Carven's semantic operations. Native C++
-integration requires compiled execution. The interpreter applies runtime arithmetic
-and execution rules to supported operations and rejects unsupported capabilities.
+Interpretation executes Carven's semantic operations using runtime arithmetic and
+execution rules. It diagnoses an unsupported operation when execution reaches it.
+Native C++ implementations require native execution.
 
 `interpret` uses the same fixed Crafts roots, resource lookup, source sorting, and
 deduplication as native execution. Other application files remain explicit inputs.
@@ -199,12 +203,21 @@ support text printing and default text formatting. Floating operations use the
 compiler host's native environment. Floating printing and formatting use the host
 standard library, including dynamic width and precision within execution budgets.
 
-The driver rejects collected `.cpp` files. C++ header imports are permitted;
-native source fragments are rejected in any collected module, including
-unimported modules. Reached native operations and callable values without an
-executable Carven body report `CV-INTERPRET-ADMISSION`. The entry must take
-no parameters. Arguments after `--` are ignored by such an entry, as in native
-execution.
+The interpreter supports input configuration, reads, clock sampling, waits, and
+deadline composition. Explicit `const` execution performs the same supported host work
+during analysis in `check`, `compile`, native-run preparation, and `interpret`.
+Ordinary calls perform it during program execution. In one compiler process,
+the input cursor preserves prefetched bytes, EOF, and system errors from static
+roots into subsequent interpretation.
+
+Collected `.cpp` files, C++ header imports, and native source fragments do not
+prevent interpretation. They remain native build inputs; the interpreter does
+not compile or load them. Reached native operations and callable implementations
+outside the supported subset report `CV-INTERPRET-ADMISSION` at the operation.
+C++ global initialization and destruction do not run. Programs that depend on
+those effects require native execution.
+The interpreted entry must take no parameters. Arguments after `--` are ignored
+by such an entry.
 
 `--trace` reports executed statement locations and function calls and successful
 returns to stderr, indented by call depth. It describes interpreted execution after
@@ -214,8 +227,8 @@ not a complete execution log.
 
 `--max-steps N` supplies a nonnegative decimal step budget, defaulting to 100,000.
 Steps charge expression evaluation, statements, and loop progress using the shared
-executor; nested calls share the root budget. It does not limit elapsed time or
-blocking output. Existing per-value, call-depth, aggregate, and cumulative text-work
+executor; nested calls share the root budget. It does not limit elapsed time,
+input waiting, timer waiting, or blocking output. Existing per-value, call-depth, aggregate, and cumulative text-work
 limits also apply. Each compile-time root keeps its own analysis budget;
 this option changes only interpreted execution, with a fresh budget for each
 runtime test. Repeating `--max-steps`, `--trace`, or `--tests` is an error.
@@ -243,7 +256,7 @@ crafts/json/io.cv -> crafts.json.io
 
 The project `crafts/` directory is the package root: `json::parser` selects
 `crafts.json.parser`. The reserved `std::` prefix selects the standard-library
-modules of the official `carven` craft, such as `crafts.carven.std.utf.text`.
+modules of the official `carven` craft, such as `crafts.carven.std.utf`.
 
 Explicit absolute Crafts paths are also accepted. For files collected from a
 known Crafts root, that root determines the module identity independently of the
@@ -260,6 +273,11 @@ are permitted as module components. Two inputs cannot derive the same canonical
 module path.
 
 ## Artifact destinations
+
+Modules containing concrete `import(cpp)` declarations emit provider type
+support headers at `carven/providers/<canonical/module>.hpp`. Their paths appear
+in the artifact manifest. See [provider type support](../language/interop.md#provider-type-support)
+for their aliases and native integration.
 
 For `compile`, one destination mode is always active, and at most one may be selected
 explicitly. With no destination option, output is written below the current

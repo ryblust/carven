@@ -1,5 +1,5 @@
-import std::utf.text using {
-    from_utf8, // decode
+import std::utf using {
+    substring, // text range
     to_string,
 };
 

@@ -172,7 +172,8 @@ auto run_interpret_command(std::string_view executable, std::span<const char* co
             "Sources include the fixed toolchain and working-directory Crafts roots.\n"
             "Program execution requires top-level statements or main.\n"
             "The entry must take no parameters; arguments after '--' are ignored.\n"
-            "Native C++ integration requires compiled execution.\n"
+            "Native C++ inputs are collected but are not compiled or initialized.\n"
+            "Executing a native C++ operation requires compiled execution.\n"
         );
         return 0;
     }
@@ -255,13 +256,6 @@ auto run_interpret_command(std::string_view executable, std::span<const char* co
     }
     if (!tests && !entry) {
         return emit_missing_entry_error();
-    }
-    if (!sources->native.empty()) {
-        return emit_driver_error(
-            std::format("cannot interpret native C++ source '{}'", sources->native.front()),
-            {},
-            "run without 'interpret' to compile and execute native sources"
-        );
     }
     auto options = InterpreterOptions {.limits = limits, .trace = {}, .report = {}};
     const auto trace_event = [&](const ExecutionTraceEvent& event) noexcept {

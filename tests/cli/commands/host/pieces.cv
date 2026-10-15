@@ -1,0 +1,27 @@
+import std::io using { IOError, Read };
+
+const async fn collect() -> bool throw IOError {
+    async let head = stdin().read(2);
+    async let tail = stdin().read_line();
+    let bytes = match await head? {
+        .Data(bytes) => bytes,
+        .End => []
+    };
+    let text = match await tail? {
+        .Data(text) => text,
+        .End => ""
+    };
+    return bytes.length() == 2 && bytes[0] == 65 && bytes[1] == 66 && text == "hé";
+}
+
+const collected = await collect()?;
+
+const {
+    assert(collected);
+    println("static pieces");
+}
+
+async fn main() throw IOError {
+    assert(await stdin().read_text(8)? == "世界\n");
+    println("runtime pieces");
+}

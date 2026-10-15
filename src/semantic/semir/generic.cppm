@@ -261,6 +261,7 @@ struct GenericNominalInstance final {
     GenericDeclarationID definition;
     CanonicalGenericEnvironment arguments;
     NominalDeclarationRef declaration;
+    ProgramOriginID origin;
 };
 
 struct GenericFunctionInstance final {

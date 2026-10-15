@@ -7,6 +7,7 @@ import :semantic.analysis.diagnostics;
 import :semantic.analysis.failure;
 import :semantic.analysis.generics.snapshot;
 import :semantic.analysis.source.builder;
+import :semantic.evaluation.execution;
 import :semantic.evaluation.output;
 import :semantic.semir.constant_access;
 import :semantic.semir.generic;
@@ -74,7 +75,8 @@ public:
         DiagnosticSink& sink,
         ExecutionOutput output = {},
         SourceAnalysisBuilder* source_analysis = nullptr,
-        TimingOutput timings = {}
+        TimingOutput timings = {},
+        HostEffects host_effects = HostEffects::Deny
     ) noexcept -> ProgramDraft;
 
     ProgramDraft(const ProgramDraft&) = delete;
@@ -85,6 +87,7 @@ public:
     auto identity() const noexcept -> ProgramIdentity override;
     auto source_analysis() const noexcept -> SourceAnalysisBuilder*;
     auto timings() const noexcept -> TimingOutput;
+    auto host_effects() const noexcept -> HostEffects;
     auto provenance_identity() const noexcept -> ProvenanceIdentity;
     auto diagnostics() const noexcept -> AnalysisDiagnostics;
     auto write_output(ExecutionOutputStream stream, std::string_view bytes) const noexcept -> void;
@@ -106,6 +109,10 @@ public:
     auto source_origin(ProgramOriginID id) const noexcept -> ProgramSourceOrigin;
     auto module_source(ProgramModuleID id) const noexcept -> ProgramSourceID;
     auto module_path_copy(ProgramModuleID id) const noexcept -> CanonicalModulePath;
+
+    auto find_program_module(const CanonicalModulePath& path) const noexcept
+        -> std::optional<ProgramModuleID>;
+
     auto source_slice_copy(ProgramSourceID source, Span span) const noexcept -> std::string;
     auto source_slice_copy(ProgramModuleID id, Span span) const noexcept -> std::string;
     auto intern_spelling(std::string_view spelling) noexcept -> ProgramSpellingID;
@@ -265,6 +272,7 @@ public:
 
     auto normalize_generic_environment(
         std::span<const GenericArgument> arguments,
+        ProgramOriginID origin,
         const FailureSolution* failures = nullptr
     ) noexcept -> std::optional<CanonicalGenericEnvironment>;
 
@@ -325,7 +333,12 @@ public:
 
     auto complete_function_result(CallableID id, ConstructionTypeRef result) noexcept -> void;
     auto append_body_callable(ConstructionCallableContract contract) noexcept -> CallableID;
+    auto provided_callable(ProvidedExport identity) noexcept -> std::optional<CallableID>;
+    auto provided_function(ProvidedFunction function) noexcept -> CallableID;
+    auto number_parser(BuiltinType number, ConstantID invalid) noexcept -> CallableID;
     auto complete_callable(CallableID id, CallableImplementation implementation) noexcept -> void;
+    auto callable_implementation_copy(CallableID id) const noexcept
+        -> std::optional<CallableImplementation>;
     auto module_declaration_copy(ModuleID id) const noexcept -> ModuleDeclaration;
     auto function_declaration_copy(FunctionID id) const noexcept -> FunctionDeclaration;
     auto function_for_callable(CallableID id) const noexcept -> std::optional<FunctionID>;
@@ -496,7 +509,8 @@ private:
         DiagnosticSink& sink,
         ExecutionOutput output,
         SourceAnalysisBuilder* source_analysis,
-        TimingOutput timings
+        TimingOutput timings,
+        HostEffects host_effects
     ) noexcept;
 
     auto resolve() && noexcept -> AnalysisResult<ResolvedAnalysisProgram>;
@@ -542,6 +556,7 @@ private:
     ExecutionOutput output;
     SourceAnalysisBuilder* source_observer;
     TimingOutput analysis_timings;
+    HostEffects execution_host_effects;
     State state;
 
     struct ConstructionStorage final {
@@ -563,6 +578,8 @@ private:
         FailureConstraintStore failure_constraints;
         std::map<CallableID, PendingFunctionContract> pending_function_contracts;
         std::map<CallableID, FunctionID> functions_by_callable;
+        std::map<ProvidedFunction, CallableID> provided_functions;
+        std::map<BuiltinType, CallableID> number_parsers;
 
         struct BodySlot final {
             BodyKind kind;

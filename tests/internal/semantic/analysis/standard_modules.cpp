@@ -16,7 +16,11 @@ const TestSuite suite([] static noexcept {
 import std::core using assert as verify;
 import std::io using print as write;
 import std::testing using check as ensure;
+import std::simd using { f32x4 as Lanes, mask4 as Flags };
+struct f32x4 { value: i32 }
 fn emit() { let output: fn(str) -> void = write; output("value"); }
+fn lanes(value: Lanes) -> Flags => value.is_finite();
+fn local(value: f32x4) -> i32 => value.value;
 test "aliases" { let check_value: fn(bool) -> void = ensure; check_value(true); verify(true); }
 const test "direct aliases" { ensure(true); verify(true); }
 )");
@@ -48,7 +52,6 @@ const test "async aliases" {
             constexpr auto cases = std::to_array<std::pair<std::string_view, DiagnosticCode>>({
                 {"fn wrong<String>() { let x = String::from_str(\"hello\"); } fn use() { wrong<i32>(); }",
                  DiagnosticCode::TypeGenericDefinition},
-                {"fn run(value: u8x16) {}", DiagnosticCode::TypeUnresolved},
                 {"fn run(value: Operation<i32>) {}", DiagnosticCode::TypeUnresolved},
                 {"async fn run() { await yield_once(); }", DiagnosticCode::NameUnresolved},
                 {"fn String() {} fn run(value: String) {}", DiagnosticCode::TypeUnresolved},
@@ -67,6 +70,7 @@ const test "async aliases" {
         };
     "Standard modules: timeout dependencies are lazy and defaults are weak"_test =
         [] static noexcept {
+            constexpr auto standard_modules = std::to_array<std::string_view>({"time"});
             static_cast<void>(analyze_test_program(R"(
 import std::time using timeout as limit;
 import std::core using String as Text;
@@ -76,12 +80,15 @@ fn print(value: i32) -> i32 => value;
 const result = 7i32;
 )"));
             expect_diagnostic(
-                analyze_test_errors(R"(
+                analyze_test_errors(
+                    R"(
 import std::time using timeout as limit;
 async fn one() -> i32 => 1;
 async fn run() { await limit(one(), 1); }
-)"),
-                DiagnosticCode::TypeUnresolved
+)",
+                    standard_modules
+                ),
+                DiagnosticCode::TypeMismatch
             );
         };
 });

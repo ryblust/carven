@@ -1,0 +1,19 @@
+import std::core using NumberParseError;
+
+const value = i32::parse("42")?;
+
+fn observe(&calls: i32, text: str) -> str {
+    calls += 1;
+    return text;
+}
+
+fn main() throw NumberParseError {
+    var calls = 0;
+    println(value, f32::parse("1.25e2")?);
+    println(i32::parse(observe(&calls, "123"))?, calls);
+    try {
+        u8::parse(observe(&calls, "256"))?;
+    } catch {
+        NumberParseError(error) => println(error == NumberParseError::Invalid, calls),
+    }
+}

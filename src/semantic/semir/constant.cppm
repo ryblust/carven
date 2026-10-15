@@ -156,6 +156,29 @@ struct ConstantFact final {
     auto operator==(const ConstantFact&) const noexcept -> bool = default;
 };
 
+template<typename Lookup>
+auto simd_static_control_valid(
+    SIMDIntrinsic intrinsic,
+    BuiltinType owner,
+    const ConstantFact& fact,
+    Lookup lookup
+) noexcept -> bool {
+    const auto valid_index = [](const ConstantFact& value, std::uint64_t limit) static noexcept {
+        const auto* integer = std::get_if<IntegerConstant>(&value.value);
+        return integer && !integer->negative() && integer->magnitude() < limit;
+    };
+    if (intrinsic != SIMDIntrinsic::Swizzle) {
+        return valid_index(fact, simd_static_limit(intrinsic, owner));
+    }
+    const auto width = simd_layout(owner)->width;
+    const auto* indices = std::get_if<ArrayConstant>(&fact.value);
+    return indices
+        && indices->elements.size() == width
+        && std::ranges::all_of(indices->elements, [&](ConstantID index) noexcept {
+               return valid_index(lookup(index), width);
+           });
+}
+
 auto constant_children(const ConstantValue& value) noexcept
     -> std::optional<std::span<const ConstantID>>;
 

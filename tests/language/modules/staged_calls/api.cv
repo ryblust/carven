@@ -1,4 +1,5 @@
 import <vector> using std::vector;
+import "modules/staged_calls/provider.hpp";
 
 export const fn adjust(value: i32, const delta: i32) -> i32 {
     const amount = delta + 2;
@@ -8,12 +9,6 @@ export const fn adjust(value: i32, const delta: i32) -> i32 {
 export const fn relay(value: i32, const delta: i32) -> i32 => adjust(value, delta);
 
 export fn runtime_relay(value: i32, const delta: i32) -> i32 => relay(value, delta);
-
-#[cpp] ---
-auto staged_native_bias(std::int32_t value) noexcept -> std::int32_t {
-    return value + 100;
-}
----
 
 private import(cpp) fn staged_native_bias(value: i32) -> i32;
 

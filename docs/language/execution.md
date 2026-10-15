@@ -1,105 +1,14 @@
-# Input, output, entry points, and tests
+# Entry points, tests, and diagnostics
 
-[Language](README.md)
+[Language](README.md) · [Standard capabilities](standard.md)
 
-This page defines observable input and output, program entry, tests, assertions, and
-selected diagnostics. Compiler invocation and process reporting are covered by
-the [CLI](../toolchain/cli.md).
+This page defines program entry, tests, assertions, and selected diagnostics.
+[Input and output](io.md) defines printing and standard input; the
+[CLI](../toolchain/cli.md) defines compiler invocation and process reporting.
 
-- [Printing](#printing)
 - [Entry points](#entry-points)
-- [Standard input](#standard-input)
 - [Tests](#tests)
 - [Diagnostics](#diagnostics)
-
-## Printing
-
-`print`, `println`, `eprint`, and `eprintln` are builtin
-callables; they need no import and follow ordinary name lookup and shadowing.
-They accept one or more Read values and return `void`. `void` and
-character-iteration views are not printable. Arguments are evaluated once, from
-left to right. Values are separated by one space; `println` and `eprintln` append
-one newline.
-`println()` and `eprintln()` also accept no argument to write a newline. Output
-goes to stdout or stderr respectively. No typed failure or `?` is required.
-As with interpolation, scalar Read values are saved and String Read values alias
-their owners. Text views retain their backing throughout argument evaluation
-and printing.
-
-Direct printing is admitted in functions executed in the static stage, `const` blocks and
-`const test` for the types supported by static execution. Static execution delivers
-output synchronously to the compiler host; runtime calls use the runtime streams. Declaring
-a function does not itself execute it. Optional precomputation does not produce
-static-stage output or remove required runtime printing. Printing follows the
-same argument, separator, newline, and text rules in both stages. Output bytes
-consume the root's cumulative text-work budget. Completed output remains observable
-if later execution fails.
-
-Text is printed verbatim, including embedded NUL bytes. Scalars use their default
-C++ format representation; a Carven `char` prints its UTF-8 text. Formatting is
-explicit through existing interpolation, for example `println(f"{value:04}")`.
-Text arguments are not interpreted as format strings: `println("{value}", 3)`
-prints `{value} 3` followed by a newline.
-
-Direct printing displays logical data structure independently of interpolation's
-formatting protocol. Structures show their source type name and fields in
-declaration order. Enums show `Type::Case` and parenthesized payload values.
-Arrays and slices show bracketed elements; integer ranges show their bounds
-and `..` or `..=`.
-
-Nonempty structures, sequences, and enum payloads use multiline layout. Each
-field or element starts on a new line, indented four spaces per level, and ends
-with a comma. Closing delimiters occupy their own line at the enclosing level.
-Empty structures and sequences remain `Type {}` and `[]`; cases without payloads,
-scalars, and ranges remain on one line without a trailing comma. Layout is
-independent of line width and content length.
-
-```text
-Order {
-    price: Money {
-        cents: 1250,
-    },
-    names: [
-        "a",
-        "b",
-    ],
-}
-```
-
-Nested text is double-quoted, escaping quotes, backslashes, newline, carriage
-return, tab, and NUL. Nested characters use single quotes and escape a single
-quote. Top-level text retains the verbatim behavior above.
-
-Native results use C++ type classification. Arithmetic values display their
-scalar values; `char32_t` uses character display, while `char8_t`, `char16_t`, and
-`wchar_t` display numeric code units. `std::string_view` and the runtime `String`
-type use quoted text. `char*` and `const char*` use the text rules above;
-null values display `nullptr`, and non-null values require readable
-NUL-terminated storage. Other pointers convertible to `const void*` display an
-address or `nullptr`. Other external types, function pointers, and callable values
-display `<opaque>`.
-Class values display their type name, including when nested in another value.
-
-Structural display never invokes a custom formatter, stream insertion operator,
-or getter, including for nested fields. `println(value)` selects structural
-display; `println(f"{value}")` first performs explicit formatting. Read access and
-backing requirements apply to the complete printed value; display adds no owning
-copy or transfer.
-
-Structural output expands at most eight levels (the root has depth zero), shows
-at most 64 elements per array or slice, and retains at most 16,384 UTF-8 bytes
-before a truncation marker, including layout whitespace. Omitted content is
-marked `...`; a sequence omission occupies an element line ending in a comma.
-These bounds also apply to structural values in assertion explanations, but not to verbatim
-top-level text. Display is diagnostic text, not a serialization format.
-
-Buffering and flushing follow the selected C++ standard-library facilities,
-with no extra flush per call. Native formatting or output failure terminates
-through the runtime's non-throwing contract.
-
-Printing values can use an expected signature, for example
-`let output: fn(str, i32) -> void = println;`, and pass through ordinary callable
-views. The expected signature fixes the parameter count and types.
 
 ## Entry points
 
@@ -170,38 +79,6 @@ async fn main(args) {
     }
 }
 ```
-
-## Standard input
-
-`stdin()` is available without an import and follows ordinary name lookup.
-The public input types and errors are selected from `std::io`.
-Reads return cold operations and run under the same async driver,
-cancellation, child closure, and timeout rules as other operations.
-
-```carven
-import std::io using IOError;
-
-async fn main() throw IOError {
-    let input = stdin().with_line_limit(4096);
-    while {
-        match await input.read_line()? {
-            .Data(line) => println(line),
-            .End => break,
-        }
-    }
-}
-```
-
-An empty line is `.Data("")`; EOF is `.End`. Reads report one `IOError` enum:
-`.System(code)`, `.InputTooLarge(limit)`, or `.InvalidUTF8(detail)`. Text reads
-reuse UTF validation and retain its typed error detail; byte reads preserve
-arbitrary bytes. Line reads strip LF and its immediately preceding CR, and
-return a final unterminated line before EOF.
-`read_all(limit)` and `read_text(limit)` require an explicit maximum byte count.
-All handles share the process input cursor. Started reads run in FIFO order.
-Cancellation preserves buffered incomplete input, and limit failures preserve
-input for another read. Completed text reads consume their bytes before UTF
-validation, including when validation fails.
 
 ## Tests
 

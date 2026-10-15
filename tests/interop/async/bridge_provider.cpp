@@ -1,6 +1,4 @@
-#include <carven/api/tests/interop/async/bridge.hpp>
-
-#include "bridge.hpp"
+#include "bridge_provider.hpp"
 
 #include <array>
 #include <cerrno>
@@ -11,15 +9,14 @@
 namespace {
 
 namespace async = carven::runtime::execution;
-namespace api = carven::api::tests::interop::async::bridge;
+namespace providers = async_bridge::providers;
 
 using async_bridge::Context;
 using async_bridge::Observations;
 using async_bridge::TrivialContext;
 using async_interop::PipeQueue;
-using IOError = decltype(api::make_io_error(0));
+using IOError = providers::bridge_read_byte::Failure0;
 using ReadResult = async::Completion<std::int32_t, IOError>;
-using ReadOperation = async::AsyncOperation<std::int32_t, IOError>;
 
 auto check(bool condition, const char* message) noexcept -> void {
     if (!condition) {
@@ -52,7 +49,7 @@ auto read_completion(PipeQueue::Completion result, std::byte byte, Observations&
         return ReadResult::cancelled();
     }
     if (const auto* error = result.failure_if<async_interop::PipeError>()) {
-        return ReadResult::failure(api::make_io_error(error->code));
+        return ReadResult::failure(IOError {.code = error->code});
     }
     const auto* success = result.success_if();
     check(success != nullptr && success->value <= 1, "one-byte native read result");
@@ -75,7 +72,9 @@ async_bridge::Context::~Context() noexcept {
     ++observed.context_destroyed;
 }
 
-auto bridge_read_byte(const Context& context) noexcept -> ReadOperation {
+namespace async_bridge {
+
+auto bridge_read_byte(const Context& context) noexcept -> providers::bridge_read_byte::Completion {
     check(&context == context.host_address, "noncopyable Read context is the host holder");
     auto lifetime = BufferLifetime(context.observed);
     auto buffer = std::array<std::byte, 1> {};
@@ -84,7 +83,7 @@ auto bridge_read_byte(const Context& context) noexcept -> ReadOperation {
 }
 
 auto bridge_write_byte(const Context& context, std::int32_t value) noexcept
-    -> async::AsyncOperation<void, IOError> {
+    -> providers::bridge_write_byte::Completion {
     check(
         &context == context.host_address && value >= 0 && value <= 255,
         "valid write context and byte"
@@ -99,7 +98,7 @@ auto bridge_write_byte(const Context& context, std::int32_t value) noexcept
         co_return Result::cancelled();
     }
     if (const auto* error = result.failure_if<async_interop::PipeError>()) {
-        co_return Result::failure(api::make_io_error(error->code));
+        co_return Result::failure(IOError {.code = error->code});
     }
     check(
         result.success_if() != nullptr && result.success_if()->value == 1,
@@ -109,7 +108,7 @@ auto bridge_write_byte(const Context& context, std::int32_t value) noexcept
 }
 
 auto bridge_trivial_byte(const TrivialContext& context, std::int32_t marker) noexcept
-    -> ReadOperation {
+    -> providers::bridge_trivial_byte::Completion {
     check(
         &context == context.host_address && marker == 23,
         "trivial Read context retains host identity through factory and yielding argument"
@@ -132,13 +131,15 @@ auto bridge_note(const Context& context, std::int32_t stage) noexcept -> void {
 }
 
 auto bridge_native_character(std::int32_t value, bool fail) noexcept
-    -> async::AsyncOperation<char32_t, IOError> {
+    -> providers::bridge_native_character::Completion {
     using Result = async::Completion<char32_t, IOError>;
     if (async::cancel_requested()) {
         co_return Result::cancelled();
     }
     if (fail) {
-        co_return Result::failure(api::make_io_error(EIO));
+        co_return Result::failure(IOError {.code = EIO});
     }
     co_return Result::success(static_cast<char32_t>(value));
 }
+
+} // namespace async_bridge

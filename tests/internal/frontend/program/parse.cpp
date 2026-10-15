@@ -22,18 +22,6 @@ auto path(std::string_view value) noexcept -> CanonicalModulePath {
 }
 
 const TestSuite suite([] static noexcept {
-    "Syntax program: source inputs cannot replace provided identities"_test = [] static noexcept {
-        auto sources = SourceManager();
-        const auto source = sources.append_virtual("core.cv", "export struct User {}");
-        require(source.has_value());
-        const auto inputs = std::array {
-            SourceModuleInput {.source_id = *source, .module_path = path("crafts.carven.std.core")}
-        };
-        const auto parsed = parse_program(sources, SourceBatch {.modules = inputs});
-        require(!parsed.has_value());
-        expect_equal(parsed.error().front().finding.code, DiagnosticCode::CompilationInput);
-    };
-
     "Syntax program: real module sources publish through the program parser"_test =
         [] static noexcept {
             auto sources = SourceManager();
@@ -190,12 +178,16 @@ const TestSuite suite([] static noexcept {
             };
 
             constexpr auto cases = std::array {
-                Case {"nested.main", "std.utf", "nested.std.utf"},
-                Case {"crafts.app.nested.main", "crafts.app.std.utf", "crafts.app.nested.std.utf"},
+                Case {"nested.main", "std.json", "nested.std.json"},
+                Case {
+                    "crafts.app.nested.main",
+                    "crafts.app.std.json",
+                    "crafts.app.nested.std.json"
+                },
                 Case {
                     "crafts.carven.nested.main",
-                    "crafts.carven.std.utf",
-                    "crafts.carven.nested.std.utf",
+                    "crafts.carven.std.json",
+                    "crafts.carven.nested.std.json",
                 },
             };
             each(
@@ -212,13 +204,13 @@ const TestSuite suite([] static noexcept {
                     };
                     append(
                         item.importer,
-                        "import std::utf using *; import std.utf using *; "
-                        "import .std.utf using *; import json::parser using *;"
+                        "import std::json using *; import std.json using *; "
+                        "import .std.json using *; import json::parser using *;"
                     );
-                    append("crafts.carven.std.utf", "");
-                    append("crafts.std.utf", "");
+                    append("crafts.carven.std.json", "");
+                    append("crafts.std.json", "");
                     append("crafts.json.parser", "");
-                    if (item.craft_root_target != "crafts.carven.std.utf") {
+                    if (item.craft_root_target != "crafts.carven.std.json") {
                         append(item.craft_root_target, "");
                     }
                     append(item.relative_target, "");
@@ -238,7 +230,7 @@ const TestSuite suite([] static noexcept {
                     }
                     const auto imports = parsed->resolved_imports(*importer);
                     const auto expected = std::array {
-                        std::string_view("crafts.carven.std.utf"),
+                        std::string_view("crafts.carven.std.json"),
                         item.craft_root_target,
                         item.relative_target,
                         std::string_view("crafts.json.parser"),
@@ -248,30 +240,29 @@ const TestSuite suite([] static noexcept {
                         return;
                     }
                     for (auto index = 0uz; index < expected.size(); ++index) {
-                        expect(
-                            ((provenance
-                                  .module_record(std::get<ProgramModuleID>(imports[index].target))
-                                  .path.value())
-                             == (expected[index]))
+                        const auto source = imports[index].target.source;
+                        if (!expect(source.has_value()).note("item.importer = ", item.importer)) {
+                            continue;
+                        }
+                        expect_equal(
+                            provenance.module_record(*source).path.value(),
+                            expected[index]
                         )
-                            .note(
-                                "provenance.module_record(std::get<ProgramModuleID>(imports[index].target)).path.value() == expected[index]",
-                                "item.importer = ",
-                                item.importer
-                            );
+                            .note("item.importer = ", item.importer);
                     }
                 }
             );
         };
 
-    "Syntax program: a standard import requires the official source in the input batch"_test =
+    "Syntax program: a Standard Craft import requires the official source in the input batch"_test =
         [] static noexcept {
             auto sources = SourceManager();
             auto inputs = std::vector<SourceModuleInput>();
-            for (const auto name : {"nested.main", "crafts.std.utf", "std.utf", "nested.std.utf"}) {
+            for (const auto name :
+                 {"nested.main", "crafts.std.json", "std.json", "nested.std.json"}) {
                 const auto source = sources.append_virtual(
                     name,
-                    std::string_view(name) == "nested.main" ? "import std::utf using *;" : ""
+                    std::string_view(name) == "nested.main" ? "import std::json using *;" : ""
                 );
                 if (!expect(source.has_value())) {
                     return;

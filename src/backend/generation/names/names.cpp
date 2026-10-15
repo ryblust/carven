@@ -27,6 +27,7 @@ auto generated_content_identifier(std::string_view spelling) noexcept -> bool {
     return spelling == "CarvenQuery"
         || spelling == "CarvenDisplay"
         || spelling == "carven_constant"
+        || spelling == "carven_inline_value"
         || spelling.starts_with("CarvenQuery_")
         || spelling.starts_with("CarvenDisplay_")
         || spelling.starts_with("carven_constant_");

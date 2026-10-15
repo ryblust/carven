@@ -1,24 +1,24 @@
-import std::utf.error using UTF8Error;
-
-import std::utf.text using {
-    from_utf8,
+import std::utf using {
+    UTF8Error,
     to_string,
     substring,
     split_once,
     split,
     lines,
     starts_with,
+    SplitCursor,
+    SplitField,
     TextError,
 };
 
 private const fn copied_text() -> String throw UTF8Error {
     let bytes = [0xffu8, 0x61, 0, 0xc3, 0xa9, 0xe4, 0xbd, 0xa0, 0xff];
     let selected = bytes.slice(1, 8);
-    let view = from_utf8(selected)?;
+    let view = str::from_utf8(selected)?;
     assert(view.bytes.length() == selected.length());
     assert(view.bytes[0] == 0x61);
     assert(view.bytes[1] == 0);
-    assert(from_utf8(selected.slice(2, 2))?.is_empty());
+    assert(str::from_utf8(selected.slice(2, 2))?.is_empty());
     return view as String;
 }
 
@@ -40,6 +40,27 @@ private const fn changed_backing() -> String {
     return view as String;
 }
 
+private const fn fields(text: str, separator: str) -> Vector<String> throw TextError {
+    var cursor = SplitCursor::new();
+    var result: Vector<String> = [];
+    while {
+        let field: SplitField = cursor.next(text, separator)?;
+        match field {
+            .End => break,
+            .Value(value) => result.push(value as String),
+        }
+    }
+    return &&result;
+}
+
+private const fn same(left: [String], right: [String]) -> bool {
+    if left.length() != right.length() { return false; }
+    for index in 0..left.length() {
+        if left[index] != right[index] { return false; }
+    }
+    return true;
+}
+
 private const copied = copied_text()?;
 private const owned = to_string([0xf0u8, 0x9f, 0x98, 0x80])?;
 private const independent = independent_text()?;
@@ -53,7 +74,7 @@ const test "UTF8: checked byte views and owned results execute at compilation" {
     var rejected = false;
     let invalid = [0xe2u8, 0x28];
     try {
-        let _ = from_utf8(invalid)?;
+        let _ = str::from_utf8(invalid)?;
     } catch {
         UTF8Error(error) => { rejected = error.kind == .InvalidContinuation && error.offset == 1; },
     }
@@ -64,7 +85,7 @@ test "UTF8: byte slices construct borrowed and owning text" {
     check(changed_backing() == "cb");
     let bytes: [u8; 7] = [0x61, 0, 0xc3, 0xa9, 0xe4, 0xbd, 0xa0];
     try {
-        let text = from_utf8(bytes)?;
+        let text = str::from_utf8(bytes)?;
         check(text == "a\u{0}é你");
         check(text.bytes[1] == 0);
         let copy = to_string(text.bytes)?;
@@ -98,7 +119,7 @@ test "UTF8: borrowed and owning text construction report invalid bytes" {
     };
     var rejected = false;
     try {
-        let _ = from_utf8(bytes)?;
+        let _ = str::from_utf8(bytes)?;
     } catch {
         UTF8Error(error) => {
             rejected = error.kind
@@ -218,4 +239,30 @@ test "Text: processing preserves UTF8 boundaries and empty fields" {
     };
     source.clear();
     check(owned.length() == 2 && owned[0] == "first" && owned[1] == "世界");
+}
+
+const test "Split cursor: empty fields and multibyte separator" {
+    try {
+        check(same(fields("世界a世界世界", "世界")?, ["", "a", "", ""]));
+    } catch {
+        _ => fail("unexpected library failure"),
+    }
+}
+
+test "Split cursor: borrowed traversal preserves exact owning split behavior" {
+    try {
+        for text in ["", " ", "  token=abc  ", "a b", "世界 a", "a世界b世界"] {
+            check(same(fields(text, " ")?, split(text, " ")?));
+        }
+        check(
+            try {
+                let _ = fields("", "")?;
+                false
+            } catch {
+                TextError(error) => error == .EmptySeparator
+            }
+        );
+    } catch {
+        _ => fail("unexpected library failure"),
+    }
 }

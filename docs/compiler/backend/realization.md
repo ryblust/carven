@@ -547,6 +547,9 @@ activation. Direct await transfers to its dependency without an implicit schedul
 turn. The shared execution runtime owns scheduling, clocks, timed waiting, task
 cancellation, and completion storage. Generated dependencies use its single entry,
 `carven/runtime/execution/execution.hpp`.
+The runtime's size-only C++20 frame allocator supplies at least 32-byte and
+fundamental alignment, covering current Carven value carriers. Native retained
+storage follows the [interop alignment contract](../../language/interop.md#declared-function-boundaries).
 Generated code owns source evaluation order, lexical child scopes, and result
 delivery. Async exits record the child scopes to close and the continuation.
 Scope traversal resolves exits and introduces labels when closure must cross
@@ -555,11 +558,12 @@ native storage scopes. Target publication requires every exit to be resolved.
 Await separates success, nominal failure, and cancelled completion. Published
 callable and await facts determine whether to emit cancellation propagation.
 Failure and cancellation transfer precede success projection. Character success
-is validated at consumption, including discarded results. Direct returns and
-whole-await initializers can adopt the completion carrier; a success binding uses
-an available value transfer or retains backing for an immovable value. Carrier
-cleanup remains at the full-expression boundary and binding cleanup at its lexical
-boundary.
+is validated at consumption, including discarded results. Direct returns can
+adopt the completion carrier. Whole-await initializers use ordinary value delivery
+when type contents prove incidental transport safe. Other initializers use a
+success binding that performs an available source transfer or retains backing
+for an immovable value. Carrier cleanup remains at the full-expression boundary
+and binding cleanup at its lexical boundary.
 
 Suspending operands execute in their owning coroutine. Preparation records
 coroutine-context requirements so expression factories cannot capture an await or

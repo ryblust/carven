@@ -22,9 +22,10 @@ non-leading `crafts` component is ordinary. The `crafts.<name>` prefix gives
 modules a craft-qualified domain for name resolution and bare declaration
 visibility within the compilation.
 
-The official craft is `carven`, stored in `crafts/carven/`. Its standard-library
-modules live under `std/`. The reserved import prefix `std::` selects that
-standard library, so `std::utf.text` names `crafts.carven.std.utf.text`.
+The official craft is `carven`, stored in `crafts/carven/`. Its source
+standard-library modules live under `std/`. The import prefix `std::` selects the
+official logical module domain for source and compiler-provided declarations,
+so `std::utf` names `crafts.carven.std.utf`.
 
 Imports form a prefix at the start of a module. Module imports use one of three
 structured references:
@@ -41,17 +42,27 @@ components after `.` are appended to that directory. For example, `.value` in
 
 Unprefixed and leading-`.` references stay inside the importer's module domain.
 Craft-qualified references select the named craft, with `std::` selecting
-`crafts.carven.std`. Normalize the path once, then resolve that exact identity to
-a supplied source module or a compiler-provided module. An absent target or source
-self-import is an error. A supplied source at an exact provided-module path is a
-collision error; deeper source paths remain ordinary modules. `std::core` and
-`carven::std.core` select the same module.
+`crafts.carven.std`. The normalized path identifies the module. An absent target
+or source self-import is an error.
+A standard entry combines any supplied source declarations with its
+compiler-provided declarations. Both use ordinary lookup and visibility rules;
+conflicting declarations are errors. `std::core` and `carven::std.core` select the
+same module.
+
+Compiler-provided declarations require no matching source file. Source exports
+require their modules in the source batch. Directory layout does not determine
+whether a declaration is provided or source-defined.
+
+`crafts/carven/std/utf.cv` defines `std::utf`, and
+`crafts/carven/std/simd/bytes.cv` defines `std::simd.bytes`. Each path selects
+one module's declarations. A directory prefix groups paths; it does not import
+sibling or descendant modules.
 
 For an importer at `crafts/foo/models/user.cv`, the three forms select:
 
 | Import | Input module path |
 | --- | --- |
-| `std::utf.text` | `crafts/carven/std/utf/text.cv` |
+| `std::utf` | `crafts/carven/std/utf.cv` |
 | `std.utf` | `crafts/foo/std/utf.cv` |
 | `.std.utf` | `crafts/foo/models/std/utf.cv` |
 
@@ -60,8 +71,8 @@ must be visible to the importer under the declaration rules below. Explicit
 selections cannot collide with a module declaration or select one local name
 twice, and they deterministically shadow same-name wildcard candidates.
 Multiple wildcard providers are ambiguous only when an actual use requires that
-name. Importing a module selects its declarations; it does not bring that
-module's imported bindings into the importing scope. Import declarations have
+name. Importing a module selects its visible declarations. Imported bindings remain
+local to the importing module. Import declarations have
 no runtime side effects. A declaration is used
 when one of its selected bindings uniquely resolves an actual reference; an
 otherwise unused declaration produces one `CV-LINT-UNUSED-IMPORT` warning.
@@ -72,36 +83,60 @@ resolve Carven modules.
 
 ## Standard modules and defaults
 
-| Provided module | Exports | Available without an import |
+This table lists public compiler-provided exports and default bindings.
+
+| Provided module | Exports | Default bindings supplied |
 | --- | --- | --- |
 | `std::core` | `bool`, `char`, `void`, `str`, `String`; `i8`, `i16`, `i32`, `i64`, `isize`; `u8`, `u16`, `u32`, `u64`, `usize`; `f32`, `f64`; `Vector`, `Range`; `assert`, `addressof` | These listed names |
-| `std::io` | `print`, `println`, `eprint`, `eprintln`, `stdin`, `Stdin`, `Read`, `IOError` | Printing names and `stdin` |
+| `std::io` | `print`, `println`, `eprint`, `eprintln` | Printing names and source-defined `stdin` |
 | `std::testing` | `check`, `require`, `fail` | These listed names |
 | `std::async` | `Operation`, `cancel_requested`, `cancel_point`, `yield_once`, `wait_ready`, `close`, `when_all`, `when_any`, `first_successful` | None |
-| `std::simd` | `u8x16`, `mask16`, `f32x4`, `mask4`, `u8x32`, `mask32`, `f32x8`, `mask8` | None |
+| `std::simd` | `u8x16`, `mask16`, `f32x4`, `mask4`, `u8x32`, `mask32`, `f32x8`, `mask8` | These listed names |
 | `std::time` | `timeout` | None |
 
-The table specifies which names are available by default. Explicit imports of
-those names use ordinary import usage tracking. Test helpers retain their
+The table specifies which names are available by default and which module
+supplies their bindings. Explicit imports of default names use ordinary import
+usage tracking. Test helpers retain their
 active-test admission rules; `assert` works outside tests.
 
-Provided modules expose compiler-supported types and operations through ordinary
-module paths and import selections. `std::core` contains scalar and text types,
-`Vector`, `Range`, assertions, and address operations. Printing, testing, async,
-SIMD, and time have separate module owners. `std::io` also exposes `stdin`
-and its source-defined types and failures. The default `stdin` binding and
-explicit IO selections resolve to the same ordinary Carven declarations.
+Standard entries expose compiler-provided declarations and source exports through
+ordinary module paths and import selections. The default `stdin` binding selects
+the same source declaration as an explicit import from `std::io`.
+The associated functions `char::from_u32` and `str::from_utf8` use the same
+declarations as `char_from_u32` and `from_utf8` from `std::utf`.
 
-Crafts are source packages. Import their APIs through source module paths such as
-`std::json.value`, `std::simd.bytes`, and `std::time.duration`, under ordinary
-visibility rules. `std::simd` supplies primitive types; `std::simd.bytes` supplies
-source algorithms. A directory alone does not define an importable module.
-The compiler, runtime, and standard sources ship together.
+Crafts are source packages. Import their APIs through module paths such as
+`std::json`, `std::simd.bytes`, and `std::utf`. `std::io` combines
+builtin printing with source input and framing APIs. `std::time` combines
+builtin timeout composition with source time values and waiting APIs.
+A directory alone does not define an importable module. The compiler, runtime,
+and standard sources ship together.
 
-`timeout` uses the source records `Duration` and `RangeError` from
-`std::time.duration`, and `Timeout` from `std::time.timeout`. These records must
-be supplied when its contract is checked. Importing `timeout` binds only the
-selected operation.
+Importing an operation does not bind the types in its signature. Results and
+failures can be inferred, used, and propagated without naming their types.
+Import a standard type that is not already in scope when naming it in an
+annotation, constructor, or failure handler. For example, duration literals need
+no `Duration` binding, and numeric parsing needs no `NumberParseError` binding;
+explicitly naming those types requires
+imports from `std::time` and `std::core`, respectively.
+
+## Library source organization
+
+A public library entry is an ordinary module containing its exported declarations.
+A capability can occupy one `.cv` file or place implementation modules beside it
+under a matching directory. For example, `std/utf.cv` exports the UTF API, while
+`std/utf/scan.cv` and `std/utf/block.cv` implement scanning. Every file retains its
+ordinary module identity and explicit dependencies.
+
+Use bare declarations for helpers shared within the Craft and `private` for
+helpers confined to one module. Export declarations from the entry that owns their
+public contract. Import selections remain local bindings; they do not re-export
+declarations or turn a parent module into an aggregate of its children.
+
+An independently useful public submodule follows the same rules at its own path.
+`std::simd.bytes` and `std::simd.floats` provide operations for their element
+families; `std::simd.scan` provides byte-set matching and scanning. Public path
+depth follows the capability, while implementation files follow their responsibilities.
 
 ## Import aliases
 
@@ -116,7 +151,7 @@ The export name before `as` is checked against the target module's visibility;
 the alias is the sole local name introduced by that selection. Both are ordinary
 identifiers. Single and list selections share these rules; wildcard imports have
 no alias clause. Distinct local names may select the same entity. Repeating a
-local name is an error even for the same entity. Aliases are not re-exported.
+local name is an error even for the same entity. Import aliases are local to their module.
 
 Aliases preserve the selected entity and its type, ownership, failure, and call
 contracts.

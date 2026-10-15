@@ -5,6 +5,7 @@ import :semantic.analysis.validation.context;
 import :semantic.format;
 import :semantic.semir.format;
 import :semantic.semir.initialization;
+import :semantic.semir.simd;
 import :semantic.semir.vector;
 import :support.utf8;
 import std;
@@ -579,10 +580,8 @@ auto BodyContractVerifier::verify_expression(
                 return value.operation.visit(
                     Overloaded {
                         [&](const FloatIntrinsic& family) noexcept {
-                            if (family != FloatIntrinsic::IsFinite
-                                || value.operands.size() != 1
-                                || value.operands.front().access != AccessMode::Read) {
-                                invariant_violation("floating query requires one Read operand");
+                            if (value.operands.size() != float_intrinsic_arguments(family) + 1) {
+                                invariant_violation("floating operation operand count mismatch");
                             }
                             const auto& receiver =
                                 require_type(value.operands.front().expression.type.resolved())
@@ -590,12 +589,28 @@ auto BodyContractVerifier::verify_expression(
                             const auto* builtin = std::get_if<BuiltinTypeValue>(&receiver);
                             if (builtin == nullptr
                                 || (builtin->kind != BuiltinType::F32
-                                    && builtin->kind != BuiltinType::F64)) {
-                                invariant_violation("floating query receiver mismatch");
+                                    && builtin->kind != BuiltinType::F64
+                                    && builtin->kind != BuiltinType::F32x4
+                                    && builtin->kind != BuiltinType::F32x8)) {
+                                invariant_violation("floating operation receiver mismatch");
                             }
+                            for (const auto& operand : value.operands) {
+                                if (operand.access != AccessMode::Read
+                                    || require_type(operand.expression.type.resolved()).value
+                                        != receiver) {
+                                    invariant_violation(
+                                        "floating operation requires same-precision Read operands"
+                                    );
+                                }
+                            }
+                            const auto layout = simd_layout(builtin->kind);
                             if (require_type(source.type.resolved()).value
-                                != CanonicalTypeValue {BuiltinTypeValue {BuiltinType::Bool}}) {
-                                invariant_violation("floating query result mismatch");
+                                != (family == FloatIntrinsic::IsFinite
+                                        ? CanonicalTypeValue {BuiltinTypeValue {
+                                              layout ? layout->mask : BuiltinType::Bool
+                                          }}
+                                        : receiver)) {
+                                invariant_violation("floating operation result mismatch");
                             }
                         },
                         [&](const SliceIntrinsicOperation& family) noexcept {

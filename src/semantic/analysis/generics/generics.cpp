@@ -93,8 +93,8 @@ auto ProgramDraft::define_generic_declaration(
     }
     const auto& contract = generic_contract(definition);
     if (contract.module_id.owner() != program_identity
-        || !owns(contract.name)
         || !owns(contract.origin)
+        || !owns(contract.name)
         || contract.parameters.empty()) {
         invariant_violation("generic definition has invalid source contract");
     }
@@ -587,7 +587,9 @@ auto ProgramDraft::instantiate_generic_nominal(
             "generic type argument count differs from its declaration"
         );
         diagnostic.primary(source_span(origin), "supply one type argument for each parameter");
+
         diagnostic.related(source_span(contract.origin), "generic declaration");
+
         return std::unexpected(diagnostics().error(diagnostic.build()));
     }
     for (const auto [index, argument] : std::views::enumerate(arguments)) {
@@ -663,7 +665,11 @@ auto ProgramDraft::instantiate_generic_nominal(
     storage.generic_instance_index.emplace(key, index);
     storage.generic_instance_nominals.emplace(declaration, index);
     storage.generic_instances.push_back({
-        .instance = {.definition = definition, .arguments = key.second, .declaration = declaration},
+        .instance =
+            {.definition = definition,
+             .arguments = key.second,
+             .declaration = declaration,
+             .origin = origin},
         .state = ConstructionStorage::GenericInstanceSlot::Progress::Instantiating,
     });
     auto effects = make_failure_instantiation(definition, generic_environment(key.second));

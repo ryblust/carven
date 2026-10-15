@@ -7,6 +7,7 @@ import :diagnostics.diagnostic;
 import :frontend.document;
 import :frontend.program.parse;
 import :semantic.analysis.source;
+import :semantic.evaluation.execution;
 import :semantic.evaluation.output;
 import :semantic.semir.program;
 import :source.batch;
@@ -200,7 +201,8 @@ auto analyze_workspace_project(
               {.output = {},
                .timings = timings,
                .collect_source_observations = true,
-               .capture_output = true},
+               .capture_output = true,
+               .host_effects = HostEffects::Deny},
               parsed
           )
         : CompilationAnalysis::failed(std::move(sources), std::move(diagnostics));

@@ -17,6 +17,7 @@ import :backend.target.symbol;
 import :backend.target.type;
 import :semantic.semir.body;
 import :semantic.semir.constant;
+import :semantic.semir.contents;
 import :semantic.semir.delegation;
 import :semantic.semir.format;
 import :semantic.semir.ids;
@@ -187,9 +188,11 @@ auto BodyRealizer::ExpressionBuilder::initialize_expression(
 ) noexcept -> ContinuationTask<std::monostate> {
     const auto awaited = !owner.context.is_void(initializer.type.resolved())
         && std::holds_alternative<SemAwait>(owner.preparation.operation(initializer).value);
+    const auto retain_success = awaited
+        && !owner.context.semantic().type_contents(initializer.type.resolved()).can_store_inline();
     auto fragment = (co_await build(
         initializer,
-        {.demand = awaited ? ResultDemand::AdoptSuccess : ResultDemand::Value,
+        {.demand = retain_success ? ResultDemand::AdoptSuccess : ResultDemand::Value,
          .use = PreparedUse::Consume,
          .retain_backing = false,
          .expression_depth = 0uz}
@@ -199,7 +202,7 @@ auto BodyRealizer::ExpressionBuilder::initialize_expression(
         destination.scope(take_statements());
         co_return {};
     }
-    if (fragment.awaited_carrier && awaited) {
+    if (fragment.awaited_carrier && retain_success) {
         const auto& carrier = *fragment.awaited_carrier;
         const auto* operation = std::get_if<OperationTypeValue>(
             &owner.context.semantic().types().type(carrier.operation).value

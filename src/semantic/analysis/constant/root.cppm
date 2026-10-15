@@ -663,6 +663,34 @@ public:
         co_return co_await call_function(*function, source, std::nullopt, span);
     }
 
+    auto standard_call(const ASTCallExpr& source, StandardDeclaration function, Span span) noexcept
+        -> ExpressionTask<Value> {
+        auto target =
+            co_await construction_requests().standard_function(function, source_module_id, span);
+        if (!target) {
+            co_return std::unexpected(target.error());
+        }
+        auto callee_id = source.callee;
+        while (const auto* group =
+                   std::get_if<ASTGroupExpr>(&syntax().expression(callee_id).value)) {
+            callee_id = group->expression;
+        }
+        scope.observe_function(
+            *target,
+            std::get<ASTMemberExpr>(syntax().expression(callee_id).value).name_span
+        );
+        co_return co_await call_function(*target, source, std::nullopt, span);
+    }
+
+    auto number_parse_call(const ASTCallExpr& source, BuiltinType number, Span span) noexcept
+        -> ExpressionTask<Value> {
+        auto target = co_await scope.resolve_number_parser(number, span);
+        if (!target) {
+            co_return std::unexpected(target.error());
+        }
+        co_return co_await call_function(*target, source, std::nullopt, span);
+    }
+
     auto member_call(
         const ASTCallExpr& source,
         const ASTMemberExpr& member,
@@ -740,8 +768,10 @@ public:
             for (auto i = 0uz; i < inferred.size(); ++i) {
                 inferred[i] = explicit_environment[i];
             }
-            if (const auto canonical =
-                    program.normalize_generic_environment(explicit_environment)) {
+            if (const auto canonical = program.normalize_generic_environment(
+                    explicit_environment,
+                    program.append_source_origin(program.module_source(source_module_id), span)
+                )) {
                 explicit_types = *canonical;
             }
         }
@@ -889,34 +919,44 @@ public:
         if (const auto* contract = std::get_if<TimeoutContract>(&**selected)) {
             co_return co_await construct_async_timeout(*this, source, *contract, span);
         }
-        co_return co_await call_function(
-            std::get<FunctionID>(**selected),
-            source,
-            std::nullopt,
-            span
-        );
+        const auto target = std::holds_alternative<CallableID>(**selected)
+            ? std::variant<FunctionID, CallableID>(std::get<CallableID>(**selected))
+            : std::variant<FunctionID, CallableID>(std::get<FunctionID>(**selected));
+        co_return co_await call_function(target, source, std::nullopt, span);
     }
 
     auto call_function(
-        FunctionID function,
+        std::variant<FunctionID, CallableID> function,
         const ASTCallExpr& source,
         std::optional<Value> receiver,
         Span span
     ) noexcept -> ExpressionTask<Value> {
-        auto completed = co_await scope.construction_requests()
-                             .ensure_function_signature(function, source_module_id, span);
-        if (!completed) {
-            co_return std::unexpected(completed.error());
+        auto callable = std::optional<CallableID>();
+        auto is_const = false;
+        if (const auto* source_function = std::get_if<FunctionID>(&function)) {
+            auto completed = co_await scope.construction_requests().ensure_function_signature(
+                *source_function,
+                source_module_id,
+                span
+            );
+            if (!completed) {
+                co_return std::unexpected(completed.error());
+            }
+            const auto declaration = program.function_declaration_copy(*source_function);
+            callable = declaration.callable;
+            is_const = declaration.is_const;
+        } else {
+            callable = std::get<CallableID>(function);
+            is_const = true;
         }
-        const auto declaration = program.function_declaration_copy(function);
-        if (!declaration.is_const) {
+        if (!is_const) {
             co_return std::unexpected(fail(
                 span,
                 DiagnosticCode::ConstAdmission,
                 "compile-time execution can only call an explicitly declared const fn"
             ));
         }
-        const auto contract = program.construction_callable_contract_copy(declaration.callable);
+        const auto contract = program.construction_callable_contract_copy(*callable);
         const auto offset = receiver.has_value() ? 1uz : 0uz;
         if (contract.parameters.size() != source.arguments.size() + offset) {
             co_return std::unexpected(fail(
@@ -968,12 +1008,7 @@ public:
             }
             arguments.push_back({.access = selected.access, .expression = std::move(*value)});
         }
-        co_return co_await finish_call(
-            declaration.callable,
-            std::move(arguments),
-            span,
-            source.callee
-        );
+        co_return co_await finish_call(*callable, std::move(arguments), span, source.callee);
     }
 
     auto finish_call(

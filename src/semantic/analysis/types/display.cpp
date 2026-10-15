@@ -124,6 +124,7 @@ auto canonical_name(const ProgramDraft& draft, TypeID type) noexcept -> std::str
             },
             [&](const EnumTypeValue& value) noexcept {
                 const auto declaration = draft.enum_declaration_copy(value.enumeration);
+
                 return nominal_name(draft, declaration.module_id, declaration.name);
             },
             [&](const ArrayTypeValue& value) noexcept {

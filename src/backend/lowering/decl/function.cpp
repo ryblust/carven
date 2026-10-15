@@ -88,10 +88,7 @@ auto lower_cpp_import(
     }
     auto body = std::vector<TargetStmt>();
     if (!declaration_only) {
-        auto provider_name = std::vector<TargetIdentifier>();
-        provider_name.push_back(
-            TargetIdentifier::from_spelling(context.semantic().provenance().spelling(function.name))
-        );
+        const auto& provider = std::get<CppImportImplementation>(callable.implementation).target;
         auto arguments = std::vector<TargetExpr>();
         for (auto index = 0uz; index < argument_names.size(); ++index) {
             auto argument = name_expression(argument_names[index]);
@@ -104,10 +101,8 @@ auto lower_cpp_import(
             }
             arguments.push_back(std::move(argument));
         }
-        auto call = call_expression(
-            name_expression(TargetName::globally_qualified(std::move(provider_name))),
-            std::move(arguments)
-        );
+        auto call =
+            call_expression(name_expression(context.cpp_name(provider)), std::move(arguments));
         if (semantic_signature.execution == CallableExecutionKind::Synchronous
             && context.plan().failure_abi().members(semantic_signature.failures).empty()
             && is_char_type(context.semantic(), semantic_signature.result)) {

@@ -356,6 +356,7 @@ auto artifact_logical_path(const TargetArtifactPlan& artifact) noexcept -> std::
             static_assert(
                 std::same_as<Artifact, TargetInterfaceArtifact>
                     || std::same_as<Artifact, TargetCppAPIHeaderArtifact>
+                    || std::same_as<Artifact, TargetCppProviderHeaderArtifact>
                     || std::same_as<Artifact, TargetModuleImplementationArtifact>
                     || std::same_as<Artifact, TargetTestRunnerHeaderArtifact>
                     || std::same_as<Artifact, TargetTestEntryArtifact>,
@@ -373,6 +374,9 @@ auto artifact_role(const TargetArtifactPlan& artifact) noexcept -> GeneratedArti
                 return GeneratedArtifactRole::Interface;
             },
             [](const TargetCppAPIHeaderArtifact&) static noexcept {
+                return GeneratedArtifactRole::CppAPIHeader;
+            },
+            [](const TargetCppProviderHeaderArtifact&) static noexcept {
                 return GeneratedArtifactRole::CppAPIHeader;
             },
             [](const TargetModuleImplementationArtifact&) static noexcept {
@@ -396,6 +400,9 @@ auto artifact_source_mapping(const TargetArtifactPlan& artifact) noexcept
                 return ArtifactSourceMappingPolicy::StableInterface;
             },
             [](const TargetCppAPIHeaderArtifact&) static noexcept {
+                return ArtifactSourceMappingPolicy::StableInterface;
+            },
+            [](const TargetCppProviderHeaderArtifact&) static noexcept {
                 return ArtifactSourceMappingPolicy::StableInterface;
             },
             [](const TargetTestRunnerHeaderArtifact&) static noexcept {
@@ -442,6 +449,9 @@ auto artifact_dependencies(const TargetArtifactPlan& artifact) noexcept
                 return std::vector<TargetArtifactID>();
             },
             [](const TargetCppAPIHeaderArtifact& value) static noexcept {
+                return value.interface_dependencies;
+            },
+            [](const TargetCppProviderHeaderArtifact& value) static noexcept {
                 return value.interface_dependencies;
             },
             [](const TargetTestRunnerHeaderArtifact&) static noexcept {

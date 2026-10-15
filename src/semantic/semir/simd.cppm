@@ -11,6 +11,7 @@ enum class SIMDIntrinsic {
     LoadPartial,
     Lane,
     WithLane,
+    Swizzle,
     Lookup,
     Extract,
     ShiftLeft,

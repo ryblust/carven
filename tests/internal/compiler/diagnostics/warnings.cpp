@@ -12,29 +12,22 @@ import :source.text;
 import :test.harness.diagnostics;
 import :test.harness.framework;
 import :test.internal.compiler.diagnostics.fixture;
+import :test.internal.source.fixture;
 import std;
 
 namespace {
 
 const TestSuite suite([] static noexcept {
-    "Compiler diagnostics: builtin standard types do not consume unused imports"_test =
+    "Compiler diagnostics: implicit standard dependencies do not consume unused imports"_test =
         [] static noexcept {
             auto sources = SourceManager();
             auto inputs = std::vector<SourceModuleInput>();
             constexpr auto modules = std::array {
                 std::pair<std::string_view, std::string_view> {
-                    "crafts.carven.std.time.duration",
-                    "export struct Duration { nanoseconds: i64 } export struct RangeError {}"
-                },
-                std::pair<std::string_view, std::string_view> {
-                    "crafts.carven.std.time.timeout",
-                    "export struct Timeout {}"
-                },
-                std::pair<std::string_view, std::string_view> {
                     "main",
-                    "import std::time using timeout;\n\nimport std::time.duration using Duration; "
-                    "import std::time.duration using RangeError; "
-                    "import std::time.timeout using Timeout; "
+                    "import std::time using timeout;\n\nimport std::time using Duration; "
+                    "import std::time using RangeError; "
+                    "import std::time using Timeout; "
                     "async fn leaf() -> i32 => 7; "
                     "const delay = 1ms; fn run() { let pending = timeout(leaf(), delay); }"
                 },
@@ -47,6 +40,8 @@ const TestSuite suite([] static noexcept {
                     {.source_id = *id, .module_path = *CanonicalModulePath::from_value(path)}
                 );
             }
+            constexpr auto standard_modules = std::to_array<std::string_view>({"time"});
+            append_standard_sources(sources, inputs, standard_modules);
             const auto result = compile(
                 sources,
                 SourceBatch {.modules = inputs},
@@ -69,9 +64,9 @@ const TestSuite suite([] static noexcept {
                 unused.insert(sources.slice(diagnostic.attachment.primary->span));
             }
             const auto expected = std::set<std::string_view> {
-                "import std::time.duration using Duration;",
-                "import std::time.duration using RangeError;",
-                "import std::time.timeout using Timeout;",
+                "import std::time using Duration;",
+                "import std::time using RangeError;",
+                "import std::time using Timeout;",
             };
             expect(unused == expected);
         };

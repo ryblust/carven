@@ -1,6 +1,4 @@
-#include <carven/api/tests/interop/async/bridge.hpp>
-
-#include "transfer.hpp"
+#include "transfer_provider.hpp"
 
 #include <algorithm>
 #include <cstdio>
@@ -10,9 +8,10 @@
 namespace {
 
 namespace async = carven::runtime::execution;
+namespace providers = async_transfer::providers;
 
 using async_transfer::Context;
-using IOError = decltype(carven::api::tests::interop::async::bridge::make_io_error(0));
+using IOError = providers::transfer_read::Failure0;
 using Result = async::Completion<std::int32_t, IOError>;
 
 auto check(bool valid, const char* message) noexcept -> void {
@@ -46,9 +45,7 @@ auto complete(async_interop::PipeQueue::Completion result, const Context& contex
         return Result::cancelled();
     }
     if (const auto* error = result.failure_if<async_interop::PipeError>()) {
-        return Result::failure(
-            carven::api::tests::interop::async::bridge::make_io_error(error->code)
-        );
+        return Result::failure(IOError {.code = error->code});
     }
     const auto* success = result.success_if();
     check(
@@ -89,8 +86,7 @@ async_transfer::Context::~Context() noexcept {
     ++observed.context_destroyed;
 }
 
-auto transfer_read(const Context& context) noexcept
-    -> async::AsyncOperation<std::int32_t, IOError> {
+auto transfer_read(const Context& context) noexcept -> providers::transfer_read::Completion {
     check(&context == context.host_address, "read borrows host holder");
     auto loan = BufferLoan(context.observed);
     auto result = co_await context.queue.read_some(context.fd, context.buffer);
@@ -98,7 +94,7 @@ auto transfer_read(const Context& context) noexcept
 }
 
 auto transfer_write(const Context& context, std::int32_t offset, std::int32_t count) noexcept
-    -> async::AsyncOperation<std::int32_t, IOError> {
+    -> providers::transfer_write::Completion {
     check(
         &context == context.host_address
             && offset >= 0

@@ -1,8 +1,8 @@
 module carven:semantic.analysis.construction.closure.impl;
 
 import :diagnostics.builder;
-import :semantic.analysis.construction.requests;
 import :semantic.analysis.construction;
+import :semantic.analysis.construction.requests;
 import :semantic.analysis.operations;
 import :semantic.semir.traversal;
 import std;
@@ -135,7 +135,10 @@ auto ConstructionRequests::close_generic_environment(
             co_return std::unexpected(completed.error());
         }
     }
-    auto environment = owner.draft.normalize_generic_environment(arguments);
+    auto environment = owner.draft.normalize_generic_environment(
+        arguments,
+        owner.draft.append_source_origin(owner.draft.module_source(requester), span)
+    );
     if (!environment) {
         if (const auto failure = owner.draft.diagnostics().failure()) {
             co_return std::unexpected(*failure);
@@ -144,7 +147,11 @@ auto ConstructionRequests::close_generic_environment(
         if (!preview) {
             co_return std::unexpected(preview.error());
         }
-        environment = owner.draft.normalize_generic_environment(arguments, &*preview);
+        environment = owner.draft.normalize_generic_environment(
+            arguments,
+            owner.draft.append_source_origin(owner.draft.module_source(requester), span),
+            &*preview
+        );
     }
     if (!environment) {
         if (const auto failure = owner.draft.diagnostics().failure()) {

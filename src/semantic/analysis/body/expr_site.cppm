@@ -52,6 +52,11 @@ public:
 
     auto representation_access(StructID owner, Span span) noexcept -> AnalysisResult<void>;
     auto associated_reference(StructID owner, Span name_span) noexcept -> ExpressionTask<Value>;
+    auto standard_call(const ASTCallExpr& source, StandardDeclaration function, Span span) noexcept
+        -> ExpressionTask<Value>;
+    auto number_parse_call(const ASTCallExpr& source, BuiltinType number, Span span) noexcept
+        -> ExpressionTask<Value>;
+    auto resolve_number_parser(BuiltinType number, Span span) noexcept -> AnalysisTask<CallableID>;
     auto native_associated_reference(ConstructionTypeRef type, Span name_span, Span span) noexcept
         -> Selection;
 
@@ -112,6 +117,7 @@ public:
     auto draft() noexcept -> ProgramDraft&;
     auto syntax() const noexcept -> ASTView;
     auto observe_expression(ASTExprID expression, ConstructionTypeRef type) noexcept -> void;
+    auto observe_function(FunctionID function, Span name) noexcept -> void;
     auto fail(Span span, DiagnosticCode code, std::string message) noexcept -> AnalysisFailure;
 
     auto build_static_expression(

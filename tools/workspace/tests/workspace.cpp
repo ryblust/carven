@@ -1,11 +1,13 @@
 module carven:test.workspace;
 
+import :diagnostics.code;
 import :frontend.document;
 import :semantic.semir.program;
 import :semantic.semir.type;
 import :source.module_path;
 import :source.standard;
 import :source.text;
+import :test.harness.diagnostics;
 import :test.harness.framework;
 import :workspace.analysis;
 import :workspace.semantic;
@@ -46,6 +48,65 @@ auto expect_type(const WorkspaceHoverQuery& query, BuiltinType type) noexcept ->
 }
 
 const TestSuite tests([] static noexcept {
+    "Workspace: analysis captures pure static output without executing ordinary host calls"_test =
+        [] static noexcept {
+            auto host = WorkspaceAnalysisHost();
+            const auto project = std::array {
+                project_module("app.cv", "app"),
+                project_module("time.cv", "crafts.carven.std.time")
+            };
+            update(host, "time.cv", 1, "export const fn sample() -> i64 => monotonic_now();");
+            update(
+                host,
+                "app.cv",
+                1,
+                "import std::time using sample; "
+                "const { assert(6 * 7 == 42); println(\"checked\"); } "
+                "fn run() -> i64 => sample();"
+            );
+            const auto analysis = host.snapshot().semantic(project);
+            require(analysis.result->program() != nullptr);
+            auto output = std::string();
+            for (const auto& item : analysis.result->output()) {
+                output += item.bytes;
+            }
+            expect_equal(output, "checked\n");
+        };
+
+    "Workspace: explicit static host effects require caller permission"_test = [] static noexcept {
+        auto host = WorkspaceAnalysisHost();
+        const auto project = std::array {
+            project_module("app.cv", "app"),
+            project_module("time.cv", "crafts.carven.std.time"),
+            project_module("io.cv", "crafts.carven.std.io")
+        };
+        update(
+            host,
+            "time.cv",
+            1,
+            "export const fn sample() -> i64 => monotonic_now(); "
+            "export const async fn pause() { await wait_until(0); }"
+        );
+        update(
+            host,
+            "io.cv",
+            1,
+            "export const async fn read() { let _ = await read_input(0, 0); }"
+        );
+        auto version = std::int64_t {0};
+        for (const auto source : {
+                 "import std::time using sample; const value = sample();",
+                 "import std::time using pause; const { await pause(); }",
+                 "import std::io using read; const { await read(); }",
+             }) {
+            update(host, "app.cv", ++version, source);
+            const auto analysis = host.snapshot().semantic(project);
+            expect(analysis.result->program() == nullptr).note("source = ", source);
+            expect_diagnostic(analysis.result->diagnostics(), DiagnosticCode::ConstAdmission)
+                .note("source = ", source);
+        }
+    };
+
     "Workspace: provided aliases preserve entity references and local rename scope"_test =
         [] static noexcept {
             auto host = WorkspaceAnalysisHost();
@@ -94,48 +155,105 @@ const TestSuite tests([] static noexcept {
             );
             expect(!snapshot.definition(project, "app.cv", offset(text, "String as")).result);
         };
-    "Workspace: duration literals carry source prerequisites without imports"_test =
+    "Workspace: duration literals discover their standard source declaration"_test =
         [] static noexcept {
             auto host = WorkspaceAnalysisHost();
             const auto project = std::array {
                 project_module("app.cv", "app"),
-                project_module("duration.cv", "crafts.carven.std.time.duration"),
-                project_module("other.cv", "other")
+                project_module("time.cv", "crafts.carven.std.time")
             };
-            const auto text = std::string("fn run() { let value = 1ms; }");
-            update(host, "app.cv", 1, text);
-            update(host, "duration.cv", 1, "export struct Duration { nanoseconds: i64 }");
-            update(host, "other.cv", 1, "fn unfinished(");
-            const auto query = host.snapshot().hover(project, "app.cv", offset(text, "1ms"));
-            require(query.result && query.result->type);
-            expect(query.analysis.result->program() != nullptr);
-            expect(query.analysis.result->source("duration.cv").has_value());
-            expect(!query.analysis.result->source("other.cv").has_value());
-        };
-    "Workspace: timeout navigation includes available contract source modules"_test =
-        [] static noexcept {
-            auto host = WorkspaceAnalysisHost();
-            const auto project = std::array {
-                project_module("app.cv", "app"),
-                project_module("duration.cv", "crafts.carven.std.time.duration"),
-                project_module("timeout.cv", "crafts.carven.std.time.timeout")
-            };
-            const auto text = std::string(
-                "import std::time using timeout as limit; async fn one() -> i32 => 1; async fn run() { let result = try { await limit(one(), 1ms)? } catch { _ => 0, }; }"
-            );
-            update(host, "app.cv", 1, text);
             update(
                 host,
-                "duration.cv",
+                "time.cv",
                 1,
-                "export struct Duration { nanoseconds: i64 } export struct RangeError {}"
+                "export struct Duration { nanoseconds: i64 } "
+                "export struct RangeError {} export struct Timeout {}"
             );
-            update(host, "timeout.cv", 1, "export struct Timeout {}");
-            const auto query = host.snapshot().hover(project, "app.cv", offset(text, "limit(one"));
-            require(query.analysis.result);
-            expect(query.analysis.result->program() != nullptr);
-            expect(query.analysis.result->source("duration.cv").has_value());
-            expect(query.analysis.result->source("timeout.cv").has_value());
+            const auto literal = std::string("fn run() { let ticks = (1ms).nanoseconds; }");
+            update(host, "app.cv", 1, literal);
+            expect_type(
+                host.snapshot().hover(project, "app.cv", offset(literal, "ticks =")),
+                BuiltinType::I64
+            );
+            const auto text = std::string(
+                "import std::time using timeout as limit; async fn one() -> i32 => 1; "
+                "async fn run() { let ticks = (1ms).nanoseconds; "
+                "let result = try { await limit(one(), 1ms)? } catch { _ => 0, }; }"
+            );
+            update(host, "app.cv", 2, text);
+            const auto snapshot = host.snapshot();
+            expect_type(
+                snapshot.hover(project, "app.cv", offset(text, "ticks =")),
+                BuiltinType::I64
+            );
+            expect_type(
+                snapshot.hover(project, "app.cv", offset(text, "result =")),
+                BuiltinType::I32
+            );
+        };
+
+    "Workspace: numeric parsing discovers source errors without importing their names"_test =
+        [] static noexcept {
+            auto host = WorkspaceAnalysisHost();
+            const auto project = std::array {
+                project_module("app.cv", "app"),
+                project_module("core.cv", "crafts.carven.std.core")
+            };
+            const auto core = std::string("export enum NumberParseError { Invalid }");
+            const auto text = std::string(
+                "import std::core using i32 as Int; "
+                "private fn parse(text: str) -> i32 => Int::parse(text)?; "
+                "fn run() { let value = try { parse(\"42\")? } catch { _ => 0, }; }"
+            );
+            update(host, "core.cv", 1, core);
+            update(host, "app.cv", 1, text);
+            expect_type(
+                host.snapshot().hover(project, "app.cv", offset(text, "value =")),
+                BuiltinType::I32
+            );
+            const auto typed = std::string(
+                "import std::core using NumberParseError as ParseError; "
+                "fn run() throw ParseError { let value = 1; }"
+            );
+            update(host, "app.cv", 2, typed);
+            const auto definition =
+                host.snapshot().definition(project, "app.cv", offset(typed, "NumberParseError"));
+            if (expect(definition.result.has_value())) {
+                expect_equal(definition.result->document, std::string("core.cv"));
+                expect_equal(definition.result->range.start(), offset(core, "NumberParseError"));
+            }
+        };
+
+    "Workspace: standard associated calls discover source declarations through aliases"_test =
+        [] static noexcept {
+            auto host = WorkspaceAnalysisHost();
+            const auto project = std::array {
+                project_module("app.cv", "app"),
+                project_module("utf.cv", "crafts.carven.std.utf"),
+                project_module("other.cv", "other")
+            };
+            const auto text = std::string(
+                "import std::core using char as Scalar; "
+                "fn run() { let character = Scalar::from_u32(65); }"
+            );
+            const auto utf = std::string(
+                "export const fn char_from_u32(value: u32) -> char "
+                "=> char::from_u32_unchecked(value);"
+            );
+            update(host, "app.cv", 1, text);
+            update(host, "utf.cv", 1, utf);
+            update(host, "other.cv", 1, "fn unfinished(");
+            const auto snapshot = host.snapshot();
+            expect_type(
+                snapshot.hover(project, "app.cv", offset(text, "character =")),
+                BuiltinType::Char
+            );
+            const auto definition =
+                snapshot.definition(project, "app.cv", offset(text, "from_u32"));
+            if (expect(definition.result.has_value())) {
+                expect_equal(definition.result->document, std::string("utf.cv"));
+                expect_equal(definition.result->range.start(), offset(utf, "char_from_u32"));
+            }
         };
 
     "Workspace: editing dependencies updates navigation while retained results stay valid"_test =

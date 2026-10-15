@@ -26,8 +26,8 @@ auto lower_declaration(
     bool declaration_only
 ) noexcept -> std::vector<TargetItem>;
 
-auto lower_forward_declaration(ModuleLowering& context, NominalDeclarationRef declaration) noexcept
-    -> TargetItem;
+auto lower_forward_declarations(ModuleLowering& context, NominalDeclarationRef declaration) noexcept
+    -> std::vector<TargetItem>;
 auto lower_cpp_export_header_declaration(ModuleLowering& context, FunctionID function) noexcept
     -> TargetItem;
 auto lower_cpp_export_facade(ModuleLowering& context, FunctionID function) noexcept -> TargetItem;

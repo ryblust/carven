@@ -1,7 +1,11 @@
-import std::utf.codec using { decode_utf8_prefix, encode_utf8, encoded_bytes };
-import std::utf.error using UTF8Error;
-import std::utf.scalar using { UnicodeScalarError, char_from_u32 };
-import std::utf.validation using validate_utf8;
+import std::utf using {
+    decode_utf8_prefix,
+    encode_utf8,
+    encoded_bytes,
+    UTF8Error,
+    UnicodeScalarError,
+    validate_utf8,
+};
 
 const test "UTF8: prefix decoding stops before later bytes" {
     try {
@@ -89,7 +93,7 @@ test "UTF8: scalar boundaries have the specified encoding and decoding" {
     ];
     for item in cases {
         try {
-            let character = char_from_u32(item.scalar)?;
+            let character = char::from_u32(item.scalar)?;
             check((character as u32) == item.scalar);
             let encoded = encode_utf8(character);
             check(encoded.width == item.width);
@@ -111,19 +115,6 @@ test "UTF8: scalar boundaries have the specified encoding and decoding" {
     }
 }
 
-test "UTF8: surrogate and out-of-range values are rejected" {
-    let invalid: [u32; 4] = [0xd800, 0xdfff, 0x110000, 0xffffffff];
-    for value in invalid {
-        var rejected = false;
-        try {
-            let _ = char_from_u32(value)?;
-        } catch {
-            UnicodeScalarError(error) => { rejected = error.value == value; },
-        }
-        check(rejected);
-    }
-}
-
 const test "UTF8: encoded arrays freeze as constant slices" {
     const encoded = encode_utf8('😀');
     check(encoded.width == 4);
@@ -140,7 +131,7 @@ const test "UTF8: encoded arrays freeze as constant slices" {
 }
 
 const test "UTF8: scalar and decoded results freeze as public constants" {
-    const character = char_from_u32(0x1f600)?;
+    const character = char::from_u32(0x1f600)?;
     check(character == '😀');
     const decoded = decode_utf8_prefix([0xf0, 0x9f, 0x98, 0x80, 0xff])?;
     match decoded {

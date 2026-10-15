@@ -5,6 +5,7 @@ import :backend.generation.plan;
 import :backend.generation.plan.references;
 import :backend.generation.request;
 import :backend.target.header;
+import :semantic.semir.decl;
 import :semantic.semir.generic;
 import :semantic.visibility;
 import :support.graph;
@@ -152,6 +153,14 @@ auto plan_artifacts(
     const auto provenance = semantic.provenance();
     const auto module_count = entry_count(declarations.modules());
     const auto ordered_nominals = target_nominal_order(semantic);
+    auto providers = std::vector<FunctionID>();
+    auto provider_modules = std::flat_set<ModuleID>();
+    for (const auto function : declarations.functions()) {
+        if (cpp_import_form_origin(declarations.callable(function.value.callable))) {
+            providers.push_back(function.id);
+            provider_modules.insert(function.value.module_id);
+        }
+    }
 
     auto module_ids = std::vector<ModuleID>();
     module_ids.reserve(module_count);
@@ -224,7 +233,7 @@ auto plan_artifacts(
             interface_nominals.insert(nominal);
         }
     }
-    auto references = collect_target_references(semantic, surface_declarations);
+    auto references = collect_target_references(semantic, surface_declarations, providers);
     // A class may hide a private representation in its source surface, but its
     // C++ definition still needs the complete layout of each by-value field.
     // Likewise, a caller instantiates a staged body, so the private functions
@@ -265,7 +274,7 @@ auto plan_artifacts(
         if (!added) {
             break;
         }
-        references = collect_target_references(semantic, surface_declarations);
+        references = collect_target_references(semantic, surface_declarations, providers);
     }
     for (const auto nominal : ordered_nominals) {
         if (interface_nominals.contains(nominal)) {
@@ -323,7 +332,10 @@ auto plan_artifacts(
 
     auto surface_modules = std::vector<ModuleID>();
     for (const auto module_id : module_ids) {
-        if (!surface_declarations[module_id.index()].empty()) {
+        // Even a private provider with only primitive signature types needs an
+        // interface component for its generated support header.
+        if (!surface_declarations[module_id.index()].empty()
+            || provider_modules.contains(module_id)) {
             surface_modules.push_back(module_id);
         }
     }
@@ -532,6 +544,39 @@ auto plan_artifacts(
                 .cpp_export_declarations = std::move(cpp_exports),
                 .interface_dependencies = {
                     *component_artifacts[*module_component[module_id.index()]],
+                },
+            }
+        ));
+    }
+
+    for (const auto module_id : module_ids) {
+        auto module_providers = std::vector<FunctionID>();
+        for (const auto provider : providers) {
+            if (declarations.function(provider).module_id == module_id) {
+                module_providers.push_back(provider);
+            }
+        }
+        if (module_providers.empty()) {
+            continue;
+        }
+        if (!module_component[module_id.index()].has_value()) {
+            invariant_violation("C++ provider module has no published interface component");
+        }
+        const auto& module = declarations.module_decl(module_id);
+        const auto& path = provenance.module_record(module.provenance_module).path;
+        auto logical_path = std::string("carven/providers/");
+        for (const auto& component : path.components()) {
+            logical_path += component + "/";
+        }
+        logical_path.pop_back();
+        logical_path += ".hpp";
+        static_cast<void>(artifacts.add(
+            TargetCppProviderHeaderArtifact {
+                .logical_path = std::move(logical_path),
+                .module_id = module_id,
+                .providers = std::move(module_providers),
+                .interface_dependencies = {
+                    *component_artifacts[*module_component[module_id.index()]]
                 },
             }
         ));

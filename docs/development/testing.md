@@ -50,6 +50,16 @@ input class, execution path, and observation. Prefer one behavioral case at
 the owning boundary over assertions on intermediate node kinds, temporary storage,
 helper names, or enumeration-to-enumeration mappings.
 
+Language and execution-host contracts belong to `language`; Standard Craft
+algorithm behavior belongs to `crafts`. Declaration ownership, a `std::` module
+path, or an implementation language does not choose the test group. Native
+provider and consumer contracts belong to `interop`.
+
+`interop/toolchain-consumer` checks installed Crafts, native interoperation, and
+incremental consumer builds. Run it with `./xmakew test '*/toolchain-consumer'`.
+Package installation also needs validation with a fresh consumer using the
+default package configuration and an isolated build/install tree.
+
 Group behavior in one executable per native configuration and runner contract.
 Register fresh process scenarios on that executable when input state or
 termination requires isolation. Separate targets express different compiler
@@ -69,9 +79,11 @@ native configurations or entry contracts. Independent stream inputs use separate
 processes; pipeline steps run sequentially because each consumes the preceding
 program's output.
 
-Do not add cases merely to prove that an obsolete API name stays unavailable.
-Test the current API's behavior and meaningful failure contracts at its owning
-boundary.
+Test current API behavior and failure contracts at the owning boundary.
+
+Use current language and standard APIs in fixture setup and incidental code.
+Preserve explicit forms when syntax, imports, evaluation, native interoperation,
+or formatting is the behavior under test. Simplification must retain that evidence.
 
 Internal C++ tests use the shared harness and compiler configuration. Crafts,
 generated-source, and consumer tests use the C++20 baseline, with additional
@@ -82,17 +94,22 @@ artifact fixtures use `--explicit-inputs` and name their complete source set.
 This keeps their analysis cost proportional to the fixture. Source-discovery,
 installed-toolchain, and representative ordinary-command tests use normal
 discovery and establish Crafts integration.
+Default CLI cases include the bundled standard sources and a mixed Craft.
+Observe successful Carven execution with unused native code and a source-located
+diagnostic when an unsupported native operation executes. Native initialization
+effects belong to native execution; test that boundary through process output.
 
 Use an independent public source module in CLI installation fixtures for
 installed-path discovery and source identity. Supply production runtime headers
 to the native execution fixture for native providers and process behavior.
 Exercise library APIs through ordinary Crafts and example targets.
 
-Static execution, interpreted execution, and generated native C++ are separate
-boundaries. Keep representative cases at each applicable boundary. Static tests
-establish representative compile-time contracts. Keep broad value tables and
-offset matrices in native tests. Native tests observe storage, lifetimes, and
-runtime state. Interpreter cases cover admission, failure propagation, and budgets.
+Static execution, interpretation, and generated native C++ implement the same
+language contracts. Use representative cases across these execution contexts;
+keep broad value tables and offset matrices in native tests. Add a context-specific
+case when it observes a distinct responsibility, such as static result retention,
+interpreter budgets, native storage, or host-resource interaction. Reuse source
+functions where possible instead of multiplying complete matrices.
 
 Language tests use local Carven state for counters and traces. A native provider
 may expose observations Carven cannot express; cases whose subject is that native

@@ -7,6 +7,7 @@ import :compiler.analysis;
 import :diagnostics.code;
 import :diagnostics.diagnosed;
 import :semantic.analysis.source;
+import :semantic.evaluation.execution;
 import :semantic.evaluation.output;
 import :semantic.semir.program;
 import :semantic.semir.type;
@@ -35,7 +36,8 @@ auto analyze_observed(std::string text, bool observe, ExecutionOutput output = {
         {.output = output,
          .timings = {},
          .collect_source_observations = observe,
-         .capture_output = false}
+         .capture_output = false,
+         .host_effects = HostEffects::Allow}
     );
 }
 

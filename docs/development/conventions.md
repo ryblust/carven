@@ -33,6 +33,22 @@ formatting; neighboring code demonstrates local idioms.
 - Split files by coherent operations, algorithms, or contracts. Define state
   ownership and dependency direction across implementation slices.
 
+### Native interoperation
+
+- Keep native type and function declarations in `.hpp` files and ordinary
+  implementations in `.cpp` files selected by the consumer build. Keep template
+  definitions visible in headers.
+- Import native headers from `.cv` files. Declare `import(cpp)` boundaries when
+  source access, failure, or async contracts are needed.
+- Native bridges owned by a Standard Craft use `carven::standard::<domain>` namespaces;
+  shared builtin support uses `carven::runtime::<domain>`.
+  Bind `import(cpp)` declarations to their qualified native function names.
+  Language module paths and native namespace names are independent. Use `std::`
+  for C++ standard-library references; avoid native namespaces that shadow it.
+- Use source fragments for small module-local adapters and implementation-only
+  includes. Follow the [interoperation reference](../language/interop.md#source-fragments)
+  for headers that depend on generated Carven types.
+
 ### Runtime domains
 
 Keep only domain directories under `crafts/carven/runtime/`. Group related
@@ -46,8 +62,8 @@ contracts and implementation slices by domain:
 | `display/` | Bounded structural value display |
 | `execution/` | Program entry, control support, asynchronous operations, and timers |
 | `format/` | General formatting and prepared fragment writing |
-| `io/` | Standard-output and standard-error printing |
-| `numeric/` | Integer operations and arithmetic checks |
+| `io/` | Host input cursor and scheduling, native read operations, and printing |
+| `numeric/` | Scalar numeric operations and arithmetic checks |
 | `simd/` | Vector and mask operations with native and portable backends |
 | `testing/` | Inline-test execution and reporting contexts |
 | `text/` | String storage, borrowed text views, and UTF-8 operations |
@@ -57,11 +73,17 @@ Expose self-contained contract headers within each domain, such as
 `collection/array.hpp` and `format/writer.hpp`. Include the contracts used by
 generated code and native consumers. Use a domain entry such as `text/text.hpp`
 for implementation headers that share one contract. Keep implementation headers
-internal to their domain and runtime includes out of compiler source in `src/`.
+internal to their domain. Compiler source in `src/` does not include Crafts
+headers; generated programs consume the runtime through native headers.
+
+Source Crafts import these headers directly through ordinary native interoperation
+when needed. Keep library-specific host bridges and their platform dependencies
+with the owning Craft, such as networking's socket adapter.
 
 Use angle brackets and the complete `carven/` path for Carven headers,
 including dependencies within the same domain. Use the corresponding native
-import in Carven source. Add the Crafts root to the include search directories:
+import in Carven source. Native consumers add the Crafts root to their include
+search directories:
 
 ```cpp
 #include <carven/runtime/collection/array.hpp>
@@ -69,7 +91,7 @@ import in Carven source. Add the Crafts root to the include search directories:
 ```
 
 ```carven
-import <carven/std/time/native.hpp>;
+import <carven/std/net/native.hpp>;
 ```
 
 ### Header order
@@ -109,8 +131,8 @@ include order.
   names that identify their domain without named C++ namespaces. Imports control
   visibility; partitions of the same named module still share declaration
   identity. Keep shared names distinct.
-- Use a global module fragment for macro-only test headers, required platform
-  headers, or consumer headers exercised by tests.
+- Use a global module fragment for required platform
+  headers, macro-only test headers, or consumer headers exercised by tests.
 - Put translation-unit-private declarations in an anonymous namespace.
 - Separate every namespace opening from its contents with a blank line. Close
   every namespace with a namespace comment; include the name for named namespaces.

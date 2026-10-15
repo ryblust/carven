@@ -6,7 +6,7 @@
 ./xmakew bench json --portable --output=build/benchmarks/json/portable.json
 ```
 
-This benchmark calls `std::json.validation::validate_bytes` through an exported
+This benchmark calls `validate_bytes` from `std::json` through an exported
 Carven function. It measures the public byte-ingress API: UTF-8 validation,
 JSON syntax, and failure delivery. It does not construct a DOM or convert numbers
 to native numeric values.

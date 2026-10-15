@@ -9,9 +9,6 @@ foundations are listed separately.
 ## Contents
 
 - [TEMPLATE.md](TEMPLATE.md): proposal structure and field guidance.
-- [example-polish-implementation-plan.md](example-polish-implementation-plan.md):
-  cross-domain delivery plan for the three examples, standard-library additions,
-  native bridging, and coordination with the Carven Xmake rules repository.
 - Other Markdown files: one design domain's unfinished work, keeping related
   syntax, semantics, compiler representation, and lowering together.
 
@@ -23,13 +20,14 @@ foundations are listed separately.
 | [Sequence views and pipeline calls](sequence-pipelines.md) | Pipeline call composition, bounded lazy Read sequence APIs, traversal, and static execution |
 | [Operator capabilities](operator-capabilities.md) | Mapping existing tokens to checked operations; consumes generic evidence |
 | [Dynamic values](dynamic-values.md) | Erased holding forms, nominal conformance, and dispatch |
-| [Dynamic ownership](dynamic-ownership.md) | Unique/shared object owners, allocator policy, and factory construction in owned storage |
-| [Semantic execution](semantic-execution.md) | Direct structured initializer/extent roots, scalar text traversal, address observations, and retained reference graphs |
+| [Dynamic ownership](dynamic-ownership.md) | Unique/shared and native resource owners, allocator policy, construction in owned storage, and move-only Vector capabilities |
+| [Semantic execution](semantic-execution.md) | Direct structured initializer/extent roots, scalar text traversal, address observations, retained reference graphs, and deferred host scripting/build-stage execution |
 | [Compiler optimization](compiler-optimization.md) | Compiler and workspace-reuse costs, C++ realization, and formatting/output experiments preserving source contracts |
 | [Frontend analysis](frontend-analysis.md) | Recovering syntax, partial semantics, diagnostic ownership, query coordination, publication, and analysis fault isolation |
 | [Data representation](data-representation.md) | Record, tuple, and enum representations, native-layout boundaries, compact handles, and collection layouts |
 | [Uninitialized storage](uninitialized-storage.md) | Construction destinations, partial initialization, native lifetime, and library storage in constant execution |
 | [Concurrency](concurrency.md) | Cross-thread values, memory ordering, threads, and synchronization |
+| [Structured async](structured-async.md) | Finite runtime-sized operation composition and cleanup |
 | [Documentation comments](doc-comments.md) | Source attachment, retained content, and its artifact consumer |
 
 ## Implemented boundaries and remaining work
@@ -45,8 +43,9 @@ developed representation and validation criteria.
 | Sequence views and pipeline calls | Integer ranges, Read slices, concrete closures, fixed iterable families, and inferred function results | Pipeline syntax, five sequence builtins, lazy views including Vector elements, traversal checking, and execution |
 | Operator capabilities | Builtin operators and compiler-selected equality | User-defined token hooks and their identity/signature/evidence rules |
 | Dynamic values | [Closures and callable views](../docs/language/functions.md), fixed-signature indirect calls, operation values | Nominal erased holding, conformance, existential packaging, and dispatch |
-| Dynamic ownership | [String](../docs/language/text.md), [Vector](../docs/language/aggregates.md#owning-vectors), and async owners | General Unique/Shared owners, allocation policy, and factory construction |
-| Semantic execution | [Structured executor](../docs/compiler/analysis/evaluation.md), specialization, compound constants, and byte traversal | Direct structured initializer/extent roots, scalar traversal, address/literal policy, and reference graphs |
+| Dynamic ownership | [String](../docs/language/text.md), [Vector](../docs/language/aggregates.md#owning-vectors), async owners, and [host-owned TCP views](../docs/language/net.md) | General Unique/Shared and source-owned native resources, allocation policy, factory construction, and move-only Vector admission |
+| Structured async | [Fixed when_all](../docs/language/async.md) and structured cancellation/close | Finite runtime-sized composition and stable result delivery |
+| Semantic execution | [Structured executor](../docs/compiler/analysis/evaluation.md), interpretation, supported host input/time operations, specialization, compound constants, and byte traversal | Direct structured initializer/extent roots, scalar traversal, address/literal policy, reference graphs, and deferred host scripting/build-stage contracts |
 | Compiler optimization | [Prepared formatting and output](../docs/compiler/backend/builtins.md), [stable-owner Read traversal](../docs/compiler/backend/preparation.md#body-summaries-and-storage-observations), known-value paths, [workspace caches](../tools/workspace/README.md), shared native library producers | Further measured reuse, parallelism, storage/delivery, constant output, and formatting experiments |
 | Frontend analysis | Top-level recovery, owned complete analysis, retained snapshots, limited observations after semantic errors, strict publication | Lossless damaged syntax, independent partial types, semantic queries, request control, and worker isolation |
 | Data representation | Declaration-order records, recursive tuples, variant-based enums/failures | Target layout facts, native forms, field ordering, compact carriers, and collection representations |

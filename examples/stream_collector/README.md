@@ -1,48 +1,42 @@
 # Stream collector
 
-Collect newline-framed records from three concurrent loopback TCP connections.
-The first publishes valid log records, the second closes with a truncated record,
-and the third remains open without publishing. Each feed has one second to
-complete reception through EOF. Rejection and timeout are handled independently
-for each feed.
+A bidirectional C++ interoperation example that merges two memory streams,
+removes duplicate records, and returns a structured report.
+
+1. [`main.cpp`](main.cpp) creates two native input streams and calls Carven's exported `collect`.
+2. [`workflow.cv`](workflow.cv) calls the imported C++ `next_record`, keeps unique records, and counts the input and duplicates.
+3. C++ receives the Carven `Report`, reads its fields, and prints the records and statistics.
+
+The first stream contains `alpha`, `beta`, `alpha`, and `gamma`. The second
+contains `beta`, `delta`, `gamma`, and `delta`. Carven drains the first stream,
+then the second, preserving the order in which each unique record first appears.
+Deduplication compares the full text, including case and whitespace.
+
+[`stream.hpp`](stream.hpp) declares the native stream holder and provider function.
+[`stream.cpp`](stream.cpp) implements the provider with `std::getline`, skipping
+empty lines. Its borrowed result remains valid until the next read; Carven
+copies each unique record into owning String storage before reading again.
+`Report.records` owns those Strings, `total` counts all nonempty input records,
+and `duplicates` counts repeated records within or across the streams. The unique
+count is `records.size()` in C++. The report remains valid after the streams
+are destroyed.
 
 ```sh
 ./xmakew run carven-example-stream-collector
-./xmakew run carven-example-stream-collector --records
-./xmakew run -q carven-example-stream-collector --stdin --records < application.log
 ```
 
-The default output is:
+Output:
 
 ```text
-Collected 3 records; rejected feeds: 1; timed out: 1
-INFO 12 collector connected
-WARN 37 mixer token=demo clipped=2
-ERROR 42 upstream timed out
+Read 8 records; unique: 4; duplicates: 4
+alpha
+beta
+gamma
+delta
 ```
 
-[`workflow.cv`](workflow.cv) owns concurrent readers and publishers, bounded
-record framing, UTF-8 validation, typed failures, and deadline recovery. Records
-are limited to 256 bytes excluding LF; empty records are ignored. EOF requires a
-complete final record. A failed feed contributes no records. Feed ordering is
-stable regardless of readiness order.
-
-[`main.cpp`](main.cpp) owns the connections and drives the exported Carven async
-workflow. With `--stdin`, it first calls the exported Carven `read_input`
-operation, which uses `stdin().read_all(16 * 1024 * 1024)` and the standard
-`IOError` enum. It retains raw bytes for per-feed UTF-8 validation.
-[`network.cpp`](network.cpp) implements the imported async receive/send providers.
-[`network.hpp`](network.hpp) supplies an `EventSource` using `select` and platform
-socket APIs. Reads use seven-byte buffers, while publishers send at most five
-bytes per write. Framing accepts records spanning multiple reads.
-
-This is bidirectional interoperation: C++ calls an exported async Carven function,
-and Carven awaits C++ providers returning `AsyncOperation` with `IOError`.
-The contexts, socket handles, and native buffers remain alive until cancellation
-is acknowledged and the children close. The driver borrows the network event
-source through workflow completion and detaches it before host resources are
-released.
-
-The application owns its socket layer. The example uses nonblocking TCP on
-`127.0.0.1`, requires no remote service, and supports POSIX sockets and Winsock.
-The Xmake target links `ws2_32` on Windows.
+The native declaration uses `std::string_view`; the Carven contract uses `str`.
+The generated API header supplies the complete `Report` representation, including
+its `Vector<String>`. C++ uses `auto` for the returned report, accesses its fields,
+and iterates its records directly. The native build compiles the two C++ source
+files alongside the generated Carven implementation.

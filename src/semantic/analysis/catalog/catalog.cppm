@@ -167,8 +167,7 @@ private:
     std::vector<std::flat_map<std::string, std::vector<std::size_t>, std::less<>>> cpp_selections;
 
     friend class AnalysisCatalogView;
-    friend auto build_analysis_catalog(ProgramDraft&) noexcept
-        -> std::expected<AnalysisCatalog, Diagnostics>;
+    friend class AnalysisCatalogBuilder;
 };
 
 class AnalysisCatalogView final {
@@ -180,6 +179,11 @@ public:
     auto symbol(CatalogSymbolID id) const noexcept -> const CatalogSymbol*;
 
     auto symbol(CatalogEntity entity) const noexcept -> const CatalogSymbol*;
+    auto standard_declaration(
+        const ProgramDraft& draft,
+        StandardDeclaration declaration
+    ) const noexcept -> const CatalogSymbol*;
+
     auto source_entity(const ProgramDraft& draft, CatalogEntity entity) const noexcept
         -> SourceEntity;
 

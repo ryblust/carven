@@ -1,0 +1,79 @@
+const fn observe(&trace: i32, digit: i32, value: f64) -> f64 {
+    trace = trace * 10 + digit;
+    return value;
+}
+
+const fn effects() -> bool {
+    if false { 0.0f32.clamp(2.0, 1.0); }
+    var trace = 0;
+    let bounded = observe(&trace, 1, -2.0).abs().clamp(
+        observe(&trace, 2, -1.0),
+        observe(&trace, 3, 1.0)
+    );
+    if trace != 123 || bounded != 1.0 { return false; }
+    trace = 0;
+    observe(&trace, 4, 3.0).min(observe(&trace, 5, 2.0));
+    if trace != 45 { return false; }
+    trace = 0;
+    observe(&trace, 6, 3.0) + observe(&trace, 7, 2.0);
+    if trace != 67 { return false; }
+    var value = -2.0;
+    let snapshot = value.min(
+        if true {
+            value = 3.0;
+            1.0
+        } else {
+            0.0
+        }
+    );
+    return snapshot == -2.0 && value == 3.0;
+}
+
+const test "Floating methods: static operands run once in source order" {
+    check(effects());
+}
+
+test "Floating methods: native operands and scalar precision" {
+    check(effects());
+    check(((2.0f64).sqrt() * (2.0f64).sqrt() - 2.0).abs() < 0.000000000000001);
+}
+
+private const fn contracts32(negative_zero: f32, infinity: f32, nan: f32, negative: f32) -> bool {
+    if negative.abs() != 3.0 || !(1.0 / negative_zero.abs() > 0.0) { return false; }
+    if !(1.0 / (-negative_zero).abs() > 0.0) { return false; }
+    if (-infinity).abs() != infinity || nan.abs() == nan.abs() { return false; }
+    if negative.abs().min(2.0) != 2.0 || negative.abs().max(2.0) != 3.0 { return false; }
+    if nan.min(1.0) == nan.min(1.0) || (1.0f32).max(nan) == (1.0f32).max(nan) { return false; }
+    if !(1.0 / negative_zero.min(0.0) < 0.0) || !(1.0 / negative_zero.max(0.0) < 0.0) {
+        return false;
+    }
+    if !(1.0 / (-negative_zero).min(negative_zero) > 0.0)
+        || !(1.0 / (-negative_zero).max(negative_zero) > 0.0) {
+        return false;
+    }
+    if negative.clamp(-1.0, 1.0) != -1.0 || (-negative).clamp(-1.0, 1.0) != 1.0 { return false; }
+    if negative_zero.clamp(1.0, 1.0) != 1.0 || nan.clamp(0.0, 1.0) == nan.clamp(0.0, 1.0) {
+        return false;
+    }
+    if (4.0f32).sqrt()
+        != 2.0
+        || infinity.sqrt() != infinity
+        || !(1.0 / negative_zero.sqrt() < 0.0) {
+        return false;
+    }
+    if (-1.0f32).sqrt() == (-1.0f32).sqrt() || (-infinity).sqrt() == (-infinity).sqrt() {
+        return false;
+    }
+    if infinity.min(negative) != negative || negative.max(infinity) != infinity { return false; }
+    if nan.max(1.0) == nan.max(1.0) || (1.0f32).min(nan) == (1.0f32).min(nan) { return false; }
+    if nan.min(nan) == nan.min(nan) || nan.max(nan) == nan.max(nan) { return false; }
+    if !(1.0 / negative_zero.clamp(-1.0, 1.0) < 0.0) { return false; }
+    if !(1.0 / negative_zero.clamp(0.0, 0.0) < 0.0) { return false; }
+    if !(1.0 / (-negative_zero).clamp(negative_zero, negative_zero) > 0.0) { return false; }
+    if (-infinity).clamp(-1.0, 1.0) != -1.0 || infinity.clamp(-1.0, 1.0) != 1.0 { return false; }
+    return ((2.0f32).sqrt() * (2.0f32).sqrt() - 2.0).abs() < 0.000001;
+}
+
+test "Floating math f32: native scalar contracts" {
+    check(contracts32(-0.0, 1.0 / 0.0, 0.0 / 0.0, -3.0));
+}

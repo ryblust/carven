@@ -19,9 +19,13 @@ providers according to their C++ requirements. A `#[cpp]` fragment containing
 native `throw` or `try`/`catch` requires exception support in its generated
 translation unit.
 
-Carven is a source-generation step. The build system supplies source batches,
-C++ providers, libraries, include paths, and native compiler options, then
-compiles and links the artifacts. C++ validates provider declarations and
+The compiler core provides semantic analysis, execution, C++ generation, and
+source and artifact facts. The CLI supplies default Crafts collection and a
+direct-run driver that compiles, links, and executes a temporary native program.
+An external build system owns project targets, dependency acquisition, source
+selection, native configuration, caching, and scheduling. It invokes Carven as a
+source-generation step, then compiles and links the artifacts and C++ providers.
+C++ validates provider declarations and
 protocols, object definitions, and link requirements. It also checks overloads,
 templates, and conversions for explicitly delegated operations.
 
@@ -58,6 +62,7 @@ Carven evaluation order.
 ```text
 carven/generated/<component-anchor>.hpp
 carven/api/<canonical-module-path>.hpp
+carven/providers/<canonical-module-path>.hpp
 <canonical-module-path>.cpp
 carven/generated/carven-test-runner.hpp
 carven/generated/carven-test-main.cpp
@@ -76,6 +81,13 @@ The `carven/api` header contains explicit `export(cpp)` declarations in
 `carven::api`, followed by nested namespaces for the encoded module path
 components. Its implementation contains the corresponding façades. The header
 is self-contained.
+
+Modules containing concrete `import(cpp)` declarations produce a
+`carven/providers` header with signature type aliases and complete type
+dependencies. Native authors include it when naming Carven representations;
+function declarations remain in authored C++ headers or source fragments. See
+[provider type support](../language/interop.md#provider-type-support) for aliases,
+type identity, and dependency requirements.
 
 C++ header imports become ordered includes in the owning implementation. An
 external type or result query needed by an interface brings its context module's
@@ -112,13 +124,16 @@ remain authoritative for C++ header dependencies.
 
 ## Build integration
 
-The `compile` command collects fixed Crafts roots and writes generated artifacts
-directly; it does not compile or copy collected `.cpp` sources. The consuming
-build must compile those sources alongside the generated implementations.
-The direct-run entry uses the same collection and invokes the native compiler
-to compile, link, and execute a program in a temporary directory.
+The `compile` command collects fixed Crafts roots and writes generated artifacts;
+it does not compile or copy collected `.cpp` sources. A manual native build
+selects the generated implementations and C++ providers needed by its target,
+including any required native initialization. A program using only header-based
+runtime operations needs its own generated implementation and runtime headers.
+The direct-run entry compiles all
+generated implementations and collected native sources, then executes the
+program in a temporary directory.
 Consumers provide the output root and installed support root as include search
-paths, compile the generated implementations, and link their C++ providers.
+paths.
 Header imports do not add include directories or link inputs.
 
 An Xmake project declares the Carven repository and package dependency, then
@@ -169,6 +184,11 @@ native compilation settings and prerequisite targets. Each consumer performs
 full Carven analysis.
 Project-local Crafts remain ordinary target inputs.
 
+Reconfigure after adding or deleting installed Crafts files. The rule publishes
+provider support headers before native compilation and supplies the standard
+TCP provider's Winsock dependency on Windows. Manual builds that include this
+provider must link `ws2_32`.
+
 Generation runs in a staging directory before updating live artifacts. A failed
 compiler invocation leaves live output intact; promotion itself can fail partway
 through. Xmake dependency records track the source files, compiler, rule files,
@@ -177,15 +197,14 @@ unchanged content. Xmake's C++ rules own native header dependencies, object
 compilation, and linking.
 
 The installed layout places `crafts/` beside `bin/`. The official `carven` craft
-contains runtime support and the standard library. Capability modules keep their
-API documentation alongside their sources. Native headers and sources remain with
-their owning capability. Runtime support is independent of generated
-standard-library code.
+contains runtime support and the standard library. Native headers and sources
+remain with their owning capability. Runtime support
+is independent of generated standard-library code.
 
 ## Support headers
 
 Include the self-contained support headers for the contracts used by generated
-files and native consumers. Runtime directories group these headers by domain:
+files and native consumers. Runtime support is grouped by domain:
 
 ```text
 carven/runtime/call/callable.hpp
@@ -194,10 +213,12 @@ carven/runtime/collection/array.hpp
 carven/runtime/collection/range.hpp
 carven/runtime/collection/slice.hpp
 carven/runtime/collection/vector.hpp
+carven/runtime/diagnostics/observe.hpp
 carven/runtime/diagnostics/report.hpp
 carven/runtime/diagnostics/trap.hpp
 carven/runtime/display/display.hpp
 carven/runtime/execution/child.hpp
+carven/runtime/execution/clock.hpp
 carven/runtime/execution/completion.hpp
 carven/runtime/execution/composition.hpp
 carven/runtime/execution/entry.hpp
@@ -207,11 +228,17 @@ carven/runtime/execution/timeout.hpp
 carven/runtime/execution/unreachable.hpp
 carven/runtime/format/format.hpp
 carven/runtime/format/writer.hpp
+carven/runtime/io/cursor.hpp
 carven/runtime/io/print.hpp
+carven/runtime/io/queue.hpp
+carven/runtime/io/stdin.hpp
+carven/runtime/numeric/float.hpp
 carven/runtime/numeric/numeric.hpp
+carven/runtime/numeric/parse.hpp
 carven/runtime/simd/simd.hpp
 carven/runtime/testing/testing.hpp
 carven/runtime/text/text.hpp
+carven/runtime/text/utf8.hpp
 carven/runtime/value/deferred.hpp
 carven/runtime/value/outcome.hpp
 carven/runtime/value/stateless.hpp
@@ -254,3 +281,19 @@ storage and terminates on invalid UTF-8. Runtime String operations support C++20
 constant evaluation. Carven constant execution retains String and Vector values
 with their source types. The compiler emits immutable backing and native constexpr descriptors;
 Read uses do not allocate. Runtime copies construct independent native owners.
+
+## SIMD configuration
+
+The C++20 runtime selects one SIMD backend per translation unit: AArch64 NEON
+when available, x86 AVX2 when enabled by the consumer, and otherwise the portable
+backend. All backends implement the same [logical lane contracts](../language/simd.md).
+
+Consumers select target instruction flags. An x86 consumer enables AVX2 with
+`-mavx2`, `/arch:AVX2`, or Xmake's `add_vectorexts("avx2")`.
+`CARVEN_SIMD_FORCE_PORTABLE` selects the portable backend. Translation units using
+SIMD or runtime text support must select the same backend.
+
+Runtime vector and mask types live in backend-specific inline namespaces within
+`carven::runtime::simd`. Their type identities can expose backend mismatches in
+symbols that encode those types. Return types alone and enclosing structs may
+not expose a mismatch at link time.

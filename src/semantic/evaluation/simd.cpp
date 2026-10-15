@@ -117,6 +117,42 @@ auto SemanticExecutor::simd(
         }
         co_return ConstantAtom {.type = *target, .value = result};
     }
+    if (intrinsic == SIMDIntrinsic::Swizzle) {
+        auto input = co_await value(frame, operation.operands[0].expression);
+        if (!input) {
+            co_return std::unexpected(std::move(input.error()));
+        }
+        auto fact = read_fact(*input, origin);
+        if (!fact) {
+            co_return std::unexpected(std::move(fact.error()));
+        }
+        const auto& lanes = std::get<Vector>(fact->value).lanes;
+        auto indices = co_await sequence_view(frame, operation.operands[1].expression, origin);
+        if (!indices) {
+            co_return std::unexpected(std::move(indices.error()));
+        }
+        auto result = Vector {.lanes = std::vector<std::uint32_t>(width)};
+        for (auto index = 0uz; index < width; ++index) {
+            auto selected = slice_element(*indices, index, origin);
+            if (!selected) {
+                co_return std::unexpected(std::move(selected.error()));
+            }
+            auto control = located(*selected, origin);
+            if (!control) {
+                co_return std::unexpected(std::move(control.error()));
+            }
+            auto control_fact = read_fact(**control, origin);
+            if (!control_fact) {
+                co_return std::unexpected(std::move(control_fact.error()));
+            }
+            const auto position = std::get<IntegerConstant>(control_fact->value).magnitude();
+            if (position >= width) {
+                co_return std::unexpected(bounds_failure());
+            }
+            result.lanes[index] = lanes[position];
+        }
+        co_return ConstantAtom {.type = *target, .value = std::move(result)};
+    }
     auto inputs = std::vector<ConstantFact>();
     for (const auto& operand : operation.operands) {
         auto input = (co_await this->value(frame, operand.expression));

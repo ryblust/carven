@@ -10,8 +10,10 @@ and generated-file integration are covered by the [Toolchain](../toolchain/artif
 - [C string literals](#c-string-literals)
 - [External operations and conversions](#external-operations-and-conversions)
 - [External access and lifetime](#external-access-and-lifetime)
+- [Execution and initialization](#execution-and-initialization)
 - [Source fragments](#source-fragments)
 - [Declared function boundaries](#declared-function-boundaries)
+- [Provider type support](#provider-type-support)
 - [Native exception boundary](#native-exception-boundary)
 
 `import <...>` and `import "..."` include C++ headers. Top-level `#[cpp]`
@@ -75,9 +77,9 @@ Local bindings and resolved Carven declarations retain their ordinary lookup
 rules. Explicit external imports cannot collide with local module declarations.
 Otherwise unresolved ordinary names can use a module's explicitly opened C++
 namespaces. External declarations, overloads, template arguments, members and
-conversions are checked by C++. External imports are module-local and are not
-re-exported through Carven module imports. Explicit selections have unused-import diagnostics;
-namespace selections do not.
+conversions are checked by C++. External imports are local to their declaring
+module. Explicit selections have unused-import diagnostics; namespace selections
+do not.
 
 ## External types and construction
 
@@ -213,7 +215,33 @@ the provider and caller own the result's storage and lifetime contract. Returnin
 to a Carven type does not establish a previously unknown backing relationship.
 Known input borrows remain checked while the operation evaluates.
 
+## Execution and initialization
+
+Header imports, native source fragments, and collected C++ sources supply native
+implementations. Their presence does not prevent semantic execution of Carven
+code. A `const fn` is checked for static capability on its semantically reachable
+paths. Interpretation diagnoses unsupported operations when execution reaches them.
+Native calls, external object construction, and native data access require an
+implementation available to the selected execution stage.
+
+Native programs use C++ initialization and destruction rules. Static execution
+and interpretation do not load compiled native code or run the dynamic
+initialization and destruction of C++ static-storage objects. A program that
+depends on those side effects requires native execution, even if it makes no
+explicit native call.
+
+A capability supported across execution stages makes observable initialization
+and cleanup part of explicit operations or object lifetimes. Each implementation
+supplies those effects in its execution context. Providers and callers satisfy
+the native behavior, environment, and lifetime requirements stated by their APIs.
+Carven checks the declared boundary; external C++ bodies remain outside its
+analysis.
+
 ## Source fragments
+
+Native declarations can be supplied by header imports. A source fragment can
+define a module-local adapter or include a header that uses generated Carven
+signature types.
 
 Each top-level `#[cpp]` payload remains an independent UTF-8 C++ source fragment.
 Carven validates its encoding and preserves its bytes without parsing or
@@ -238,8 +266,19 @@ An `import(cpp)` declaration is private or bare and has no Carven body:
 private import(cpp) fn native_value(value: i32) -> i32;
 ```
 
-Calling it invokes the same-named global C++ provider with the declared argument
-access. C++ resolves overloads and function templates from that call. Carven does
+An optional target binding selects a fully qualified C++ function independently
+of the Carven function name:
+
+```carven
+private import(cpp) fn native_value(value: i32) -> i32 = ::vendor::compute;
+```
+
+The target is a name path rooted at `::`, including namespace or static member
+components. It is not an expression and has no explicit template arguments.
+Target paths use ordinary native identifier rules and do not select Carven names
+or header `using` bindings. Omitting the binding selects the same-named global
+C++ provider. Both forms invoke the target with the declared argument access.
+C++ resolves overloads and function templates from that call. Carven does
 not generate the provider declaration or parse, import, or compare its C++
 signature.
 
@@ -248,8 +287,8 @@ responsibilities. Same-spelled imports in different modules remain distinct
 Carven capabilities even when C++ linkage makes their providers identical.
 Names beginning with `_` or `__` receive no additional Carven restriction;
 whether such a spelling is reserved in its downstream C++ context is the
-author/toolchain's responsibility. `main`, `std`, and `carven` are not valid
-provider names.
+author/toolchain's responsibility. Without an explicit target, `main`, `std`,
+and `carven` are not valid provider names.
 
 An `export(cpp)` declaration is a complete-compilation-visible Carven function
 with a Carven body. It may be synchronous or async. It is also declared in the generated C++
@@ -259,9 +298,8 @@ API for its module:
 export(cpp) fn value() -> i32 => 42;
 ```
 
-An `import(cpp)` declaration cannot be exported directly in any syntactic
-combination; re-export is not a language feature. A wider capability requires
-an explicit ordinary Carven wrapper. Both directions use ordinary function type,
+Expose an imported native capability through an ordinary Carven wrapper.
+Both directions use ordinary function type,
 access, visibility, ownership, and declared failure rules. Unit values in
 parameters and aggregates use `carven::runtime::Void`; an infallible synchronous
 unit result returns native C++ `void`. Async and fallible carriers keep `void` as
@@ -293,8 +331,15 @@ Other native-containing Read parameters use `carven::runtime::ReadArg<T>`, which
 selects a const value for trivial copy construction and destruction, and a const
 reference otherwise. The native callee's own signature still controls its C++
 parameter initialization. Async providers must capture
-builtin scalar Read values by value; native-containing Read holders remain
+Carven Read values passed by value; native-containing Read holders remain
 borrowed until the cold operation closes.
+
+The C++20 execution runtime guarantees coroutine frame alignment of at least
+32 bytes and the platform's fundamental alignment. Native values and temporaries
+retained across suspension must fit that alignment, including those constructed
+inside Carven async functions. Keep objects requiring stronger alignment in
+separately allocated storage and retain a suitable owner or borrow in the frame;
+the ordinary lifetime obligations still apply.
 
 The generated API header includes the required generated type definitions,
 native header environments, and runtime support. Consumers use that header and
@@ -333,6 +378,35 @@ names may be C++ keywords: a component named `export` becomes
 C++ callers use the names declared in the generated API header. For APIs
 intended for handwritten C++ callers, prefer module path components and
 exported function names that retain their spelling under this encoding.
+
+## Provider type support
+
+Every source module containing concrete `import(cpp)` declarations produces
+`carven/providers/<canonical/module>.hpp`. The header supplies signature type
+aliases and their complete definition dependencies, including module-private
+nominal types. Source visibility remains governed by ordinary Carven rules.
+
+Aliases live under
+`carven::providers::<encoded module>::cv_escaped_functions::<encoded function>`.
+
+`Result` names the source result representation, `Completion` its mapped native
+return carrier, `Parameter0`, `Parameter1`, and so on the source parameter value
+types, and `Failure0`, `Failure1`, and so on the canonical failure types. Parameter
+aliases are value types; the authored native declaration determines references
+and native argument initialization. `void` has `Result = carven::runtime::Void`;
+a synchronous infallible unit result has `Completion = void`. Async Completion
+names the cold AsyncOperation carrier. Failure numbering follows canonical
+failure-carrier order. Review these aliases when changing the source signature.
+
+Include the header in a provider source file or `#[cpp]` fragment when those
+types are needed. It supplies aliases, not external function declarations;
+declare providers in C++ headers or fragments. C++ checks their calls through
+ordinary overload, template, and conversion rules.
+
+Type aliases refer to the same nominal definitions used by Carven, with the same
+field access. They provide C++ source names, not a cross-toolchain binary ABI
+promise. A native header defining a type used by the signature must not include
+the generated provider header that depends on it.
 
 ## Native exception boundary
 

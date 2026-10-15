@@ -48,4 +48,8 @@ struct Range final {
     constexpr auto end() const noexcept -> Sentinel { return {}; }
 };
 
+template<typename T>
+    requires (std::is_integral_v<T> && !std::is_same_v<T, bool>)
+auto carven_inline_value(Range<T>*) noexcept -> std::true_type;
+
 } // namespace carven::runtime

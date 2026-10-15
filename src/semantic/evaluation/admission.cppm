@@ -1,9 +1,9 @@
 module carven:semantic.evaluation.admission;
 
 import :semantic.semir.constant_access;
-import :semantic.semir.vector;
 import :semantic.semir.structured;
 import :semantic.semir.type;
+import :semantic.semir.vector;
 import std;
 
 // This is the executor's structural capability query. Value-dependent failures,
@@ -12,7 +12,7 @@ template<typename Operation>
 constexpr auto unsupported_execution_operation(const Operation& operation) noexcept
     -> std::optional<std::string_view> {
     if constexpr (std::same_as<Operation, SemCpp> || std::same_as<Operation, SemCppCall>) {
-        return "native C++ operation has no compile-time provider";
+        return "native C++ operation requires compiled execution";
     } else if constexpr (std::same_as<Operation, SemClosure>) {
         return "closure execution is not supported";
     } else if constexpr (std::same_as<Operation, SemEnumConstructor>) {

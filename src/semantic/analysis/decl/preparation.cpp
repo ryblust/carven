@@ -48,6 +48,7 @@ auto DeclResolver::ensure_available(
             if (!visited.insert(definition_id).second) {
                 continue;
             }
+
             const auto source = catalog.generic_symbol(definition_id);
             completed = (co_await resolve(source, requester, origin));
             if (!completed) {
@@ -196,6 +197,7 @@ auto DeclResolver::prepare_type_dependencies(
     }
     if (const auto* concrete = std::get_if<TypeID>(&type)) {
         const auto canonical = draft.type_copy(*concrete);
+
         if (std::holds_alternative<FunctionTypeValue>(canonical.value)
             || std::holds_alternative<ClosureTypeValue>(canonical.value)) {
             co_return {};
@@ -428,13 +430,8 @@ auto DeclResolver::publish_declaration(const CatalogSymbol& symbol) noexcept
         Overloaded {
             [](const CatalogGenericForm&) static noexcept {},
             [&](const CatalogFunctionForm& form) noexcept {
-                if (cpp_import_origins[form.callable.index()]) {
-                    draft.complete_callable(
-                        form.callable,
-                        CppImportImplementation {
-                            .form_origin = *cpp_import_origins[form.callable.index()],
-                        }
-                    );
+                if (cpp_imports[form.callable.index()]) {
+                    draft.complete_callable(form.callable, *cpp_imports[form.callable.index()]);
                 }
             },
             [&](const CatalogStructForm& form) noexcept {

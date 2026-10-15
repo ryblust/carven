@@ -89,7 +89,13 @@ private:
 
     auto visit(const ASTCppExportForm& value) noexcept -> void { visit(value.span); }
 
-    auto visit(const ASTCppImportForm& value) noexcept -> void { visit(value.span); }
+    auto visit(const ASTCppFunctionTarget& value) noexcept -> void {
+        visit_fields(value.span, value.components);
+    }
+
+    auto visit(const ASTCppImportForm& value) noexcept -> void {
+        visit_fields(value.span, value.target);
+    }
 
     auto visit(const ASTCppSourceFragment& value) noexcept -> void {
         visit_fields(value.form_span, value.payload_span);

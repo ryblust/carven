@@ -102,6 +102,9 @@ auto generate_artifacts(
                     [&](const TargetCppAPIHeaderArtifact& value) noexcept {
                         return selected(value.module_id);
                     },
+                    [&](const TargetCppProviderHeaderArtifact& value) noexcept {
+                        return selected(value.module_id);
+                    },
                     [&](const TargetModuleImplementationArtifact& value) noexcept {
                         return selected(value.schedule.module_id);
                     },

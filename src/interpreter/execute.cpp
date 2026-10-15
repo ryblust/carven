@@ -31,13 +31,12 @@ public:
     auto function_for_callable(CallableID callable) const noexcept
         -> std::optional<FunctionID> override;
     auto prepare_call(CallableID callable, ProgramOriginID origin) noexcept
-        -> ContinuationTask<std::expected<ExecutionBody, ExecutionCallFailure>> override;
+        -> ContinuationTask<std::expected<ExecutionCallTarget, ExecutionCallFailure>> override;
     auto report(const ExecutionEvent& event) noexcept -> void override;
     auto write(ExecutionOutputStream stream, std::string_view bytes) noexcept -> void override;
     auto trace(const ExecutionTraceEvent& event) noexcept -> void override;
 
 private:
-    auto admit_modules() noexcept -> std::expected<void, ExecutionHalt>;
     auto reject(ProgramOriginID origin, std::string_view message) noexcept -> ExecutionHalt;
 
     const SemIRProgram& program;
@@ -84,8 +83,21 @@ auto Interpreter::function_for_callable(CallableID callable) const noexcept
 }
 
 auto Interpreter::prepare_call(CallableID callable, ProgramOriginID origin) noexcept
-    -> ContinuationTask<std::expected<ExecutionBody, ExecutionCallFailure>> {
+    -> ContinuationTask<std::expected<ExecutionCallTarget, ExecutionCallFailure>> {
     const auto& declaration = program.declarations().callable(callable);
+    if (const auto* parser = std::get_if<NumberParseImplementation>(&declaration.implementation)) {
+        co_return ExecutionBuiltinCall {
+            .result = program.callable_signatures().signature(declaration.signature).result,
+            .implementation = *parser
+        };
+    }
+    if (const auto* provided =
+            std::get_if<ProvidedFunctionImplementation>(&declaration.implementation)) {
+        co_return ExecutionBuiltinCall {
+            .result = program.callable_signatures().signature(declaration.signature).result,
+            .implementation = *provided
+        };
+    }
     const auto body = callable_body_id(declaration);
     if (!body) {
         co_return std::unexpected(
@@ -94,7 +106,11 @@ auto Interpreter::prepare_call(CallableID callable, ProgramOriginID origin) noex
                 .cause =
                     ExecutionIssue {
                         .reason = ExecutionReason::Admission,
-                        .message = "callable has no executable interpreter body",
+                        .message = std::holds_alternative<CppImportImplementation>(
+                                       declaration.implementation
+                                   )
+                            ? "native C++ function requires compiled execution"
+                            : "callable has no executable interpreter body",
                         .termination = ExecutionTermination::StopRoot,
                     },
                 .fields = {},
@@ -132,22 +148,7 @@ auto Interpreter::trace(const ExecutionTraceEvent& event) noexcept -> void {
     }
 }
 
-auto Interpreter::admit_modules() noexcept -> std::expected<void, ExecutionHalt> {
-    for (const auto module_declaration : program.declarations().modules()) {
-        if (!module_declaration.value.cpp_source_fragments.empty()) {
-            return std::unexpected(reject(
-                module_declaration.value.origin,
-                "native source fragments may initialize state and require a native runtime"
-            ));
-        }
-    }
-    return {};
-}
-
 auto Interpreter::run(FunctionID entry) noexcept -> std::expected<void, ExecutionHalt> {
-    if (auto admitted = admit_modules(); !admitted) {
-        return std::unexpected(std::move(admitted.error()));
-    }
     const auto& declaration = program.declarations().function(entry);
     if (declaration.entry_point != EntryPointKind::NoArguments) {
         return std::unexpected(reject(
@@ -166,9 +167,6 @@ auto Interpreter::run(FunctionID entry) noexcept -> std::expected<void, Executio
 
 auto Interpreter::run_tests() noexcept
     -> std::expected<std::vector<InterpreterTestResult>, ExecutionHalt> {
-    if (auto admitted = admit_modules(); !admitted) {
-        return std::unexpected(std::move(admitted.error()));
-    }
     auto selected = std::vector<TestID>();
     for (const auto row : program.tests().entries()) {
         if (!row.value.is_const) {

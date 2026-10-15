@@ -1,6 +1,5 @@
-import .error using ValueError;
 import .node using Node;
-
+import std::json using ValueError;
 import std::simd.scan using { one_of, byte_range, set_union, find_from };
 
 private const escaped_bytes = set_union(byte_range(0, 0x1f), one_of([0x22, 0x5c]));

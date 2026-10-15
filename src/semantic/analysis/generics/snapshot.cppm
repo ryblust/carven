@@ -8,6 +8,7 @@ import std;
 // Definition checking and ownership share the same rigid tree. This data is
 // consumed before publication; it is not an executable program type store.
 struct GenericAnalysisSnapshot final {
+    std::optional<ProgramIdentity> owner;
     std::vector<GenericDeclarationDefinition> definitions;
     std::vector<GenericTypeExpression> types;
     std::map<GenericDeclarationID, std::unique_ptr<StructuredBodyDraft>> bodies;

@@ -20,14 +20,6 @@ test "Pointers: native slice projections preserve Read access" {
     check(*element == 4);
 }
 
-#[cpp] ---
-auto pointer_output_adapter() noexcept -> std::int32_t* {
-    std::int32_t* result = nullptr;
-    pointer_probe::output(&result);
-    return result;
-}
----
-
 test "Pointers: Read calls snapshot addresses and dereference selects its target first" {
     var p: ptr<&i32> = ::pointer_probe::get();
     check(::pointer_probe::snapshot(p, &p));
@@ -67,7 +59,7 @@ test "Pointers: native qualifiers aliases and incomplete targets retain their ty
     check(::pointer_probe::observes_opaque(opaque_address));
     let native_argument = ::pointer_probe::NativeVoidArgument<void> {};
     check(native_argument.is_void());
-    let output: ptr<&i32> = ::pointer_output_adapter();
+    let output: ptr<&i32> = ::pointer_probe::output_adapter();
     check(output != nullptr);
     let owned: ptr<i32> = output;
     check(::pointer_probe::pair(owned, &&owned));

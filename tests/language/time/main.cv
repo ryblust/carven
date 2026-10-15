@@ -1,0 +1,10 @@
+import .sleep using run_sleep;
+import .timeout using run_timeout;
+import std::time using RangeError;
+import <carven/generated/carven-test-runner.hpp>;
+
+async fn main() -> i32 throw RangeError {
+    await run_sleep()?;
+    await run_timeout()?;
+    return ::carven::runtime::run_generated_tests();
+}

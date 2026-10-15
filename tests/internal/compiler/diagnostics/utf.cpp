@@ -8,19 +8,19 @@ import std;
 
 namespace {
 
+constexpr auto checked_text_modules = std::to_array<std::string_view>({
+    "utf",
+    "utf.scan",
+    "utf.block",
+    "simd.bytes",
+});
+
 const TestSuite suite([] static noexcept {
-    "UTF craft: returned text protects input storage from mutation"_test = [] static noexcept {
-        constexpr auto modules = std::to_array<std::string_view>({
-            "utf.error",
-            "utf.scan",
-            "utf.block",
-            "utf.validation",
-            "utf.text",
-            "simd.bytes",
-        });
+    "Checked text: source wrappers preserve the input borrow"_test = [] static noexcept {
         with_compiled_source(
-            "import std::utf.text using from_utf8; import std::utf.error using UTF8Error; "
-            "fn bad() throw UTF8Error { var a: [u8; 1] = [65]; let text = from_utf8(a)?; a[0] = 66; }",
+            "import std::utf using UTF8Error; "
+            "fn view(bytes: [u8]) -> str throw UTF8Error => str::from_utf8(bytes)?; "
+            "fn bad() throw UTF8Error { var a: [u8; 1] = [65]; let text = view(a)?; a[0] = 66; }",
             [](const auto& sources, const auto& result) static noexcept {
                 if (!expect(!result.has_value())
                     || !expect_diagnostic(result.error(), DiagnosticCode::AccessBorrowConflict)) {
@@ -33,20 +33,41 @@ const TestSuite suite([] static noexcept {
                 }
                 expect_equal(sources.slice(diagnostic->attachment.primary->span), "a[0] = 66");
             },
-            modules
+            checked_text_modules
+        );
+    };
+
+    "Checked text: a returned view cannot outlive local bytes"_test = [] static noexcept {
+        with_compiled_source(
+            "import std::utf using UTF8Error; "
+            "fn bad() -> str throw UTF8Error { let bytes: [u8; 1] = [65]; "
+            "return str::from_utf8(bytes)?; }",
+            [](const auto&, const auto& result) static noexcept {
+                if (expect(!result.has_value())) {
+                    expect_diagnostic(result.error(), DiagnosticCode::AccessBorrowConflict);
+                }
+            },
+            checked_text_modules
+        );
+    };
+
+    "UTF craft: cursor fields protect their input backing"_test = [] static noexcept {
+        with_compiled_source(
+            "import std::utf using { SplitCursor, TextError }; "
+            "fn bad() throw TextError { var text: String = \"a b\"; var cursor = SplitCursor::new(); "
+            "let field = cursor.next(text, \" \")?; text.clear(); println(field); }",
+            [](const auto&, const auto& result) static noexcept {
+                if (expect(!result.has_value())) {
+                    expect_diagnostic(result.error(), DiagnosticCode::AccessBorrowConflict);
+                }
+            },
+            checked_text_modules
         );
     };
 
     "UTF craft: encoded views protect encoding storage from mutation"_test = [] static noexcept {
-        constexpr auto modules = std::to_array<std::string_view>({
-            "utf.error",
-            "utf.codec",
-            "utf.scan",
-            "utf.block",
-            "simd.bytes",
-        });
         with_compiled_source(
-            "import std::utf.codec using { encode_utf8, encoded_bytes }; "
+            "import std::utf using { encode_utf8, encoded_bytes }; "
             "fn bad() { var encoded = encode_utf8('a'); let bytes = encoded_bytes(encoded); "
             "encoded = encode_utf8('b'); }",
             [](const auto& sources, const auto& result) static noexcept {
@@ -61,7 +82,7 @@ const TestSuite suite([] static noexcept {
                 }
                 expect(!sources.slice(diagnostic->attachment.primary->span).empty());
             },
-            modules
+            checked_text_modules
         );
     };
 

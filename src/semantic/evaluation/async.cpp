@@ -49,6 +49,10 @@ auto SemanticExecutor::drive(ExecutionTask<ExecutionValue> operation) noexcept
     ready.push_back({.task = &root, .continuation = std::exchange(root.loop.next, {})});
     while (!root.operation->done() && !stopped) {
         poll_cancellation();
+        poll_host();
+        if (ready.empty() && wait_host()) {
+            continue;
+        }
         if (ready.empty()) {
             invariant_violation("unfinished execution has no runnable task");
         }
@@ -253,12 +257,7 @@ auto SemanticExecutor::park(
 }
 
 auto SemanticExecutor::cancel_requested() const noexcept -> bool {
-    for (auto* task = current; task != nullptr; task = task->parent) {
-        if (task->requested) {
-            return true;
-        }
-    }
-    return false;
+    return task_cancel_requested(*current);
 }
 
 auto SemanticExecutor::request_cancel(ExecutionLogicalTask& task) noexcept -> void {
@@ -292,48 +291,12 @@ auto SemanticExecutor::consume(ExecutionColdOperation operation, ProgramOriginID
     if (std::holds_alternative<ExecutionCompositionAction>(operation.action)) {
         co_return co_await compose(std::move(operation), origin);
     }
-    if (const auto* timeout = std::get_if<ExecutionTimeoutAction>(&operation.action)) {
-        if (cancel_requested()) {
-            co_return std::unexpected(
-                ExecutionFailure {ExecutionCancelled {
-                    .origin = origin,
-                    .calls = current->calls,
-                    .blocks = current->blocks,
-                }}
-            );
-        }
-        if (operation.arguments.size() != 2uz) {
-            invariant_violation("timeout requires its operation and duration operands");
-        }
-        auto duration = materialize(std::move(operation.arguments.back()), origin);
-        if (!duration) {
-            co_return std::unexpected(std::move(duration.error()));
-        }
-        const auto fact = read_fact(*duration, origin);
-        if (!fact) {
-            co_return std::unexpected(std::move(fact.error()));
-        }
-        const auto* ticks = std::get_if<IntegerConstant>(&fact->value);
-        if (!ticks) {
-            invariant_violation("timeout duration is not signed integer ticks");
-        }
-        if (ticks->negative() || ticks->magnitude() == 0u) {
-            co_return std::unexpected(
-                ExecutionFailure {ExecutionSourceFailure {
-                    .type = timeout->timeout_failure,
-                    .payload = std::make_shared<const ExecutionValue>(ExecutionAggregateValue {
-                        .type = timeout->timeout_failure,
-                        .elements = {},
-                    }),
-                    .origin = origin,
-                    .calls = current->calls,
-                    .blocks = current->blocks,
-                }}
-            );
-        }
-        co_return std::unexpected(
-            fail(origin, ExecutionReason::Admission, "positive timeout requires a native clock")
-        );
+    if (std::holds_alternative<ExecutionTimeoutAction>(operation.action)) {
+        co_return co_await timeout(std::move(operation), origin);
+    }
+    if (std::holds_alternative<ExecutionInputAction>(operation.action)
+        || std::holds_alternative<ExecutionTimerAction>(operation.action)) {
+        co_return co_await host_operation(std::move(operation), origin);
     }
     switch (std::get<AsyncIntrinsic>(operation.action)) {
         case AsyncIntrinsic::YieldOnce: co_await Parking(*this); co_return ExecutionVoid {};

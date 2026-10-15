@@ -55,6 +55,11 @@ can also produce output or validate tests without retaining a result value.
 Give observable operations an execution-stage contract; optional precomputation
 must preserve their required effects.
 
+`const` marks static execution capability. Supported effects, such as input,
+clock sampling, waiting, and printing, occur on the compiler host during explicit
+static execution. Ordinary calls retain their runtime stage; known arguments
+alone do not move observable work into compilation.
+
 Compiler-side implementations can use host code independently of C++ constant
 evaluation support in the runtime implementation. Define which completed types
 and backing storage can be retained after temporary construction state ends.
@@ -86,6 +91,11 @@ meet or improve that baseline without adding runtime work solely to represent
 a language abstraction. Runtime storage, allocation, indirection, checks, and
 dispatch each serve a required behavior. Static facts need runtime representation
 only when execution uses them.
+
+Distinguish source-level transfer from incidental movement of an implementation
+carrier. Use known type contents, ownership, and lifetime facts to remove carrier
+storage and movement that have no observable effect. Preserve native construction,
+address observations, transfer effects, and cleanup at their established boundaries.
 
 Carven compilation, generated C++ compilation, artifact size, and program execution
 have distinct costs. Evaluate the dimensions affected by a design and its
@@ -137,41 +147,89 @@ where a language rule depends on them.
 
 ## Language mechanisms and library composition
 
-Choose builtins for common, stable operations whose checked behavior benefits
-from compiler knowledge and a compact source contract. Source implementability
-is one consideration alongside usability and total complexity. Treat builtins
-as complete language APIs with explicit, bounded contracts.
+Organize standard APIs around the capability a caller needs. Choose names,
+defaults, and type-associated methods from ordinary use. Decide the public entry,
+declaration owner, implementation location, and execution capability separately.
 
-Decide default visibility, compiler recognition, and implementation location
-independently.
+Keep related public types, errors, and operations together at the shortest module
+path that identifies their capability.
+A public submodule supplies an independently useful contract or vocabulary.
+Implementation decomposition follows its algorithms and dependencies; it does not
+require another public entry. Apply these criteria to source and builtin APIs alike.
 
-`print` accepts heterogeneous arguments. The compiler knows their number and
-types, checks supported values, and preserves evaluation order while selecting
-output operations. This provides variable-arity printing without requiring a
-public parameter-pack mechanism. `when_all` similarly derives result and
-failure types from its inputs and checks their ownership transfer.
+Standard Craft organizes public APIs and reusable source implementations.
+Builtins supply types and operations whose semantics the compiler owns.
+Runtime Craft supplies C++ representations and operations for generated programs.
+A standard capability can use all three.
 
-Keep builtin inputs and results within the shared type, access, ownership,
-lifetime, and failure models. An operation returned by `when_all` can
-participate in further composition through the ordinary operation contract.
-Using an API in larger programs and expressing its implementation through a
-general language mechanism are separate design requirements.
+Default visibility is a separate API choice. Defaults serve pervasive language
+types and common entry operations; builtin ownership does not make a name
+default-visible. Resolving an operation's result or failure type does not add a
+binding to the caller's scope. Inference and propagation use that type without
+requiring its name in scope; explicit names follow ordinary lookup and import rules.
 
-Library APIs can hide complex implementations behind simple contracts. Prefer
-them when existing source semantics and native interoperation fully express
-their contracts. When implementing an API requires additional language
-mechanisms, evaluate their public rules, feature interactions, diagnostics, and
-compiler maintenance costs as part of the design.
+Choose builtin ownership by four questions:
 
-Libraries own algorithms, data structures, and the native support needed to
-implement them. Depending on a clock, operating system, or runtime facility does
-not by itself require a builtin. Standard and user crafts use the same
-declaration facilities and admission rules; shared execution capabilities
-support library static execution and specialization.
+- What type, access, lifetime, failure, or execution knowledge must the compiler own?
+- Can existing source operations naturally express the complete contract?
+- Does compiler knowledge simplify use or remove repeated analysis, checks,
+  conversions, storage, or calls?
+- How much library-specific policy and maintenance does it add to the compiler?
 
-Give each builtin one semantic definition for typing, evaluation, and effects.
-Analysis, static execution, and lowering consume that definition and its
-published facts. Runtime support implements the remaining native work.
+Method syntax, operand count, algorithm size, and source expressibility do not
+individually determine ownership. Builtins participate in the shared type, access,
+ownership, lifetime, and failure models. `Operation` is a builtin type; ordinary
+async functions and builtin composition produce values of that same type.
+
+`print` uses known argument types and order to offer heterogeneous printing.
+`when_all` derives result and failure types and checks ownership transfer. Their
+bounded builtin APIs provide these capabilities without requiring callers to use
+variadic templates or higher-order generic machinery. Scalar and SIMD floating
+methods share a bounded numeric contract even where comparisons and selection
+can express their bodies. SIMD block traversal and scanning compose builtin
+operations in source.
+
+Choose ownership by the contract being implemented:
+
+- Prefer source declarations for ordinary public data contracts, including domain
+  errors, result enums, and interval values. Builtin operations can resolve and
+  use those declarations through their ordinary type rules. Duration literals,
+  numeric parsing, and timeout composition use standard-source declarations.
+- Prefer reusable source bodies when existing operations express the full
+  contract. JSON, text processing, framing, and SIMD scanning use ordinary
+  functions. Include effects, failure recovery, cancellation, and retained
+  resources when evaluating that contract. Associated entries can select source
+  functions or builtin operations.
+- Keep a host operation together when its state and completion rules need one
+  execution boundary. Algorithms and host operations can remain builtin when
+  that gives a simpler API and execution model. Library-specific native adapters
+  belong to their owning Craft.
+
+Select native implementations and optimizations separately from API ownership.
+Inspect generated C++ and optimized native code to distinguish required work from
+removable intermediate expressions.
+
+Standard and user source share discovery, module resolution, declaration
+completion, analysis, execution, and publication. Resolve each import to one
+canonical module identity. Standard entries may also supply compiler-provided
+declarations. Resolve a builtin's standard-source dependencies through the same
+catalog and declaration-completion path.
+
+Static execution, interpretation, and native generation preserve the same values,
+evaluation order, effects, ownership, and failures within a capability's supported
+execution stages. Implementations can use different value representations and
+host adapters; verify agreement through observable behavior. Keep execution
+context, host resources, and result retention explicit.
+
+Collect a Craft as one source package, including its native adapters. Native
+source presence does not determine whether a Carven execution path is supported.
+Check execution capability at the operation that needs it. Define native
+initialization, cleanup, and external validity obligations in the interoperation
+contract; arbitrary C++ side effects are outside semantic execution.
+
+The compiler build is independent of Crafts headers and native libraries.
+Programs being compiled receive their standard-source dependencies through
+ordinary source discovery.
 
 ## Semantic authority and native boundaries
 

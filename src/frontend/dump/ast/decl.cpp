@@ -433,10 +433,18 @@ auto ASTDumper::render_top_level_item(
                         [&](const ASTCppImportForm& implementation) noexcept {
                             render_span_field(
                                 nested_prefix,
-                                true,
+                                !implementation.target.has_value(),
                                 "cpp_import",
                                 implementation.span
                             );
+                            if (implementation.target) {
+                                render_span_field(
+                                    nested_prefix,
+                                    true,
+                                    "cpp_target",
+                                    implementation.target->span
+                                );
+                            }
                         },
                     }
                 );

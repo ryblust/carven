@@ -2,7 +2,7 @@
 
 - **Status:** Exploration
 - **Implementation:** Not started
-- **Scope:** Direct structured constant initializer and extent expressions, scalar text traversal, address observation, literal identity, and retained reference graphs
+- **Scope:** Direct structured constant initializer and extent expressions, scalar text traversal, address observation, literal identity, retained reference graphs, and deferred host scripting and build-stage execution
 
 ## Summary
 
@@ -12,6 +12,12 @@ independent design slices. Structured roots can reduce one-use `const fn` helper
 address observations and retained reference graphs need explicit identity and
 stability guarantees.
 
+Host scripting and an explicit build-stage entry are deferred extensions of the
+shared execution model. Their remaining questions concern host capabilities,
+invocation, dependencies, and output publication. They can be explored without
+requiring address observation, retained reference graphs, or arbitrary native
+C++ execution.
+
 ## Execution boundary
 
 Structured control already executes in `const fn`, `const` blocks, and static
@@ -20,6 +26,15 @@ runtime bodies. Arrays, tuples, structures, payload enums, String, Vector, and
 slices have admitted execution and retained-value paths. These implemented
 contracts belong to the [execution reference](../docs/compiler/analysis/evaluation.md);
 they are not pending extensions here.
+
+Interpretation and explicit static execution share semantic operations and the
+executor. Supported input, clocks, waits, and timeout composition already execute
+through compiler-host adapters. `const fn` declares static execution capability;
+observable work belongs to the selected stage. Type dependency queries restrict
+host effects, and retaining a completed constant has separate publication rules.
+Native C++ inputs may be present, but semantic execution does not load their
+code or run their global initialization. These boundaries already support a
+useful language subset independently of complete native interoperation.
 
 The remaining structured-root slice is direct `if`, `match`, or `try` in a
 constant initializer or array extent. `StaticRootSite` rejects those forms even
@@ -143,6 +158,95 @@ Native reconstruction must establish C++20 static initialization across modules
 without silently adding runtime initialization. Observe alias relationships and
 backing lifetimes in the generated program.
 
+## Host scripting and staged builds
+
+### Research basis
+
+| Source | Observed boundary | Implication for Carven |
+| --- | --- | --- |
+| NimScript | Uses Nim's compile-time VM for standalone scripts, configuration, and build tasks; ordinary FFI is unavailable. | A useful scripting subset can reuse semantic execution while native integration develops separately. |
+| Zig Build System | `build.zig` describes a graph of build steps, including generated files and tool execution. | Sharing the project language does not settle task ordering, artifact ownership, or rebuild policy. |
+| Cargo build scripts | A host executable runs before package compilation, writes generated outputs under `OUT_DIR`, and reports file/environment dependencies for reruns. Host configuration differs from target configuration. | A pre-build entry needs explicit inputs, outputs, failure behavior, and host/target context even when it shares the application's language. |
+| Build Systems à la Carte | Separates task scheduling from the decision to rebuild and studies static and dynamic dependencies. | Keep execution capability, dependency discovery, and result reuse as separate decisions. |
+
+These comparisons motivate the following candidates. The implementation and
+invocation model remain open.
+
+### DEFER-02 — Host scripting through semantic execution
+
+- **Status:** Deferred
+- **Reason deferred:** Stabilize the current standard APIs, host execution, and
+  native boundaries before extending the execution surface.
+- **Reactivation condition:** After that consolidation, select a concrete script
+  such as reading project configuration and generating a source or resource file,
+  with a bounded set of missing host operations.
+
+Use the existing source language, checking, and semantic executor for scripts.
+Select host capabilities from the consumer: configuration-driven generation may
+need file access and arguments; a tool wrapper may also need environment and
+process operations. Define each capability's execution stages, value and failure
+contracts, resource ownership, and cancellation behavior where applicable.
+Scripting does not require interpreting arbitrary C++ providers or emulating
+their ABI and global initialization.
+
+Choose invocation and process behavior before broadening the API: arguments,
+working directory, output routing, exit status, and interruption all affect a
+script's observable contract. Compare extending `interpret` with a dedicated
+script entry only when the consumer demonstrates a distinction. Calls supported
+in multiple stages preserve ordinary ordering, ownership, and failures; host
+state is observed in the selected environment. Execution support does not make
+a live host resource eligible for constant retention.
+
+Keep execution obligations explicit when analysis or tooling requests values.
+A dependency query must not replay a script's host work. Reusing a value must not
+silently skip required reads, writes, output, or cleanup. Frontend analysis owns
+query effects and event delivery; compiler optimization owns reuse experiments
+under those contracts. A first scripting consumer can execute without caching.
+
+Validate the selected script's values, typed failures, output, exit behavior,
+and resource cleanup. Compare native and interpreted behavior for their common
+supported operations. Exercise reached unsupported native operations and ensure
+that merely collecting native inputs does not reject an otherwise supported
+script. Include explicit static execution only for capabilities admitted there.
+
+### DEFER-03 — Explicit build-stage entry
+
+- **Status:** Deferred
+- **Reason deferred:** A build entry needs a demonstrated generation workflow and
+  stage/dependency contracts beyond the current executor. Xmake owns current
+  project builds and native scheduling.
+- **Reactivation condition:** A project needs configuration-driven source or
+  resource generation before application analysis, and the required scripting
+  capabilities have a defined contract.
+
+`build.cv` is a provisional entry name. Compare an ordinary Carven script invoked
+by the existing build tool with a dedicated entry that publishes inputs for a
+subsequent compilation. A task-graph API is a further option if a concrete
+multi-step workflow requires scheduling and incremental reuse. The initial
+consumer is configuration input, generation of one `.cv` file, and compilation
+and execution of its application through the existing toolchain.
+
+Define the stage boundary independently of ordinary application `const` roots:
+the build entry and its own dependencies must be analyzable before it can produce
+application inputs. Reject cycles that require those outputs to analyze the
+entry itself. Record which source selection and configuration the next stage
+receives, and distinguish the executing host from the generated program's target.
+
+Specify output ownership and successful publication before adding reuse. A failed
+or interrupted generation must not make partial output available as a completed
+input. Distinguish repeatable dependency reads from effects whose execution count
+matters. File, environment, and tool dependencies need an explicit declaration
+or observation model; clock reads and other untracked observations need a defined
+rerun or freezing policy. Language execution capability alone establishes none
+of these cache guarantees.
+
+The bounded experiment should establish stage ordering, generation failure and
+cleanup, dependency cycles, host/target separation, and agreement with a fresh
+build after input changes. If reuse is selected, include unchanged runs, changed
+configuration or tools, and obsolete output removal. Once invocation, artifacts,
+and scheduling require a developed toolchain contract, move this slice to a
+dedicated proposal while keeping host execution owned here.
+
 ## Open decisions
 
 ### OPEN-01 — Define one structured static-root form
@@ -192,3 +296,11 @@ stops while implementing the selected observation.
 - [Static-root construction](../src/semantic/analysis/constant/root.cppm): source admission for initializer and extent expressions.
 - [Constant admission tests](../tests/internal/semantic/analysis/const_admission.cpp): structured body support and rejected scalar traversal.
 - [Text](../docs/language/text.md): `.bytes` and `.chars` source contracts.
+- [CLI interpretation](../docs/toolchain/cli.md#interpretation): current invocation, execution subset, and native boundary.
+- [Static execution](../docs/language/constants.md#static-execution-of-functions): callable capability, host effects, and result retention.
+- [Frontend analysis](frontend-analysis.md#static-evaluation-and-observable-effects): query execution, effects, and event delivery.
+- [Compiler optimization](compiler-optimization.md): preparation, analysis reuse, and build-worker boundaries.
+- [NimScript](https://nim-lang.org/docs/nims.html): shared compile-time VM, scripting and build tasks, and FFI limitations.
+- [Zig Build System](https://ziglang.org/learn/build-system/): build graphs, generated files, and tool execution.
+- [Cargo build scripts](https://doc.rust-lang.org/cargo/reference/build-scripts.html): host execution, output directories, and dependency-based reruns.
+- Mokhov, Mitchell, and Peyton Jones, [Build Systems à la Carte](https://www.microsoft.com/en-us/research/wp-content/uploads/2018/03/build-systems-final.pdf), ICFP 2018: scheduling and rebuilding as separate design choices.

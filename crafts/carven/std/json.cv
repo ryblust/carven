@@ -1,0 +1,317 @@
+import .json.node using { Node, Member };
+import .json.parse using { parse_node, parse_node_bytes, parse_number_node };
+import .json.serialize using serialize_node;
+import .json.string using { begin_string, next_string_part };
+import .json.syntax using { syntax_state, next_event };
+import std::core using NumberParseError;
+import std::utf using UTF8Error;
+
+export enum JSONErrorKind {
+    UnexpectedEnd,
+    UnexpectedByte,
+    InvalidEscape,
+    InvalidHex,
+    UnpairedSurrogate,
+    ControlCharacter,
+    InvalidNumber,
+    TrailingInput,
+    DepthLimit,
+}
+
+// Zero-based byte offset; UnexpectedEnd points at the input length.
+export struct JSONError {
+    kind: JSONErrorKind,
+    offset: usize,
+}
+
+export enum ValueError {
+    WrongKind,
+    MissingKey,
+    IndexOutOfBounds,
+    NumberConversion,
+    DepthLimit,
+}
+
+export enum ValueKind: u8 {
+    Null,
+    Boolean,
+    Number,
+    String,
+    Array,
+    Object,
+}
+
+private const fn find_member(members: Vector<Member>, key: str) -> usize {
+    var index = members.length();
+    while index != 0 {
+        index -= 1;
+        if members[index].key.as_str() == key { return index; }
+    }
+    return members.length();
+}
+
+// Child access returns independent values; text access borrows this value.
+export class Value {
+    node: Node,
+
+    const fn null() -> Value => { node:.Null };
+    const fn boolean(value: bool) -> Value => { node:.Boolean(value) };
+    const fn number(text: str) -> Value throw JSONError => { node: parse_number_node(text)? };
+    const fn integer(value: i64) -> Value => { node:.Number(f"{value}") };
+    const fn unsigned_integer(value: u64) -> Value => { node:.Number(f"{value}") };
+
+    const fn real(value: f64) -> Value throw ValueError {
+        if !value.is_finite() { throw ValueError::NumberConversion; }
+        return { node:.Number(f"{value}") };
+    }
+
+    const fn string(text: str) -> Value => { node:.Text(text as String) };
+    const fn array() -> Value => { node:.Array([]) };
+    const fn object() -> Value => { node:.Object([]) };
+    const fn parse(text: str) -> Value throw JSONError => { node: parse_node(text)? };
+
+    const fn parse_bytes(bytes: [u8]) -> Value throw JSONError + UTF8Error => {
+        node: parse_node_bytes(bytes)?,
+    };
+
+    const fn to_json(self) -> String throw ValueError => serialize_node(self.node)?;
+
+    const fn kind(self) -> ValueKind {
+        return match self.node {
+            .Null => .Null,
+            .Boolean(_) => .Boolean,
+            .Number(_) => .Number,
+            .Text(_) => .String,
+            .Array(_) => .Array,
+            .Object(_) => .Object,
+        };
+    }
+
+    const fn as_bool(self) -> bool throw ValueError {
+        match self.node {
+            .Boolean(value) => return value,
+            _ => throw ValueError::WrongKind,
+        }
+    }
+
+    const fn as_str(self) -> str throw ValueError {
+        match self.node {
+            .Text(text) => return text.as_str(),
+            _ => throw ValueError::WrongKind,
+        }
+    }
+
+    const fn number_text(self) -> str throw ValueError {
+        match self.node {
+            .Number(text) => return text.as_str(),
+            _ => throw ValueError::WrongKind,
+        }
+    }
+
+    const fn as_i64(self) -> i64 throw ValueError {
+        let text = self.number_text()?;
+        return try {
+            i64::parse(text)?
+        } catch {
+            NumberParseError(_) => throw ValueError::NumberConversion,
+        };
+    }
+
+    const fn as_u64(self) -> u64 throw ValueError {
+        let text = self.number_text()?;
+        return try {
+            u64::parse(text)?
+        } catch {
+            NumberParseError(_) => throw ValueError::NumberConversion,
+        };
+    }
+
+    const fn as_f64(self) -> f64 throw ValueError {
+        let text = self.number_text()?;
+        return try {
+            f64::parse(text)?
+        } catch {
+            NumberParseError(_) => throw ValueError::NumberConversion,
+        };
+    }
+
+    const fn length(self) -> usize throw ValueError {
+        return match self.node {
+            .Array(items) => items.length(),
+            .Object(members) => members.length(),
+            _ => throw ValueError::WrongKind,
+        };
+    }
+
+    const fn at(self, index: usize) -> Value throw ValueError {
+        match self.node {
+            .Array(items) => {
+                if index >= items.length() { throw ValueError::IndexOutOfBounds; }
+                return { node: items[index] };
+            },
+            _ => throw ValueError::WrongKind,
+        }
+    }
+
+    const fn push(&self, &&value: Value) throw ValueError {
+        match self.node {
+            .Array(&items) => {
+                let child = (&&value).node;
+                items.push(&&child);
+            },
+            _ => throw ValueError::WrongKind,
+        }
+    }
+
+    const fn set_at(&self, index: usize, &&value: Value) throw ValueError {
+        match self.node {
+            .Array(&items) => {
+                if index >= items.length() { throw ValueError::IndexOutOfBounds; }
+                items[index] = (&&value).node;
+            },
+            _ => throw ValueError::WrongKind,
+        }
+    }
+
+    const fn remove_at(&self, index: usize) throw ValueError {
+        match self.node {
+            .Array(&items) => {
+                if index >= items.length() { throw ValueError::IndexOutOfBounds; }
+                items.remove(index);
+            },
+            _ => throw ValueError::WrongKind,
+        }
+    }
+
+    const fn key_at(self, index: usize) -> str throw ValueError {
+        match self.node {
+            .Object(members) => {
+                if index >= members.length() { throw ValueError::IndexOutOfBounds; }
+                return members[index].key;
+            },
+            _ => throw ValueError::WrongKind,
+        }
+    }
+
+    const fn member_value_at(self, index: usize) -> Value throw ValueError {
+        match self.node {
+            .Object(members) => {
+                if index >= members.length() { throw ValueError::IndexOutOfBounds; }
+                return { node: members[index].value };
+            },
+            _ => throw ValueError::WrongKind,
+        }
+    }
+
+    const fn has(self, key: str) -> bool throw ValueError {
+        return match self.node {
+            .Object(members) => find_member(members, key) != members.length(),
+            _ => throw ValueError::WrongKind,
+        };
+    }
+
+    const fn get(self, key: str) -> Value throw ValueError {
+        match self.node {
+            .Object(members) => {
+                let index = find_member(members, key);
+                if index == members.length() { throw ValueError::MissingKey; }
+                return { node: members[index].value };
+            },
+            _ => throw ValueError::WrongKind,
+        }
+    }
+
+    const fn append_member(&self, key: str, &&value: Value) throw ValueError {
+        match self.node {
+            .Object(&members) => {
+                let member = Member {
+                    key: key as String,
+                    value: (&&value).node
+                };
+                members.push(&&member);
+            },
+            _ => throw ValueError::WrongKind,
+        }
+    }
+
+    const fn set(&self, key: str, &&value: Value) throw ValueError {
+        match self.node {
+            .Object(&members) => {
+                let index = find_member(members, key);
+                if index == members.length() {
+                    let member = Member {
+                        key: key as String,
+                        value: (&&value).node
+                    };
+                    members.push(&&member);
+                } else {
+                    members[index].value = (&&value).node;
+                }
+            },
+            _ => throw ValueError::WrongKind,
+        }
+    }
+
+    const fn erase(&self, key: str) -> usize throw ValueError {
+        match self.node {
+            .Object(&members) => {
+                var removed: usize = 0;
+                var index: usize = 0;
+                while index < members.length() {
+                    if members[index].key.as_str() == key {
+                        members.remove(index);
+                        removed += 1;
+                    } else {
+                        index += 1;
+                    }
+                }
+                return removed;
+            },
+            _ => throw ValueError::WrongKind,
+        }
+    }
+}
+
+private const fn validate_input(bytes: [u8]) throw JSONError {
+    var state = syntax_state();
+    while {
+        match next_event(bytes, &state)? {
+            .Complete => return,
+            _ => {},
+        }
+    }
+}
+
+// str already establishes UTF-8 validity. All JSON syntax is still checked.
+export const fn validate(text: str) throw JSONError => validate_input(text.bytes)?;
+
+export const fn validate_bytes(bytes: [u8]) throw JSONError + UTF8Error => validate(
+    str::from_utf8(bytes)?
+)?;
+
+// Exactly one quoted string. The result owns independent decoded storage.
+export const fn decode_string(text: str) -> String throw JSONError {
+    var offset: usize = 0;
+    begin_string(text.bytes, &offset)?;
+    var result = String {};
+    while {
+        let start = offset;
+        match next_string_part(text.bytes, &offset)? {
+            .End(end) => {
+                if offset != text.byte_length() {
+                    throw JSONError {
+                        kind:.TrailingInput,
+                        offset: offset
+                    };
+                }
+                // Quotes and escapes are ASCII boundaries in valid UTF-8.
+                result.append(str::from_utf8_unchecked(text.bytes.slice(start, end)));
+                return &&result;
+            },
+            .Escape(end, character) => {
+                result.append(str::from_utf8_unchecked(text.bytes.slice(start, end)));
+                result.push(character);
+            },
+        }
+    }
+}

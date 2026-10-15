@@ -1,0 +1,31 @@
+import std::io using { IOError, Read };
+import std::utf using UTF8ErrorKind;
+
+const async fn recover() -> String throw IOError {
+    var rejected = false;
+    try {
+        let _ = await stdin().read_line()?;
+    } catch {
+        IOError(error) => {
+            rejected = match error {
+                .InvalidUTF8(details) => details.kind
+                    == UTF8ErrorKind::InvalidLead
+                    && details.offset == 0,
+                .System(_) => false,
+                .InputTooLarge(_) => false
+            };
+        }
+    }
+    assert(rejected);
+    return match await stdin().read_line()? {
+        .Data(text) => text,
+        .End => ""
+    };
+}
+
+const text = await recover()?;
+
+const {
+    assert(text == "valid");
+    println("recovered");
+}

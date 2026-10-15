@@ -649,9 +649,24 @@ auto Parser::parse_function(
     auto implementation = std::optional<ASTFunctionImplementation> {};
     auto end = std::optional<Span> {};
     if (cpp_import.has_value()) {
+        auto target = std::optional<ASTCppFunctionTarget>();
+        if (match(TokenKind::Equal)) {
+            const auto root = expect(TokenKind::ColonColon, "expected '::' before C++ target");
+            auto components = std::vector<Span>();
+            do {
+                components.push_back(expect_name_component("expected C++ target name").span);
+            } while (!failed && match(TokenKind::ColonColon));
+            if (failed) {
+                return std::nullopt;
+            }
+            target = ASTCppFunctionTarget {
+                .span = join(root.span, components.back()),
+                .components = std::move(components),
+            };
+        }
         const auto semicolon =
             expect(TokenKind::Semicolon, "expected ';' after import(cpp) declaration");
-        implementation = ASTCppImportForm {.span = *cpp_import};
+        implementation = ASTCppImportForm {.span = *cpp_import, .target = std::move(target)};
         end = semicolon.span;
     } else {
         const auto body = parse_callable_body();

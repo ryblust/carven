@@ -30,10 +30,6 @@ enum class ProvidedExport {
     Println,
     Eprint,
     Eprintln,
-    Stdin,
-    StdinType,
-    InputRead,
-    IOError,
     Check,
     Require,
     Fail,
@@ -55,6 +51,9 @@ enum class ProvidedExport {
     F32x8,
     Mask8,
     Timeout,
+    ReadInput,
+    MonotonicNow,
+    WaitUntil,
 };
 
 struct ProvidedExportInfo final {
@@ -62,6 +61,7 @@ struct ProvidedExportInfo final {
     ProvidedModule module;
     std::string_view name;
     bool default_available;
+    bool module_local;
 };
 
 auto provided_module_path(ProvidedModule module) noexcept -> std::string_view;
@@ -69,15 +69,40 @@ auto find_provided_module(std::string_view path) noexcept -> std::optional<Provi
 auto provided_exports() noexcept -> std::span<const ProvidedExportInfo>;
 auto provided_export(ProvidedExport identity) noexcept -> const ProvidedExportInfo&;
 
-enum class StandardRecord { Duration, Timeout, TimeRangeError };
-
-struct StandardRecordKey final {
-    std::string_view module;
-    std::string_view name;
+enum class StandardDeclaration {
+    Stdin,
+    CharFromU32,
+    TextFromUTF8,
+    Duration,
+    RangeError,
+    Timeout,
+    NumberParseError
 };
 
-auto provided_source_key(ProvidedExport identity) noexcept -> std::optional<StandardRecordKey>;
+enum class StandardDeclarationKind { Function, Struct, Enum };
 
-auto standard_record_key(StandardRecord record) noexcept -> StandardRecordKey;
-auto provided_contract_dependencies(ProvidedExport identity) noexcept
-    -> std::span<const StandardRecord>;
+struct StandardDeclarationInfo final {
+    StandardDeclaration identity;
+    StandardDeclarationKind kind;
+    std::string_view module;
+    std::string_view name;
+    bool default_available;
+};
+
+auto standard_declarations() noexcept -> std::span<const StandardDeclarationInfo>;
+auto standard_declaration(StandardDeclaration identity) noexcept -> const StandardDeclarationInfo&;
+
+enum class StandardAssociatedReceiver { Character, Text, Number };
+enum class StandardAssociatedKind { SourceFunction, NumberParse };
+
+struct StandardAssociatedEntry final {
+    StandardAssociatedReceiver receiver;
+    std::string_view name;
+    StandardAssociatedKind kind;
+    StandardDeclaration declaration;
+};
+
+auto standard_associated_receiver(ProvidedExport type) noexcept
+    -> std::optional<StandardAssociatedReceiver>;
+auto find_standard_associated(StandardAssociatedReceiver receiver, std::string_view name) noexcept
+    -> const StandardAssociatedEntry*;

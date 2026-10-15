@@ -1,0 +1,1 @@
+private import(cpp) fn hidden(value: i32) -> i32 = ::native::nested::implementation;

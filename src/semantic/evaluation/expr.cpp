@@ -33,7 +33,7 @@ auto SemanticExecutor::finish_cast_value(
         || kind == CastKind::PointerErase
         || kind == CastKind::PointerRestore) {
         const auto target = source.type.construction();
-        if (auto* pointer = std::get_if<ExecutionPointer>(&operand)) {
+        if (std::holds_alternative<ExecutionPointer>(operand)) {
             return std::move(operand);
         }
         const auto atom = execution_atom(values, operand);
@@ -597,20 +597,24 @@ auto SemanticExecutor::expression_value(
         );
     } else if constexpr (std::same_as<Operation, SemIntrinsic>) {
         if (const auto* intrinsic = std::get_if<FloatIntrinsic>(&operation.operation)) {
-            auto input = co_await this->value(frame, operation.operands.front().expression);
-            if (!input) {
-                co_return std::unexpected(std::move(input.error()));
-            }
-            auto fact = read_fact(*input, source.origin);
-            if (!fact) {
-                co_return std::unexpected(std::move(fact.error()));
+            auto facts = std::vector<ConstantFact>();
+            for (const auto& operand : operation.operands) {
+                auto input = co_await this->value(frame, operand.expression);
+                if (!input) {
+                    co_return std::unexpected(std::move(input.error()));
+                }
+                auto fact = read_fact(*input, source.origin);
+                if (!fact) {
+                    co_return std::unexpected(std::move(fact.error()));
+                }
+                facts.push_back(std::move(*fact));
             }
             auto target = type(source.type.construction(), source.origin);
             if (!target) {
                 co_return std::unexpected(std::move(target.error()));
             }
             co_return finish(
-                evaluate_float_intrinsic_constant_value(values, *intrinsic, *fact, *target),
+                evaluate_float_intrinsic_constant_value(values, *intrinsic, facts, *target),
                 source.origin
             );
         }
@@ -964,6 +968,7 @@ auto SemanticExecutor::expression_value(
                 ExecutionCompositionAction {
                     .policy = operation.policy,
                     .success = operation.success.construction(),
+                    .selection = ExecutionSelectionResult::Indexed,
                 },
             .arguments = std::move(arguments),
         });
@@ -983,7 +988,11 @@ auto SemanticExecutor::expression_value(
         arguments.push_back(std::move(*duration));
         co_return std::make_unique<ExecutionColdOperation>(ExecutionColdOperation {
             .type = source.type.construction(),
-            .action = ExecutionTimeoutAction {.timeout_failure = operation.timeout_failure},
+            .action =
+                ExecutionTimeoutAction {
+                    .timeout_failure = operation.timeout_failure,
+                    .range_failure = operation.range_failure
+                },
             .arguments = std::move(arguments),
         });
     } else if constexpr (std::same_as<Operation, SemAsyncIntrinsic>) {

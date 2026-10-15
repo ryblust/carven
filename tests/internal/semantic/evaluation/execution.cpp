@@ -78,7 +78,7 @@ public:
     auto function_for_callable(CallableID callable) const noexcept
         -> std::optional<FunctionID> override;
     auto prepare_call(CallableID callable, ProgramOriginID origin) noexcept
-        -> ContinuationTask<std::expected<ExecutionBody, ExecutionCallFailure>> override;
+        -> ContinuationTask<std::expected<ExecutionCallTarget, ExecutionCallFailure>> override;
     auto report(const ExecutionEvent& event) noexcept -> void override;
     auto write(ExecutionOutputStream stream, std::string_view bytes) noexcept -> void override;
 
@@ -98,7 +98,7 @@ auto BodyExecutionContext::function_for_callable(CallableID callable) const noex
 }
 
 auto BodyExecutionContext::prepare_call(CallableID callable, ProgramOriginID) noexcept
-    -> ContinuationTask<std::expected<ExecutionBody, ExecutionCallFailure>> {
+    -> ContinuationTask<std::expected<ExecutionCallTarget, ExecutionCallFailure>> {
     const auto body = callable_body_id(program.declarations().callable(callable));
     require(body.has_value());
     co_return ExecutionBody(program.bodies().body(*body));
@@ -122,7 +122,7 @@ public:
     auto function_for_callable(CallableID callable) const noexcept
         -> std::optional<FunctionID> override;
     auto prepare_call(CallableID callable, ProgramOriginID origin) noexcept
-        -> ContinuationTask<std::expected<ExecutionBody, ExecutionCallFailure>> override;
+        -> ContinuationTask<std::expected<ExecutionCallTarget, ExecutionCallFailure>> override;
     auto report(const ExecutionEvent& event) noexcept -> void override;
 
     auto write(ExecutionOutputStream, std::string_view) noexcept -> void override;
@@ -156,7 +156,7 @@ auto ExecutionContext::function_for_callable(CallableID callable) const noexcept
 }
 
 auto ExecutionContext::prepare_call(CallableID callable, ProgramOriginID origin) noexcept
-    -> ContinuationTask<std::expected<ExecutionBody, ExecutionCallFailure>> {
+    -> ContinuationTask<std::expected<ExecutionCallTarget, ExecutionCallFailure>> {
     const auto function = *draft.function_for_callable(callable);
     calls.push_back(function);
     const auto body = co_await requests.ensure_function_body(
@@ -972,10 +972,7 @@ test { let owner = Payload { number: 1 }; ::native(owner); })",
                     3
                 },
                 Scenario {
-                    R"(import std::simd using u8x16;
-import std::simd using u8x32;
-
-const table = u8x16::splat(7); const indices = u8x32::splat(0);
+                    R"(const table = u8x16::splat(7); const indices = u8x32::splat(0);
         const fn run() -> i32 {
             var input = indices; return table.lookup(input).lane(0) as i32;
         })",
@@ -983,10 +980,7 @@ const table = u8x16::splat(7); const indices = u8x32::splat(0);
                     7
                 },
                 Scenario {
-                    R"(import std::simd using u8x16;
-import std::simd using u8x32;
-
-const table = u8x32::splat(9); const indices = u8x16::splat(0);
+                    R"(const table = u8x32::splat(9); const indices = u8x16::splat(0);
         const fn run() -> i32 {
             var input = indices; return table.lookup(input).lane(0) as i32;
         })",
@@ -994,9 +988,7 @@ const table = u8x32::splat(9); const indices = u8x16::splat(0);
                     9
                 },
                 Scenario {
-                    R"(import std::simd using u8x32;
-
-const table = u8x32::splat(5);
+                    R"(const table = u8x32::splat(5);
         const fn run() -> i32 { var input = table; return input.lane(0) as i32; })",
                     0uz,
                     5

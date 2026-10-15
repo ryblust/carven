@@ -141,7 +141,7 @@ is valid, including when exported through a generated C++ interface.
 
 Copying, passing, and taking a pointer perform no allocation, reference counting,
 or automatic release. Owners and adapters implement the external resource protocol.
-Native `T**` output protocols and buffer traversal remain in `#[cpp]`; `&p` passes a
-pointer slot by reference and does not implicitly compute a `T**`. Declared
-`import(cpp)` and `export(cpp)` signatures preserve these same pointer and access
-rules.
+Native C++ adapters implement `T**` output protocols and buffer traversal.
+`&p` passes a pointer slot by reference and does not implicitly compute a `T**`.
+Declared `import(cpp)` and `export(cpp)` signatures preserve these same pointer
+and access rules.

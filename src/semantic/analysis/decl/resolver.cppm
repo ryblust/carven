@@ -78,6 +78,7 @@ private:
 
         auto evaluate_array_extent(ASTExprID expression) noexcept -> AnalysisTask<std::uint64_t>;
         auto observe_expression(ASTExprID expression, ConstructionTypeRef type) noexcept -> void;
+        auto observe_function(FunctionID function, Span name) noexcept -> void;
 
         auto observe_field(ProgramOriginID definition, Span name, ConstructionTypeRef type) noexcept
             -> void;
@@ -99,6 +100,8 @@ private:
 
         auto construction_requests() noexcept -> ConstructionRequests&;
         auto resolve_duration_type(Span span) noexcept -> AnalysisTask<TypeID>;
+        auto resolve_number_parser(BuiltinType number, Span span) noexcept
+            -> AnalysisTask<CallableID>;
 
         auto resolve_type_qualifier(ASTExprID expression) noexcept
             -> AnalysisTask<std::optional<ConstructionTypeRef>>;
@@ -219,5 +222,5 @@ private:
     std::vector<std::optional<EnumDeclaration>> enumerations;
     std::vector<std::optional<ConstructionEnumCaseDeclaration>> enum_cases;
     std::vector<std::optional<ModuleConstantDeclaration>> module_constants;
-    std::vector<std::optional<ProgramOriginID>> cpp_import_origins;
+    std::vector<std::optional<CppImportImplementation>> cpp_imports;
 };

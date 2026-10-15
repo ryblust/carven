@@ -14,10 +14,8 @@ struct Failure {
 }
 
 const async fn number(value: i32, turns: i32) -> i32 {
-    var remaining = turns;
-    while remaining > 0 {
+    for _ in 0..turns {
         await yield_once();
-        --remaining;
     }
     return value;
 }
@@ -28,6 +26,67 @@ const async fn inferred() => 42;
 
 const async fn idle() {
     await yield_once();
+}
+
+const async fn snapshot(values: f32x4, active: mask4) -> f32x4 {
+    await yield_once();
+    return active.select(values, f32x4::splat(0.0));
+}
+
+struct LaneValues {
+    values: f32x4,
+    active: mask4,
+}
+
+enum LaneFailure {
+    Rejected(LaneValues),
+}
+
+const async fn update(&values: f32x4, &active: mask4, &unit: void) -> (LaneFailure, mask4) {
+    await yield_once();
+    values += 1.0;
+    active = values >= 6.0;
+    unit = ();
+    return (
+        LaneFailure::Rejected(
+            LaneValues {
+                values: values,
+                active: active
+            }
+        ),
+        active
+    );
+}
+
+const async fn reject(&&values: LaneFailure) throw LaneFailure {
+    await yield_once();
+    throw values;
+}
+
+const async fn vector_values() -> bool {
+    var values = f32x4::from_array([1.0, 2.0, 3.0, 4.0]);
+    var active = mask4::prefix(2);
+    let pending = snapshot(values, active);
+    values = f32x4::splat(5.0);
+    active = mask4::prefix(0);
+    let captured = await pending;
+    var unit = ();
+    let (completed, returned_active) = await update(&values, &active, &unit);
+    let rejected = try {
+        await reject(&&completed)?;
+        false
+    } catch {
+        LaneFailure(error) => match error {
+            .Rejected(value) => (value.values == 6.0).all() && value.active.all(),
+        },
+    };
+    return captured.to_array()
+        == [1.0, 2.0, 0.0, 0.0]
+        && (values == 6.0).all()
+        && active.all()
+        && returned_active.all()
+        && unit == ()
+        && rejected;
 }
 
 const async fn rejected(code: i32, turns: i32) -> i32 throw Failure {
@@ -167,6 +226,7 @@ const async fn ambient_cancellation() -> bool {
 }
 
 const async fn exercise() => await products()
+    && await vector_values()
     && await cold_drop(false)
     && await construction_failure()
     && await races()

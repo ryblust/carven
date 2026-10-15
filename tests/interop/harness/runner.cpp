@@ -2,6 +2,7 @@
 #include <carven/api/tests/interop/printing/structural.hpp>
 #include <carven/api/tests/interop/providers/contracts.hpp>
 #include <carven/api/tests/interop/scalars/export_argument.hpp>
+#include <carven/api/tests/interop/scalars/math.hpp>
 #include <carven/generated/carven-test-runner.hpp>
 
 #include <csignal>
@@ -30,6 +31,8 @@ auto main(int argc, char** argv) noexcept -> int {
     if (operation == "structural-output") {
         carven::api::tests::interop::printing::structural::structural_output();
         return 0;
+    } else if (operation == "math-reversed") {
+        carven::api::tests::interop::scalars::math::discard_clamp32(2.0f, 1.0f);
     } else if (operation == "contract-stop") {
         auto context =
             carven::runtime::TestContext(+[](const carven::runtime::TestFailure&) noexcept {});

@@ -5,6 +5,7 @@ import :semantic.evaluation.memory;
 import :semantic.evaluation.operation;
 import :semantic.evaluation.shape;
 import :semantic.semir.structured;
+import :support.input;
 import std;
 
 enum class ExecutionFlow { Normal, Return, Break, Continue };
@@ -224,8 +225,89 @@ private:
         ExecutionLogicalTask* dependency
     ) noexcept -> void;
 
+    class TimerWait final {
+    public:
+        TimerWait(SemanticExecutor& executor, std::int64_t deadline) noexcept;
+        TimerWait(const TimerWait&) = delete;
+        TimerWait(TimerWait&&) = delete;
+        ~TimerWait() noexcept;
+        auto await_ready() noexcept -> bool;
+
+        template<typename Promise>
+        auto await_suspend(std::coroutine_handle<Promise> continuation) noexcept -> void {
+            suspend(continuation.promise().task_loop(), continuation);
+        }
+
+        auto await_resume() const noexcept -> bool;
+
+    private:
+        auto suspend(ContinuationTaskLoop& loop, std::coroutine_handle<> continuation) noexcept
+            -> void;
+        SemanticExecutor& executor;
+        friend class SemanticExecutor;
+        std::int64_t deadline;
+        std::optional<std::list<TimerWait*>::iterator> registration;
+        std::optional<ExecutionWork> work;
+        bool cancelled = false;
+    };
+
+    class InputWait final {
+    public:
+        InputWait(
+            SemanticExecutor& executor,
+            ExecutionInputAction action,
+            TypeID result_type,
+            ProgramOriginID origin
+        ) noexcept;
+        InputWait(const InputWait&) = delete;
+        InputWait(InputWait&&) = delete;
+        ~InputWait() noexcept;
+        auto await_ready() const noexcept -> bool;
+
+        template<typename Promise>
+        auto await_suspend(std::coroutine_handle<Promise> continuation) noexcept -> void {
+            suspend(continuation.promise().task_loop(), continuation);
+        }
+
+        auto await_resume() noexcept -> ExecutionResult<ExecutionValue>;
+
+    private:
+        friend class SemanticExecutor;
+        auto suspend(ContinuationTaskLoop& loop, std::coroutine_handle<> continuation) noexcept
+            -> void;
+        SemanticExecutor& executor;
+        TypeID result_type;
+        ProgramOriginID origin;
+        std::size_t user_limit;
+        HostInputRequest request;
+        std::optional<ExecutionWork> work;
+        std::optional<ExecutionResult<ExecutionValue>> result;
+        std::optional<std::list<InputWait*>::iterator> registration;
+    };
+
+    auto input_value(const HostInputResult& response, const InputWait& input) noexcept
+        -> ExecutionResult<ExecutionValue>;
+    auto host_clock(ProgramOriginID origin) noexcept -> ExecutionResult<std::int64_t>;
+    auto poll_host() noexcept -> void;
+    auto wait_host() noexcept -> bool;
+    static auto task_cancel_requested(const ExecutionLogicalTask& task) noexcept -> bool;
+    auto cancelled(ProgramOriginID origin) const noexcept -> ExecutionFailure;
+    auto source_failure(TypeID failure, ExecutionValue payload, ProgramOriginID origin) noexcept
+        -> ExecutionFailure;
+    auto host_operation(ExecutionColdOperation operation, ProgramOriginID origin) noexcept
+        -> ExecutionTask<ExecutionValue>;
+    auto timeout(ExecutionColdOperation operation, ProgramOriginID origin) noexcept
+        -> ExecutionTask<ExecutionValue>;
+
     auto detach_argument(ExecutionOperand operand, ProgramOriginID origin) noexcept
         -> ExecutionResult<ExecutionValue> override;
+
+    auto provided_call(
+        ProvidedFunction function,
+        TypeID result,
+        std::vector<ExecutionOperand> arguments,
+        ProgramOriginID origin
+    ) noexcept -> ExecutionTask<ExecutionValue>;
 
     auto bind(ExecutionFrame& frame, std::size_t slot, ExecutionValue value) noexcept -> void;
     auto release(ExecutionFrame& frame, std::size_t slot) noexcept -> void;
@@ -545,6 +627,8 @@ private:
     std::list<ExecutionLogicalTask> tasks;
     std::deque<ExecutionWork> ready;
     std::list<ReadySelection*> cancellation_waiters;
+    std::list<TimerWait*> timers;
+    std::list<InputWait*> input_requests;
     bool cancellation_dirty = false;
     ExecutionLogicalTask* current = nullptr;
     std::optional<ExecutionFailure> stopped;

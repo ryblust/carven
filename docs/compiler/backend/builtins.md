@@ -5,6 +5,29 @@ representation contracts. Format plans and their budgets
 belong to preparation; this reference describes runtime and target operations
 that consume those plans.
 
+## Floating realization
+
+Floating `is_finite`, `sqrt`, `abs`, `min`, `max`, and `clamp` use the checked
+FloatIntrinsic operation with source-ordered Read operands of one concrete
+scalar or vector shape. Scalar receivers use f32/f64 precision; floating vectors
+apply f32 semantics per lane. `is_finite` returns bool for scalars and the
+corresponding mask for vectors; numeric results retain the receiver's type.
+Scalar classification and square root lower to the corresponding `<cmath>`
+functions. Scalar selection uses `numeric/float.hpp`; SIMD methods preserve the
+same NaN propagation and signed-zero selection per lane. Clamp retains execution even when its
+result is discarded and reports an assertion failure at the call's source site
+for reversed or unordered bounds.
+
+## Numeric parse realization
+
+Numeric parse calls use the ordinary fallible-call transport and realize as
+`runtime::parse_number<Number, Error>`, with the generated standard
+`NumberParseError` type as `Error`. `numeric/parse.hpp` converts
+the entire text view with `std::from_chars`, selecting general format for floating
+types and base ten for integers. It returns an ordinary `Outcome` containing the
+scalar result or the published Invalid case. No input backing is retained by the
+result or failure. Generated consumers compile with C++20.
+
 ## Owning text realization
 
 Text byte and scalar queries use `runtime::text_bytes` and `runtime::text_chars`.
@@ -114,13 +137,17 @@ Ownership analysis establishes borrowing validity before lowering. Runtime views
 carry no owner metadata. String owners, pending operands, retained range sources,
 closure captures, and Outcome payloads use ordinary construction and cleanup frames.
 
+Checked character and text entries select ordinary standard-source functions.
+Their calls lower through the shared callable and typed-failure paths; ordinary
+ownership analysis retains the borrowed text result's backing relationship.
+
 Unchecked character construction lowers to a C++ cast to the character
-representation. Unchecked UTF-8 construction calls `utf8_text` from `text.hpp`
+representation. Unchecked UTF-8 construction calls `utf8_text` from `text/view.hpp`
 to create a view over the input bytes. Neither operation validates content;
 semantic ownership analysis preserves the text's input backing before lowering.
 The backend supplies runtime includes without a source-level header import.
 
-`utf.hpp` validates borrowed, contiguous UTF-8 through `utf8_is_valid`.
+`text/utf8.hpp` validates borrowed, contiguous UTF-8 through `utf8_is_valid`.
 Constant evaluation, inputs shorter than 32 bytes, and targets selecting the
 portable SIMD backend use its scalar scanner. Other runtime inputs use the
 existing SIMD component to check complete 32-byte blocks. Three preceding bytes
@@ -128,14 +155,16 @@ carry continuation requirements across blocks; the scalar scanner revisits the
 last scalar and checks the remaining tail, including truncation at an exact block
 boundary. Loads copy only proven readable bytes and require no report site.
 The scan returns a Boolean; `checked_utf8` alone attaches the ingress site's
-failure report. Single-scalar encoding and decoding remain scalar.
+failure report. The same `text/utf8.hpp` header owns scalar validation, encoding,
+and decoding. Standard-source validation owns typed UTF errors.
 
 SIMD selection follows the consumer's compilation target and
 `CARVEN_SIMD_FORCE_PORTABLE`. `simd::uses_native_backend` reports whether NEON or
 AVX2 intrinsics were selected. The portable backend may also compile to machine
 vector instructions. Translation units using these inline runtime headers select
-the same SIMD backend. Runtime does not depend on the `std::utf` craft,
-whose source implementation owns streaming state and precise encoding errors.
+the same SIMD backend. Runtime does not depend on the `std::utf` craft.
+Its source algorithms compose the shared UTF error contract with their own
+streaming state and text-processing rules.
 
 ## Builtin calls and reports
 
@@ -187,7 +216,7 @@ or explanation storage. Known failures need no report guard. Dynamic conditions
 form the guard directly; fatal reports terminate the lowering continuation.
 
 Comparison explanations observe the condition after operand sequencing. The
-observer in `report.hpp` compares once and renders operands on failure, before
+observer in `observe.hpp` compares once and renders operands on failure, before
 message evaluation can change their values. Short-circuit explanations use
 ordinary expression construction: selected branches observe the
 right Boolean result, and a skipped failing branch records `<not evaluated>`.
@@ -225,8 +254,9 @@ to complete constant masks. Memory operations still check the actual slice range
 a known lane index is not a memory-range proof.
 
 `testing.hpp` owns test-stop transport and `TestContext`, which tracks the active
-case and completed-case counts. `report.hpp` owns condition observation, failure
-text, and fatal assertions. `check`, `require`, and `fail` call
+case and completed-case counts. `observe.hpp` owns condition observation;
+`report.hpp` owns failure text and fatal assertions without depending on value
+display. `check`, `require`, and `fail` call
 `report_test_failure`, which reaches the runner of the active test and traps at
 the report's site when no test is active.
 The default layout groups test identity, condition, operands, and message under

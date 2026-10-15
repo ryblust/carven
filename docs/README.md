@@ -3,18 +3,19 @@
 This directory contains Carven's tutorial, language and implementation references,
 and development guidance for the current checkout.
 
-## Domains
+## Find a reference
 
-| Domain | Scope |
+| Reference | Scope |
 | --- | --- |
 | [Language](language/README.md) | Learning, syntax, program validity, and observable behavior |
+| [Standard capabilities](language/standard.md) | Standard types, functions, module entries, and API references |
 | [Toolchain](toolchain/README.md) | Compiler invocation, native requirements, generated artifacts, and build integration |
 | [Compiler](compiler/README.md) | Semantic construction, analysis, execution, and C++ generation |
 | [Development](development/README.md) | Coding conventions, validation, and design principles |
 
 Runnable programs live in [examples](../examples/README.md); unfinished designs
-live in [proposals](../proposals/README.md). Craft APIs and Xmake procedures are
-documented alongside their sources.
+live in [proposals](../proposals/README.md). Standard API references live in
+`language/`; Xmake procedures are documented alongside their implementation.
 
 The language tutorial introduces concepts in learning order. Grammar and the
 topic references define source rules. Compiler documentation describes their
@@ -35,6 +36,10 @@ Their rules and mechanisms apply to the same checkout.
   locally understandable with the brief context it needs. Use cross-references
   only when essential detail cannot be stated concisely in place. Split documents
   by reader task.
+- Keep standard capability and module navigation in the
+  [standard index](language/standard.md). Define detailed contracts in the owning
+  language topic or capability page; module lookup and defaults belong to
+  [Modules and names](language/modules.md).
 - Describe current behavior, requirements, and limitations in references. Check
   their accuracy against implementation and tests; keep proposed changes in proposals.
 - State supported forms, defaults, evaluation, lifetime, failure, and diagnostic
@@ -43,3 +48,5 @@ Their rules and mechanisms apply to the same checkout.
   condensing text. Combine repeated explanations.
 - Present teaching examples in dependency order, with commands and expected
   results where useful.
+- Keep runnable examples and reference snippets aligned with current language
+  and standard APIs. Use the simplest supported form that expresses their purpose.

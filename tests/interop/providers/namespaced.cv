@@ -1,0 +1,28 @@
+import "providers/namespaced.hpp";
+
+private import(cpp) fn invoke(
+    value: ::namespaced_provider::Value
+) -> i32 = ::namespaced_provider::invoke;
+
+private import(cpp) fn renamed(value: i32) -> i32 = ::namespaced_provider::invoke;
+private import(cpp) fn std(value: i32) -> i32 = ::namespaced_provider::invoke;
+private import(cpp) fn generic(value: i32) -> i32 = ::namespaced_provider::identity;
+private import(cpp) fn keyword_target(value: i32) -> i32 = ::namespaced_provider::async;
+private import(cpp) fn static_target() -> i32 = ::namespaced_provider::Operations::value;
+private import(cpp) fn global_target(value: ::namespaced_provider::Value) -> i32;
+
+private fn ordinary(value: ::namespaced_provider::Value) -> i32 => value.number as i32 + 100;
+
+test "C++ targets: explicit paths preserve overloads, templates, and source callee selection" {
+    let value = ::namespaced_provider::Value { 7 };
+    check(invoke(value) == 8);
+    check(renamed(7) == 9);
+    check(std(7) == 9);
+    check(generic(7) == 7);
+    check(keyword_target(7) == 11);
+    check(static_target() == 42);
+    check(global_target(value) == 10);
+    check(ordinary(value) == 107);
+    let callback = invoke;
+    check(callback(value) == 8);
+}

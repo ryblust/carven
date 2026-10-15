@@ -118,7 +118,8 @@ auto validate_publication_topology(
             if (!declarations.contains(case_id)) {
                 invariant_violation("enum declaration used an invalid case");
             }
-            if (declarations.enum_case(case_id).owner != enum_id) {
+            const auto& source_case = declarations.enum_case(case_id);
+            if (source_case.owner != enum_id) {
                 invariant_violation("enum declaration listed a case owned by another enum");
             }
             claim_once(enum_case_claims, case_id.index(), "enum case was listed more than once");
@@ -128,7 +129,9 @@ auto validate_publication_topology(
 
     auto function_claims = std::vector<std::uint8_t>(function_count, 0u);
     auto structure_claims = std::vector<std::uint8_t>(structure_count, 0u);
+
     auto enum_claims = std::vector<std::uint8_t>(enum_count, 0u);
+
     auto constant_claims = std::vector<std::uint8_t>(constant_count, 0u);
     auto test_claims = std::vector<std::uint8_t>(tests.size(), 0u);
     auto provenance_module_claims = std::vector<std::uint8_t>(module_count, 0u);
@@ -280,9 +283,19 @@ auto validate_publication_topology(
                         "body was assigned to more than one declaration"
                     );
                 },
+                [&](const NumberParseImplementation& implementation) noexcept {
+                    if (named || implementation.invalid.owner() != owner) {
+                        invariant_violation("number parser has an invalid contract");
+                    }
+                },
                 [&](const CppImportImplementation&) noexcept {
                     if (!named) {
                         invariant_violation("C++ import callable had no function declaration");
+                    }
+                },
+                [&](const ProvidedFunctionImplementation&) noexcept {
+                    if (named) {
+                        invariant_violation("provided callable has an invalid contract");
                     }
                 },
             }
@@ -443,6 +456,15 @@ auto validate_publication_facts(
             if (!types.contains(parameter.type)) {
                 invariant_violation("callable signature used an unpublished parameter type");
             }
+        }
+    }
+
+    for (const auto [callable_id, declaration] : declarations.callables()) {
+        static_cast<void>(callable_id);
+        if (const auto* parser =
+                std::get_if<NumberParseImplementation>(&declaration.implementation);
+            parser && !constants.contains(parser->invalid)) {
+            invariant_violation("number parser has an unpublished invalid value");
         }
     }
 

@@ -1,0 +1,1 @@
+import(cpp)fn renamed(value:i32)->i32=::vendor::call;private import(cpp)async fn invoke(value: ::vendor::Context)->i32 throw Error=::vendor::invoke;

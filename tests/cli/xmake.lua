@@ -1,4 +1,41 @@
+local utf_modules = {"utf", "utf.scan", "utf.block", "simd.bytes"}
+
 local case_specs = {
+    ["commands/host"] = {
+        standard_modules = table.join({"io", "time"}, utf_modules),
+        inputs = {"stages.cv", "bytes.cv", "recovery.cv", "limit.cv", "budget.cv", "witness.cv", "module_witness.cv", "cold.cv", "operation.cv", "timers.cv", "pieces.cv"},
+        steps = {
+            {args = {"interpret", "--explicit-inputs", "stages.cv"}, stdin_bytes = "first\r\nsecond\nthird\n", stdout_contains = {"static first second\nruntime third\n"}},
+            {args = {"check", "--explicit-inputs", "bytes.cv"}, stdin = "bytes.txt", stdout_contains = {"bytes\n"}, stderr_contains = {"check passed"}},
+            {args = {"check", "--explicit-inputs", "recovery.cv"}, stdin = "recovery.txt", stdout_contains = {"recovered\n"}, stderr_contains = {"check passed"}},
+            {args = {"check", "--explicit-inputs", "limit.cv"}, stdin_bytes = "abcd\r\n", stdout_contains = {"limit\n"}, stderr_contains = {"check passed"}},
+            {args = {"check", "--explicit-inputs", "budget.cv"}, stdin_bytes = string.rep("x", 70000), exit_code = 1, stderr_contains = {"CV-CONST-LIMIT", "execution value size limit"}},
+            {args = {"check", "--explicit-inputs", "witness.cv"}, stdin = "witness.txt", exit_code = 1, stderr_contains = {"type dependency query"}},
+            {args = {"interpret", "--explicit-inputs", "module_witness.cv"}, stdin = "witness.txt", stdout_contains = {"1 1\n"}},
+            {args = {"check", "--explicit-inputs", "cold.cv"}, stdin = "witness.txt", stdout_contains = {"cold\n"}, stderr_contains = {"check passed"}},
+            {args = {"check", "--explicit-inputs", "operation.cv"}, exit_code = 1, stderr_contains = {"CV-CONST-INITIALIZER"}},
+            {args = {"interpret", "--explicit-inputs", "timers.cv"}, stdout_contains = {"runtime timers\n"}},
+            {args = {"interpret", "--explicit-inputs", "pieces.cv"}, stdin = "pieces.txt", stdout_contains = {"static pieces\nruntime pieces\n"}},
+        },
+    },
+    ["commands/number_parse"] = {
+        standard_modules = {"core"},
+        inputs = {"input.cv"},
+        args = {"interpret", "--explicit-inputs", "input.cv"},
+        stdout = "stdout.txt",
+    },
+    ["commands/math"] = {
+        inputs = {"input.cv"},
+        args = {"interpret", "--explicit-inputs", "input.cv"}, stdout = "stdout.txt",
+    },
+    ["commands/provider"] = {
+        inputs = {"input.cv", "input/provider/Result.cv", "private_only.cv"},
+        steps = {
+            {args = {"compile", "--explicit-inputs", "--artifact-manifest=manifest.json", "-o", "emit", "input.cv", "input/provider/Result.cv", "private_only.cv"},
+                output_files = {"emit/carven/providers/input.hpp", "emit/carven/providers/input/provider/Result.hpp", "emit/carven/providers/private_only.hpp"},
+                file_contains = {["manifest.json"] = {'"path": "carven/providers/input.hpp"', '"path": "carven/providers/input/provider/Result.hpp"'}}},
+        },
+    },
     ["input/mapped"] = {
         inputs = {"second.cv"},
         fixtures = {["../../commands/manifest/input.cv"] = "crafts/toolchain/crafts/input.cv"},
@@ -382,6 +419,37 @@ case_specs["commands/native_execution"] = {
     },
 }
 
+local default_cli = {
+    interpret = {
+        args = {"interpret", "input.cv"}, stdout = "stdout.txt",
+    },
+    tests = {
+        args = {"interpret", "--tests", "input.cv"},
+        stderr_contains = {"tests: 1 passed; 0 failed"},
+    },
+    native_operation = {
+        args = {"interpret", "native.cv"}, exit_code = 1, stdout = "stdout.txt",
+        stderr_contains = {"CV-INTERPRET-ADMISSION", "native C++ function requires compiled execution",
+            "crafts/demo/api.cv:", "native.cv:"},
+    },
+    compile = {
+        args = {"compile", "input.cv", "-o", "emit"},
+        output_files = {"emit/input.cpp", "emit/crafts/demo/api.cpp", "emit/crafts/carven/std/io.cpp"},
+    },
+    run = {
+        args = {"native.cv"}, run_timeout = 120000,
+        stdout_contains = {"native initialized\n", "native destroyed\n"},
+        stdout_ordered = {"fragment initialized\n", "source 42\nnative 43\n", "fragment destroyed\n"},
+    },
+}
+
+-- Keep normal discovery against the real bundled Standard and Runtime Crafts.
+for name, scenario in pairs(default_cli) do
+    scenario.case_dir = "commands/default_cli"
+    scenario.inputs = {"input.cv", "native.cv", "crafts/demo/api.cv", "crafts/demo/native.hpp", "crafts/demo/native.cpp"}
+    case_specs["commands/default_cli/" .. name] = scenario
+end
+
 local interpretation = {
     fixtures = {
         ["../../../language/functions/interpreted_runtime.cv"] = "shared.cv",
@@ -395,7 +463,7 @@ local interpretation = {
         ["../../../language/async/cancelled.cv"] = "async_cancelled.cv",
     },
     inputs = {
-        "input.cv", "unsupported.cv", "inactive_native.cv", "failure.cv", "implicit_failure.cv", "implicit_recovery.cv", "limit.cv", "wrapping.cv",
+        "input.cv", "failure.cv", "implicit_failure.cv", "implicit_recovery.cv", "limit.cv", "wrapping.cv",
         "declarations.cv", "static_only.cv", "static_failure.cv", "main.cv", "floating.cv", "typed_failures.cv", "escaped_failure.cv", "composition_budget.cv",
         "async_waiting_entry.cv", "async_composition_entry.cv", "async_scheduling_entry.cv",
     },
@@ -423,6 +491,7 @@ local interpretation = {
                 "CV-INTERPRET-EXECUTION", "cancellation escaped execution without a consumer"},
             stderr_not_contains = {"unreachable child", "unreachable root"}},
         ["typed-failures"] = {
+            standard_modules = utf_modules,
             args = {"interpret", "typed_failures.cv"},
             stdout = "typed_failures.txt",
         },
@@ -471,11 +540,6 @@ local interpretation = {
             stdout = "stdout.txt",
             stderr_contains = {"call main", "call fib", "return fib", "statement"},
         },
-        ["unsupported"] = {
-            args = {"interpret", "unsupported.cv"}, exit_code = 1,
-            stderr_contains = {"CV-INTERPRET-ADMISSION"},
-        },
-        ["inactive-native"] = {args = {"interpret", "inactive_native.cv"}, exit_code = 0},
         ["division-failure"] = {
             args = {"interpret", "failure.cv"}, exit_code = 1,
             stdout = "failure.txt",
@@ -613,7 +677,7 @@ case_specs["commands/runtime_traps"] = {
         {args = {"interpret", "--explicit-inputs", "range_entry.cv", "range.cv"}, exit_code = 1,
             stderr_contains = {"slice range is out of bounds", "range.cv:2:12"}},
         {args = {"interpret", "--explicit-inputs", "lane_entry.cv", "lane.cv"}, exit_code = 1,
-            stderr_contains = {"SIMD index or memory range is out of bounds", "lane.cv:4:12"}},
+            stderr_contains = {"SIMD index or memory range is out of bounds", "lane.cv:2:12"}},
     },
 }
 
@@ -666,10 +730,10 @@ case_specs["commands/source_collection"] = {
         {installed_toolchain = true, args = {"interpret", "explicit.cv"}, absolute_inputs = {"external/crafts/json/parser.cv"},
             stdout_contains = {"42\n"}},
         {installed_toolchain = true, args = {"compile", "input.cv", "crafts/demo/value.cv", "-o", "emit"},
-            output_files = {"emit/input.cpp", "emit/crafts/demo/value.cpp", "emit/crafts/carven/std/utf/scalar.cpp"}},
+            output_files = {"emit/input.cpp", "emit/crafts/demo/value.cpp", "emit/crafts/carven/fixture.cpp"}},
         {args = {"compile", "input.cv", "-o", "installed"}, installed_toolchain = true,
-            installed_inputs = {"carven/std/utf/scalar.cv"},
-            output_files = {"installed/input.cpp", "installed/crafts/carven/std/utf/scalar.cpp"}},
+            installed_inputs = {"carven/fixture.cv"},
+            output_files = {"installed/input.cpp", "installed/crafts/carven/fixture.cpp"}},
         {installed_toolchain = true, args = {"interpret", "input.cv"}, stdout_contains = {"65 7\n"}},
     },
 }

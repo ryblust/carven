@@ -1,5 +1,4 @@
-import std::simd using { f32x8, mask8 };
-import std::simd.floats using { block_count, load_block, swizzle, store, store_partial };
+import std::simd.floats using { block_count, load_block };
 
 const frozen = f32x8::from_array([1.0, -2.0, 0.5, 4.0, 1.0, -2.0, 0.5, 4.0]);
 const frozen_mask = frozen < 1.0;
@@ -14,6 +13,51 @@ const fn stamped(&trace: i32, digit: i32) -> f32x8 {
 fn control_effect(&trace: i32, digit: i32) -> bool {
     trace = trace * 10 + digit;
     return true;
+}
+
+private const fn same_float(actual: f32, expected: f32) -> bool {
+    if expected != expected { return actual != actual; }
+    return actual == expected && (expected != 0.0 || 1.0 / actual == 1.0 / expected);
+}
+
+test "SIMD: floating methods preserve scalar contracts in each lane" {
+    let infinity = 1.0f32 / 0.0;
+    let nan = 0.0f32 / 0.0;
+    let values = f32x8::from_array([-0.0, 0.0, -3.0, 4.0, -infinity, infinity, nan, 0.25]);
+    let other = f32x8::from_array([0.0, -0.0, 2.0, 9.0, 1.0, -infinity, 1.0, nan]);
+    let lower = f32x8::from_array([-1.0, -1.0, -2.0, -1.0, -1.0, -1.0, -1.0, -1.0]);
+    let finite: mask8 = values.is_finite();
+    check(finite.bits() == 0x8f);
+    let roots = values.sqrt();
+    let magnitudes = values.abs();
+    let smaller = values.min(other);
+    let larger = values.max(other);
+    let bounded = values.clamp(lower, 1.0);
+    for lane in 0usize..8 {
+        let value = values.lane(lane);
+        check(same_float(roots.lane(lane), value.sqrt()));
+        check(same_float(magnitudes.lane(lane), value.abs()));
+        check(same_float(smaller.lane(lane), value.min(other.lane(lane))));
+        check(same_float(larger.lane(lane), value.max(other.lane(lane))));
+        check(same_float(bounded.lane(lane), value.clamp(lower.lane(lane), 1.0)));
+    }
+    check((1.0 / values.clamp(0.0, 0.0)).lane(0) < 0.0);
+}
+
+test "SIMD: floating method operands run once in source order" {
+    var trace = 0;
+    let bounded = stamped(&trace, 1).clamp(stamped(&trace, 2).lane(0), stamped(&trace, 3));
+    check(trace == 123 && (bounded == 2.0).all());
+    var value = f32x8::splat(-2.0);
+    let snapshot = value.max(
+        if true {
+            value = f32x8::splat(3.0);
+            -1.0f32
+        } else {
+            0.0f32
+        }
+    );
+    check((snapshot == -1.0).all() && (value == 3.0).all());
 }
 
 test "SIMD: proven controls preserve operand effects and lane values" {
@@ -69,22 +113,15 @@ export const fn verify_floats() -> bool {
     }
     assert(v.with_lane(3, 7.0).lane(3) == 7.0 && v.lane(3) == 4.0);
     assert(
-        swizzle(v, [7, 6, 5, 4, 3, 2, 1, 0]).to_array()
-            == [4.0, 0.5, -2.0, 1.0, 4.0, 0.5, -2.0, 1.0]
+        v.swizzle([7, 6, 5, 4, 3, 2, 1, 0]).to_array() == [4.0, 0.5, -2.0, 1.0, 4.0, 0.5, -2.0, 1.0]
     );
-    assert((swizzle(v, [1, 1, 1, 1, 1, 1, 1, 1]) == -2.0).all());
+    assert((v.swizzle([1, 1, 1, 1, 1, 1, 1, 1]) == -2.0).all());
     let ordered = f32x8::from_array([0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]);
     const for offset in 0usize..=8 {
         let mixed = ordered.extract(ordered + 8.0, offset);
         assert(mixed.lane(0) == (offset as f32));
         assert(mixed.lane(7) == ((offset + 7) as f32));
     }
-    var output: [f32; 8] = {};
-    store(v, &output);
-    store_partial(v + 1.0, &output, 2);
-    assert(output == [2.0, -1.0, 0.5, 4.0, 1.0, -2.0, 0.5, 4.0]);
-    store_partial(v, &output, 0);
-    assert(output[0] == 2.0);
     let data: [f32; 9] = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
     for size in 0usize..=9 {
         let view = data.slice(0, size);

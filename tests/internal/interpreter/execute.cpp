@@ -26,6 +26,35 @@ auto entry(const SemIRProgram& program) noexcept -> FunctionID {
 }
 
 const TestSuite suite([] static noexcept {
+    "Interpreter: discarded clamp checks bounds after all operand effects"_test =
+        [] static noexcept {
+            const auto program = analyze_test_program(R"(
+fn observe(value: f32) -> f32x8 { print("operand;"); return f32x8::splat(value); }
+println("before");
+observe(0.0).clamp(observe(2.0), observe(1.0));
+println("after");
+)");
+            auto output = std::string();
+            const auto write_output = [&](ExecutionOutputStream, std::string_view bytes) noexcept {
+                output.append(bytes);
+            };
+            const auto result = interpret(
+                program,
+                entry(program),
+                write_output,
+                InterpreterOptions {.limits = static_execution_limits(), .trace = {}, .report = {}}
+            );
+            if (!expect(!result.has_value())) {
+                return;
+            }
+            expect(
+                interpreter_diagnostic_code(result.error().event.reason())
+                == DiagnosticCode::AssertionFailed
+            );
+            expect(result.error().event.termination() == ExecutionTermination::Abort);
+            expect_equal(output, std::string("before\noperand;operand;operand;"));
+        };
+
     "Interpreter: floating classification evaluates the receiver once"_test = [] static noexcept {
         const auto program = analyze_test_program(R"(
         fn observe(&count: i32) -> f32 { count += 1; return 1.0; }
@@ -195,34 +224,6 @@ const TestSuite suite([] static noexcept {
         );
         expect(!result.error().event.calls.empty());
     };
-
-    "Interpreter: native source initialization cannot be silently omitted"_test =
-        [] static noexcept {
-            const auto program = analyze_test_program(R"(
-        #[cpp] ---
-        inline int native_state = [] { return 42; }();
-        ---
-        println("not executed");
-    )");
-            auto output = std::string();
-            const auto write_output = [&](ExecutionOutputStream, std::string_view bytes) noexcept {
-                output.append(bytes);
-            };
-            const auto result = interpret(
-                program,
-                entry(program),
-                write_output,
-                InterpreterOptions {.limits = static_execution_limits(), .trace = {}, .report = {}}
-            );
-            if (!expect(!result.has_value())) {
-                return;
-            }
-            expect(
-                interpreter_diagnostic_code(result.error().event.reason())
-                == DiagnosticCode::InterpretAdmission
-            );
-            expect(output.empty());
-        };
 
     "Interpreter: static and dynamic ranges select the matching branch"_test = [] static noexcept {
         const auto program = analyze_test_program(R"(
@@ -519,14 +520,14 @@ const TestSuite suite([] static noexcept {
             Input {
                 .name = "SIMD lane",
                 .declaration =
-                    "import std::simd using u8x16;\n\nfn lane(value: u8x16, index: usize) { println(value.lane(index)); }",
+                    "fn lane(value: u8x16, index: usize) { println(value.lane(index)); }",
                 .operation = "lane(u8x16::splat(7), 16);",
                 .message = "SIMD index or memory range is out of bounds"
             },
             Input {
                 .name = "SIMD load",
                 .declaration =
-                    "import std::simd using u8x16;\n\nfn load(values: [u8], index: usize) { let _ = u8x16::load(values, index); }",
+                    "fn load(values: [u8], index: usize) { let _ = u8x16::load(values, index); }",
                 .operation = "load([1u8], 0);",
                 .message = "SIMD index or memory range is out of bounds"
             },

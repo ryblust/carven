@@ -21,6 +21,19 @@ table.insert(language_sources, path.join(language_dir, "testing", "assertions.cv
 local entry_source = path.join(language_dir, "entry", "explicit.cv")
 local reporting_source = path.join(language_dir, "testing", "reporting.cv")
 
+target("carven-test-language-time")
+    set_default(false)
+    add_rules("@carven/carven", {tests = "runner"})
+    set_languages("c++20")
+    add_files(path.join(language_dir, "time", "*.cv"))
+    add_tests("time", {group = "language", run_timeout = 30000})
+    on_test(function (target)
+        return import("generated", {
+            rootdir = path.join(os.projectdir(), "tests", "harness"),
+        }).main(target, "Time", "true\ntrue\n")
+    end)
+target_end()
+
 target("carven-test-language")
     set_default(false)
     add_rules("@carven/carven", {tests = "runner"})
@@ -30,9 +43,12 @@ target("carven-test-language")
     for _, source in ipairs(language_sources) do
         add_files(source)
     end
+    add_files(path.join(language_dir, "modules", "staged_calls", "provider.cpp"))
 
     add_files(path.join(language_dir, "main.cv"))
     add_files(path.join(language_dir, "io", "input.cv"))
+    add_files(path.join(language_dir, "io", "utf_errors.cv"))
+    add_files(path.join(language_dir, "io", "values.cv"))
     for _, source in ipairs({
         "behavior.cv", "core.cv", "containers.cv", "tuples.cv", "tail.cv", "constant.cv", "contracts.cv",
         "owners.cv", "composition.cv", "waiting.cv", "scheduling.cv",

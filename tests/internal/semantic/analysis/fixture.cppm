@@ -4,6 +4,7 @@ import :diagnostics.code;
 import :diagnostics.diagnostic;
 import :frontend.program.parse;
 import :semantic.analyze;
+import :semantic.evaluation.execution;
 import :semantic.semir.body;
 import :semantic.semir.constant;
 import :semantic.semir.decl;
@@ -13,6 +14,7 @@ import :source.batch;
 import :source.manager;
 import :source.module_path;
 import :test.harness.framework;
+import :test.internal.source.fixture;
 import std;
 
 auto semantic_test_module_path() noexcept -> CanonicalModulePath {
@@ -21,18 +23,22 @@ auto semantic_test_module_path() noexcept -> CanonicalModulePath {
     return std::move(*result);
 }
 
-auto analyze_test_errors(std::string source_text) noexcept -> Diagnostics {
+auto analyze_test_errors(
+    std::string source_text,
+    std::span<const std::string_view> standard_modules = {}
+) noexcept -> Diagnostics {
     auto sources = SourceManager();
     const auto source_id = sources.append_virtual("analysis.cv", std::move(source_text));
     require(source_id.has_value());
     const auto source_view = sources.view(*source_id);
-    const auto inputs = std::array {SourceModuleInput {
+    auto inputs = std::vector {SourceModuleInput {
         .source_id = *source_id,
         .module_path = semantic_test_module_path(),
     }};
+    append_standard_sources(sources, inputs, standard_modules);
     auto parsed = parse_program(sources, SourceBatch {.modules = inputs});
     require(parsed.has_value()).note("source = ", source_view.text);
-    auto analyzed = analyze(std::move(*parsed));
+    auto analyzed = analyze(std::move(*parsed), {}, {}, {}, HostEffects::Allow);
     if (analyzed.has_value()) {
         return std::move(analyzed->diagnostics);
     }
@@ -41,19 +47,21 @@ auto analyze_test_errors(std::string source_text) noexcept -> Diagnostics {
 
 auto analyze_test_program(
     std::string source_text,
+    std::span<const std::string_view> standard_modules = {},
     std::source_location location = std::source_location::current()
 ) noexcept -> SemIRProgram {
     auto sources = SourceManager();
     const auto source_id = sources.append_virtual("analysis.cv", std::move(source_text));
     require(source_id.has_value());
     const auto source_view = sources.view(*source_id);
-    const auto inputs = std::array {SourceModuleInput {
+    auto inputs = std::vector {SourceModuleInput {
         .source_id = *source_id,
         .module_path = semantic_test_module_path(),
     }};
+    append_standard_sources(sources, inputs, standard_modules);
     auto parsed = parse_program(sources, SourceBatch {.modules = inputs});
     require(parsed.has_value(), location).note("source = ", source_view.text);
-    auto analyzed = analyze(std::move(*parsed));
+    auto analyzed = analyze(std::move(*parsed), {}, {}, {}, HostEffects::Allow);
     require(analyzed.has_value(), location)
         .note("source = ", source_view.text)
         .note([&]() noexcept {

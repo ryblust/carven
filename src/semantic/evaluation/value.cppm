@@ -3,6 +3,7 @@ module carven:semantic.evaluation.value;
 import :semantic.semir.async;
 import :semantic.semir.constant;
 import :semantic.semir.constant_access;
+import :support.input;
 import std;
 
 // Execution atoms contain no aggregate storage; compounds have explicit owners below.
@@ -197,18 +198,38 @@ struct ExecutionValue final : std::variant<
 
 // Cold arguments are acquired once in the same execution memory domain.
 // Ownership is affine; the descriptor executes only when consumed by await.
+enum class ExecutionSelectionResult { Indexed, Direct };
+
 struct ExecutionCompositionAction final {
     AsyncCompositionPolicy policy;
     ConstructionTypeRef success;
+    ExecutionSelectionResult selection;
 };
 
 struct ExecutionTimeoutAction final {
     TypeID timeout_failure;
+    TypeID range_failure;
+};
+
+struct ExecutionInputAction final {
+    HostInputMode mode;
+    std::size_t limit;
+};
+
+struct ExecutionTimerAction final {
+    std::int64_t deadline;
+    std::optional<TypeID> failure;
 };
 
 struct ExecutionColdOperation final {
     ConstructionTypeRef type;
-    std::variant<CallableID, AsyncIntrinsic, ExecutionCompositionAction, ExecutionTimeoutAction>
+    std::variant<
+        CallableID,
+        AsyncIntrinsic,
+        ExecutionCompositionAction,
+        ExecutionTimeoutAction,
+        ExecutionInputAction,
+        ExecutionTimerAction>
         action;
     std::vector<std::variant<ExecutionValue, ExecutionPlace>> arguments;
 };

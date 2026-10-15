@@ -1,6 +1,6 @@
-import std::io using { Read, IOError };
-import std::io using stdin as input;
+import std::io using { Read, IOError, stdin as input };
 import std::async using close;
+import .utf_errors using verify_utf_errors;
 import "io/pipe.hpp";
 
 private import(cpp) fn io_test_open_pipe();
@@ -30,6 +30,7 @@ private fn expect_end(result: Read<Vector<u8>>) {
 
 export async fn run_input(&&name: String) throw IOError {
     match name.as_str() {
+        "utf-errors" => await verify_utf_errors()?,
         "lines" => {
             let reader = input();
             assert(await reader.read_line()? == .Data("a"));
@@ -122,6 +123,7 @@ export async fn run_input(&&name: String) throw IOError {
                 },
             };
             assert(failed);
+            expect_bytes(await stdin().read(0)?, []);
         },
         "cold-fifo" => {
             let _ = stdin().read_line();

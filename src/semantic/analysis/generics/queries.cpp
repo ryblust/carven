@@ -203,6 +203,7 @@ auto ProgramDraft::take_generic_analysis_snapshot(
         }
     }
     auto result = GenericAnalysisSnapshot {
+        .owner = program_identity,
         .definitions = {},
         .types = storage.generic_types,
         .bodies = std::move(storage.generic_function_bodies),

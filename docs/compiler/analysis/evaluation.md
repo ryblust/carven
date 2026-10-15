@@ -85,6 +85,16 @@ facts; computing a fact does not execute a static root. Other admitted
 operations are evaluated by the executor when the root executes or a type
 reads its value.
 
+A construction dependency query uses the same executor with a restricted host
+capability. It suppresses output and rejects actual clock reads, input, and
+waiting at execution, including through source calls; constructing configuration
+or cold operations does not perform those actions. The analysis caller separately
+selects host-effect availability through `HostEffects`. Analysis defaults to
+`Deny`; compilation and command-line execution select `Allow`, while workspace
+queries retain `Deny`. Output routing and capture are independent. An
+explicit static root needs both an execution purpose and caller permission for
+host work. Completed module constants are consumed as frozen values.
+
 Each static root and its nested calls share one execution budget. Ordinary
 semantic checks cover all source branches. The executor checks an operation's
 capability after its required operands complete; bounds and other dynamic checks
@@ -111,8 +121,9 @@ structured control flow and direct callable identities. It reuses scalar
 static execution, including wrapping integer operations, and the builtin
 constant-formatting implementation. Floating
 execution uses host native scalar operations. Optional runtime folding retains a
-separate admission boundary for floating arithmetic and ordering, so adding an
-executor operation does not authorize host precomputation of runtime expressions.
+separate admission boundary for floating arithmetic, ordering, and integer-to-floating
+casts, so adding an executor operation does not authorize host precomputation of
+runtime expressions.
 
 ### Explicit static inputs
 
@@ -133,7 +144,9 @@ Static specialization evaluates local initializer roots while constructing
 residual regions. A body root executes once for its instance; each expanded
 occurrence executes in its iteration's static environment. A value that type
 formation or an independent body's construction read earlier was computed from
-a copy with `ExecutionOutputMode::Discard`; the root still executes here. A body
+a copy under `StaticEvaluationPurpose::ResolveType`; the root still executes
+here under `StaticEvaluationPurpose::Execute`. Type queries cannot read input,
+sample a clock, or wait. Execution purpose is independent of output routing. A body
 or instance specialized during such a computation executes its own static stage
 and writes its output. Distinct call-argument roots
 execute independently even when their values select the same instance. Unselected
@@ -207,16 +220,52 @@ cleanup. Fatal teardown detaches selection and cancellation receivers while the
 borrowed child metadata is still alive.
 
 Timeout evaluates its duration before protected startup. Nonpositive intervals
-select the nominal timeout failure. Native clock reads and timer providers retain
-their generated-execution boundary.
+select the nominal timeout failure without sampling a clock. Positive intervals
+use the selected host's monotonic clock and timer queue. Deadline completion uses
+the existing candidate selection, cancellation, and drain machinery.
+
+### Host execution
+
+Standard-source bodies execute interval arithmetic, time-point shifts and
+comparisons, UTF validation, and input error mapping through ordinary calls and
+failure transport. Their host reads, clock sampling, and waits use provided
+callables admitted in static execution and interpretation. `const` is an execution
+capability; explicit static roots perform host effects when they execute.
+Ordinary runtime calls remain required work.
+
+Compiler support owns host operations independently of Runtime Craft.
+`support.clock` samples and waits on the monotonic clock; `support.input` owns the
+process input cursor. The executor adapts host results to semantic values; source
+wrappers construct the public results and typed failures.
+
+Input readiness returns a borrowed byte view. The executor constructs an owning
+byte value and the request status, charges its budgets, and commits cursor
+consumption before queuing the continuation. Source wrappers decode completed
+bytes and map native failures after the host operation returns. Cancellation and
+limit failures preserve the cursor's unread bytes.
+
+The process input cursor retains prefetched bytes, EOF, and system-error state
+across static roots and subsequent interpretation. The executor owns pending FIFO
+input requests and ordered timer waits. Cold host actions retain concrete input
+modes, limits, or deadlines after argument evaluation; starting them consumes
+that configuration without re-evaluating arguments. Each pump checks cancellation before due
+timers or input completion. Completion unlinks registrations and queues
+continuations without running source code directly. When ready work is exhausted, the executor waits
+for host input or its nearest timer.
 
 Tasks share one memory domain and cumulative resource budget. An execution halt or
 failed semantic dependency stops the whole domain; exhaustion does not promise
 further user cleanup or output. Already written output remains observable.
-Native provider bodies and real I/O are outside static capability. Await is admitted
+Arbitrary native C++ provider bodies remain outside semantic execution capability.
+Host operations use their supported semantic contracts. Await is admitted
 in static roots, `const` blocks, and `const test` bodies as well as async bodies;
 a synchronous const function's ordinary body cannot await. Runtime realization
 consumes the same published body and emits its C++ coroutine representation.
+
+Execution budgets bound steps, text, and aggregate work, with no elapsed-time
+limit on host waits. A completed input value beyond the executor's value limits
+halts with an execution limit; a caller's explicit read limit uses the ordinary
+`IOError::InputTooLarge` failure.
 
 ### Execution values and storage
 
@@ -506,6 +555,9 @@ body execution and assertion control as static tests, including wrapping integer
 arithmetic.
 Ordinary language analysis remains the authority for names, types, access, lifetimes,
 failures, and entry uniqueness; interpretation does not introduce an AST checker.
+Native source inventory and module fragments do not form an admission gate.
+The executor diagnoses unsupported native operations when reached; it does not
+load C++ code or reproduce native global initialization and destruction.
 
 Semantic display owns bounded text storage, escaping, and indentation in
 `semantic/evaluation/display.cpp`. Native display owns these operations in the
@@ -525,6 +577,17 @@ Output and errors follow the selected stage; the
 normal compiler has no interpreter-mode branch. The driver owns command options
 and diagnostic presentation.
 
+## Numeric parse execution
+
+Call preparation derives a builtin call's result from its completed callable contract.
+Builtin calls and executable bodies share call-depth, tracing, and step limits.
+Numeric parsing reads the
+complete text input and uses `std::from_chars` in the selected scalar precision.
+Static and interpreted execution share this conversion path. Failed conversions
+produce `ExecutionSourceFailure` with the nominal `NumberParseError::Invalid`
+payload, allowing ordinary handlers, propagation, and rethrow. Unhandled failures
+use the same root diagnostics as failures thrown by source functions.
+
 ## SIMD execution
 
 `U8x16`, `Mask16`, `F32x4`, `Mask4`, `U8x32`, `Mask32`, `F32x8`, and `Mask8`
@@ -540,8 +603,11 @@ Extract offsets and byte shift counts are static operands with checked ranges.
 A type layout supplies the element, vector, mask and memory shapes; construction,
 publication and backend realization consume that same contract. The executor
 shares bounded lane algorithms across layouts and never calls native intrinsics.
-Floating arithmetic uses the scalar floating semantics; ordinary floating runtime
-expressions retain the native execution environment.
+Floating arithmetic uses the scalar floating semantics. Floating value methods
+share `FloatIntrinsic` with scalar methods, applying the scalar contract to each
+lane and returning the matching mask for classification. Scalar arguments are
+broadcast through the ordinary SIMD splat operation before evaluation. Ordinary
+floating runtime expressions retain the native execution environment.
 
 The backend maps these logical values to the separately included
 `carven/runtime/simd/simd.hpp`. Its shared public layer realizes operations through

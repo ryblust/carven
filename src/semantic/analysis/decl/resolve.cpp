@@ -19,7 +19,6 @@ import :semantic.analysis.operations;
 import :semantic.analysis.program;
 import :semantic.analysis.source.builder;
 import :semantic.analysis.types;
-import :semantic.analysis.types.standard;
 import :semantic.semir.constant;
 import :semantic.semir.decl;
 import :semantic.semir.program;
@@ -168,16 +167,11 @@ auto DeclResolver::finish_declarations() noexcept -> void {
     for (const auto& symbol : catalog.symbols()) {
         const auto* form = std::get_if<CatalogFunctionForm>(&symbol.form);
         if (form == nullptr
-            || !cpp_import_origins[form->callable.index()].has_value()
+            || !cpp_imports[form->callable.index()].has_value()
             || published[symbol.symbol_id.index()]) {
             continue;
         }
-        draft.complete_callable(
-            form->callable,
-            CppImportImplementation {
-                .form_origin = *cpp_import_origins[form->callable.index()],
-            }
-        );
+        draft.complete_callable(form->callable, *cpp_imports[form->callable.index()]);
     }
 }
 
@@ -198,7 +192,7 @@ DeclResolver::DeclResolver(
       enumerations(source_catalog.enum_count()),
       enum_cases(source_catalog.enum_case_count()),
       module_constants(source_catalog.symbols().size()),
-      cpp_import_origins(source_catalog.function_count()) {
+      cpp_imports(source_catalog.function_count()) {
     publish_modules();
 }
 
@@ -438,15 +432,12 @@ auto DeclResolver::ConstantScope::resolve_static_callable(std::string_view name,
     }
     const auto* selected_symbol = resolver.catalog.symbol(*selected);
     if (const auto* provided = std::get_if<ProvidedExport>(&*selected)) {
+        if (const auto callable = resolver.draft.provided_callable(*provided)) {
+            co_return std::optional<ResolvedStaticCallable>(*callable);
+        }
         if (const auto builtin = provided_async_builtin(*provided)) {
-            auto resolved = co_await resolve_async_builtin(
-                resolver.draft,
-                resolver.catalog,
-                resolver.requests,
-                module_id,
-                *builtin,
-                span
-            );
+            auto resolved =
+                co_await resolve_async_builtin(construction_requests(), *builtin, module_id, span);
             if (!resolved) {
                 co_return std::unexpected(resolved.error());
             }
@@ -486,16 +477,15 @@ auto DeclResolver::ConstantScope::resolve_static_callable(std::string_view name,
     co_return std::optional<ResolvedStaticCallable>(function->function);
 }
 
+auto DeclResolver::ConstantScope::resolve_number_parser(BuiltinType number, Span span) noexcept
+    -> AnalysisTask<CallableID> {
+    co_return co_await construction_requests().number_parser(number, module_id, span);
+}
+
 auto DeclResolver::ConstantScope::resolve_duration_type(Span span) noexcept
     -> AnalysisTask<TypeID> {
-    co_return co_await resolve_standard_record(
-        resolver.draft,
-        resolver.catalog,
-        resolver.requests,
-        module_id,
-        span,
-        StandardRecord::Duration
-    );
+    co_return co_await construction_requests()
+        .standard_type(StandardDeclaration::Duration, module_id, span);
 }
 
 auto DeclResolver::ConstantScope::construction_requests() noexcept -> ConstructionRequests& {
@@ -668,6 +658,20 @@ auto DeclResolver::ConstantScope::observe_field(
             locate(syntax.source_id(), name),
             resolver.draft.source_span(definition),
             type
+        );
+    }
+}
+
+auto DeclResolver::ConstantScope::observe_function(FunctionID function, Span name) noexcept
+    -> void {
+    if (auto* observations = resolver.draft.source_analysis()) {
+        const auto callable = resolver.draft.function_declaration_copy(function).callable;
+        observations->declarations().record(
+            resolver.draft,
+            locate(syntax.source_id(), name),
+            resolver.catalog
+                .declaration_location(resolver.draft, resolver.catalog.function_symbol(function)),
+            resolver.draft.intern_type({.value = FunctionTypeValue {callable}})
         );
     }
 }

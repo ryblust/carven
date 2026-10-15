@@ -11,7 +11,7 @@ rules for a topic. Each reference can be read independently of this tutorial.
 
 | Lesson | Language reference |
 | --- | --- |
-| [A first program](#a-first-program) | [Entries, output, and tests](execution.md) |
+| [A first program](#a-first-program) | [Entry points](execution.md#entry-points), [printing](io.md#printing) |
 | [Modules](#modules) | [Modules and names](modules.md) |
 | [Records and arrays](#records-and-arrays) | [Aggregates](aggregates.md) |
 | [Enums and matches](#enums-and-matches) | [Enums](aggregates.md#enums) and [pattern matching](control-flow.md#patterns-and-matches) |
@@ -23,10 +23,10 @@ rules for a topic. Each reference can be read independently of this tutorial.
 | [Closures and callbacks](#closures-and-callbacks) | [Functions and callable values](functions.md) |
 | [Calling C++](#calling-c) | [C++ interoperation](interop.md) |
 | [Acquiring an external address](#acquiring-an-external-address) | [Pointers](pointers.md) |
-| [Assertions](#assertions) | [Entries, output, and tests](execution.md) |
-| [Tests](#tests) | [Entries, output, and tests](execution.md) |
+| [Assertions](#assertions) | [Entry points and tests](execution.md) |
+| [Tests](#tests) | [Entry points and tests](execution.md) |
 | [Compile-time execution](#compile-time-execution) | [Compile-time execution](constants.md) |
-| [Structural printing and assertion explanations](#structural-printing-and-assertion-explanations) | [Entries, output, and tests](execution.md) |
+| [Structural printing and assertion explanations](#structural-printing-and-assertion-explanations) | [Printing](io.md#printing), [tests](execution.md#tests) |
 
 ## A first program
 
@@ -98,7 +98,7 @@ For a file at `crafts/foo/models/user.cv`:
 
 | Import | Selected source |
 | --- | --- |
-| `std::utf.text` | `crafts/carven/std/utf/text.cv` |
+| `std::utf` | `crafts/carven/std/utf.cv` |
 | `std.utf` | `crafts/foo/std/utf.cv` |
 | `.std.utf` | `crafts/foo/models/std/utf.cv` |
 
@@ -110,10 +110,11 @@ import std::core using String as Text;
 import std::simd.bytes using load_block as load_bytes;
 ```
 
-Common core, printing, and test names are available by default. Specialized names
-require imports, such as `import std::async using Operation;` or
-`import std::simd using u8x16;`. Source APIs use paths such as
-`std::simd.bytes` or `std::json.value`.
+Common core, SIMD vector and mask types, printing, and test names are available
+by default. Other names require imports, such as
+`import std::async using Operation;`. Explicit imports can also alias default
+types, as in `import std::simd using f32x8 as Samples;`. Source APIs use paths
+such as `std::simd.bytes` or `std::json`.
 
 Functions, structures, enums, and constants may be `private`, bare, or `export`.
 Private declarations are module-local; bare means no visibility modifier and

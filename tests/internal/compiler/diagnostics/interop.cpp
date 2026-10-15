@@ -54,6 +54,12 @@ const TestSuite suite([] static noexcept {
                 .primary_text = "std",
             },
             {
+                .name = "unrepresentable explicit C++ target component",
+                .source = "private import(cpp) fn local() -> i32 = ::vendor::class;",
+                .code = DiagnosticCode::CppIdentifier,
+                .primary_text = "class",
+            },
+            {
                 .name = "unrepresentable carven provider name",
                 .source = "private import(cpp) fn carven() -> i32;",
                 .code = DiagnosticCode::CppIdentifier,
@@ -201,7 +207,7 @@ const TestSuite suite([] static noexcept {
                 TargetPlanningRequest {
                     .test_mode = TestGenerationMode::None,
                     .linkage_domain = LinkageDomain::explicit_value("test:cpp-isolation").value(),
-                    .library = std::nullopt
+                    .library = std::nullopt,
                 }
             );
             if (!(expect(!result.has_value()))) {

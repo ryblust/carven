@@ -7,6 +7,7 @@
 // CARVEN_SIMD_FORCE_PORTABLE selects the portable backend for testing.
 
 #include <carven/runtime/collection/slice.hpp>
+#include <carven/runtime/numeric/float.hpp>
 
 #if defined(_MSC_VER)
 #define CARVEN_SIMD_INLINE __forceinline
@@ -46,11 +47,15 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <type_traits>
 
 namespace carven::runtime::simd::inline CARVEN_SIMD_ABI {
 
 inline constexpr auto uses_native_backend = CARVEN_SIMD_NATIVE_BACKEND;
+
+template<typename Element, std::size_t Lanes>
+struct Mask;
 
 template<typename Element, std::size_t Lanes>
 struct Vector final {
@@ -94,6 +99,52 @@ struct Vector final {
         return backend::sum<sizeof(Element) * Lanes>(value);
     }
 
+    CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL is_finite() const noexcept -> Mask<Element, Lanes>
+        requires std::is_same_v<Element, float>
+    {
+        return abs() <= splat(std::numeric_limits<Element>::max());
+    }
+
+    CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL sqrt() const noexcept -> Vector
+        requires std::is_same_v<Element, float>
+    {
+        return Vector {.value = backend::sqrt_floats<sizeof(Element) * Lanes>(value)};
+    }
+
+    CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL abs() const noexcept -> Vector
+        requires std::is_same_v<Element, float>
+    {
+        return Vector {
+            .value = backend::bit_and<sizeof(Element) * Lanes>(
+                value,
+                backend::splat_floats<sizeof(Element) * Lanes>(
+                    std::bit_cast<float>(std::uint32_t {0x7fffffff})
+                )
+            )
+        };
+    }
+
+    CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL min(Vector other) const noexcept -> Vector
+        requires std::is_same_v<Element, float>
+    {
+        // Preserve the receiver on equal lanes, including differently signed zeros.
+        return ((*this == *this) & ((other != other) | (other < *this))).select(other, *this);
+    }
+
+    CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL max(Vector other) const noexcept -> Vector
+        requires std::is_same_v<Element, float>
+    {
+        return ((*this == *this) & ((other != other) | (other > *this))).select(other, *this);
+    }
+
+    CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL
+    clamp(Vector lower, Vector upper, SourceSite site) const noexcept -> Vector
+        requires std::is_same_v<Element, float>
+    {
+        check_float_clamp_bounds((lower <= upper).all(), site);
+        return (*this < lower).select(lower, (*this > upper).select(upper, *this));
+    }
+
     static CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL
     load(Slice<Element> data, std::size_t offset, SourceSite site) noexcept -> Vector {
         if (offset > data.size() || data.size() - offset < Lanes) {
@@ -110,7 +161,7 @@ struct Vector final {
         }
         const auto count = data.size() - offset;
         if (count >= Lanes) {
-            return load(data, offset, site);
+            return Vector {.value = backend::load<sizeof(Element) * Lanes>(data.data() + offset)};
         }
         auto buffer = std::array<Element, Lanes>();
         buffer.fill(fill);
@@ -164,6 +215,14 @@ struct Vector final {
         return Vector<std::uint8_t, IndexLanes> {
             .value = backend::lookup<Lanes, IndexLanes>(value, indices.value)
         };
+    }
+
+    template<std::size_t... Indices>
+    CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL swizzle() const noexcept -> Vector {
+        static_assert(sizeof...(Indices) == Lanes);
+        static_assert(((Indices < Lanes) && ...));
+        const auto lanes = to_array();
+        return from_array({lanes[Indices]...});
     }
 
     template<std::size_t Offset>
@@ -274,6 +333,12 @@ struct Mask final {
     // both MSVC and clang-cl. Default zero storage preserves value construction.
     Value value {};
 };
+
+template<typename Element, std::size_t Lanes>
+auto carven_inline_value(Vector<Element, Lanes>*) noexcept -> std::true_type;
+
+template<typename Element, std::size_t Lanes>
+auto carven_inline_value(Mask<Element, Lanes>*) noexcept -> std::true_type;
 
 using U8x16 = Vector<std::uint8_t, 16>;
 using U8x32 = Vector<std::uint8_t, 32>;

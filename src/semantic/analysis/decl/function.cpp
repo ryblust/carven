@@ -11,11 +11,13 @@ import :semantic.analysis.decl.context;
 import :semantic.analysis.decl.resolver;
 import :semantic.analysis.expr.scope;
 import :semantic.analysis.interop;
+import :semantic.analysis.names;
 import :semantic.analysis.nominal.containment;
 import :semantic.analysis.operations;
 import :semantic.analysis.types;
 import :semantic.semir.constant;
 import :semantic.semir.decl;
+import :semantic.semir.delegation;
 import :semantic.semir.program;
 import :semantic.semir.type;
 import :semantic.visibility;
@@ -290,11 +292,30 @@ auto DeclResolver::resolve_function(
         );
     }
     if (cpp_import) {
-        cpp_import_origins[form.callable.index()] = declaration_source_origin(
-            draft,
-            symbol.module_id,
-            std::get<ASTCppImportForm>(function.implementation).span
-        );
+        const auto& imported = std::get<ASTCppImportForm>(function.implementation);
+        auto target = CppNameReference {
+            .context_module = catalog.find_module(symbol.module_id)->declaration,
+            .lookup = CppNameLookup::Global,
+            .components = {symbol.name},
+        };
+        if (imported.target) {
+            auto selected = lookup_cpp_name(
+                draft,
+                catalog,
+                import_usage,
+                symbol.module_id,
+                CppNameLookup::Global,
+                imported.target->components
+            );
+            if (!selected) {
+                co_return std::unexpected(selected.error());
+            }
+            target = std::move(**selected);
+        }
+        cpp_imports[form.callable.index()] = CppImportImplementation {
+            .form_origin = declaration_source_origin(draft, symbol.module_id, imported.span),
+            .target = std::move(target),
+        };
     }
     co_return {};
 }

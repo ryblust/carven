@@ -76,13 +76,21 @@ A body-local `const` executes where it stands in the static stage: once for
 each selected instance or expanded occurrence, and not at all in an unselected
 `const if` arm or an empty `const for`.
 
-Types are checked in every arm before any stage executes. An array extent, a
-C++ construction type query, or a separately constructed body that names a
-local constant reads its value by computing the initializer. That computation
-is part of checking the type: it writes no output, its failure is reported even
-in an unselected arm, and it requires a value independent of unbound static
-parameters. The declaration still executes in its own stage, and a `const fn`
-result depends only on its arguments, so both yield the same value.
+Types are checked in every arm before the selected stage executes. An array
+extent, C++ construction type query, or separately constructed body that names
+a local constant requires an admitted value independent of unbound static
+parameters. These dependency queries cannot sample a host clock, read input, or
+perform waiting, including through a source wrapper. They may construct
+configuration or cold values without executing their host operation. This
+restriction prevents type formation from repeating or prematurely performing
+the local declaration's host work.
+
+A completed module constant may supply a type dependency. When a value depends
+on host state and also determines a type, compute the value in a module `const`
+declaration and use that frozen result. A local `const` that needs a new host
+observation can execute at its ordinary static-stage position, but type formation
+cannot pre-read it. Constant value formation and type validity retain their
+ordinary rules.
 
 Static values do not guide ordinary control analysis. Only
 `const if` selects by a static value.
@@ -100,10 +108,11 @@ terminates for those conditions. Evaluation never relies on undefined host
 arithmetic. A wrapping operation in an ordinary `let` initializer follows the
 same rule as one in a constant initializer.
 
-Floating literals, supported casts, and equality can supply constant facts.
+Floating literals, exact widening casts, and equality can supply constant facts.
 Static execution supports floating arithmetic and ordering; for
 example, `const sum = 1.0 + 2.0;` evaluates to `3.0`. Ordinary runtime floating
-arithmetic and ordering do not acquire optional constant facts from host execution;
+arithmetic, ordering, and integer-to-floating casts do not acquire optional
+constant facts from host execution;
 they retain the target's native operations. Negation of a numeric literal is
 normalized with its sign during literal checking, including through grouping
 parentheses.
@@ -191,6 +200,11 @@ rules. Every function body undergoes ordinary type, effect, ownership, and
 lifetime validation. A `const fn` can also run at runtime; a runtime call remains
 an ordinary call even when all arguments happen to be known.
 
+`const` declares that a callable can execute in the static stage; it does not
+promise purity or results determined solely by its arguments. Observable work
+happens in the selected execution stage. Declaring a `const fn` does not execute
+it, and an ordinary call does not move its effects into compilation.
+
 A [static parameter](functions.md#static-parameters) is a separate input contract.
 It requires an admitted constant source in every execution mode. Executor-known
 values of ordinary parameters, `let`, and `var` do not acquire that qualification.
@@ -216,6 +230,19 @@ parameter-dependent execution at concrete application time. The containing
 Execution checks budgets and dynamic errors. Completed static roots also
 check result publication. Language arithmetic and effects are the same in
 both stages.
+
+Builtin [input](io.md#input-execution-capabilities) and
+[time operations](time.md#execution-capabilities), including deadline composition,
+support explicit static execution through the compiler host. They use that
+process's input and monotonic clock. Cold construction retains arguments; awaiting
+or starting the operation performs the read or wait. Cold operations remain local
+execution values and cannot be frozen as module constants. Results and failures
+follow the ordinary retention and typed failure rules.
+
+Host effects already completed remain observable after a later static failure.
+Execution budgets bound steps, text, and aggregate work. They do not impose an
+elapsed-time limit on input or waiting. Ordinary runtime calls use the program's
+host resources and preserve their required effects.
 
 ```carven
 const fn label(count: i32) -> String {

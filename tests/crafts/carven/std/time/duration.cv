@@ -1,13 +1,6 @@
-import std::time.duration using {
-    Duration,
-    RangeError,
-    nanoseconds,
-    microseconds,
-    milliseconds,
-    seconds,
-};
+import std::time using { Duration, RangeError, nanoseconds, microseconds, milliseconds, seconds };
 
-const test "Time: nanoseconds preserve every signed value" {
+test "Time: nanoseconds preserve every signed value" {
     const minimum = nanoseconds(-9223372036854775808i64);
     const maximum = nanoseconds(9223372036854775807i64);
     const negative = Duration { nanoseconds: -1 };
@@ -17,7 +10,7 @@ const test "Time: nanoseconds preserve every signed value" {
     check(nanoseconds(0).nanoseconds == 0);
 }
 
-const test "Time: unit conversion preserves signs and accepts exact boundaries" {
+test "Time: unit conversion preserves signs and accepts exact boundaries" {
     try {
         check(microseconds(1)?.nanoseconds == 1000);
         check(milliseconds(-1)?.nanoseconds == -1000000);
@@ -34,7 +27,7 @@ const test "Time: unit conversion preserves signs and accepts exact boundaries" 
     }
 }
 
-const test "Time: unit conversion rejects both overflow directions" {
+test "Time: unit conversion rejects both overflow directions" {
     var rejected = 0;
     try {
         let _ = microseconds(9223372036854776i64)?;
@@ -72,4 +65,19 @@ const test "Time: unit conversion rejects both overflow directions" {
         RangeError(_) => { ++rejected; },
     }
     check(rejected == 7);
+}
+
+const test "Time: source constructors preserve units and failures in static execution" {
+    try {
+        check(milliseconds(-2)?.nanoseconds == -2000000);
+        let rejected = try {
+            let _ = seconds(9223372037)?;
+            false
+        } catch {
+            RangeError(_) => true
+        };
+        check(rejected);
+    } catch {
+        RangeError(_) => fail("representable durations must succeed"),
+    }
 }

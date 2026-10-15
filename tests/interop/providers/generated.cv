@@ -1,0 +1,91 @@
+import std::io using IOError;
+
+private struct Record {
+    text: String,
+    count: i32
+}
+
+private struct Failure {
+    code: i32
+}
+
+private struct WriteValue {
+    count: i32
+}
+
+private struct SliceValue {
+    count: i32
+}
+
+private struct Link {
+    value: i32,
+    next: ptr<LinkTail>
+}
+
+private struct LinkTail {
+    value: i32,
+    previous: ptr<Link>
+}
+
+#[cpp] ---
+#include "providers/generated_native.hpp"
+---
+
+private import(cpp) fn generated_record(
+    mode: i32,
+    local: Failure,
+    io: IOError
+) -> Record throw Failure + IOError;
+
+import(cpp) fn generated_void();
+import(cpp) fn generated_other_translation_unit() -> bool;
+import(cpp) fn generated_converted() -> i32;
+private import(cpp) fn generated_write(&value: WriteValue);
+private import(cpp) fn generated_slice(values: [SliceValue]) -> i32;
+private import(cpp) fn generated_links(value: ptr<Link>) -> i32;
+
+export(cpp) fn generated_check() -> bool {
+    generated_void();
+    let success = try {
+        generated_record(0, { code: 17 }, .System(23))?.count == 42
+    } catch {
+        _ => false
+    };
+    let local = try {
+        let _ = generated_record(1, { code: 17 }, .System(23))?;
+        false
+    } catch {
+        Failure(error) => error.code == 17,
+        _ => false
+    };
+    let io = try {
+        let _ = generated_record(2, { code: 17 }, .System(23))?;
+        false
+    } catch {
+        IOError(error) => match error {
+            .System(code) => code == 23,
+            _ => false
+        },
+        _ => false
+    };
+    return success
+        && local
+        && io
+        && generated_other_translation_unit()
+        && generated_converted() == 42;
+}
+
+test "Provider support: private nominal types, native conversion and multiple failures" {
+    check(generated_check());
+}
+
+test "Provider support: private Write values and slice elements remain operable" {
+    var written = WriteValue { count: 7 };
+    generated_write(&written);
+    check(written.count == 42);
+    let values = [
+        SliceValue { count: 17 },
+        SliceValue { count: 25 }
+    ];
+    check(generated_slice(values) == 42);
+}

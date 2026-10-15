@@ -6,4 +6,4 @@ import "provider.hpp" using native::{
     third_descriptive_exported_function,
 };
 
-import std::utf.text using { from_utf8, to_string };
+import std::utf using { substring, to_string };

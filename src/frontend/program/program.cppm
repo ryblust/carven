@@ -8,7 +8,12 @@ import std;
 
 class SyntaxProgramBuilder;
 
-using ResolvedModuleTarget = std::variant<ProgramModuleID, ProvidedModule>;
+struct ResolvedModuleTarget final {
+    std::optional<ProgramModuleID> source;
+    std::optional<ProvidedModule> provided;
+
+    auto operator<=>(const ResolvedModuleTarget&) const = default;
+};
 
 struct ResolvedModuleImport final {
     ASTModuleImportID declaration;

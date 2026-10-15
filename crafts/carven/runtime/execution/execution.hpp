@@ -445,6 +445,11 @@ template<typename Result, typename... Failures>
 class AsyncOperation final {
 public:
     class promise_type final {
+        // C++20 supplies only the frame size. Current Carven value carriers need
+        // at most 32-byte alignment, including AVX2 vectors retained by a frame.
+        static constexpr auto allocation_alignment =
+            std::align_val_t {alignof(std::max_align_t) > 32 ? alignof(std::max_align_t) : 32};
+
     public:
         OperationState state;
         Completion<Result, Failures...> completion;
@@ -452,7 +457,7 @@ public:
         promise_type() noexcept = default;
 
         static auto operator new(std::size_t size) noexcept -> void* {
-            auto* storage = ::operator new(size, std::nothrow);
+            auto* storage = ::operator new(size, allocation_alignment, std::nothrow);
             if (storage == nullptr) {
                 std::terminate();
             }
@@ -460,7 +465,7 @@ public:
         }
 
         static auto operator delete(void* storage, std::size_t) noexcept -> void {
-            ::operator delete(storage);
+            ::operator delete(storage, allocation_alignment);
         }
 
         auto get_return_object() noexcept -> AsyncOperation {

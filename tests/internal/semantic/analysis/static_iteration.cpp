@@ -1,6 +1,7 @@
 module carven:test.internal.semantic.analysis.static_iteration;
 
 import :compiler.analysis;
+import :semantic.evaluation.execution;
 import :semantic.evaluation.output;
 import :semantic.semir.program;
 import :source.batch;
@@ -31,7 +32,8 @@ auto with_iteration(std::string_view text, Check check) noexcept -> void {
         {.output = write_output,
          .timings = {},
          .collect_source_observations = false,
-         .capture_output = false}
+         .capture_output = false,
+         .host_effects = HostEffects::Allow}
     );
     require(result.program() != nullptr).note("source = ", text);
     check(output);

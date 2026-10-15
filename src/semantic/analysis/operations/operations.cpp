@@ -12,11 +12,11 @@ import :semantic.semir.body;
 import :semantic.semir.constant;
 import :semantic.semir.decl;
 import :semantic.semir.generic;
-import :semantic.semir.vector;
 import :semantic.semir.simd;
 import :semantic.semir.slice;
 import :semantic.semir.structured;
 import :semantic.semir.type;
+import :semantic.semir.vector;
 import :support.invariant;
 import :support.visit;
 import std;
@@ -1480,20 +1480,44 @@ auto decide_float_method(
     std::size_t arguments
 ) noexcept -> std::expected<std::optional<FloatIntrinsic>, OperationDiagnostic> {
     const auto* type = std::get_if<TypeID>(&operand);
-    if (type == nullptr || name != "is_finite") {
+    const auto intrinsic = [&]() noexcept -> std::optional<FloatIntrinsic> {
+        if (name == "is_finite") {
+            return FloatIntrinsic::IsFinite;
+        }
+        if (name == "sqrt") {
+            return FloatIntrinsic::Sqrt;
+        }
+        if (name == "abs") {
+            return FloatIntrinsic::Abs;
+        }
+        if (name == "min") {
+            return FloatIntrinsic::Min;
+        }
+        if (name == "max") {
+            return FloatIntrinsic::Max;
+        }
+        if (name == "clamp") {
+            return FloatIntrinsic::Clamp;
+        }
+        return std::nullopt;
+    }();
+    if (type == nullptr || !intrinsic) {
         return std::nullopt;
     }
     const auto canonical = draft.type_copy(*type);
     const auto* builtin = std::get_if<BuiltinTypeValue>(&canonical.value);
     if (builtin == nullptr
-        || (builtin->kind != BuiltinType::F32 && builtin->kind != BuiltinType::F64)) {
+        || (builtin->kind != BuiltinType::F32
+            && builtin->kind != BuiltinType::F64
+            && builtin->kind != BuiltinType::F32x4
+            && builtin->kind != BuiltinType::F32x8)) {
         return std::nullopt;
     }
-    if (arguments != 0) {
+    if (arguments != float_intrinsic_arguments(*intrinsic)) {
         return operation_error(
-            "is_finite requires no arguments",
+            "floating method argument count does not match",
             DiagnosticCode::TypeMethodCallArity
         );
     }
-    return FloatIntrinsic::IsFinite;
+    return intrinsic;
 }

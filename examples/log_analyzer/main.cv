@@ -1,11 +1,15 @@
 import .analysis using { analyze, to_json };
-import std::json.error using ValueError;
+import std::json using ValueError;
 import std::io using IOError;
 
 enum AnalyzerError {
     Input(IOError),
-    Report(ValueError)
+    Report(ValueError),
+    UnknownArgument(String)
 }
+
+const input_limit: usize = 16 * 1024 * 1024;
+const usage = "Usage: log-analyzer [--stdin] [--help]";
 
 const demo = """
     INFO 12 collector connected
@@ -17,11 +21,20 @@ const demo = """
 async fn main(args) throw AnalyzerError {
     var from_stdin = false;
     for argument in args {
-        if argument == "--stdin" { from_stdin = true; }
+        if argument == "--help" {
+            println(usage);
+            return;
+        }
+        if argument == "--stdin" {
+            from_stdin = true;
+            continue;
+        }
+        eprintln(usage);
+        throw AnalyzerError::UnknownArgument(argument as String);
     }
     try {
         if from_stdin {
-            let bytes = await stdin().read_all(16 * 1024 * 1024)?;
+            let bytes = await stdin().read_all(input_limit)?;
             println(to_json(analyze(bytes))?);
         } else {
             println(to_json(analyze(demo.bytes))?);

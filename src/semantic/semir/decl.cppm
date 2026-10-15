@@ -1,5 +1,6 @@
 module carven:semantic.semir.decl;
 
+import :semantic.semir.delegation;
 import :semantic.semir.identity;
 import :semantic.semir.ids;
 import :semantic.semir.table;
@@ -143,10 +144,25 @@ struct ClosureBodyImplementation final {
 
 struct CppImportImplementation final {
     ProgramOriginID form_origin;
+    CppNameReference target;
 };
 
-using CallableImplementation =
-    std::variant<FunctionBodyImplementation, ClosureBodyImplementation, CppImportImplementation>;
+struct NumberParseImplementation final {
+    ConstantID invalid;
+};
+
+enum class ProvidedFunction { ReadInput, MonotonicNow, WaitUntil };
+
+struct ProvidedFunctionImplementation final {
+    ProvidedFunction function;
+};
+
+using CallableImplementation = std::variant<
+    FunctionBodyImplementation,
+    ClosureBodyImplementation,
+    CppImportImplementation,
+    NumberParseImplementation,
+    ProvidedFunctionImplementation>;
 
 struct CallableDeclaration final {
     CallableSignatureID signature;
@@ -276,6 +292,8 @@ public:
     auto callable_contract(CallableID id) const noexcept -> const ConstructionCallableContract&;
     auto callable_signature(CallableID id) const noexcept -> CallableSignatureID;
     auto callable_implementation(CallableID id) const noexcept -> CallableImplementation;
+    auto try_callable_implementation(CallableID id) const noexcept
+        -> std::optional<CallableImplementation>;
     auto module_count() const noexcept -> std::size_t;
     auto function_count() const noexcept -> std::size_t;
     auto struct_count() const noexcept -> std::size_t;

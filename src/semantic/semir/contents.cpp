@@ -84,6 +84,10 @@ auto TypeContents::read_is_value_snapshot() const noexcept -> bool {
     return !read_borrows_storage();
 }
 
+auto TypeContents::can_store_inline() const noexcept -> bool {
+    return !has_value_storage_constraint;
+}
+
 auto query_type_contents(
     const CanonicalTypeStoreBuilder& types,
     DeclarationConstructionView declarations,
@@ -185,6 +189,7 @@ auto solve_type_content_graph(
             .contains_native_value = (contents[index] & native_value_content) != 0u,
             .contains_string_storage = (contents[index] & string_storage_content) != 0u,
             .contains_parametric_value = (contents[index] & parametric_value_content) != 0u,
+            .has_value_storage_constraint = (contents[index] & value_storage_constraint) != 0u,
         });
     }
     return result;
@@ -198,5 +203,6 @@ auto TypeContents::mask() const noexcept -> unsigned {
         | (contains_storage_view ? storage_view_content : 0u)
         | (contains_native_value ? native_value_content : 0u)
         | (contains_string_storage ? string_storage_content : 0u)
-        | (contains_parametric_value ? parametric_value_content : 0u);
+        | (contains_parametric_value ? parametric_value_content : 0u)
+        | (has_value_storage_constraint ? value_storage_constraint : 0u);
 }

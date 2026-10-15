@@ -247,11 +247,12 @@ auto verify_resolved_imports(
                 )
             );
         }
-        const auto* target = std::get_if<ProgramModuleID>(&edge.target);
-        if (target
-            && (!program.provenance().contains(*target)
-                || target->index() >= module_count
-                || *target == module_id)) {
+        const auto target = edge.target.source;
+        if ((!target && !edge.target.provided)
+            || (target
+                && (!program.provenance().contains(*target)
+                    || target->index() >= module_count
+                    || *target == module_id))) {
             return verification_error(
                 SyntaxProgramErrorKind::InvalidResolvedImportGraph,
                 std::format(

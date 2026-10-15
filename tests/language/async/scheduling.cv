@@ -153,7 +153,7 @@ const async fn nested_turn() -> i32 {
 
 const async fn repeated_close() -> i32 {
     var trace = 0;
-    for var index = 0; index < 4; index += 1 {
+    for _ in 0..4 {
         async let child = recorded(&trace, 1);
         cancel child;
     }

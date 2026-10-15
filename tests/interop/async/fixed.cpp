@@ -2,6 +2,7 @@
 
 #include <cstdio>
 #include <utility>
+#include <vector>
 
 namespace {
 
@@ -75,6 +76,24 @@ auto completion_winner(CancelOnDestroy retained) noexcept
     co_return execution::Completion<std::int32_t>::success(7);
 }
 
+struct alignas(32) Block final {
+    std::uint64_t word;
+};
+
+auto aligned(const void* value) noexcept -> bool {
+    const volatile auto address = reinterpret_cast<std::uintptr_t>(value);
+    return address % alignof(Block) == 0;
+}
+
+auto retained_block(Block value, std::uint64_t seed) noexcept -> execution::AsyncOperation<bool> {
+    auto local = value;
+    ++local.word;
+    co_await execution::await_yield_once();
+    co_return execution::Completion<bool>::success(
+        aligned(&value) && aligned(&local) && value.word == seed && local.word == seed + 1
+    );
+}
+
 } // namespace
 
 Fixed::Fixed() noexcept
@@ -142,4 +161,20 @@ auto fixed_completion_cancel_observed() noexcept -> bool {
     return completion_observation.published
         && completion_observation.destroyed
         && completion_observation.requested;
+}
+
+auto fixed_aligned_frames() noexcept -> execution::AsyncOperation<bool> {
+    // Retain a batch before execution so every payload has its own live storage.
+    auto pending = std::vector<execution::AsyncOperation<bool>>();
+    for (auto seed = std::uint64_t {0}; seed < 128; ++seed) {
+        pending.push_back(retained_block(Block {seed}, seed));
+    }
+    for (auto& operation : pending) {
+        const auto result = co_await std::move(operation);
+        const auto* success = result.success_if();
+        if (success == nullptr || !success->value) {
+            co_return execution::Completion<bool>::success(false);
+        }
+    }
+    co_return execution::Completion<bool>::success(true);
 }

@@ -6,9 +6,15 @@ completion, solving, and delegated C++ operations.
 ## Module and name selection
 
 `source.standard` owns provided module and export identities, per-name defaults,
-and source-record contract keys. Frontend normalization resolves canonical paths
-to source or provided targets. Each source target owns its syntax and generated
-implementation. Exact source/provided path collisions are input errors.
+and standard declaration roles. Frontend normalization resolves canonical paths
+through the module catalog. A standard entry may contain both source and provided
+declarations; they share name lookup and conflict rules. Each source module owns
+its syntax and generated implementation.
+
+`analysis/catalog/builder` registers module declarations before binding imports
+and supplying defaults. `decl.cpp` owns source and provided declaration
+registration; `imports.cpp` owns Carven and C++ selections and conflicts.
+`catalog.cpp` owns read-only queries and import-use tracking.
 
 The catalog stores source declarations with their source ownership. Name bindings
 select either a declaration identity or a provided export identity. Explicit
@@ -18,9 +24,29 @@ lexical and type-parameter lookup belong to their surrounding scopes. Semantic
 construction dispatches on the selected identity and produces canonical types and
 operations consumed by the existing analysis and C++ generation stages.
 
-Source contract checking completes required records when an operation needs them.
-Frontend prerequisite discovery uses the same record keys, together with literal
-requirements, to select available source modules for workspace navigation.
+Standard nominal and generic types are source declarations with ordinary record,
+enum, and generic identities. Builtin duration literals, numeric parsing, and
+timeout composition select the standard declarations they require through the
+catalog and ordinary declaration completion. Their standard roles do not add a
+second type identity.
+
+`source.standard` records a bounded set of standard declaration roles, default
+bindings, and associated entries. Dependency discovery and semantic selection
+share the associated-entry mapping. Source function selection finds the catalog
+symbol and requests ordinary declaration completion. The completed callable
+supplies its signature and source body; argument checking, borrow propagation,
+and failures use ordinary calls.
+
+Host input, monotonic sampling, and timer waits have provided callable contracts
+available within their owning standard source module. Source functions compose
+these operations into input handles, checked text, time points, and public waits.
+These implementation bindings do not add module import forms.
+
+Frontend source dependency discovery includes source imports, configured standard
+defaults and associated entries, and standard declarations required by builtin
+operations. Provided selections without source dependencies need no source
+module. Workspace navigation consumes this same dependency closure. Explicit-input
+compilation checks the supplied batch and does not load missing source declarations.
 
 ## Expression construction
 
@@ -104,7 +130,7 @@ tokens, independently of expected types.
 
 ## Nominal type parameters
 
-The source catalog reserves a generic definition identity rather than a concrete
+The declaration store reserves a generic definition identity rather than a concrete
 struct or enum identity. Each parameter has a type or failure-set kind; an
 application keeps those argument domains distinct. Declaration construction binds
 parameter references, nominal applications, and array, Tuple, slice, Vector,
@@ -112,6 +138,10 @@ pointer, and Operation constructors into checked type expressions. These descrip
 contain semantic identities rather than AST nodes or unresolved names. Definition
 checking validates application arity, parameter-flow growth, and symbolic by-value
 storage cycles, including unused definitions.
+
+`GenericDeclarationContract` retains the generic definition's source identity.
+The standard `Read<T>` enum uses ordinary type-argument resolution and concrete
+nominal-instance construction.
 
 Instance formation keys an ordinary concrete nominal declaration by its
 definition and ordered canonical arguments. It reserves that declaration before
@@ -122,12 +152,14 @@ type. The owned key keeps that environment stable during nested instance
 construction. Symbolic definition checks retain substitution over rigid type
 expressions. Failed instances retain their diagnosed failure. Source-head
 completion and the concrete instance closure are separate gates.
+Each `GenericNominalInstance` retains its source use origin for diagnostics,
+independently of the definition's declaration identity.
 
 Concrete declarations pass ordinary type, storage, ownership, and publication
-checks. Enum equality is derived from those same concrete shapes. Source
+checks. Enum equality is derived from those same concrete shapes. Declaration
 audience is checked against the generic definition and its actual arguments;
 instance declarations themselves are implementation details. Publication retains
-only source audience contracts and concrete instance metadata for content identity and
+definition audience contracts and concrete instance metadata for content identity and
 C++ planning. Parameterized function bodies are not part of this path.
 
 ## Parameterized function bodies
@@ -231,12 +263,15 @@ type, failure, ownership, and return checks regardless of constant operand facts
 `const if` selects the residual arm during specialization.
 
 Fixed type formation, C++ construction type queries, and separately constructed
-lambda bodies read a closed source root
-during construction. The read follows binding identities, computes a copy of the
-initializer with its output discarded, and records the frozen value by binding;
-later reads reuse it. The source initializer is unchanged and executes during
-specialization. An unbound static input cannot determine a fixed type or
-implicitly enter a separate body. Retained owning values preserve their source type; static call
+lambda bodies can read a closed source root during construction. The read follows
+binding identities, computes a copy of the initializer in a dependency-query
+context, and records the frozen value by binding; later queries reuse it. That
+context discards output and disallows host clock reads, input, and waits at the
+shared execution boundary, including calls through source wrappers. It can use
+already completed module constants. The source initializer stays in place for
+ordinary specialization; construction cannot pre-execute its host work.
+An unbound static input cannot determine a fixed type or implicitly enter a
+separate body. Retained owning values preserve their source type; static call
 inputs retain their declared types. Explicit captures require runtime local storage.
 C++ construction queries resolve explicit static references and propagate pure
 operand facts; ordinary runtime calls retain their execution obligations.
@@ -249,8 +284,10 @@ per selected instance or expanded source occurrence, in source order. Ordinary
 control retains its static roots and static arguments. Explicit instance, iteration,
 node, and depth budgets bound this work per specialization root.
 
-Type formation precedes selection and expansion, so a root read by a type is
-computed even in an unselected arm. A `const` block in a body is constructed in
+Type formation precedes selection and expansion, so an admitted dependency-query
+root can be demanded even in an unselected arm. Host-dependent local roots cannot
+be read this way; their values must first be completed in a module constant when
+needed for type formation. A `const` block in a body is constructed in
 place as a `SemConstBlock` region with its own lexical frame and failure
 context. Construction rejects a runtime local declared outside the block and a
 control transfer that would leave it. Runtime bodies first specialize static

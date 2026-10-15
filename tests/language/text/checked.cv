@@ -1,0 +1,51 @@
+import std::utf using { UnicodeScalarError, UTF8Error };
+
+const test "Checked text: values and failures support static execution" {
+    const character = char::from_u32(0x1f600)?;
+    const text = str::from_utf8([0xf0u8, 0x9f, 0x98, 0x80])?;
+    check(character == '😀' && text == "😀");
+    let rejected = try {
+        let _ = char::from_u32(0xd800)?;
+        false
+    } catch {
+        UnicodeScalarError(error) => error.value == 0xd800
+    };
+    check(rejected);
+}
+
+test "Checked scalar: surrogate and out-of-range values are rejected" {
+    let invalid: [u32; 4] = [0xd800, 0xdfff, 0x110000, 0xffffffff];
+    for value in invalid {
+        var rejected = false;
+        try {
+            let _ = char::from_u32(value)?;
+        } catch {
+            UnicodeScalarError(error) => { rejected = error.value == value; },
+        }
+        check(rejected);
+    }
+}
+
+test "Checked text: byte contents and error offsets follow the selected slice" {
+    let storage: [u8; 6] = [0xff, 65, 0, 0xc3, 0xa9, 0xff];
+    try {
+        let view = str::from_utf8(storage.slice(1, 5))?;
+        check(view == "A\0é");
+        check(view.bytes.length() == 4);
+        let empty: [u8; 0] = [];
+        check(str::from_utf8(empty)?.is_empty());
+    } catch {
+        UTF8Error(_) => fail("valid byte views must succeed"),
+    }
+    let invalid: [u8; 4] = [65, 0xe2, 0x28, 0xa1];
+    let rejected = try {
+        let _ = str::from_utf8(invalid.slice(1, 4))?;
+        false
+    } catch {
+        UTF8Error(error) => error.kind
+            == .InvalidContinuation
+            && error.offset == 1
+            && error.sequence_start == 0
+    };
+    check(rejected);
+}

@@ -78,11 +78,9 @@ auto ModuleLowering::enum_payload_projection(
     TargetExpr subject
 ) noexcept -> TargetExpr {
     const auto& representation = payload_enum(id);
-    auto record_name = enumeration_name(id);
-    record_name.append(representation.case_records[case_index]);
     return template_call_expression(
         intrinsic_expression(TargetSymbol::StdGetIf),
-        {named_type(std::move(record_name))},
+        {TargetIntegerLiteral {false, case_index, TargetIntegerSuffix::None}},
         target_expressions(
             address_expression(member_expression(std::move(subject), representation.storage_member))
         )

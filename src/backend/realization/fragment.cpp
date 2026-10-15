@@ -102,7 +102,7 @@ auto BodyRealizer::ExpressionBuilder::finish_fragment(Fragment value) noexcept -
                 .initializer = std::vector<TargetExpr> {}
             }
         };
-        if (pending(value)) {
+        if (pending(value) && value.preparation.requires_execution) {
             auto body = std::vector<TargetStmt>();
             body.push_back(discard_statement(raw(value)));
             body.push_back(

@@ -1,9 +1,11 @@
 #pragma once
 
+#include <carven/runtime/execution/storage.hpp>
 #include <carven/runtime/value/outcome.hpp>
 
 #include <exception>
 #include <functional>
+#include <memory>
 #include <new>
 #include <type_traits>
 #include <utility>
@@ -17,10 +19,71 @@ namespace detail {
 template<typename Result>
 using SuccessState = carven::runtime::detail::SuccessState<Result>;
 
+// Completion owns indirect allocations; Empty records their ownership transfer.
+template<typename Value, bool Inline>
+class Payload final {
+    using Storage = std::conditional_t<Inline, Value, Value*>;
+    Storage storage;
+
+    template<typename... Arguments>
+    static auto make_storage(Arguments&&... arguments) noexcept -> Storage {
+        if constexpr (Inline) {
+            return Value(std::forward<Arguments>(arguments)...);
+        } else {
+            auto* result = new (std::nothrow) Value(std::forward<Arguments>(arguments)...);
+            if (result == nullptr) {
+                std::terminate();
+            }
+            return result;
+        }
+    }
+
+public:
+    template<typename... Arguments>
+    explicit Payload(std::in_place_t, Arguments&&... arguments) noexcept
+        : storage(make_storage(std::forward<Arguments>(arguments)...)) {}
+
+    Payload(const Payload&) = delete;
+
+    Payload(Payload&&) noexcept = default;
+
+    auto operator=(const Payload&) -> Payload& = delete;
+    auto operator=(Payload&&) -> Payload& = delete;
+    ~Payload() = default;
+
+    auto get() noexcept -> Value* {
+        if constexpr (Inline) {
+            return std::addressof(storage);
+        } else {
+            return storage;
+        }
+    }
+
+    auto get() const noexcept -> const Value* {
+        if constexpr (Inline) {
+            return std::addressof(storage);
+        } else {
+            return storage;
+        }
+    }
+
+    auto release() noexcept -> std::unique_ptr<Value>
+        requires (!Inline)
+    {
+        return std::unique_ptr<Value>(storage);
+    }
+
+    auto destroy() noexcept -> void {
+        if constexpr (!Inline) {
+            delete storage;
+        }
+    }
+};
+
 } // namespace detail
 
-// Primitive success is a value; class and failure payloads have independent
-// storage that remains valid after the producing coroutine frame is destroyed.
+// Source value payloads travel with the completion. Other payloads retain
+// independent storage across completion and coroutine-frame lifetimes.
 template<typename Result, typename... Failures>
 class Completion final {
     static_assert(carven::runtime::detail::UniqueTypes<Failures...>::value);
@@ -35,24 +98,25 @@ class Completion final {
 
     struct Empty final {};
 
-    static constexpr auto inline_success =
-        std::is_void_v<Result> || std::is_arithmetic_v<Result> || std::is_enum_v<Result>;
+    static constexpr auto inline_success = detail::InlineValue<Result>::value;
 
-    auto release_success() noexcept -> detail::SuccessState<Result>*
+    using SuccessPayload = detail::Payload<detail::SuccessState<Result>, inline_success>;
+    template<typename Failure>
+    using FailurePayload = detail::Payload<Failure, detail::InlineValue<Failure>::value>;
+    using State = std::variant<SuccessPayload, FailurePayload<Failures>..., Cancelled, Empty>;
+    State state;
+
+    auto release_success() noexcept -> std::unique_ptr<detail::SuccessState<Result>>
         requires (!inline_success)
     {
-        auto* result = success_if();
-        if (result == nullptr) {
+        auto* payload = std::get_if<SuccessPayload>(&state);
+        if (payload == nullptr) {
             std::terminate();
         }
+        auto result = payload->release();
         state.template emplace<Empty>();
         return result;
     }
-
-    using SuccessStorage = std::
-        conditional_t<inline_success, detail::SuccessState<Result>, detail::SuccessState<Result>*>;
-    using State = std::variant<SuccessStorage, Failures*..., Cancelled, Empty>;
-    State state;
 
     Completion() noexcept
         : state(std::in_place_type<Empty>) {}
@@ -61,45 +125,48 @@ class Completion final {
 
     // The promise selects one outcome into its initially empty carrier.
     auto initialize(Completion&& source) noexcept -> void {
-        state = std::move(source.state);
+        std::destroy_at(std::addressof(state));
+        std::construct_at(std::addressof(state), std::move(source.state));
         source.state.template emplace<Empty>();
     }
 
-    template<typename Alternative, typename... Arguments>
-    static auto make_state(Arguments&&... arguments) noexcept -> State {
-        if constexpr (std::same_as<Alternative, detail::SuccessState<Result>> && inline_success) {
-            return State(std::in_place_type<Alternative>, std::forward<Arguments>(arguments)...);
-        } else {
-            auto* payload = new (std::nothrow) Alternative(std::forward<Arguments>(arguments)...);
-            if (payload == nullptr) {
-                std::terminate();
-            }
-            return State(std::in_place_type<Alternative*>, payload);
-        }
-    }
+    template<typename Alternative>
+    using Payload = std::conditional_t<
+        std::same_as<Alternative, detail::SuccessState<Result>>,
+        SuccessPayload,
+        FailurePayload<Alternative>>;
 
     template<typename Alternative, typename... Arguments>
     explicit Completion(std::in_place_type_t<Alternative>, Arguments&&... arguments) noexcept
-        : state(make_state<Alternative>(std::forward<Arguments>(arguments)...)) {}
+        : state(
+              std::in_place_type<Payload<Alternative>>,
+              std::in_place,
+              std::forward<Arguments>(arguments)...
+          ) {}
 
-    explicit Completion(State value) noexcept
-        : state(std::move(value)) {}
+    explicit Completion(SuccessPayload&& payload) noexcept
+        : state(std::in_place_type<SuccessPayload>, std::move(payload)) {}
+
+    explicit Completion(Cancelled) noexcept
+        : state(std::in_place_type<Cancelled>) {}
 
 public:
     using Success = detail::SuccessState<Result>;
     Completion(const Completion&) = delete;
 
     Completion(Completion&& other) noexcept
-        : state(other.state) {
+        : state(std::move(other.state)) {
         other.state.template emplace<Empty>();
     }
 
     ~Completion() noexcept {
-        if constexpr (!inline_success || sizeof...(Failures) != 0) {
+        if constexpr (!(inline_success && (detail::InlineValue<Failures>::value && ...))) {
             std::visit(
-                [](auto alternative) noexcept {
-                    if constexpr (std::is_pointer_v<decltype(alternative)>) {
-                        delete alternative;
+                [](auto& alternative) noexcept {
+                    using Alternative = std::remove_cvref_t<decltype(alternative)>;
+                    if constexpr (!std::same_as<Alternative, Cancelled>
+                                  && !std::same_as<Alternative, Empty>) {
+                        alternative.destroy();
                     }
                 },
                 state
@@ -124,7 +191,7 @@ public:
     static auto success() noexcept -> Completion
         requires std::is_void_v<Result>
     {
-        return Completion(State(std::in_place_type<Success>));
+        return Completion(std::in_place_type<Success>);
     }
 
     template<typename Value = Result>
@@ -149,64 +216,46 @@ public:
         );
     }
 
-    static auto cancelled() noexcept -> Completion {
-        return Completion(State(std::in_place_type<Cancelled>));
-    }
+    static auto cancelled() noexcept -> Completion { return Completion(Cancelled {}); }
 
     // Private generated-code ABI: success-only ownership transfer across exact
     // Result types. Nominal failure propagation still performs source transfer.
     template<typename... SourceFailures>
     static auto adopt_success(Completion<Result, SourceFailures...>&& source) noexcept
         -> Completion {
-        auto* success = source.success_if();
-        if (success == nullptr) {
+        auto* payload = std::get_if<SuccessPayload>(&source.state);
+        if (payload == nullptr) {
             std::terminate();
         }
-        if constexpr (std::is_void_v<Result>) {
-            source.state.template emplace<typename Completion<Result, SourceFailures...>::Empty>();
-            return Completion(State(std::in_place_type<Success>));
-        } else if constexpr (inline_success) {
-            const auto value = success->value;
-            source.state.template emplace<typename Completion<Result, SourceFailures...>::Empty>();
-            return Completion::success(value);
-        } else {
-            source.state.template emplace<typename Completion<Result, SourceFailures...>::Empty>();
-            return Completion(State(std::in_place_type<Success*>, success));
-        }
+        auto result = Completion(std::move(*payload));
+        source.state.template emplace<typename Completion<Result, SourceFailures...>::Empty>();
+        return result;
     }
 
     auto success_if() & noexcept -> Success* {
-        if constexpr (inline_success) {
-            return std::get_if<Success>(&state);
-        } else {
-            auto* value = std::get_if<Success*>(&state);
-            return value == nullptr ? nullptr : *value;
-        }
+        auto* value = std::get_if<SuccessPayload>(&state);
+        return value == nullptr ? nullptr : value->get();
     }
 
     auto success_if() const& noexcept -> const Success* {
-        if constexpr (inline_success) {
-            return std::get_if<Success>(&state);
-        } else {
-            const auto* value = std::get_if<Success*>(&state);
-            return value == nullptr ? nullptr : *value;
-        }
+        const auto* value = std::get_if<SuccessPayload>(&state);
+        return value == nullptr ? nullptr : value->get();
     }
 
     template<typename Failure>
     auto failure_if() & noexcept -> Failure*
         requires carven::runtime::detail::ContainsExact<Failure, Failures...>
     {
-        auto* value = std::get_if<Failure*>(&state);
-        return value == nullptr ? nullptr : *value;
+        auto* value = std::get_if<FailurePayload<Failure>>(&state);
+        return value == nullptr ? nullptr : value->get();
     }
 
     template<typename Failure>
     auto failure_if() const& noexcept -> const Failure*
         requires carven::runtime::detail::ContainsExact<Failure, Failures...>
     {
-        const auto* value = std::get_if<Failure*>(&state);
-        return value == nullptr ? nullptr : *value;
+        const auto* value = std::get_if<FailurePayload<Failure>>(&state);
+        return value == nullptr ? nullptr : value->get();
     }
 
     auto is_cancelled() const noexcept -> bool { return std::holds_alternative<Cancelled>(state); }
@@ -219,17 +268,18 @@ class SuccessBinding final {
     static_assert(!std::is_void_v<Result>);
     static constexpr auto transferable = carven::runtime::detail::TransferConstructible<Result>;
     using Success = detail::SuccessState<Result>;
-    using Storage = std::conditional_t<transferable, Success, Success*>;
+    using Storage = std::conditional_t<transferable, Success, std::unique_ptr<Success>>;
     Storage storage;
 
     template<typename... Failures>
     static auto bind(Completion<Result, Failures...>& source) noexcept -> Storage {
-        if (source.success_if() == nullptr) {
+        auto* success = source.success_if();
+        if (success == nullptr) {
             std::terminate();
         }
         if constexpr (transferable) {
             return Success(std::in_place, [&]() noexcept -> Result {
-                return Result(carven::runtime::transfer(source.success_if()->value));
+                return Result(carven::runtime::transfer(success->value));
             });
         } else {
             return source.release_success();
@@ -246,11 +296,7 @@ public:
     auto operator=(const SuccessBinding&) -> SuccessBinding& = delete;
     auto operator=(SuccessBinding&&) -> SuccessBinding& = delete;
 
-    ~SuccessBinding() noexcept {
-        if constexpr (!transferable) {
-            delete storage;
-        }
-    }
+    ~SuccessBinding() = default;
 
     auto get() & noexcept -> Result& {
         if constexpr (transferable) {

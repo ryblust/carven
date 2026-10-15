@@ -1,6 +1,4 @@
-import std::json.error using ValueError;
-import std::json.error using JSONError;
-import std::json.value using { Value, ValueKind };
+import std::json using { JSONError, ValueError, Value, ValueKind };
 
 // Owning values and mutation are runtime contracts.
 test "JSON values: numeric construction and conversion preserve their one spelling" {
@@ -133,6 +131,15 @@ test "JSON values: wrong kinds absent keys and invalid indices are typed failure
         ValueError(error) => { rejected = error == .WrongKind; },
     }
     check(rejected);
+    let text = Value::string("42");
+    check(
+        try {
+            let _ = text.as_f64()?;
+            false
+        } catch {
+            ValueError(error) => error == .WrongKind,
+        }
+    );
     var array = Value::array();
     rejected = false;
     try {

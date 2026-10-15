@@ -8,6 +8,8 @@ import std;
 
 namespace {
 
+enum class ReferencePurpose { Declaration, ProviderAccess };
+
 struct DeclarationReferenceFacts final {
     std::flat_map<NominalDeclarationRef, TargetTypeCompleteness> requirements;
     std::flat_set<CallableID> callables;
@@ -27,28 +29,40 @@ private:
         NominalDeclarationRef nominal,
         TargetTypeCompleteness completeness
     ) noexcept -> void;
-    auto collect_failure_set(FailureSetID failure_set, TargetTypeCompleteness completeness) noexcept
-        -> void;
+    auto collect_failure_set(
+        FailureSetID failure_set,
+        TargetTypeCompleteness completeness,
+        ReferencePurpose purpose = ReferencePurpose::Declaration
+    ) noexcept -> void;
     auto collect_signature(
         CallableSignatureID signature_id,
-        TargetTypeCompleteness value_completeness = TargetTypeCompleteness::Declaration
+        TargetTypeCompleteness value_completeness = TargetTypeCompleteness::Declaration,
+        ReferencePurpose purpose = ReferencePurpose::Declaration
     ) noexcept -> void;
-    auto collect_callable(CallableID callable) noexcept -> void;
-    auto collect_type(TypeID type_id, TargetTypeCompleteness completeness) noexcept -> void;
+    auto collect_callable(CallableID callable, ReferencePurpose purpose) noexcept -> void;
+    auto collect_type(
+        TypeID type_id,
+        TargetTypeCompleteness completeness,
+        ReferencePurpose purpose = ReferencePurpose::Declaration
+    ) noexcept -> void;
+    auto collect_nominal_members(NominalDeclarationRef nominal, ReferencePurpose purpose) noexcept
+        -> void;
     auto collect_surface(CallableID callable) noexcept -> void;
     auto collect_body_callable(CallableID callable) noexcept -> void;
 
 public:
     auto collect_declaration(DeclarationRef declaration) noexcept -> void;
     auto collect_generic(GenericDeclarationID definition) noexcept -> void;
+    auto collect_provider(FunctionID id) noexcept -> void;
 
 private:
     const SemIRProgram& semantic;
     std::optional<ModuleID> surface_module;
     std::flat_map<CallableID, FunctionID> module_functions;
     DeclarationReferenceFacts result;
-    std::set<std::pair<TypeID, TargetTypeCompleteness>> visited_types;
-    std::set<std::pair<CallableSignatureID, TargetTypeCompleteness>> visited_signatures;
+    std::set<std::tuple<TypeID, TargetTypeCompleteness, ReferencePurpose>> visited_types;
+    std::set<std::tuple<CallableSignatureID, TargetTypeCompleteness, ReferencePurpose>>
+        visited_signatures;
     std::set<CallableID> visited_surfaces;
     std::set<GenericDeclarationID> visited_generics;
 };
@@ -92,18 +106,20 @@ auto DeclarationReferenceCollector::require_nominal(
 
 auto DeclarationReferenceCollector::collect_failure_set(
     FailureSetID failure_set,
-    TargetTypeCompleteness completeness
+    TargetTypeCompleteness completeness,
+    ReferencePurpose purpose
 ) noexcept -> void {
     for (const auto member : semantic.failure_sets().failure_set(failure_set).members) {
-        collect_type(member, completeness);
+        collect_type(member, completeness, purpose);
     }
 }
 
 auto DeclarationReferenceCollector::collect_signature(
     CallableSignatureID signature_id,
-    TargetTypeCompleteness value_completeness
+    TargetTypeCompleteness value_completeness,
+    ReferencePurpose purpose
 ) noexcept -> void {
-    if (!visited_signatures.emplace(signature_id, value_completeness).second) {
+    if (!visited_signatures.emplace(signature_id, value_completeness, purpose).second) {
         return;
     }
     const auto& signature = semantic.callable_signatures().signature(signature_id);
@@ -113,87 +129,113 @@ auto DeclarationReferenceCollector::collect_signature(
         }
         collect_type(
             parameter.type,
-            parameter.access == AccessMode::Read       ? TargetTypeCompleteness::CompleteDefinition
-                : parameter.access == AccessMode::Take ? value_completeness
-                                                       : TargetTypeCompleteness::Declaration
+            purpose == ReferencePurpose::ProviderAccess ? value_completeness
+                : parameter.access == AccessMode::Read  ? TargetTypeCompleteness::CompleteDefinition
+                : parameter.access == AccessMode::Take  ? value_completeness
+                                                        : TargetTypeCompleteness::Declaration,
+            purpose
         );
     }
-    collect_type(signature.result, value_completeness);
-    collect_failure_set(signature.failures, value_completeness);
+    collect_type(signature.result, value_completeness, purpose);
+    collect_failure_set(signature.failures, value_completeness, purpose);
 }
 
-auto DeclarationReferenceCollector::collect_callable(CallableID callable) noexcept -> void {
-    collect_signature(semantic.declarations().callable(callable).signature);
+auto DeclarationReferenceCollector::collect_callable(
+    CallableID callable,
+    ReferencePurpose purpose
+) noexcept -> void {
+    collect_signature(
+        semantic.declarations().callable(callable).signature,
+        TargetTypeCompleteness::Declaration,
+        purpose
+    );
 }
 
 auto DeclarationReferenceCollector::collect_type(
     TypeID type_id,
-    TargetTypeCompleteness completeness
+    TargetTypeCompleteness completeness,
+    ReferencePurpose purpose
 ) noexcept -> void {
-    if (!visited_types.emplace(type_id, completeness).second) {
+    if (purpose == ReferencePurpose::ProviderAccess) {
+        // Providers operate on referenced values even through pointers and views.
+        // Publish those definitions without turning weak references into layout edges.
+        completeness = std::max(completeness, TargetTypeCompleteness::DeferredCompleteDefinition);
+    }
+    if (!visited_types.emplace(type_id, completeness, purpose).second) {
         return;
     }
     semantic.types().type(type_id).value.visit(
         Overloaded {
 
             [&](const SliceTypeValue& value) noexcept {
-                collect_type(value.element, TargetTypeCompleteness::Declaration);
+                collect_type(value.element, TargetTypeCompleteness::Declaration, purpose);
             },
             [&](const VectorTypeValue& value) noexcept {
                 collect_type(
                     value.element,
                     completeness == TargetTypeCompleteness::Declaration
                         ? TargetTypeCompleteness::Declaration
-                        : TargetTypeCompleteness::DeferredCompleteDefinition
+                        : TargetTypeCompleteness::DeferredCompleteDefinition,
+                    purpose
                 );
             },
             [&](const RangeTypeValue& value) noexcept {
-                collect_type(value.element, TargetTypeCompleteness::Declaration);
+                collect_type(value.element, TargetTypeCompleteness::Declaration, purpose);
             },
             [&](const PointerTypeValue& value) noexcept {
-                collect_type(value.target, TargetTypeCompleteness::Declaration);
+                collect_type(value.target, TargetTypeCompleteness::Declaration, purpose);
             },
             [&](const CppTypeValue& value) noexcept {
                 visit_cpp_type_references(value, [&](TypeID argument) noexcept {
-                    collect_type(argument, TargetTypeCompleteness::CompleteDefinition);
+                    collect_type(argument, TargetTypeCompleteness::CompleteDefinition, purpose);
                 });
             },
             [](const BuiltinTypeValue&) static noexcept {},
             [&](const StructTypeValue& value) noexcept {
-                require_nominal(NominalDeclarationRef {value.structure}, completeness);
+                const auto nominal = NominalDeclarationRef {value.structure};
+                require_nominal(nominal, completeness);
+                if (purpose == ReferencePurpose::ProviderAccess) {
+                    collect_nominal_members(nominal, purpose);
+                }
             },
             [&](const EnumTypeValue& value) noexcept {
-                require_nominal(NominalDeclarationRef {value.enumeration}, completeness);
+                const auto nominal = NominalDeclarationRef {value.enumeration};
+                require_nominal(nominal, completeness);
+                if (purpose == ReferencePurpose::ProviderAccess) {
+                    collect_nominal_members(nominal, purpose);
+                }
             },
             [&](const ArrayTypeValue& value) noexcept {
-                collect_type(value.element, completeness);
+                collect_type(value.element, completeness, purpose);
             },
             [&](const TupleTypeValue& value) noexcept {
                 for (const auto element : value.elements) {
-                    collect_type(element, completeness);
+                    collect_type(element, completeness, purpose);
                 }
             },
             [&](const OperationTypeValue& value) noexcept {
-                collect_type(value.success, completeness);
-                collect_failure_set(value.failures, completeness);
+                collect_type(value.success, completeness, purpose);
+                collect_failure_set(value.failures, completeness, purpose);
             },
             [&](const FunctionTypeValue& value) noexcept {
                 collect_signature(
                     semantic.declarations().callable(value.callable).signature,
                     completeness == TargetTypeCompleteness::Declaration
                         ? completeness
-                        : TargetTypeCompleteness::DeferredCompleteDefinition
+                        : TargetTypeCompleteness::DeferredCompleteDefinition,
+                    purpose
                 );
             },
             [&](const ClosureTypeValue& value) noexcept {
                 result.callables.insert(value.callable);
-                collect_callable(value.callable);
+                collect_callable(value.callable, purpose);
                 const auto body_id = semantic.declarations().body_for_callable(value.callable);
                 const auto& body = semantic.bodies().body(*body_id);
                 for (const auto capture : body.inputs().captures) {
                     collect_type(
                         body.binding(capture).type,
-                        TargetTypeCompleteness::CompleteDefinition
+                        TargetTypeCompleteness::CompleteDefinition,
+                        purpose
                     );
                 }
             },
@@ -202,8 +244,40 @@ auto DeclarationReferenceCollector::collect_type(
                     value.signature,
                     completeness == TargetTypeCompleteness::Declaration
                         ? completeness
-                        : TargetTypeCompleteness::DeferredCompleteDefinition
+                        : TargetTypeCompleteness::DeferredCompleteDefinition,
+                    purpose
                 );
+            },
+        }
+    );
+}
+
+auto DeclarationReferenceCollector::collect_nominal_members(
+    NominalDeclarationRef nominal,
+    ReferencePurpose purpose
+) noexcept -> void {
+    const auto completeness = purpose == ReferencePurpose::ProviderAccess
+        ? TargetTypeCompleteness::DeferredCompleteDefinition
+        : TargetTypeCompleteness::CompleteDefinition;
+    nominal.visit(
+        Overloaded {
+            [&](StructID id) noexcept {
+                for (const auto& field : semantic.declarations().structure(id).fields) {
+                    collect_type(field.type, completeness, purpose);
+                }
+            },
+            [&](EnumID id) noexcept {
+                const auto& enumeration = semantic.declarations().enumeration(id);
+                if (const auto* numeric =
+                        std::get_if<NumericEnumRepresentation>(&enumeration.representation)) {
+                    collect_type(numeric->underlying_type, completeness, purpose);
+                }
+                for (const auto case_id : enumeration.cases) {
+                    for (const auto type :
+                         semantic.declarations().enum_case(case_id).payload_types) {
+                        collect_type(type, completeness, purpose);
+                    }
+                }
             },
         }
     );
@@ -249,6 +323,14 @@ auto DeclarationReferenceCollector::collect_generic(GenericDeclarationID definit
     }
 }
 
+auto DeclarationReferenceCollector::collect_provider(FunctionID id) noexcept -> void {
+    collect_signature(
+        semantic.declarations().callable(semantic.declarations().function(id).callable).signature,
+        TargetTypeCompleteness::DeferredCompleteDefinition,
+        ReferencePurpose::ProviderAccess
+    );
+}
+
 auto DeclarationReferenceCollector::collect_declaration(DeclarationRef declaration) noexcept
     -> void {
     declaration.visit(
@@ -266,26 +348,9 @@ auto DeclarationReferenceCollector::collect_declaration(DeclarationRef declarati
                 }
             },
             [&](StructID id) noexcept {
-                for (const auto& field : semantic.declarations().structure(id).fields) {
-                    collect_type(field.type, TargetTypeCompleteness::CompleteDefinition);
-                }
+                collect_nominal_members(id, ReferencePurpose::Declaration);
             },
-            [&](EnumID id) noexcept {
-                const auto& enumeration = semantic.declarations().enumeration(id);
-                if (const auto* numeric =
-                        std::get_if<NumericEnumRepresentation>(&enumeration.representation)) {
-                    collect_type(
-                        numeric->underlying_type,
-                        TargetTypeCompleteness::CompleteDefinition
-                    );
-                }
-                for (const auto case_id : enumeration.cases) {
-                    for (const auto type :
-                         semantic.declarations().enum_case(case_id).payload_types) {
-                        collect_type(type, TargetTypeCompleteness::CompleteDefinition);
-                    }
-                }
-            },
+            [&](EnumID id) noexcept { collect_nominal_members(id, ReferencePurpose::Declaration); },
             [&](ModuleConstantID id) noexcept {
                 const auto type = semantic.constants()
                                       .constant(semantic.declarations().module_constant(id).value)
@@ -339,7 +404,8 @@ auto target_owner_module(const SemIRProgram& semantic, DeclarationRef declaratio
 
 auto collect_target_references(
     const SemIRProgram& semantic,
-    std::span<const std::vector<DeclarationRef>> surface_declarations
+    std::span<const std::vector<DeclarationRef>> surface_declarations,
+    std::span<const FunctionID> providers
 ) noexcept -> TargetReferenceFacts {
     auto result = TargetReferenceFacts {
         .surface_requirements =
@@ -356,6 +422,11 @@ auto collect_target_references(
         }
         visited[index] = true;
         auto collector = DeclarationReferenceCollector(semantic, entry.id);
+        for (const auto provider : providers) {
+            if (semantic.declarations().function(provider).module_id == entry.id) {
+                collector.collect_provider(provider);
+            }
+        }
         for (const auto declaration : surface_declarations[index]) {
             collector.collect_declaration(declaration);
         }

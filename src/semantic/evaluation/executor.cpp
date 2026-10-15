@@ -114,6 +114,8 @@ auto SemanticExecutor::operation_failure(
         case ConstantEvaluationFailure::SliceOutOfBounds:
         case ConstantEvaluationFailure::SIMDOutOfBounds:
             return trap(origin, ExecutionReason::IndexBounds, std::move(message));
+        case ConstantEvaluationFailure::InvalidClampBounds:
+            return trap(origin, ExecutionReason::Assertion, std::move(message));
         case ConstantEvaluationFailure::IntegerOverflow:
         case ConstantEvaluationFailure::IntegerLiteralOutOfRange:
         case ConstantEvaluationFailure::FloatingLiteralOutOfRange:
@@ -1177,7 +1179,49 @@ auto SemanticExecutor::call(
         if (!target) {
             co_return std::unexpected(unavailable(std::move(target.error())));
         }
-        const auto& body = *target;
+        if (const auto* builtin = std::get_if<ExecutionBuiltinCall>(&*target)) {
+            if (const auto* parser =
+                    std::get_if<NumberParseImplementation>(&builtin->implementation)) {
+                if (arguments.size() != 1uz) {
+                    invariant_violation("number parser requires one argument");
+                }
+                auto input = detach_argument(std::move(arguments.front()), origin);
+                if (!input) {
+                    co_return std::unexpected(std::move(input.error()));
+                }
+                auto bytes = text(*input, origin);
+                if (!bytes) {
+                    co_return std::unexpected(std::move(bytes.error()));
+                }
+                const auto parsed = parse_number_constant(
+                    values,
+                    std::get<BuiltinTypeValue>(values.type_copy(builtin->result).value).kind,
+                    bytes->view()
+                );
+                if (parsed) {
+                    co_return ExecutionValue(*constant_atom(*parsed));
+                }
+                co_return std::unexpected(
+                    ExecutionFailure {ExecutionSourceFailure {
+                        .type = values.constant(parser->invalid).type,
+                        .payload = std::make_shared<const ExecutionValue>(
+                            *constant_atom(values.constant(parser->invalid))
+                        ),
+                        .origin = origin,
+                        .calls = current->calls,
+                        .blocks = current->blocks,
+                    }}
+                );
+            }
+            const auto provided = std::get<ProvidedFunctionImplementation>(builtin->implementation);
+            co_return co_await provided_call(
+                provided.function,
+                builtin->result,
+                std::move(arguments),
+                origin
+            );
+        }
+        const auto& body = std::get<ExecutionBody>(*target);
         const auto parameters = body.parameters();
         if (arguments.size() != parameters.size()) {
             co_return std::unexpected(fail(

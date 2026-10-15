@@ -79,12 +79,15 @@ auto ProgramDraft::validate_generic_definitions(std::optional<GenericDeclaration
     auto pending = std::vector<std::pair<GenericDeclarationID, ProgramOriginID>>();
     if (root) {
         const auto definition = generic_declaration_copy(*root);
+
         pending.emplace_back(*root, definition_contract(definition).origin);
+
     } else {
         for (auto index = 0uz; index < storage.generic_definitions.size(); ++index) {
             const auto owner =
                 GenericDeclarationID(program_identity, static_cast<std::uint32_t>(index));
             const auto definition = generic_declaration_copy(owner);
+
             pending.emplace_back(owner, definition_contract(definition).origin);
         }
     }
@@ -118,6 +121,7 @@ auto ProgramDraft::validate_generic_definitions(std::optional<GenericDeclaration
             return std::unexpected(*failure);
         }
         const auto definition = generic_declaration_copy(owner);
+
         for (const auto [type, origin] : definition_fields(definition)) {
             collect_dependencies(collect_dependencies, type, origin);
         }
@@ -161,6 +165,7 @@ auto ProgramDraft::validate_generic_definitions(std::optional<GenericDeclaration
         }
         const auto definition = generic_declaration_copy(owner);
         const auto& contract = definition_contract(definition);
+
         auto parameter_names = std::set<ProgramSpellingID>();
         for (const auto parameter : contract.parameters) {
             if (!parameter_names.insert(parameter).second) {
@@ -524,6 +529,7 @@ auto ProgramDraft::validate_generic_definitions(std::optional<GenericDeclaration
         }
         const auto definition = generic_declaration_copy(owner);
         const auto& contract = definition_contract(definition);
+
         if (std::holds_alternative<GenericFunctionDefinition>(definition)) {
             continue;
         }

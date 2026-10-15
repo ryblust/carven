@@ -20,6 +20,19 @@ import std;
 namespace {
 
 const TestSuite suite([] static noexcept {
+    "Parser C++ targets: bindings require a global path and reject expressions"_test =
+        [] static noexcept {
+            check_invalid(
+                "import(cpp) fn local() = vendor::call;",
+                "expected '::' before C++ target"
+            );
+            check_invalid("import(cpp) fn local() = ::vendor::;", "expected C++ target name");
+            check_invalid(
+                "import(cpp) fn local() = ::vendor::call();",
+                "expected ';' after import(cpp) declaration"
+            );
+        };
+
     "Parser declaration: generic parameters distinguish types and failure sets"_test =
         [] static noexcept {
             const auto tree = parse_valid("fn forward<T, throw E>() {}");

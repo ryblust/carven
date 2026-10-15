@@ -756,9 +756,9 @@ auto OwnershipBodyAnalyzer::expression(
                             },
                             [&](const FloatIntrinsic&) noexcept
                                 -> ContinuationTask<std::monostate> {
-                                static_cast<void>(
-                                    co_await evaluate(value.operands.front().expression)
-                                );
+                                for (const auto& operand : value.operands) {
+                                    static_cast<void>(co_await evaluate(operand.expression));
+                                }
                                 if (flow.normal) {
                                     flow.normal->value = OwnershipRelationships {};
                                 }

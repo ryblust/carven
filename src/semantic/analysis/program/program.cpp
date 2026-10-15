@@ -6,6 +6,7 @@ import :frontend.program;
 import :semantic.analysis.diagnostics;
 import :semantic.analysis.failure;
 import :semantic.analysis.program;
+import :semantic.evaluation.execution;
 import :semantic.semir.contents;
 import :semantic.semir.program;
 import :semantic.semir.stage;
@@ -19,9 +20,17 @@ auto ProgramDraft::begin(
     DiagnosticSink& sink,
     ExecutionOutput output,
     SourceAnalysisBuilder* source_analysis,
-    TimingOutput timings
+    TimingOutput timings,
+    HostEffects host_effects
 ) noexcept -> ProgramDraft {
-    return ProgramDraft(std::move(syntax).decompose(), sink, output, source_analysis, timings);
+    return ProgramDraft(
+        std::move(syntax).decompose(),
+        sink,
+        output,
+        source_analysis,
+        timings,
+        host_effects
+    );
 }
 
 ProgramDraft::ProgramDraft(
@@ -29,7 +38,8 @@ ProgramDraft::ProgramDraft(
     DiagnosticSink& sink,
     ExecutionOutput output,
     SourceAnalysisBuilder* source_analysis,
-    TimingOutput timings
+    TimingOutput timings,
+    HostEffects host_effects
 ) noexcept
     : program_identity(ProgramIdentity::fresh()),
       provenance_appender(std::move(parts.provenance)),
@@ -37,6 +47,7 @@ ProgramDraft::ProgramDraft(
       output(output),
       source_observer(source_analysis),
       analysis_timings(timings),
+      execution_host_effects(host_effects),
       state(State::Declarations),
       storage(
           program_identity,
@@ -47,6 +58,10 @@ ProgramDraft::ProgramDraft(
 
 auto ProgramDraft::timings() const noexcept -> TimingOutput {
     return analysis_timings;
+}
+
+auto ProgramDraft::host_effects() const noexcept -> HostEffects {
+    return execution_host_effects;
 }
 
 auto ProgramDraft::source_analysis() const noexcept -> SourceAnalysisBuilder* {
@@ -291,6 +306,11 @@ auto ProgramDraft::append_body_callable(ConstructionCallableContract contract) n
 auto ProgramDraft::complete_callable(CallableID id, CallableImplementation implementation) noexcept
     -> void {
     storage.declarations.complete_callable(id, implementation);
+}
+
+auto ProgramDraft::callable_implementation_copy(CallableID id) const noexcept
+    -> std::optional<CallableImplementation> {
+    return storage.declarations.construction_view().try_callable_implementation(id);
 }
 
 auto ProgramDraft::module_declaration_copy(ModuleID id) const noexcept -> ModuleDeclaration {
@@ -592,6 +612,11 @@ auto ProgramDraft::module_path_copy(ProgramModuleID id) const noexcept -> Canoni
         invariant_violation("semantic module path lookup used a foreign module");
     }
     return provenance_appender.reader().module_path_copy(id);
+}
+
+auto ProgramDraft::find_program_module(const CanonicalModulePath& path) const noexcept
+    -> std::optional<ProgramModuleID> {
+    return provenance_appender.reader().find_program_module(path);
 }
 
 auto ProgramDraft::source_slice_copy(ProgramSourceID source, Span span) const noexcept

@@ -190,11 +190,8 @@ auto BodyElaborator::find_enum_case(EnumID owner, std::string_view name, Span sp
     -> std::optional<EnumCaseID> {
     const auto selected = draft().enum_case_named(owner, name);
     if (selected && observe_sources) {
-        observe_source(
-            span,
-            draft().source_span(draft().construction_enum_case_declaration_copy(*selected).origin),
-            std::nullopt
-        );
+        const auto source = draft().construction_enum_case_declaration_copy(*selected).origin;
+        observe_source(span, draft().source_span(source), std::nullopt);
     }
     return selected;
 }

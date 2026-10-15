@@ -64,6 +64,13 @@ The Xmake project directory is the workspace root. Targets select sources; the
 compiler manifest lists inputs and generated artifacts. Xmake's C++ rules own
 native dependency scanning, compilation, linking, and build caches.
 
+The compiler emits provider type support headers for native imports. The rule
+publishes their manifest headers before native scanning. Refresh local rule
+changes with
+`CARVEN_XMAKE_REPO_DIR=/path/to/carven-xmake-repo ./xmakew require --force -y`.
+Networking's Windows/MinGW `ws2_32` dependency is configured for producers and
+final consumers by the rule. Reconfigure after installed Crafts inventory changes.
+
 ## Shared targets
 
 Register shared sources in one producer per compilation configuration. Consumers

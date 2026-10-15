@@ -5,6 +5,8 @@
 #include <cstdlib>
 #include <string_view>
 
+auto run_net_cases() noexcept -> void;
+
 auto run_timer_cases() noexcept -> void;
 auto run_cleanup_cases() noexcept -> void;
 
@@ -19,7 +21,9 @@ auto main(int argc, char** argv) noexcept -> int {
         return EXIT_FAILURE;
     }
     const auto operation = std::string_view(argv[1]);
-    if (operation == "timer") {
+    if (operation == "net") {
+        run_net_cases();
+    } else if (operation == "timer") {
         run_timer_cases();
     } else if (operation == "cleanup") {
         run_cleanup_cases();

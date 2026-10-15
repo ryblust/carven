@@ -1,0 +1,7 @@
+struct Record {
+    value: i32
+}
+
+import(cpp) fn provider(value: Record) -> Record;
+private import(cpp) fn mapped_value(value: i32) -> i32 = ::native::nested::implementation;
+fn ordinary() -> i32 => mapped_value(42);

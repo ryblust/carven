@@ -1,0 +1,30 @@
+import std::io using IOError;
+import std::utf using UTF8ErrorKind;
+
+export const async fn verify_utf_errors() throw IOError {
+    let kinds: [UTF8ErrorKind; 6] = [
+        .InvalidLead,
+        .InvalidContinuation,
+        .Overlong,
+        .Surrogate,
+        .TooLarge,
+        .Truncated
+    ];
+    let offsets: [usize; 6] = [1, 3, 2, 2, 2, 3];
+    for index in 0..6 {
+        let rejected = try {
+            let _ = await stdin().read_line()?;
+            false
+        } catch {
+            IOError(error) => match error {
+                .InvalidUTF8(detail) => detail.kind
+                    == kinds[index]
+                    && detail.offset == offsets[index]
+                    && detail.sequence_start == 1,
+                _ => false
+            }
+        };
+        assert(rejected);
+    }
+    assert(await stdin().read_line()? == .Data("done"));
+}

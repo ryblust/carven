@@ -1,0 +1,4 @@
+import demo::api using answer;
+
+println("source", answer(false));
+println("native", answer(true));

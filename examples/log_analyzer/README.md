@@ -27,11 +27,15 @@ Static tests check redaction and the template, while runtime tests check record
 recovery and ordering. The async entry reads raw bytes with
 `await stdin().read_all(16 * 1024 * 1024)?`; validation and recovery apply to each
 record. Command-line arguments are an ordinary `Vector<String>`.
-Field parsing uses borrowed `split_once` results and `parse<u64>`; redaction uses
-`split` and `starts_with` from the text library.
+Field parsing uses borrowed `split_once` results and `u64::parse`; redaction uses
+`SplitCursor` and `starts_with` from the text library, preserving leading,
+trailing, and repeated spaces. `ByteLines` separates records before UTF-8
+validation, so invalid text rejects only its own record.
 
 Record parsing reports one `RecordError` enum, retaining typed numeric, UTF-8,
 and text-processing details. The entry models application failures with
 `AnalyzerError`: input failures retain the standard `IOError` payload, and report
 failures retain `ValueError`. Individual malformed records are counted and
 processing continues.
+`--help` prints usage. Unknown options print usage to stderr and fail before
+reading input.

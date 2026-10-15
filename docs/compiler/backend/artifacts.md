@@ -5,6 +5,19 @@ construction owns syntax, dependencies, verification, and emission.
 
 ## Names and interfaces
 
+Concrete `import(cpp)` declarations add `carven/providers/<module>.hpp`
+artifacts with the existing C++ API header role. Dependency collection separates
+provider access from ordinary signature declarations: providers need the source
+type definitions reachable through parameters, results, and failures, including
+private types behind slices and pointers. Weak references require publication
+without imposing a C++ layout order. Both purposes use the same type traversal
+and definition-placement requirements. Support headers include those interfaces
+and emit aliases in a callable namespace below the module namespace.
+They contain no external function prototypes and are not automatically included
+by module implementations. Native declarations and calls retain their authored
+header and fragment environments. The manifest records these headers for
+publication and obsolete-artifact removal.
+
 `TargetNamePlan` owns linkage-domain namespaces, module names, nominal names,
 callable and closure names, enum payload names, generated test names, query aliases,
 constant backing names, and nominal display helper names. Function references

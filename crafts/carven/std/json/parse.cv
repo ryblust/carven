@@ -1,9 +1,7 @@
-import .error using JSONError;
 import .node using { Node, Member };
 import .syntax using { SyntaxState, SyntaxEvent, syntax_state, next_event, validate_number };
-
-import std::utf.error using UTF8Error;
-import std::utf.validation using validate_utf8;
+import std::json using JSONError;
+import std::utf using UTF8Error;
 
 private const fn read_string(bytes: [u8], &state: SyntaxState) -> String throw JSONError {
     var result = String {};
@@ -40,7 +38,7 @@ private const fn read_value(
             return .Text(&&text);
         },
         .ArrayBegin => {
-            var result: Vector<Node> = {};
+            var result: Vector<Node> = [];
             while {
                 let element = next_event(bytes, &state)?;
                 match element {
@@ -53,7 +51,7 @@ private const fn read_value(
             }
         },
         .ObjectBegin => {
-            var result: Vector<Member> = {};
+            var result: Vector<Member> = [];
             while {
                 match next_event(bytes, &state)? {
                     .ObjectEnd => return .Object(&&result),
@@ -85,10 +83,9 @@ const fn parse_node(text: str) -> Node throw JSONError {
     return &&result;
 }
 
-const fn parse_node_bytes(bytes: [u8]) -> Node throw JSONError + UTF8Error {
-    validate_utf8(bytes)?;
-    return parse_node(str::from_utf8_unchecked(bytes))?;
-}
+const fn parse_node_bytes(bytes: [u8]) -> Node throw JSONError + UTF8Error => parse_node(
+    str::from_utf8(bytes)?
+)?;
 
 const fn parse_number_node(text: str) -> Node throw JSONError {
     validate_number(text.bytes)?;

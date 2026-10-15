@@ -175,11 +175,8 @@ auto close_import_graph(
                 continue;
             }
             const auto target = provenance.find_program_module(*resolved);
-            if (const auto provided = find_provided_module(resolved->value())) {
-                imports.push_back({.declaration = declaration, .target = *provided});
-                continue;
-            }
-            if (!target.has_value()) {
+            const auto provided = find_provided_module(resolved->value());
+            if (!target && !provided) {
                 diagnostics.push_back(import_error(
                     source.manager_source_id(),
                     std::format(
@@ -190,7 +187,7 @@ auto close_import_graph(
                 ));
                 continue;
             }
-            if (*target == module_id) {
+            if (target == module_id) {
                 diagnostics.push_back(import_error(
                     source.manager_source_id(),
                     "a module cannot import itself",
@@ -198,7 +195,10 @@ auto close_import_graph(
                 ));
                 continue;
             }
-            imports.push_back({.declaration = declaration, .target = *target});
+            imports.push_back({
+                .declaration = declaration,
+                .target = {.source = target, .provided = provided},
+            });
         }
         result.push_back(std::move(imports));
     }
@@ -236,14 +236,6 @@ auto validate_inputs(
                 std::format(
                     "source snapshot {} is supplied more than once",
                     input.source_id.index()
-                )
-            ));
-        }
-        if (find_provided_module(input.module_path.value())) {
-            diagnostics.push_back(compilation_input_error(
-                std::format(
-                    "source module '{}' conflicts with a compiler-provided module",
-                    input.module_path.value()
                 )
             ));
         }

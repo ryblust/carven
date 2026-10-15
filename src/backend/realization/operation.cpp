@@ -19,13 +19,13 @@ import :semantic.semir.delegation;
 import :semantic.semir.ids;
 import :semantic.semir.operation;
 import :semantic.semir.program;
-import :semantic.semir.vector;
 import :semantic.semir.slice;
 import :semantic.semir.structured;
 import :semantic.semir.text;
 import :semantic.semir.type;
-import :source.provenance.ids;
+import :semantic.semir.vector;
 import :source.provenance;
+import :source.provenance.ids;
 import :support.invariant;
 import :support.visit;
 import std;
@@ -364,7 +364,7 @@ auto realize_operation(
                 invariant_violation("binding storage is resolved by body realization");
             },
             [&](const SemCallable& value) noexcept -> TargetExpr {
-                return name_expression(context.callable_name(value.callable));
+                return context.callable_expression(value.callable);
             },
             [&](const SemEnumConstructor& value) noexcept -> TargetExpr {
                 const auto owner =
@@ -603,9 +603,47 @@ auto realize_operation(
             [&](const SemIntrinsic& value) noexcept -> TargetExpr {
                 return value.operation.visit(
                     Overloaded {
-                        [&](const FloatIntrinsic&) noexcept -> TargetExpr {
+                        [&](const FloatIntrinsic& intrinsic) noexcept -> TargetExpr {
+                            if (intrinsic == FloatIntrinsic::Clamp) {
+                                operands.push_back(source_site_expression(context, source.origin));
+                            }
+                            const auto receiver_type =
+                                value.operands.front().expression.type.resolved();
+                            const auto* receiver = std::get_if<BuiltinTypeValue>(
+                                &context.semantic().types().type(receiver_type).value
+                            );
+                            if (receiver != nullptr
+                                && (receiver->kind == BuiltinType::F32x4
+                                    || receiver->kind == BuiltinType::F32x8)) {
+                                const auto name = [&]() noexcept {
+                                    switch (intrinsic) {
+                                        case FloatIntrinsic::IsFinite: return "is_finite";
+                                        case FloatIntrinsic::Sqrt:     return "sqrt";
+                                        case FloatIntrinsic::Abs:      return "abs";
+                                        case FloatIntrinsic::Min:      return "min";
+                                        case FloatIntrinsic::Max:      return "max";
+                                        case FloatIntrinsic::Clamp:    return "clamp";
+                                    }
+                                    std::unreachable();
+                                }();
+                                auto object = std::move(operands.front());
+                                operands.erase(operands.begin());
+                                return call_member(std::move(object), name, std::move(operands));
+                            }
+                            const auto symbol = [&]() noexcept {
+                                switch (intrinsic) {
+                                    case FloatIntrinsic::IsFinite: return TargetSymbol::StdIsFinite;
+                                    case FloatIntrinsic::Sqrt:     return TargetSymbol::StdSqrt;
+                                    case FloatIntrinsic::Abs: return TargetSymbol::RuntimeFloatAbs;
+                                    case FloatIntrinsic::Min: return TargetSymbol::RuntimeFloatMin;
+                                    case FloatIntrinsic::Max: return TargetSymbol::RuntimeFloatMax;
+                                    case FloatIntrinsic::Clamp:
+                                        return TargetSymbol::RuntimeFloatClamp;
+                                }
+                                std::unreachable();
+                            }();
                             return call_expression(
-                                intrinsic_expression(TargetSymbol::StdIsFinite),
+                                intrinsic_expression(symbol),
                                 std::move(operands)
                             );
                         },
@@ -706,9 +744,26 @@ auto realize_operation(
                                 if (!id) {
                                     invariant_violation("SIMD immediate was not realized");
                                 }
-                                const auto& control = std::get<IntegerConstant>(
-                                    context.semantic().constants().constant(*id).value
-                                );
+                                const auto& constant = context.semantic().constants().constant(*id);
+                                auto controls = std::vector<TargetTemplateArgument>();
+                                const auto append = [&](const ConstantFact& fact) noexcept {
+                                    controls.emplace_back(
+                                        TargetIntegerLiteral {
+                                            .negative = false,
+                                            .magnitude =
+                                                std::get<IntegerConstant>(fact.value).magnitude(),
+                                            .suffix = TargetIntegerSuffix::None
+                                        }
+                                    );
+                                };
+                                if (family == SIMDIntrinsic::Swizzle) {
+                                    for (const auto element :
+                                         std::get<ArrayConstant>(constant.value).elements) {
+                                        append(context.semantic().constants().constant(element));
+                                    }
+                                } else {
+                                    append(constant);
+                                }
                                 operands.erase(
                                     operands.begin() + static_cast<std::ptrdiff_t>(*input - 1uz)
                                 );
@@ -720,11 +775,7 @@ auto realize_operation(
                                 };
                                 return template_call_expression(
                                     std::move(callee),
-                                    {TargetIntegerLiteral {
-                                        .negative = false,
-                                        .magnitude = control.magnitude(),
-                                        .suffix = TargetIntegerSuffix::None
-                                    }},
+                                    std::move(controls),
                                     std::move(operands)
                                 );
                             }
@@ -808,9 +859,25 @@ auto realize_operation(
                 invariant_violation("unsubstituted generic call reached backend");
             },
             [&](const SemCall& value) noexcept -> TargetExpr {
+                const auto* parser = value.target
+                    ? std::get_if<NumberParseImplementation>(
+                          &context.semantic().declarations().callable(*value.target).implementation
+                      )
+                    : nullptr;
+                if (parser) {
+                    operands.push_back(constant_expression(context, parser->invalid));
+                    return template_call_expression(
+                        intrinsic_expression(TargetSymbol::RuntimeParseNumber),
+                        {context.lower_type(source.type.resolved()),
+                         context.lower_type(
+                             context.semantic().constants().constant(parser->invalid).type
+                         )},
+                        std::move(operands)
+                    );
+                }
                 if (value.target) {
                     return call_expression(
-                        name_expression(context.callable_name(*value.target)),
+                        context.callable_expression(*value.target),
                         std::move(operands)
                     );
                 }
@@ -820,7 +887,7 @@ auto realize_operation(
             },
             [&](const SemColdCall& value) noexcept -> TargetExpr {
                 return call_expression(
-                    name_expression(context.callable_name(value.target)),
+                    context.callable_expression(value.target),
                     std::move(operands)
                 );
             },

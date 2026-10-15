@@ -32,9 +32,17 @@ private:
     auto validate_generic_application(const GenericNominalInstance& instance) noexcept -> void;
 
     auto validate_nominal(const auto& nominal) noexcept -> void {
-        const auto allowed = nominal.visibility == DeclarationVisibility::Compilation
+        validate_nominal(nominal.visibility, nominal.module_id, nominal.origin);
+    }
+
+    auto validate_nominal(
+        DeclarationVisibility visibility,
+        ModuleID module_id,
+        ProgramOriginID origin
+    ) noexcept -> void {
+        const auto allowed = visibility == DeclarationVisibility::Compilation
             || (surface_visibility == DeclarationVisibility::ModuleDomain
-                && nominal.visibility == DeclarationVisibility::ModuleDomain
+                && visibility == DeclarationVisibility::ModuleDomain
                 && same_module_domain(
                     program.provenance()
                         .module_record(
@@ -43,7 +51,7 @@ private:
                         .path,
                     program.provenance()
                         .module_record(
-                            program.declarations().module_decl(nominal.module_id).provenance_module
+                            program.declarations().module_decl(module_id).provenance_module
                         )
                         .path
                 ));
@@ -54,10 +62,7 @@ private:
                     std::format("{} references a declaration with narrower visibility", description)
                 )
                     .primary(program.provenance().source_span(primary))
-                    .related(
-                        program.provenance().source_span(nominal.origin),
-                        "referenced declaration"
-                    )
+                    .related(program.provenance().source_span(origin), "referenced declaration")
                     .build()
             );
         }

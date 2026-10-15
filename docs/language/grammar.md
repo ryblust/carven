@@ -103,7 +103,7 @@ There is no escaped-identifier syntax.
 
 | Class | Recognition layer | Grammar role and legal positions | Reservation scope | Shadowing | Evidence |
 | --- | --- | --- | --- | --- | --- |
-| Reserved keywords, including `async`, `await`, `cancel`, and `fn` | Lexical token classification | Their language productions; also identifier-shaped name positions below | Bare declaration, binding, and expression names cannot use these tokens | Cannot be shadowed as bare names | [Token classification](../../tests/internal/frontend/lex/tokens.cpp), [source identifiers](../../tests/internal/source/identifier.cpp) |
+| Reserved keywords, including `async`, `await`, `cancel`, and `fn` | Lexical token classification | Their language productions; also identifier-shaped name positions below | Bare declaration, binding, and expression names cannot use these tokens | Cannot be shadowed as bare names | [Token classification](../../tests/internal/frontend/lex/tokens.cpp) |
 | `self` and `cpp` | Identifier token; contextual syntax or semantic checks | `self` is an untyped first class-operation receiver; `cpp` selects the native declaration form | Only those positions have special meaning | Ordinary names elsewhere | [Class operations](../../tests/language/types/classes.cv), [declaration parser](../../tests/internal/frontend/parse/decl.cpp) |
 | `ptr` | Identifier token; structural type parsing | `ptr<T>` and `ptr<&T>` | Module declarations, type parameters, and import local names are reserved | Runtime bindings do not change structural type syntax | [Type parser](../../tests/internal/frontend/parse/type.cpp) |
 | Provided type names, including `String`, `i32`, `Vector`, `Range`, and `Operation` | Identifier token; shared binding selection | Named types, construction, and associated operations | No additional reservation | Type parameters and module bindings may shadow them; runtime locals shadow only expression uses | [Modules and names](modules.md) |
@@ -181,7 +181,7 @@ The integer suffixes `ns`, `us`, `ms`, and `s` construct standard `Duration`
 values. Decimal, hexadecimal, binary, and octal integer spellings are admitted.
 Scaling to signed 64-bit nanoseconds is checked during compilation, including
 the minimum negative value. These suffixes do not apply to floating literals.
-A duration literal directly selects the standard `Duration` declaration without
+A duration literal directly selects the `Duration` declaration from `std::time` without
 introducing that name into source scope. An explicit `Duration` type name still
 requires an ordinary import.
 
@@ -343,7 +343,9 @@ module-declaration = enum-declaration
 
 cpp-import-function-declaration = [ "private" ],
                                   "import", "(", "cpp", ")",
-                                  function-head, ";";
+                                  function-head, [ "=", cpp-function-target ], ";";
+
+cpp-function-target = "::", cpp-name;
 
 cpp-export-function-definition = "export", "(", "cpp", ")",
                                  function-head, function-body;
@@ -513,7 +515,8 @@ throw-clause = "throw", ( "(", ")" | named-type, { "+", named-type } );
 ```
 
 Function definitions are top-level items or class operations. `import(cpp)` uses the same function
-head followed by `;`; `export(cpp)` uses either function-body form.
+head, an optional `= ::qualified::target` binding, and `;`;
+`export(cpp)` uses either function-body form.
 Both `const async fn` and `async const fn` apply the same two modifiers.
 The official source style uses `const async fn`, placing static-execution
 capability before execution kind.

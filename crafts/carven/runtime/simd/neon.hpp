@@ -192,6 +192,13 @@ CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL div_floats(Value<Bytes> a, Value<Bytes>
 }
 
 template<std::size_t Bytes>
+CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL sqrt_floats(Value<Bytes> value) noexcept -> Value<Bytes> {
+    return map<Bytes>(value, [](auto value) noexcept {
+        return vreinterpretq_u8_f32(vsqrtq_f32(vreinterpretq_f32_u8(value)));
+    });
+}
+
+template<std::size_t Bytes>
 CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL equal_floats(Value<Bytes> a, Value<Bytes> b) noexcept
     -> Value<Bytes> {
     return compare_floats<Bytes>(a, b, [](auto a, auto b) noexcept { return vceqq_f32(a, b); });

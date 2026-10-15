@@ -195,7 +195,7 @@ const TestSuite suite([] static noexcept {
     "Format: import lists include closing punctuation in the line width"_test = [] static noexcept {
         constexpr auto prefixes = std::to_array<std::string_view>({
             "import <vector> using std::{",
-            "import std::utf.text using {",
+            "import std::utf using {",
         });
         each(
             prefixes,

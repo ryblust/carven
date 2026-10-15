@@ -24,6 +24,12 @@ private:
 
 enum class IntegerArithmetic { Checked, Wrapping };
 
+auto parse_number_constant(
+    const ExecutionValueAccess& values,
+    BuiltinType number,
+    std::string_view text
+) noexcept -> std::optional<ConstantFact>;
+
 enum class ConstantEvaluationFailure {
     OperandNotConstant,
     UnsupportedOperation,
@@ -36,6 +42,7 @@ enum class ConstantEvaluationFailure {
     IntegerLiteralNotRepresentable,
     SliceOutOfBounds,
     SIMDOutOfBounds,
+    InvalidClampBounds,
 };
 
 struct ConstantEvaluationDiagnostic final {
@@ -208,6 +215,6 @@ auto fold_simd_constant(
 auto evaluate_float_intrinsic_constant_value(
     const ExecutionValueAccess& values,
     FloatIntrinsic intrinsic,
-    const ConstantFact& operand,
+    std::span<const ConstantFact> operands,
     TypeID result
 ) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure>;

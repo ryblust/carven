@@ -28,7 +28,7 @@ async fn main() {
     let nesting = cv_async_bench_depth();
     var checksum: u64 = 0;
     cv_async_bench_begin();
-    for var index: u64 = 0; index < count; ++index {
+    for index in 0..count {
         let value = (initial + index) % 1048576;
         // @BODY@
     }

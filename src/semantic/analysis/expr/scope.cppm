@@ -22,6 +22,7 @@ struct TimeoutContract final {
 
 using ResolvedStaticCallable = std::variant<
     FunctionID,
+    CallableID,
     GenericDeclarationID,
     AsyncIntrinsic,
     AsyncCompositionPolicy,

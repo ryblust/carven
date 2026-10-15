@@ -1,0 +1,15 @@
+import std::io using { Read as Input, Read as SameInput };
+
+const fn wrap<T>(&&value: Input<T>) -> Input<T> => &&value;
+
+test "Input values preserve payloads and aliases" {
+    let value = wrap<i32>(&&Input<i32>::Data(7));
+    check(value == SameInput<i32>::Data(7));
+    check(value != Input<i32>::End);
+    check(
+        match value {
+            .Data(number) => number == 7,
+            .End => false
+        }
+    );
+}

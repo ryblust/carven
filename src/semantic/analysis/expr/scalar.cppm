@@ -9,6 +9,7 @@ import :semantic.analysis.constant.literal;
 import :semantic.analysis.expr.conversion;
 import :semantic.analysis.expr.result;
 import :semantic.analysis.expr.scope;
+import :semantic.analysis.expr.simd;
 import :semantic.analysis.expr.text;
 import :semantic.analysis.operations;
 import :semantic.analysis.types.display;
@@ -387,32 +388,7 @@ auto interpret_binary(
             if (kind != layout->element) {
                 return input;
             }
-            auto splat_state = Site::operand_state();
-            auto scalar = site.consume_read(splat_state, std::move(input), source.operator_span);
-            if (!scalar) {
-                return std::unexpected(scalar.error());
-            }
-            auto constant = std::optional<ConstantID>();
-            if (scalar->constant) {
-                const auto& fact = site.draft().constant(*scalar->constant);
-                const auto bits = layout->element == BuiltinType::F32
-                    ? std::bit_cast<std::uint32_t>(std::get<F32Constant>(fact.value).value)
-                    : static_cast<std::uint32_t>(std::get<IntegerConstant>(fact.value).magnitude());
-                constant = site.draft().intern_constant(
-                    {.type = site.draft().builtin_type(layout->vector),
-                     .value =
-                         SIMDConstant {.lanes = std::vector<std::uint32_t>(layout->width, bits)}}
-                );
-            }
-            auto inputs = std::vector<SemCallArgument>();
-            inputs.push_back({.access = AccessMode::Read, .expression = std::move(*scalar)});
-            return site.finish_constructed(
-                site.draft().builtin_type(layout->vector),
-                SemIntrinsic {.operation = SIMDIntrinsic::Splat, .operands = std::move(inputs)},
-                std::move(splat_state),
-                source.operator_span,
-                constant
-            );
+            return construct_simd_splat(site, *layout, std::move(input), source.operator_span);
         };
         auto first = splat(std::move(*left), *left_kind);
         if (!first) {

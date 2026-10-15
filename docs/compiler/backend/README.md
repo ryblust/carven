@@ -50,6 +50,10 @@ order, retain borrowed results, and complete fallible calls. Semantic publicatio
 owns source legality and lifetime contracts; native compilation checks delegated
 C++ operations.
 
+Resolved Carven callable references use qualified target names. Import bridges
+call the native target retained by semantic analysis. C++ argument-dependent
+lookup does not add candidates to these resolved calls.
+
 `TargetUnitBuilder::finish` verifies the target tree, collects its header
 requirements, and plans directives with artifact references and ordered native
 imports. Async runtime symbols use the same header-provider metadata and

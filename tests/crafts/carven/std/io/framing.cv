@@ -1,0 +1,84 @@
+import std::io using { ByteLines, LineFramer, FrameError, Read };
+import std::utf using to_string;
+
+test "Line framing: every split preserves CRLF and UTF8 records" {
+    try {
+        let input = "a\r\n世界\n\nlast\r".bytes;
+        for split in 0usize..=input.length() {
+            var framer = LineFramer::new(16, true);
+            var output: Vector<String> = [];
+            for bytes in framer.feed(input.slice(0, split))? {
+                output.push(to_string(bytes)?);
+            }
+            for bytes in framer.feed(input.slice(split, input.length()))? {
+                output.push(to_string(bytes)?);
+            }
+            let last: Read<Vector<u8>> = framer.finish(true)?;
+            match last {
+                .Data(bytes) => output.push(to_string(bytes)?),
+                .End => fail("partial record remains"),
+            }
+            check(output.length() == 4);
+            check(
+                output[0]
+                    == "a"
+                    && output[1] == "世界"
+                    && output[2] == ""
+                    && output[3] == "last\r"
+            );
+        }
+    } catch {
+        _ => fail("unexpected library failure"),
+    }
+}
+
+const test "Line framing: exact limit and final record policy" {
+    try {
+        var framer = LineFramer::new(2, false);
+        check(framer.feed("ab\n".bytes)?.length() == 1);
+        check(framer.feed("x".bytes)?.is_empty());
+        check(
+            try {
+                let _ = framer.finish(false)?;
+                false
+            } catch {
+                FrameError(error) => error == .Truncated
+            }
+        );
+    } catch {
+        _ => fail("unexpected library failure"),
+    }
+}
+
+test "Line framing: overflow seals the attempt and scanner exposes boundaries" {
+    try {
+        var framer = LineFramer::new(2, false);
+        check(
+            try {
+                let _ = framer.feed("abc".bytes)?;
+                false
+            } catch {
+                FrameError(error) => match error {
+                    .TooLong(limit) => limit == 2,
+                    _ => false
+                }
+            }
+        );
+        check(
+            try {
+                let _ = framer.feed("\n".bytes)?;
+                false
+            } catch {
+                FrameError(error) => error == .Finished
+            }
+        );
+        var lines = ByteLines::new();
+        let input = "\nx\r\ny".bytes;
+        check(lines.next(input) == .Line(0, 0, true));
+        check(lines.next(input) == .Line(1, 3, true));
+        check(lines.next(input) == .Line(4, 5, false));
+        check(lines.next(input) == .End);
+    } catch {
+        _ => fail("unexpected library failure"),
+    }
+}

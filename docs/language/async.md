@@ -1,6 +1,6 @@
 # Async functions and lexical children
 
-[Language](README.md)
+[Language](README.md) · [Standard capabilities](standard.md)
 
 Async functions produce cold operations consumed by prefix `await` or started as
 lexical children. Source and native producers share the completion and lifetime
@@ -114,48 +114,8 @@ outcome. Cancellation requests alone do not release borrowed backing. After
 commitment, later cancellation and loser failures do not replace the outcome.
 Result assembly follows ordinary value-transfer requirements.
 
-## Deadlines
-
-Import `timeout` from `std::time`. `timeout(operation, duration)` consumes one
-cold operation and a standard `Duration`. It preserves the protected operation's
-successful type and adds the standard `Timeout` and `RangeError` types to its
-nominal failures. These are ordinary standard-library types. The builtin follows
-the same ordinary lookup and direct-call rules as other composition operations.
-Duration literals and the builtin require no type imports; import a type only
-when naming it in source, such as a parameter annotation or a failure declaration.
-
-Duration literals and `timeout` require `std::time.duration.Duration` with one
-`nanoseconds: i64` field. `timeout` also requires the empty records
-`std::time.duration.RangeError` and `std::time.timeout.Timeout`. These declarations
-must be exported structs. The compiler checks their module identities and shapes
-when used by these facilities.
-
-Construction retains the protected input without executing it or reading the
-clock. At execution, pending cancellation is accepted first. A nonpositive
-interval then selects `Timeout` without starting protected work or reading the
-clock. A positive interval calculates a fixed monotonic deadline before starting
-either child. Unrepresentable deadline arithmetic produces `RangeError`.
-
-The protected operation is queued before the timer. Terminal publication selects
-one candidate; an already terminal pair gives the protected operation priority.
-Pending parent cancellation is checked before selection and after observing the
-selected completion, before committing the outward outcome. A protected winner
-forwards its completion, including supported immovable native results. A timer
-winner produces `Timeout`. Both children close before delivery. Once committed,
-later cancellation requests and losing outcomes cannot replace the result.
-Noncooperative protected work can delay closure beyond the deadline.
-
-```carven
-import std::time using timeout;
-import std::time.duration using RangeError;
-import std::time.timeout using Timeout;
-
-async fn limited() -> i32 throw Timeout + RangeError {
-    return await timeout(next(4), 100ms)?;
-}
-```
-
-Native clock reads and timer providers require generated execution.
+The time domain adds deadline composition through `timeout` from `std::time`.
+[Time and waiting](time.md#deadlines) defines its complete contract.
 
 ## Lexical children and cancellation
 
@@ -253,19 +213,21 @@ selection and closure rules.
 ## Retained access and admission
 
 Cold operations and active children retain the backing needed by their inputs.
-Write access remains nonexclusive and scalar mutation may continue; taking or
+Write access remains nonexclusive and mutation of admitted value slots may continue; taking or
 reconstructing retained owner storage is rejected until its loan closes. A
 cancellation request alone does not close that loan. Observation closes the active
 loan while the lexical scope retains responsibility for the child state.
 
-Async inputs admit scalar Read, recursively pure Carven aggregate/enum Read,
-scalar Write, owning Take values without external referents, and opaque native
-Read holders, also when contained in Carven aggregates. Native Read borrows
+Async inputs admit scalar, SIMD vector, mask, and unit values by Read or Write,
+recursively pure Carven aggregate/enum Read, owning Take values without external
+referents, and opaque native Read holders, also when contained in Carven aggregates.
+Read snapshots the builtin values when the cold operation is constructed;
+Write retains their original slots. Native Read borrows
 retain the source holder through the same lifetime loan as cold Write; taking or
 replacing it before completion or closure is rejected. Cold native borrows require
 known source backing, such as a named holder. Opaque native temporaries and
 reference query results do not establish that backing. Borrowed text, slices,
-pointers, callable views, and SIMD Read inputs are excluded. Unknown native owning
+pointers, and callable views are excluded. Unknown native owning
 Take inputs are also excluded.
 
 Parameterized async functions obey these same rules. Known invalid shapes are
@@ -333,9 +295,10 @@ remains in the current task. Cancellation is requested separately from acceptanc
 at a checkpoint. Children close before their borrowed local backing is released,
 using the same source rules as runtime execution.
 
-All tasks in a static root share its execution limits and memory domain. Native
-provider bodies and real I/O are outside static execution capability. Runtime
-calls to the same source definition use C++ coroutines.
+All tasks in a static root share its execution limits and memory domain. Builtin
+input, clocks, and waits use the compiler host and the ordinary cold-operation,
+cancellation, and failure contracts. Native C++ provider bodies remain outside semantic
+execution capability. Runtime calls to the same source definition use C++ coroutines.
 
 ## Native providers and hosts
 
@@ -377,11 +340,6 @@ child closure, then detaches it. Providers using `Driver::attach` and `detach`
 keep their source alive throughout that registration. Native requests use
 `TaskContext::request_cancel()` on the driver thread so parked timer cancellation
 is notified.
-
-The time craft supplies `std::time.duration`, `std::time.clock`, and
-`std::time.sleep`. Its waits produce ordinary cold operations and accept
-cancellation; importing those modules adds
-library APIs under the existing async rules.
 
 Successful `char` values received by await are checked as Unicode scalar values,
 including discarded awaits and direct completion returns. Failure and cancelled

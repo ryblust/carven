@@ -84,6 +84,9 @@ auto SemanticExecutor::compose(ExecutionColdOperation operation, ProgramOriginID
     const auto selected_value =
         [&](std::size_t position,
             ExecutionValue value) noexcept -> ExecutionResult<ExecutionValue> {
+        if (action.selection == ExecutionSelectionResult::Direct) {
+            return std::move(value);
+        }
         if (auto checked = check_aggregate_size(*success, origin); !checked) {
             return std::unexpected(std::move(checked.error()));
         }

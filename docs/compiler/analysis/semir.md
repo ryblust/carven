@@ -40,6 +40,32 @@ may consume either a draft or a published program, but type queries have the
 same guarantees in both contexts.
 Operations use their resolved result types where available.
 
+Numeric parse factories retain one program-owned callable per numeric type.
+`NumberParseImplementation` records the constant Invalid case. The callable
+signature owns the numeric result type and has one Read `str` parameter and a
+singleton failure set; the Invalid constant carries its nominal error type. Calls use `SemCall`, so failure
+inference, propagation, handlers, operand sequencing, and ownership use the same
+contracts as source functions. `NumberParseError` is a source enum exported by
+`std::core`. Ordinary declaration completion supplies
+its nominal identity and nullary Invalid case to the builtin parse contract.
+
+Record and enum declarations retain their source module and origin. Matching,
+failure handling, display, ownership, and static execution consume their ordinary
+declaration contracts. Native representation selection belongs to the backend
+and does not replace the declaration identity.
+
+`GenericDeclarationContract` retains the generic definition's source identity.
+The standard `Read<T>` enum instantiates through ordinary nominal argument,
+canonical instance, visibility, and publication machinery.
+`GenericNominalInstance.origin` records the source use position for instance
+diagnostics. It does not replace the generic definition's declaration identity
+or its source declaration.
+
+`Duration`, `RangeError`, and `Timeout` retain their standard-source identities
+when used by duration literals and builtin timeout composition. Builtin
+operations consume completed declarations through shared readers. The backend
+generates their native representations through ordinary source-type realization.
+
 Canonical facts and spellings remain stable across appends; moving or sealing their
 owner ends outstanding borrows. Types still return copies during construction.
 Constant interning uses a hash index with exact equality checks and deterministic
@@ -63,6 +89,13 @@ the call chain.
 Published-program consumers read these facts through an identity-checked query.
 Static execution during construction queries the draft's type facts, including
 types whose dependencies are still being completed.
+
+The same containment worklist propagates constraints on inline value storage.
+Opaque native values, dynamic owners, borrowed views, callable values, operations,
+and unresolved parameters prevent this proof. Fixed arrays, Tuples, and nominal
+fields propagate their children's constraints. This query is separate from Read
+passing: owning an inline array does not itself make its transport observable.
+The storage query does not change async admission or establish referent lifetimes.
 
 ## Async operations
 
@@ -177,6 +210,10 @@ retain type references and access modes. Substitution maps construction referenc
 to canonical types; validation and dependency collection visit the same query
 structure. Published concrete bodies and native lowering use `CppNamedType` and
 `CppQueryType`.
+
+`CppImportImplementation` retains the import origin and its global
+`CppNameReference` target. Analysis resolves explicit bindings or supplies the
+same-named global target before publishing the callable.
 
 Published generic function instances retain their source declaration, canonical
 arguments, and concrete callable. Target planning uses these facts for stable
@@ -333,8 +370,11 @@ static test declaration have no body reference.
 Checked source bodies store local static roots as `SemStaticBinding`, which owns
 its typed initializer at a stable tree edge. The binding records the frozen local
 type; the initializer records its execution result type. These types agree;
-retained owning results keep their source type. Construction finds a root by its binding
-identity and reads its value by computing a copy; the initializer stays in place.
+retained owning results keep their source type. Construction finds a root by its
+binding identity and can read its value through a dependency-query execution
+context; the initializer stays in place. Queries suppress output and cannot
+perform host clock, input, or waiting operations. Completed module constants are
+ordinary frozen value references rather than operations to replay.
 Root failures and ownership transitions belong to static execution, independently
 of the surrounding runtime region.
 
@@ -406,8 +446,10 @@ execution, requiring only its executed operands, selecting short-circuit
 operands, or requiring no execution when discarded. It consumes resolved
 operations, types, and constant facts. Storage reads are separate from execution
 requirements, so a removable read can still require a snapshot before a later
-mutation. Calls and native operations are conservative; checks, ownership
-operations, and floating computations retain execution. The backend prepares and
+mutation. Calls and native operations are conservative; checks and ownership
+operations retain execution. Discarded scalar and SIMD arithmetic retain required
+operand effects; the unit value has no construction effect. Whether a result can
+be precomputed is a separate decision. The backend prepares and
 consumes body-local execution, storage-read, lifetime, and exit summaries during
 body realization. Shared type rules consume
 the relevant stage's facts.

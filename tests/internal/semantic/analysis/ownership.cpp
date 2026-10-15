@@ -91,10 +91,6 @@ const TestSuite suite([] static noexcept {
                 DiagnosticCode::AsyncOwnership
             },
             std::pair {
-                std::string_view("import std::simd using u8x32;\n\nasync fn bad(value: u8x32) {}"),
-                DiagnosticCode::AsyncOwnership
-            },
-            std::pair {
                 std::string_view("async fn leaf() -> i32 => 1; fn bad() { await leaf(); }"),
                 DiagnosticCode::AsyncAdmission
             },

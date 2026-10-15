@@ -7,6 +7,7 @@ import :compiler.analysis;
 import :compiler.compile;
 import :diagnostics.builder;
 import :diagnostics.code;
+import :semantic.evaluation.execution;
 import :semantic.evaluation.output;
 import :source.batch;
 import :source.manager;
@@ -26,7 +27,8 @@ auto compile(
         {.output = output,
          .timings = timings,
          .collect_source_observations = false,
-         .capture_output = false}
+         .capture_output = false,
+         .host_effects = HostEffects::Allow}
     );
     auto diagnostics = Diagnostics(semantic.diagnostics().begin(), semantic.diagnostics().end());
     if (semantic.program() == nullptr) {

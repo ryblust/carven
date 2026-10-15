@@ -1,5 +1,3 @@
-import std::async using yield_once;
-
 async fn ready_leaf(value: u64) -> u64 {
     cv_async_bench_observe_stack();
     return value + 1;
