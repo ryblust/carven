@@ -13,41 +13,35 @@ struct StandardOutputArtifactDestination final {};
 using ArtifactDestination =
     std::variant<DirectoryArtifactDestination, StandardOutputArtifactDestination>;
 
-struct CompileCommandOptions final {
-    ArtifactDestination destination;
-    std::optional<std::filesystem::path> artifact_manifest;
+enum class CompilationCommand { Check, Compile };
+
+struct CompilationOptions final {
+    CompilationCommand command;
+    std::optional<ArtifactDestination> destination;
     TestGenerationMode test_mode;
-    std::optional<LinkageDomain> linkage_domain;
-    std::optional<SourceLibrary> library;
     std::vector<std::string_view> input_paths;
     std::vector<SourceInput> mapped_inputs;
-    bool explicit_inputs;
     bool timings;
 };
 
-enum class CompileOptionErrorKind {
+enum class CompilationOptionErrorKind {
     DestinationSpecifiedMoreThanOnce,
     TestModeSpecifiedMoreThanOnce,
     MissingOutputPath,
     EmptyOutputPath,
-    ManifestSpecifiedMoreThanOnce,
-    EmptyManifestPath,
-    LinkageDomainSpecifiedMoreThanOnce,
-    EmptyLinkageDomain,
-    LibraryDomainSpecifiedMoreThanOnce,
-    InvalidLibraryModule,
-    IncompleteLibraryOptions,
     InvalidSourceInput,
     UnknownOption,
     NoSourceInput,
 };
 
-struct CompileOptionError final {
-    CompileOptionErrorKind kind;
+struct CompilationOptionError final {
+    CompilationOptionErrorKind kind;
     std::optional<std::string_view> option;
 };
 
-auto parse_compile_command_options(std::span<const char* const> args) noexcept
-    -> std::expected<CompileCommandOptions, CompileOptionError>;
+auto parse_compilation_options(
+    std::span<const char* const> args,
+    CompilationCommand command = CompilationCommand::Compile
+) noexcept -> std::expected<CompilationOptions, CompilationOptionError>;
 
-auto format_compile_option_error(const CompileOptionError& error) noexcept -> std::string;
+auto format_compilation_option_error(const CompilationOptionError& error) noexcept -> std::string;

@@ -29,11 +29,10 @@ async fn yielding(depth: i32) -> i32 {
 const rotated = await rotate(1, 2, 7);
 
 async fn run_tail() {
-    println(await rotate(1, 2, 7) == rotated);
+    assert(await rotate(1, 2, 7) == rotated);
     let saved = rotate(1, 2, 16384);
-    println(await saved == 12);
-    println(await nested(32) == 7);
-    println(await matched(32) == 9);
-    await yielding(32);
-    println(true);
+    assert(await saved == 12);
+    assert(await nested(32) == 7);
+    assert(await matched(32) == 9);
+    assert(await yielding(32) == 7);
 }

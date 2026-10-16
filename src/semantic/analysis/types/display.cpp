@@ -129,7 +129,7 @@ auto canonical_name(
                 return std::string(builtin_name(value.kind));
             },
             [&](const StructTypeValue& value) noexcept {
-                if (catalog && value.structure.index() < catalog->struct_count()) {
+                if (catalog && !draft.generic_nominal_instance_copy(value.structure)) {
                     return nominal_name(
                         draft,
                         *catalog->symbol(catalog->struct_symbol(value.structure))
@@ -140,7 +140,7 @@ auto canonical_name(
                 return nominal_name(draft, declaration.module_id, declaration.name);
             },
             [&](const EnumTypeValue& value) noexcept {
-                if (catalog && value.enumeration.index() < catalog->enum_count()) {
+                if (catalog && !draft.generic_nominal_instance_copy(value.enumeration)) {
                     return nominal_name(
                         draft,
                         *catalog->symbol(catalog->enum_symbol(value.enumeration))

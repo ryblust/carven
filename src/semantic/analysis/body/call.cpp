@@ -435,10 +435,7 @@ auto BodyElaborator::call_expression(
         if (const auto function = target ? draft().function_for_callable(*target) : std::nullopt) {
             const auto* symbol = catalog().symbol(catalog().function_symbol(*function));
             diagnostic.related(
-                locate(
-                    draft().syntax_tree(symbol->module_id).view().source_id(),
-                    symbol->declaration_span
-                ),
+                locate(draft().module_source_id(symbol->module_id), symbol->declaration_span),
                 std::format("'{}' is declared here", symbol->name)
             );
         }

@@ -151,14 +151,15 @@ public:
     auto view() const noexcept -> AnalysisCatalogView;
 
 private:
+    friend class SemanticArtifactAccess;
     AnalysisCatalog() = default;
     std::vector<CatalogModule> modules;
     std::vector<CatalogSymbol> symbols;
-    std::vector<CatalogSymbolID> function_symbols;
-    std::vector<CatalogSymbolID> struct_symbols;
+    std::vector<std::optional<CatalogSymbolID>> function_symbols;
+    std::vector<std::optional<CatalogSymbolID>> struct_symbols;
     std::vector<CatalogSymbolID> generic_symbols;
-    std::vector<CatalogSymbolID> enum_symbols;
-    std::vector<CatalogSymbolID> enum_case_symbols;
+    std::vector<std::optional<CatalogSymbolID>> enum_symbols;
+    std::vector<std::optional<CatalogSymbolID>> enum_case_symbols;
     std::vector<std::flat_map<std::string, std::vector<CatalogLookupCandidate>, std::less<>>>
         visible_candidates;
     std::vector<CatalogImportBinding> import_bindings;
@@ -223,7 +224,7 @@ private:
     friend class AnalysisCatalog;
 };
 
-auto build_analysis_catalog(ProgramDraft& draft) noexcept
+auto build_analysis_catalog(ProgramDraft& draft, CheckedDefinitions* seed = nullptr) noexcept
     -> std::expected<AnalysisCatalog, Diagnostics>;
 
 class ImportUsage final {

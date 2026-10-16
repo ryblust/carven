@@ -22,9 +22,9 @@ needed for adoption.
 Compiler wall time, CPU time, peak RSS, generated size, native compilation, and
 program runtime and memory are measured separately.
 
-## Current boundary
+## Context
 
-Semantic analysis already folds admitted constant operations, and static
+Semantic analysis folds admitted constant operations, and static
 specialization refreshes value facts and index bounds after substitution. Backend
 preparation consumes published facts to select constant print text, known lane
 paths, and builtin formatting writers; realization consumes proven index bounds.
@@ -32,42 +32,9 @@ Writers use checked minimum/maximum capacity
 bounds and direct `std::to_chars` conversion; proven UTF-8 formatting avoids a
 validation scan. Direct owning format returns can use a local String and NRVO.
 
-## Measurements
+## Design
 
-Define the measured boundary and preserve results, effects, diagnostics, and
-output contracts across variants. Use actual programs and a minimal reproduction,
-adding deep or wide expressions, skewed file sizes, mutable state, constant loops,
-or error recovery when they exercise the affected cost.
-
-Use the repository benchmark commands:
-
-```sh
-./xmakew bench compile --list
-./xmakew bench compile --samples=5 --warmups=1 --timings --output=build/benchmarks/compile.json
-./xmakew bench incremental --samples=5 --warmups=1 --timings --output=build/benchmarks/incremental.json
-```
-
-These use the current configuration. Record the source revision, local changes,
-toolchain, mode, flags, and recoverable inputs. Report Release results for
-throughput decisions; Debug development costs can be measured separately.
-External `--compiler` artifacts need their own revision and mode records.
-`compile` excludes native compilation; `incremental` includes Xmake and native
-build work. Neither directly measures target-program speed.
-
-The `async`, `simd`, and `json` topics measure generated program execution. SIMD
-and JSON calibrate iteration counts by duration and retain raw samples and input
-identities. JSON measures the byte-validation API, including UTF-8 and failure
-delivery, without constructing a DOM. Match the measured boundary to the proposed
-optimization and inspect generated C++ as well as timings.
-
-Select workloads with `--case=<id>`. JSON retains inputs, commands, and samples.
-The displayed stage report is from the valid sample closest to median wall time,
-not a set of stage medians. `<0.1 ms` is an upper bound; a missing report is not
-zero cost. Compare identical timing settings, alternate baseline and variant runs,
-and retain dispersion, adverse results, and independent peak-memory observations.
-Do not infer allocation counts or cache behavior from timings alone.
-
-## Data and query experiments
+### Data and query experiments
 
 | Observed cost | Candidate | Obligations and additional costs |
 | --- | --- | --- |
@@ -79,18 +46,16 @@ Do not infer allocation counts or cache behavior from timings alone.
 | Loop RSS grows with cumulative object creation | Reclaim execution slots or prepare region-binding queries | Stale-coordinate rejection, generations, and cache lifetime |
 | Wide records or fragmented representation | Separate hot fields, move rare payloads, or repack locally | Indirection, overlapping old/new storage, conversion, destruction, and origins |
 
-Shared source backing needs an immutable owner; replacing ownership with a
-`string_view` is insufficient. Token compaction must preserve exact spans:
+Retain immutable ownership for shared source backing. Preserve exact token spans:
 stateful interpolation boundaries cannot generally be recovered from the next
 token's start. Prepared summaries belong to the correct body and completion
 state, and cannot outlive their borrowed source.
 
 Match execution preparation cost to reuse: one-shot roots and repeatedly called
-bodies may justify different choices. Preparation caches do not authorize result
-memoization that skips output, diagnostics, budgets, or other required-execution
-events. Preparing an entire body must not reject an unexecuted native branch in
-interpretation. Slot reuse needs generations or an equivalent stale-coordinate
-proof so Take, release, and reinitialization cannot revive prior pointers.
+bodies may justify different choices. Preserve output, diagnostics, budgets, and
+required execution events when reusing preparation. Check native-operation
+support on executed paths. Use generations or an equivalent stale-coordinate
+check when reusing slots after Take, release, or reinitialization.
 
 Grouping compatible passes around each body may improve data locality. Preserve
 analysis dependencies and invalidation rules, and measure locality benefits
@@ -103,7 +68,7 @@ added memory; weigh the selected workload's benefit against regressions elsewher
 For parent-owned `OwnershipFlow` updated by child work, measure ordinary Release
 CPU cost as well as result-transfer counts and Debug deep-expression behavior.
 
-## Bounded stage parallelism
+### Bounded stage parallelism
 
 One candidate is independent tasks within a stage, synchronous join, and ordered
 coordinator publication. Select an entry independently of the others:
@@ -115,14 +80,15 @@ coordinator publication. Select an entry independently of the others:
 | Nullability | Private analyzer and sink per body | Publication gates and diagnostic set |
 | Backend | Per-artifact lower, verify, and emit | Immutable plans and names, private lowering, stable plan-order results |
 
-Artifacts may cover an SCC or a test entry rather than one source module. Compare
-stable bytes, paths, roles, and dependencies, not owner identity numbers from
-different compilations. Distinct FunctionIDs do not establish independent write
-sets for construction, interning, static execution, or fixed-point solving.
-Unproven work remains serial. Preserve source-error collection, failed-request
-reuse, ordered events, and the partial-output state after a file failure.
+Artifacts may cover an SCC or a test entry. Compare stable bytes, paths, roles,
+and dependencies across compilations; program-local IDs are not cross-compilation
+identities. Establish independent write sets for construction, interning, static
+execution, and fixed-point solving before parallelizing them. Distinct FunctionIDs
+alone do not establish that independence. Keep unproven work serial. Preserve
+source-error collection, failed-request reuse, ordered events, and the output
+contract after a file failure.
 
-### Candidate execution protocol
+#### Candidate execution protocol
 
 This candidate is a bounded synchronous design. Names such as `ParallelExecutor`
 and `map_ordered` are provisional.
@@ -162,17 +128,18 @@ compiler processes. Workers return local timing records; the coordinator aggrega
 them instead of invoking a synchronous recipient concurrently. Stage wall time,
 cumulative task elapsed time, and CPU time remain separate.
 
-Source reading and SourceID registration have different ordering responsibilities.
-Keep writes serial unless their failure and output contracts are redesigned;
-joining computation is not a filesystem transaction. Native subprocess builds
-remain with the outer build system.
+Give source reads and SourceID registration separate ordering rules. Keep
+SourceID assignment deterministic and preserve read-failure behavior. Keep
+filesystem writes serial under their current failure contract; joining computation
+is not a filesystem transaction. Build integration owns staged publication and
+native subprocess scheduling.
 
-## C++ storage and delivery
+### C++ storage and delivery
 
 Identify the source lifetime and control duties of the generated operation, then
 compare alternative realizations under the selected cost measures.
 
-### Storage observations
+#### Storage observations
 
 A more local stability proof may avoid snapshots that a body-wide
 mutation/access/exposure classification retains. Compare the extra scan, summary
@@ -183,7 +150,7 @@ iteration aliases, captures, native references, address exposure, and the type's
 Read snapshot policy. Check Read followed by Write, projections, captures, and
 native retention at their original observation points.
 
-### Intermediate storage and failure delivery
+#### Intermediate storage and failure delivery
 
 For each removable reservation, state its source lifetime and C++ scope duties.
 Initialization remains on the selected path; construction and reverse cleanup
@@ -203,9 +170,9 @@ rethrow, return, loop transfers, test stops, and skipping later operands after
 failure. Storage and failure lifetime tests, together with target-structure tests,
 check observable behavior and target structure.
 
-## Constant output and local facts
+### Constant output and local facts
 
-### Compact default arrays
+#### Compact default arrays
 
 Frozen `ArrayConstant` lowering reconstructs elements individually. A candidate
 emits `std::array<T, N>{}` when value-initialization of the selected C++
@@ -219,19 +186,18 @@ element reconstruction.
 Preserve canonical identity, evaluation budgets, and freezing. Avoid repeated
 scans of nested fallback paths. Test empty and nested arrays, non-default values,
 representation-sensitive values, construction obligations, indexing, and
-independent mutation after copying. At fixed depth, initializer-node count should
-not grow with eligible element count; scanning and extent spelling still have
-costs. Measure target nodes, bytes, generation, and native compilation separately.
+independent mutation after copying. At fixed depth, require initializer-node count
+to remain bounded as eligible element count grows. Measure scanning, extent
+spelling, target nodes, bytes, generation, and native compilation separately.
 
-### Broader local value propagation
+#### Broader local value propagation
 
-Static-parameter substitution already refreshes non-diagnostic expression facts.
+Static-parameter substitution refreshes non-diagnostic expression facts.
 Further propagation through ordinary local bindings, mutation, branches, or loops
 needs a workload with residual runtime work and explicit invalidation and join
-rules. Reuse existing folding and known-result consumers where applicable; do not
-introduce another evaluator to repeat their work. Unknown, invalid, or over-budget
-operations retain their runtime execution. An extension does not implicitly
-execute ordinary functions or broaden floating precomputation.
+rules. Use existing folding and known-result consumers. Unknown, invalid, or
+over-budget operations retain runtime execution. Keep ordinary-function and
+floating precomputation within their existing admission rules.
 
 Preserve SemIR known-result boundaries: facts do not change ordinary source
 reachability, failure, ownership, or return analysis. Storage stability does not
@@ -241,92 +207,101 @@ aliases, calls, loops, and joins. `touch() && false` still executes touch;
 index safe; a known in-range index and extent already allow an unchecked path.
 Preserve failure, storage observation, borrowed owners, and condition cleanup.
 
-## Workspace reuse
+### Workspace reuse
 
-Complete analysis of a selected source batch remains the build correctness
-boundary. Source selection, computation granularity, and result lifetime are
-independent choices. The [frontend-analysis proposal](frontend-analysis.md) owns
-partial semantic facts, query dependencies, cancellation, effects, admission,
-and worker isolation. This section owns performance evidence and build integration.
+This section owns reuse measurements and build integration. Frontend analysis
+owns partial semantic facts, query dependencies, cancellation, effects, admission,
+and worker isolation. Measure source selection, computation granularity, and
+result lifetime separately.
 
-### Existing reuse and remaining costs
+#### Existing reuse and remaining costs
 
-The compiler owns shared source, parsing, complete analysis, and borrowed-generation
-contracts. Workspace supplies the session and revision layer; Xmake owns project
-targets, native compilation, and scheduling. Ordinary CLI commands discover
-Crafts; build integrations supply exact batches. Shared `SourceLibrary` generation
-and Xmake library producers reuse native implementation objects across compatible
-consumers. Native object reuse does not reuse semantic queries.
+The compiler publishes checked units containing an executable program,
+cacheability, and optional checked definitions. Standard-library producers retain
+definitions for generic and staged instantiation in later source analysis.
+Generation-only consumers retain the executable program. Artifact directories
+carry these results across processes; generation from a retained program repeats
+neither source analysis nor static execution.
 
-Unchanged documents reuse parsing, but a content edit still requires a complete
-semantic transaction for an uncached selection. Cache hits require the same
-content and module mapping; overlapping selections do not share semantic work.
-Snapshots are cheap to retain. Bulk updates copy the document table once;
-independent updates copy it per revision. Navigation still constructs selection
-indexes and prerequisite closures. Old snapshots may retain results beyond the
-current cache's capacity. Measure these costs separately.
+Xmake shares standard-library analysis and baseline generation across native
+configurations, selects native archives by compilation settings, and shares
+analysis for identical source batches. Ordinary and test generation consume the
+same checked program. Targets with their own source preparation retain separate
+batches. Build integration owns dependency freshness and staged publication.
 
-One-shot CLI processes do not retain workspace results across requests or builds.
-Shared interfaces help only when their callers retain the relevant owners.
-Published SemIR has released construction data and static-only bodies, and its
-IDs belong to one program. It is neither a reusable standard-library image nor
-a way to replay only a later command's static roots. Until effect contracts
-authorize reuse, each new command performs its complete semantic transaction.
+Analysis records observed host input, time, or waiting as noncacheable; build
+integration repeats that producer. Producer roots execute during producer
+analysis; imported definitions reuse those completed results. Consumer analysis
+executes its own roots and records host observations made by its calls. Preserve
+this producer/consumer boundary in reuse experiments.
 
-### Candidate experiments
+Workspace retains immutable documents and complete-selection results in memory.
+Unchanged documents reuse parsing. A content edit requires a complete semantic
+transaction for an uncached selection; overlapping selections do not share
+individual semantic queries. Bulk updates copy the document table once;
+individual updates copy it per revision. Navigation builds selection indexes and
+prerequisite closures. Retained snapshots can keep results beyond cache eviction.
+
+Measure artifact encoding, decoding, retained definitions, source analysis, and
+native work separately. Select further reuse only for work that remains after
+these existing paths.
+
+#### Candidate experiments
 
 | Measured cost | Candidate | Required boundary |
 | --- | --- | --- |
 | Repeated navigation rebuilds the same closure | Snapshot-owned module/prerequisite indexes | Imports, missing lookups, provided contracts, duration prerequisites, remapping, and revisions invalidate the correct selection |
 | Document-table copying remains costly after bulk updates | Persistent document maps | Atomic publication and independently retained old snapshots |
-| Body edits repeat unrelated semantics | Scope, declaration, body, or domain-specific SCC queries | Frontend-analysis dependency, identity, effect, and admission contracts |
-| Compatible generation requests repeat analysis | Compiler-owned multi-request worker | Xmake schedules targets; command execution obligations remain explicit |
-| Separate processes reconstruct valuable immutable results | Persistent compiler cache | Stable identities, compiler/configuration keys, dependency validation, atomic writes, and bounded IO |
+| Body edits repeat unrelated semantics | Scope, declaration, body, or domain-specific SCC queries | Track dependency reads, snapshot-owned identities, effects, and complete-publication requirements |
+| Repeated artifact loading dominates compatible generation requests | Worker retaining decoded programs | Preserve generation results, source ownership, freshness, and bounded retention; compare with artifact-directory inputs |
+| Completed semantic queries repeat across process lifetimes | Persistent query cache | Requires owned query results, stable identities, dependency validation, atomic publication, and measured benefit over complete artifacts |
 
-Begin with conservative dependencies. A source file, import SCC, or native library
-boundary does not prove semantic independence. Inferred contracts, generic
-specialization, constants, and ownership can cross each boundary. Lookup tracks
-failed lookups and competing candidates as well as selected declarations.
+Begin with conservative dependencies covering inferred contracts, generic
+specialization, constants, and ownership across source and library boundaries.
+Track failed lookups and competing candidates as well as selected declarations.
 
-### Request lifetime
+#### Request lifetime
 
-Evaluate in-memory reuse in the existing long-lived editor host before adding a
-process service. A justified build worker accepts compiler requests and retains
-bounded source/analysis owners. It does not evaluate Xmake targets, watch trees,
-invoke native compilers, or own native jobs. Reuse the frontend proposal's worker
-isolation and lifecycle contracts.
+Use the long-lived workspace host for editor reuse experiments. Compare a build
+worker with the existing artifact-directory path, including encoding, decoding,
+startup, IPC, recovery, retention, and validation costs. Select its lifetime from
+measured request overlap within or across builds.
 
-A worker lasting one Xmake process shares only that build's requests. Reuse across
-invocations needs a persistent worker or disk cache. Include startup, IPC,
-recovery, retention, and validation costs. Do not merge semantically distinct
-targets merely to increase cache hits.
+A selected worker owns bounded compiler results. Tag requests and results with
+input revisions and a worker generation; discard replies from failed generations.
+Keep restart and request failure reporting outside the worker. Xmake retains
+target evaluation, native compilation, and job scheduling. Preserve distinct
+semantic inputs and source-preparation boundaries.
 
-### Evidence and decision gates
+#### Evidence and decision gates
 
 Use cold compilation, same-content rewrite, leaf-body edits, exported-contract
 edits, const/generic edits, and import addition/removal workloads. Add an in-process
 trace for bulk loading, repeated navigation, overlapping selections, and compatible
-generation requests. Record wall/CPU time, parsing versus semantics, peak and
-retained memory, and native work separately. Alternate fresh/reused Release runs
-with identical coverage; Debug editor latency is a separate result. A warm identical
-query is not an edit benchmark.
+generation requests. Include artifact-only regeneration, standard-definition
+imports, ordinary/test consumers, and noncacheable host-effect producers. Record
+wall/CPU time, parsing, semantics, serialization, peak and retained memory, and
+native work separately. Alternate fresh/reused Release runs with identical
+coverage; measure Debug editor latency separately. Report unchanged-query and
+edited-source results as separate workloads.
 
 Select an acceptable cold-time/memory budget and required edit-latency improvement
 before experimenting. Savings must exceed lookup, hashing, retention, and transport
-costs. Parsing reuse does not establish semantic throughput gains, and rare request
-overlap does not justify a worker solely to retain a cache. Complete fresh analysis
-is the correctness oracle.
+costs. Measure semantic throughput and request overlap directly. Use fresh
+analysis under the same producer inputs and execution policy as the correctness
+oracle.
 
-Compare fresh/reused diagnostics, static output, paths/bytes, and source locations
-across real edits, including previously missing names, local aliases, provided
-prerequisites, recursive contracts, and const/generic dependencies. Extend existing
-Xmake scenarios for native behavior. Do not fix cache sizes, pointer identities,
-query visitation order, or pass counts. Generated-program speed needs separate
-execution measurements.
+Compare diagnostics, static-root execution and output, paths/bytes, and source
+locations under each command's contract. Artifact-only generation must not replay
+producer roots. Source edits must execute the newly selected batch's roots and
+tests. Cover missing names, local aliases, provided prerequisites, recursive
+contracts, and const/generic dependencies. Use existing Xmake scenarios for native
+behavior. Keep cache sizes, pointer identities, query visitation order, and pass
+counts out of behavioral assertions. Measure generated-program speed separately.
 
-## Formatting and output
+### Formatting and output
 
-### Destination capacity planning
+#### Destination capacity planning
 
 Select a reservation experiment when a representative workload exceeds existing
 writer bounds. Exact length, an upper bound, and minimum field width are distinct
@@ -335,7 +310,7 @@ observations. Compare fresh and reused destinations: an upper bound can reserve
 unused memory, while computing the exact size adds work. Explicit operation
 resource constraints take precedence over growth heuristics.
 
-### Composition across output boundaries
+#### Composition across output boundaries
 
 A formatting/output experiment must preserve operand completion, String
 observation, and visible failure prefixes. For example:
@@ -353,7 +328,7 @@ batching print values can suppress an already observable prefix. Define the
 preserved construction, conversion, and allocation-failure behavior before
 selecting fusion. Measure the complete operation, including effects and aliases.
 
-### Conversion runtime replacement
+#### Conversion runtime replacement
 
 A replacement needs a concrete byte-output and failure contract and representative
 cost evidence. Cover the selected target libraries, Unicode width and precision,
@@ -365,7 +340,44 @@ data model, and floating-point constant-fact boundaries.
 Measure generated source, native compilation, runtime, and memory independently.
 A native formatting kernel alone does not establish an application throughput gain.
 
-## Validation and stopping conditions
+## Validation
+
+### Measurements
+
+Define the measured boundary and preserve results, effects, diagnostics, and
+output contracts across variants. Use actual programs and a minimal reproduction,
+adding deep or wide expressions, skewed file sizes, mutable state, constant loops,
+or error recovery when they exercise the affected cost.
+
+Use the repository benchmark commands:
+
+```sh
+./xmakew bench compile --list
+./xmakew bench compile --samples=5 --warmups=1 --timings --output=build/benchmarks/compile.json
+./xmakew bench incremental --samples=5 --warmups=1 --timings --output=build/benchmarks/incremental.json
+```
+
+These use the current configuration. Record the source revision, local changes,
+toolchain, mode, flags, and recoverable inputs. Report Release results for
+throughput decisions; Debug development costs can be measured separately.
+External `--compiler` artifacts need their own revision and mode records.
+`compile` excludes native compilation; `incremental` includes Xmake and native
+build work. Neither directly measures target-program speed.
+
+The `async`, `simd`, and `json` topics measure generated program execution. They
+calibrate iteration counts by duration and retain raw samples and input
+identities. JSON measures the byte-validation API, including UTF-8 and failure
+delivery, without constructing a DOM. Match the measured boundary to the proposed
+optimization and inspect generated C++ as well as timings.
+
+Select workloads with `--case=<id>`. JSON retains inputs, commands, and samples.
+The displayed stage report is from the valid sample closest to median wall time,
+not a set of stage medians. `<0.1 ms` is an upper bound; a missing report is not
+zero cost. Compare identical timing settings, alternate baseline and variant runs,
+and retain dispersion, adverse results, and independent peak-memory observations.
+Do not infer allocation counts or cache behavior from timings alone.
+
+### Checks and stopping conditions
 
 Select source, structural, diagnostic, and native checks for the affected behavior.
 Parallel experiments compare budgets 1/2/4 and larger values when useful, including small, skewed,
@@ -379,12 +391,4 @@ require disproportionate complexity.
 
 ## References
 
-- [Benchmarks](../benchmarks/README.md) and [testing](../docs/development/testing.md): measurement and validation commands.
-- [Realization](../docs/compiler/backend/realization.md) and [known results](../docs/compiler/analysis/semir.md#known-results-and-execution-requirements): current semantic boundaries.
-- [Semantic execution](../docs/compiler/analysis/evaluation.md), [preparation](../docs/compiler/backend/preparation.md), and [builtin realization](../docs/compiler/backend/builtins.md): existing value facts and output paths.
-- [Uninitialized storage](uninitialized-storage.md): construction-destination contracts for direct delivery.
-- [Workspace API](../tools/workspace/README.md),
-  [compiler architecture](../docs/compiler/README.md), and
-  [CLI](../docs/toolchain/cli.md): implemented reuse, source-library generation, and invocation boundaries.
-- [Frontend analysis](frontend-analysis.md): proposed semantic query and worker contracts.
 - [rustc incremental compilation](https://rustc-dev-guide.rust-lang.org/queries/incremental-compilation-in-detail.html): tracked dependencies and identity, persistence, and hashing costs.

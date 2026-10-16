@@ -1,0 +1,7 @@
+import .common using { Value, make as common_make, value as common_value };
+
+export(cpp) fn value() -> i32 => common_value();
+
+export(cpp) fn make() -> Value => common_make();
+
+export(cpp) fn read(value: Value) -> i32 => value.number + value.label.byte_length() as i32;

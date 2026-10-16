@@ -1,9 +1,7 @@
 # C++ interoperation
 
-[Language](README.md)
-
-This page defines language behavior at C++ boundaries. Native build requirements
-and generated-file integration are covered by the [Toolchain](../toolchain/artifacts.md).
+This page defines native names, types, operations, function boundaries, and provider
+obligations visible to Carven programs.
 
 - [Names and lookup](#names-and-lookup)
 - [External types and construction](#external-types-and-construction)
@@ -16,20 +14,11 @@ and generated-file integration are covered by the [Toolchain](../toolchain/artif
 - [Provider type support](#provider-type-support)
 - [Native exception boundary](#native-exception-boundary)
 
-`import <...>` and `import "..."` include C++ headers. Top-level `#[cpp]`
-contributes an implementation source fragment. `import(cpp)` declares a
-C++-implemented Carven function; `export(cpp)` publishes a Carven function to
-C++ consumers. Source fragments are implementation-only.
-
-Carven has no source operations for creating threads, sharing state between
-threads, or synchronizing access. Read/Write/Take and borrow checking do not
-establish cross-thread safety. C++ fragment authors, import providers, and export
-callers own concurrent calls, shared data, synchronization, and referent lifetimes.
-
 ## Names and lookup
 
-A header import makes its header available through C++ inclusion; Carven does
-not read its contents or associate declarations with individual headers.
+Header imports `import <...>` and `import "..."` make their headers available
+through C++ inclusion; Carven does not read their contents or associate
+declarations with individual headers.
 A name with a leading `::` delegates lookup directly to the global C++ namespace:
 `::calculate`, `::vendor::calculate`, and the type `::Point` bypass Carven local,
 module, and builtin name lookup. Global paths work in expressions, type
@@ -215,6 +204,11 @@ the provider and caller own the result's storage and lifetime contract. Returnin
 to a Carven type does not establish a previously unknown backing relationship.
 Known input borrows remain checked while the operation evaluates.
 
+Carven has no source operations for creating threads, sharing state between
+threads, or synchronizing access. Read/Write/Take and borrow checking do not
+establish cross-thread safety. C++ fragment authors, import providers, and export
+callers own concurrent calls, shared data, synchronization, and referent lifetimes.
+
 ## Execution and initialization
 
 Header imports, native source fragments, and collected C++ sources supply native
@@ -260,7 +254,8 @@ A staged body uses native names published through header imports or
 
 ## Declared function boundaries
 
-An `import(cpp)` declaration is private or bare and has no Carven body:
+An `import(cpp)` declaration names a C++-implemented Carven function. It is
+private or bare and has no Carven body:
 
 ```carven
 private import(cpp) fn native_value(value: i32) -> i32;
@@ -324,7 +319,6 @@ The generated signatures use the same C++ representations as Carven functions:
 | Declared synchronous failures | `carven::runtime::Outcome<Result, Failures...>` |
 | Async completion contract | Cold `carven::runtime::execution::AsyncOperation<Result, Failures...>` |
 
-Async imports and exports use the [async borrowing and host contracts](async.md#native-providers-and-hosts).
 Read uses `const T&` for owned Carven storage, closures, and parameter holders
 retained across the call boundary, and const values for other pure Carven types.
 Other native-containing Read parameters use `carven::runtime::ReadArg<T>`, which
@@ -403,9 +397,9 @@ types are needed. It supplies aliases, not external function declarations;
 declare providers in C++ headers or fragments. C++ checks their calls through
 ordinary overload, template, and conversion rules.
 
-Type aliases refer to the same nominal definitions used by Carven, with the same
-field access. They provide C++ source names, not a cross-toolchain binary ABI
-promise. A native header defining a type used by the signature must not include
+Type aliases refer to the same nominal definitions and field access used by Carven.
+They define a C++ source interface; binary compatibility across toolchains is not
+specified. A native header defining a type used by the signature must not include
 the generated provider header that depends on it.
 
 ## Native exception boundary

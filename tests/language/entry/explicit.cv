@@ -2,39 +2,33 @@ import "entry/explicit.hpp";
 
 private import(cpp) fn cv_test_entry_mark_test_observed();
 private import(cpp) fn cv_test_entry_run_tests() -> i32;
-private import(cpp) fn cv_test_entry_observe(condition: bool);
-private import(cpp) fn cv_test_entry_test_was_observed() -> bool;
 
-test "Testing: explicit entry point executes emitted tests" {
+test "Entry: an authored entry runs inline tests" {
     cv_test_entry_mark_test_observed();
-    check(true);
 }
 
 struct Failure {
-    payload: ::EntryPayload,
+    payload: ::EntryPayload
 }
 
 private fn fail_entry() throw Failure {
     throw Failure { payload: ::EntryPayload {} };
 }
 
-// Entry points: completion preserves cleanup and determines process status.
 fn main(args) -> ::EntryPayload throw Failure {
-    let owner = ::cv_test_entry_begin();
+    assert(args.length() == 3);
+    assert(args[1] == "alpha" && args[2] == "beta");
+    let owner = ::cv_test_entry_begin(if args[0] == "recover" { 2 } else { 1 });
     let result = cv_test_entry_run_tests();
-    cv_test_entry_observe(result == 0);
-    cv_test_entry_observe(cv_test_entry_test_was_observed());
-    if ::cv_test_entry_selected(c"failure-status") {
-        print(::cv_test_entry_failure_status() as i32);
-    }
-    if ::cv_test_entry_selected(c"throw") { throw Failure { payload: ::EntryPayload {} }; }
-    if ::cv_test_entry_selected(c"recover") {
+    assert(result == 0);
+    if args[0] == "throw" { throw Failure { payload: ::EntryPayload {} }; }
+    if args[0] == "propagate" { fail_entry()?; }
+    if args[0] == "recover" {
         try {
             fail_entry()?;
         } catch {
             Failure(_) => {},
         }
     }
-    if ::cv_test_entry_selected(c"propagate") { fail_entry()?; }
     return ::EntryPayload {};
 }

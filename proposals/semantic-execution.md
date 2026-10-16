@@ -1,21 +1,22 @@
 # Semantic execution extensions
 
-- **Status:** Exploration
-- **Scope:** Additional address and literal identity guarantees, retained reference graphs, and deferred host scripting and build-stage execution
+- **Status:** Draft
+- **Scope:** Interpreted closures, additional address observations, retained reference graphs, and host scripting and build-stage execution
 
 ## Summary
 
-This proposal explores additional guarantees for execution addresses, literal
-identity, and retained reference graphs. Each needs defined identity and
-stability rules.
+Extend the shared semantic executor at the following boundaries. Each slice has
+its own admission, lifetime, and validation requirements.
 
-Host scripting and an explicit build-stage entry are deferred extensions of the
-shared execution model. Their remaining questions concern host capabilities,
-invocation, dependencies, and output publication. They can be explored without
-requiring address observation, retained reference graphs, or arbitrary native
-C++ execution.
+| Slice | Design status | Remaining work |
+| --- | --- | --- |
+| Interpreted closures (`EXEC-01`) | Accepted | Execute concrete closures and their captures through ordinary calls |
+| Additional address observations (`OPEN-03`) | Exploration | Select an observation and its stability domain |
+| Retained reference graphs (`DEFER-01`) | Deferred | Select a static-data consumer requiring shared nodes or cycles |
+| Host scripting (`DEFER-02`) | Deferred | Select a script and the host operations it requires |
+| Build-stage entry (`DEFER-03`) | Deferred | Define a source-generation workflow and its publication boundary |
 
-## Execution boundary
+## Context
 
 Structured control executes in constant initializers, array extents, `const fn`,
 `const` blocks, and static tests. Static parameters, `const if`, and `const for`
@@ -24,27 +25,60 @@ String, Vector, and slices have admitted execution and retained-value paths. Byt
 and character traversal share text backing and borrowing rules.
 
 Interpretation and explicit static execution share semantic operations and the
-executor. Supported input, clocks, waits, and timeout composition already execute
+executor. Supported input, clocks, waits, and timeout composition execute
 through compiler-host adapters. `const fn` declares static execution capability;
 observable work belongs to the selected stage. Type dependency queries restrict
 host effects, and retaining a completed constant has separate publication rules.
 Native C++ inputs may be present, but semantic execution does not load their
-code or run their global initialization. These boundaries already support a
-useful language subset independently of complete native interoperation.
+code or run their global initialization. Concrete closure construction remains
+unsupported by the executor.
 
 Execution places use domain and object identities with projection paths.
 Static erased-pointer formatting produces fixed null/non-null text; interpreted
 formatting produces execution-local object and projection labels. Pointer
 comparison and restoration use established address relations, including
-standard-layout first-field relations. Known C strings select execution backing
-by canonical contents. Numeric addresses, target layout, and cross-environment
-identity guarantees remain outside these contracts.
+standard-layout first-field relations. Equal C-string contents share immutable
+program-lifetime backing within one linkage domain, including across generated
+modules and artifacts. Known C strings select execution backing by canonical
+contents. Numeric addresses, target-layout queries, and identity guarantees
+across execution environments remain outside these contracts.
 
 Address-observation and graph-retention designs must preserve invalidation by
 Take and scope exit; reinitialization cannot revive old pointers. Source
 admission, executed-path support, and result publication remain separate checks.
 
-## Address observation
+## Design
+
+### EXEC-01 — Interpreted closures
+
+- **Status:** Accepted
+- **Implementation:** Not started
+
+Execute concrete closure construction, copying, and invocation in interpreted
+runtime code. Ordinary closure calls and sequence callbacks use the same
+invocation and capture-binding path.
+
+Represent a closure by its published callable identity and capture storage.
+Construct captures in source order. Apply ordinary owning-copy rules to value
+captures and retain live execution coordinates for Write captures. Preserve
+result backing and cleanup. Select the closure object before evaluating arguments,
+then read that object's current captures after argument evaluation. An explicit
+closure copy establishes a value-capture snapshot. Resolve the callable and bind
+captures through the existing execution context without repeating source analysis.
+
+Keep static admission and retained-result publication at their existing
+boundaries. This delivery enables interpreted runtime closure calls; static
+closure invocation and retained closure constants remain unsupported. Optional
+precomputation must preserve callback effects, capture construction, reads, and
+cleanup.
+
+Validate ordinary calls and sequence callbacks against generated execution.
+Cover value and Write captures, copying, returned closures, aliased callable
+replacement during argument evaluation, returned borrows, typed failures,
+cleanup, and execution budgets. Validate the shared executor with ordinary closure
+programs. Sequence consumers additionally check traversal demand and view lifetimes.
+
+### Address observation
 
 Choose the relationship being observed before choosing its representation:
 
@@ -55,58 +89,51 @@ Choose the relationship being observed before choosing its representation:
 | Target-layout virtual memory | Alignment, address width, field offsets, byte access, and provenance |
 | Native bridge | ABI, synchronization, reentry, permissions, lifetime, and failure |
 
-An internal `ExecutionValue*` cannot stand for a source address. Distinct object
-identities do not guarantee different address text, and the same address does not
-grant the same access permissions. Assigning different numbers to every
-projection does not reproduce native subobject address relations. Invalid-pointer
-comparison and display need their own policy; rejection of dereference does not
-settle those observations.
+Represent source addresses with execution identities and established subobject
+relations. Keep access permissions separate from address equality. Canonicalize
+projections that share an address and define comparison and display after target
+invalidation. Keep compiler-host pointers private to the executor.
 
 Address text can be compared or used in control flow, so formatting still has an
 observable contract. A C-string converted to `ptr<void>` and then formatted is a
 candidate probe. Conversion must preserve its target and permissions without
 creating an object or granting Write access.
 
-## C-string literal identity
-
-Constant content and source object identity require separate representations.
-The alternatives are:
-
-| Candidate policy | Required execution and backend guarantees |
-| --- | --- |
-| Every source literal has independent identity | Retain occurrence identity and emit backing that guarantees separation, including across artifacts |
-| Equal contents always share identity | Define the merging domain and guarantee shared backing across the applicable modules |
-| Sharing or separation is implementation-selected | Do not turn an implementation-dependent identity observation into an environment-independent constant fact |
-
-The first two choices need explicit backing and a defined cross-module strategy;
-optional C++ literal pooling cannot guarantee them. Introduce occurrence identity
-when the selected policy requires it. A merged `ConstantID` cannot reconstruct
-the original literal occurrences.
-
-## Required and interpreted observation policies
+### Required and interpreted observation policies
 
 Stronger address observations have three candidate boundaries in required
 execution:
 
-- Keep address observation unsupported.
+- Retain the current fixed null/non-null static display without object identity.
 - Permit diagnostic or debug output through an output boundary that does not
   return an ordinary value.
 - Permit address text as an ordinary constant, defining whether it describes the
   compile-time environment and its stability within one execution, across
   repeated compilations, and across targets.
 
-Interpreted display can be decided independently. Literal-identity and address
-policies must agree wherever an observation includes a literal.
+Define any stronger interpreted display separately, preserving established
+address equality and C-string backing identity.
 
-Rejecting pointer values only at freezing is insufficient to prevent address
-observations from influencing retained results: an observation can first become
-text or an integer, choose a branch, or determine an array extent. A policy that
-prohibits that influence must restrict the observation itself or define complete
-dependency rules.
+An address observation can become text or an integer, choose a branch, or
+determine an array extent before freezing. Apply restrictions at the observation
+or track its dependencies through those uses. Result-pointer rejection alone
+does not cover them.
 
-## Retained reference graphs
+## Open decisions
 
-### DEFER-01 — Shared or cyclic static graphs
+### OPEN-03 — Select an observation and execution-mode policy
+
+Specify the observed relationship, permissions, invalidation behavior, and
+stability interval, and choose its required and interpreted admission. Preserve
+the established C-string identity within each linkage domain. State whether an
+ordinary result can carry the observation and how retained-result restrictions
+are enforced.
+
+## Deferred work
+
+### Retained reference graphs
+
+#### DEFER-01 — Shared or cyclic static graphs
 
 - **Reason deferred:** Retained alias identity, cycles, and access permissions
   require an explicit source contract.
@@ -131,9 +158,9 @@ Native reconstruction must establish C++20 static initialization across modules
 without silently adding runtime initialization. Observe alias relationships and
 backing lifetimes in the generated program.
 
-## Host scripting and staged builds
+### Host scripting and staged builds
 
-### Research basis
+#### Research basis
 
 | Source | Observed boundary | Implication for Carven |
 | --- | --- | --- |
@@ -145,22 +172,21 @@ backing lifetimes in the generated program.
 These comparisons motivate the following candidates. The implementation and
 invocation model remain open.
 
-### DEFER-02 — Host scripting through semantic execution
+#### DEFER-02 — Host scripting through semantic execution
 
-- **Status:** Deferred
-- **Reason deferred:** Stabilize the current standard APIs, host execution, and
-  native boundaries before extending the execution surface.
-- **Reactivation condition:** After that consolidation, select a concrete script
-  such as reading project configuration and generating a source or resource file,
-  with a bounded set of missing host operations.
+- **Reason deferred:** No script has selected the required file, argument,
+  environment, or process operations and invocation contract.
+- **Reactivation condition:** Select a script such as reading project
+  configuration and generating a source or resource file, with a bounded set
+  of required host operations.
 
 Use the existing source language, checking, and semantic executor for scripts.
 Select host capabilities from the consumer: configuration-driven generation may
 need file access and arguments; a tool wrapper may also need environment and
 process operations. Define each capability's execution stages, value and failure
 contracts, resource ownership, and cancellation behavior where applicable.
-Scripting does not require interpreting arbitrary C++ providers or emulating
-their ABI and global initialization.
+Implement host operations through execution adapters with explicit provider
+contracts.
 
 Choose invocation and process behavior before broadening the API: arguments,
 working directory, output routing, exit status, and interruption all affect a
@@ -182,9 +208,8 @@ supported operations. Exercise reached unsupported native operations and ensure
 that merely collecting native inputs does not reject an otherwise supported
 script. Include explicit static execution only for capabilities admitted there.
 
-### DEFER-03 — Explicit build-stage entry
+#### DEFER-03 — Explicit build-stage entry
 
-- **Status:** Deferred
 - **Reason deferred:** A build entry needs a demonstrated generation workflow and
   stage/dependency contracts beyond the current executor. Xmake owns current
   project builds and native scheduling.
@@ -213,27 +238,10 @@ or observation model; clock reads and other untracked observations need a define
 rerun or freezing policy. Language execution capability alone establishes none
 of these cache guarantees.
 
-The bounded experiment should establish stage ordering, generation failure and
+The bounded experiment must establish stage ordering, generation failure and
 cleanup, dependency cycles, host/target separation, and agreement with a fresh
 build after input changes. If reuse is selected, include unchanged runs, changed
-configuration or tools, and obsolete output removal. Once invocation, artifacts,
-and scheduling require a developed toolchain contract, move this slice to a
-dedicated proposal while keeping host execution owned here.
-
-## Open decisions
-
-### OPEN-02 — Choose literal identity and its domain
-
-Choose a literal policy and the backing guarantees needed to implement it.
-Explain equal contents, separate occurrences, and cross-module uses. This decision
-is needed for observations that depend on literal identity.
-
-### OPEN-03 — Select an observation and execution-mode policy
-
-Specify the observed relationship, permissions, invalidation behavior, and
-stability interval, and choose its required and interpreted admission. Apply
-`OPEN-02` when literals participate. State whether an ordinary result can carry
-the observation and how retained-result restrictions are enforced.
+configuration or tools, and obsolete output removal.
 
 ## Validation
 
@@ -254,13 +262,6 @@ stops while implementing the selected observation.
 
 ## References
 
-- [Semantic execution](../docs/compiler/analysis/evaluation.md): current roots, storage, and freezing.
-- [Constant admission tests](../tests/internal/semantic/analysis/const_admission.cpp): structured body support and callable capability checks.
-- [Text](../docs/language/text.md): `.bytes` and `.chars` source contracts.
-- [CLI interpretation](../docs/toolchain/cli.md#interpretation): current invocation, execution subset, and native boundary.
-- [Static execution](../docs/language/constants.md#static-execution-of-functions): callable capability, host effects, and result retention.
-- [Frontend analysis](frontend-analysis.md#static-evaluation-and-observable-effects): query execution, effects, and event delivery.
-- [Compiler optimization](compiler-optimization.md): preparation, analysis reuse, and build-worker boundaries.
 - [NimScript](https://nim-lang.org/docs/nims.html): shared compile-time VM, scripting and build tasks, and FFI limitations.
 - [Zig Build System](https://ziglang.org/learn/build-system/): build graphs, generated files, and tool execution.
 - [Cargo build scripts](https://doc.rust-lang.org/cargo/reference/build-scripts.html): host execution, output directories, and dependency-based reruns.

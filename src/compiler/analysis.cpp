@@ -8,6 +8,7 @@ import :semantic.evaluation.output;
 import :semantic.semir.program;
 import :source.batch;
 import :source.manager;
+import :source.provenance;
 import std;
 
 CompilationAnalysis::CompilationAnalysis(SourceManager sources) noexcept
@@ -21,7 +22,7 @@ auto CompilationAnalysis::failed(SourceManager sources, Diagnostics diagnostics)
 }
 
 auto CompilationAnalysis::program() const noexcept -> const SemIRProgram* {
-    return semantic_program ? std::addressof(*semantic_program) : nullptr;
+    return semantic ? std::addressof(semantic->program) : nullptr;
 }
 
 auto CompilationAnalysis::sources() const noexcept -> const SourceManager& {
@@ -41,17 +42,26 @@ auto CompilationAnalysis::source_occurrences() const noexcept -> std::span<const
 }
 
 auto CompilationAnalysis::take_program() && noexcept -> std::optional<SemIRProgram> {
-    return std::move(semantic_program);
+    return semantic ? std::optional(std::move(semantic->program)) : std::nullopt;
 }
 
-auto analyze_compilation(
+auto CompilationAnalysis::take_checked_unit() && noexcept -> std::optional<CheckedUnit> {
+    return std::move(semantic);
+}
+
+auto CompilationAnalysis::analyze(
     SourceManager sources,
     SourceBatch batch,
+    std::optional<CheckedDefinitions> seed,
     CompilationAnalysisOptions options,
-    std::span<const ParsedSourceInput> parsed
+    std::span<const ParsedSourceInput> parsed,
+    bool retain_definitions
 ) noexcept -> CompilationAnalysis {
     auto result = CompilationAnalysis(std::move(sources));
-    auto syntax = parse_program(result.sources(), batch, options.timings, parsed);
+    auto imported = seed ? std::optional(seed->take_provenance(result.source_manager))
+                         : std::optional<CompilationProvenance>();
+    auto syntax =
+        parse_program(result.sources(), batch, options.timings, parsed, std::move(imported));
     if (!syntax) {
         result.findings = std::move(syntax.error());
         return result;
@@ -67,19 +77,55 @@ auto analyze_compilation(
     const auto collect = [&](std::span<const SourceOccurrence> facts) noexcept {
         result.occurrences.assign(facts.begin(), facts.end());
     };
-    auto analyzed = analyze(
+    auto analyzed = analyze_checked(
         std::move(*syntax),
+        std::move(seed),
         options.capture_output || options.output ? ExecutionOutput(capture) : ExecutionOutput {},
         options.timings,
         options.collect_source_observations ? SourceAnalysisOutput(collect)
                                             : SourceAnalysisOutput {},
-        options.host_effects
+        options.host_effects,
+        retain_definitions
     );
     if (analyzed) {
-        result.semantic_program.emplace(std::move(analyzed->value));
+        result.semantic.emplace(std::move(analyzed->value));
         result.findings = std::move(analyzed->diagnostics);
     } else {
         result.findings = std::move(analyzed.error());
     }
     return result;
+}
+
+auto analyze_compilation(
+    SourceManager sources,
+    SourceBatch batch,
+    CompilationAnalysisOptions options,
+    std::span<const ParsedSourceInput> parsed
+) noexcept -> CompilationAnalysis {
+    return CompilationAnalysis::analyze(
+        std::move(sources),
+        batch,
+        std::nullopt,
+        options,
+        parsed,
+        false
+    );
+}
+
+auto analyze_checked_compilation(
+    SourceManager sources,
+    SourceBatch batch,
+    std::optional<CheckedDefinitions> seed,
+    bool retain_definitions,
+    CompilationAnalysisOptions options,
+    std::span<const ParsedSourceInput> parsed
+) noexcept -> CompilationAnalysis {
+    return CompilationAnalysis::analyze(
+        std::move(sources),
+        batch,
+        std::move(seed),
+        options,
+        parsed,
+        retain_definitions
+    );
 }

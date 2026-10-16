@@ -1,16 +1,16 @@
 # Body and operation preparation
 
-Preparation derives implementation choices and operand demands from a published
-semantic body. Realization consumes those choices without
-changing the published evaluation and lifetime contracts.
+This reference defines body summaries, operand demands, and operation plans for
+C++ generation.
 
 ## Body summaries and storage observations
 
-`BodyPreparation` borrows semantic expression occurrences, stores operation and
-subtree execution requirements and storage-observation summaries, and prepares
-operand demands and operation plans on request. Each fragment owns its operation
-preparation. SemIR owns types, lifetimes, origins, constants, effects, patterns,
-and structured control flow.
+`BodyPreparation` borrows a published body's semantic expression occurrences,
+stores operation and subtree execution requirements and storage-observation
+summaries, and prepares operand demands and operation plans on request.
+Realization consumes these plans without changing the published evaluation and
+lifetime contracts. Each fragment owns its operation preparation. SemIR owns
+types, lifetimes, origins, constants, effects, patterns, and structured control flow.
 Realization chooses ordinary or deferred storage from the C++ scope that owns
 the source cleanup.
 Propagation markers select their operand operation. Summary queries require an
@@ -94,7 +94,8 @@ result conversions preserve promotion, overload, and deduction behavior.
 only when a published integer fact satisfies the operation's bound. The selected
 runtime overload has no reporting path or site parameter. The original operand
 still executes for its effects; unknown and out-of-range controls retain checked
-runtime calls. This does not infer slice bounds or move checks across effects.
+runtime calls. Lane selection supplies no slice-bound proof; checks retain their
+source execution position.
 
 ## Format and print plans
 
@@ -144,9 +145,8 @@ borrowing until their bytes are written. Delegated formatters retain their
 native operand access. Repeated writer use therefore needs no scalar backing
 beyond its evaluation scope, while actual native references retain theirs.
 
-C++ checks native format specifications and formatter availability, performs object
-layout and ordinary optimization, and owns instruction selection. Carven selects
-implementations from published source facts and local operation contracts.
+C++ checks native format specifications and formatter availability. Preparation
+selects implementations from published facts and local operation contracts.
 
 ## Native construction operands
 

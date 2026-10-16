@@ -49,7 +49,7 @@ auto source_type_name_is_reserved(std::string_view name) noexcept -> bool {
 namespace {
 
 auto source_id(const ProgramDraft& draft, ProgramModuleID module_id) noexcept -> SourceID {
-    return draft.syntax_tree(module_id).view().source_id();
+    return draft.module_source_id(module_id);
 }
 
 auto fail(

@@ -28,18 +28,18 @@ struct DumpRequest final {
 
 auto print_help() noexcept -> int {
     std::print(
-        "Inspect source syntax.\n"
+        "Print tokens or the syntax tree.\n"
         "\n"
         "Usage:\n"
         "  carven dump [kind] [options] <source-file>\n"
         "\n"
         "Kinds:\n"
-        "  tokens    Print the token stream\n"
-        "  ast       Print the syntax tree\n"
+        "  tokens                          Print the token stream\n"
+        "  ast                             Print the syntax tree\n"
         "\n"
         "Options:\n"
-        "      --timings Show total and stage timings on stderr\n"
-        "  -h, --help    Show this help\n"
+        "      --timings                   Show total and stage timings on stderr\n"
+        "  -h, --help                      Show this help\n"
         "\n"
         "Reads one source file without semantic analysis.\n"
         "Without a kind, prints both tokens and the syntax tree.\n"

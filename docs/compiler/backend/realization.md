@@ -1,10 +1,13 @@
 # Body realization
 
-Body realization composes prepared semantic operations into target expressions,
-statements, storage, and control exits. Representation defines native types and
-ABI; preparation supplies operation plans and operand demands. Realization
-preserves evaluation order, storage observations, constructor capabilities,
-control exits, and cleanup.
+This reference defines how prepared bodies become target expressions,
+statements, storage, and control exits.
+
+## Inputs and contracts
+
+Representation defines native types and ABI; preparation supplies operation
+plans and operand demands. Realization preserves evaluation order, storage
+observations, constructor capabilities, control exits, and cleanup.
 
 Body lowering queries one published semantic body by BodyID. Preparation
 summarizes its executable region; realization uses its binding, parameter,
@@ -236,9 +239,6 @@ use synchronous storage and operand operations. `realize_operation` consumes
 prepared operands. Cleanup-frame links share retained declarations across
 operations with the same source lifetime.
 
-Validate stack use and growth on deep and wide structured bodies, and check
-evaluation order and cleanup through behavior and lifetime tests.
-
 Composition uses execution and storage-read facts with C++ sequencing guarantees.
 Storage access preserves Read value snapshots and Read aliases to owned storage.
 Write operands retain the selected place before later operand evaluation; a later
@@ -310,9 +310,8 @@ from selections of existing storage. Value category alone is insufficient: Read
 bindings can still name existing storage. Preparation consumes the owning
 source. Realization anchors the complete source in mutable owned storage, applies
 the common transfer policy to the selected field, and keeps the remainder alive
-through the cleanup frame. It does not ask native overload resolution to infer
-Carven ownership from an incidental C++ value category. Owning field results have
-their own temporary identity for backing and escape analysis.
+through the cleanup frame. Owning field results have their own temporary identity
+for backing and escape analysis.
 
 ## Callable adaptation
 
@@ -463,9 +462,8 @@ active only in its protected region; a loop target is active only in its body.
 Catch guards and bodies send failures to the enclosing receiver. The active catch
 retains the payload and accepted failure set needed by a rethrow.
 
-[Failure and test-stop ABI](representation.md#failure-and-test-stop-abi) fixes
-carrier alternatives and widening. The following rules dispatch those carriers
-through the active control regions.
+Dispatch the callable's selected result carrier through the active control
+regions. Carrier alternatives and widening remain fixed during dispatch.
 
 Failure delivery registers a logical receiver, typed source, candidate failure
 set, and unique target edge. A call with several failure alternatives is one
@@ -548,8 +546,9 @@ turn. The shared execution runtime owns scheduling, clocks, timed waiting, task
 cancellation, and completion storage. Generated dependencies use its single entry,
 `carven/runtime/execution/execution.hpp`.
 The runtime's size-only C++20 frame allocator supplies at least 32-byte and
-fundamental alignment, covering current Carven value carriers. Native retained
-storage follows the [interop alignment contract](../../language/interop.md#declared-function-boundaries).
+fundamental alignment. Native values and temporaries retained across suspension
+must fit that alignment. Keep more strongly aligned objects in separate storage
+and retain an owner or borrow with the required lifetime.
 Generated code owns source evaluation order, lexical child scopes, and result
 delivery. Async exits record the child scopes to close and the continuation.
 Scope traversal resolves exits and introduces labels when closure must cross
@@ -599,8 +598,7 @@ Continue retains loop-initializer storage; break exits the body before closing t
 initializer's child scope. C++ RAII performs ordinary object destruction.
 
 A fresh direct await may realize its producer inside the caller's coroutine.
-Preparation selects bodies with scalar Read inputs, scalar or void success, and
-no outward failure, cancellation, children, or test stop. Realization checks module
+Preparation supplies an eligible scalar producer. Realization checks module
 ownership, active recursive edges, and a shared expansion budget. It borrows the
 published callee body and gives its realizer independent binding, loop, handler,
 and lifetime contexts while sharing target names and the expansion budget.

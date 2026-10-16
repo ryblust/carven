@@ -248,6 +248,7 @@ public:
         -> IDTableEntries<CallableID, CallableDeclaration, ProgramIdentity>;
 
 private:
+    friend class SemanticArtifactAccess;
     auto publish_bodies(std::span<const std::optional<BodyID>> bodies) noexcept -> void;
 
     DeclarationStore(
@@ -347,6 +348,8 @@ public:
     auto seal(const TypeResolution& type_resolution) && noexcept -> DeclarationStore;
 
 private:
+    friend class SemanticArtifactAccess;
+    friend class ProgramDraft;
     enum class State {
         Reserving,
         Completing,

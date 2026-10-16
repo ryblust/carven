@@ -42,6 +42,7 @@ public:
     auto size() const noexcept -> std::size_t;
 
 private:
+    friend class SemanticArtifactAccess;
     explicit BodyStore(ImmutableProgramTable<SemIRBody, BodyID> values) noexcept;
 
     // Dropping analysis-only bodies leaves vacant IDs, never changes a
@@ -66,6 +67,7 @@ public:
     auto size() const noexcept -> std::size_t;
 
 private:
+    friend class SemanticArtifactAccess;
     explicit TestStore(ImmutableProgramTable<TestDeclaration, TestID> values) noexcept;
 
     ImmutableProgramTable<TestDeclaration, TestID> rows;
@@ -81,6 +83,8 @@ struct CallableSurface final {
     // First-encounter closure references for this callable, without duplicates.
     std::vector<CallableID> closures;
 };
+
+struct SemIRProgramArtifactState;
 
 class SemIRProgram final {
 public:
@@ -151,6 +155,8 @@ public:
         -> bool;
 
 private:
+    explicit SemIRProgram(SemIRProgramArtifactState state) noexcept;
+    friend class SemanticArtifactAccess;
     auto publish_surfaces() noexcept -> void;
     auto publish_bodies() noexcept -> void;
     auto publish_read_passing_facts(ReadPassingFacts facts) noexcept -> void;

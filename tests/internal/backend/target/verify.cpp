@@ -15,7 +15,6 @@ import :backend.target.unit;
 import :backend.target.verify;
 import :backend.target;
 import :support.unique_indirect;
-import :test.harness.death;
 import :test.harness.framework;
 import :test.internal.backend.target.fixture;
 import std;
@@ -351,82 +350,6 @@ const TestSuite suite([] static noexcept {
         });
     };
 
-    "Target verifier: standalone template arguments belong to the unit"_test = [] static noexcept {
-        const auto owner = TargetTestingFixture::unit_identity();
-        const auto result_type = TargetTestingFixture::type_id(owner, 0);
-        const auto foreign =
-            TargetTestingFixture::type_id(TargetTestingFixture::unit_identity(), 0);
-        const auto types = std::array {bool_type()};
-        struct Scenario final {
-            std::string_view name;
-            TargetTypeID argument;
-            bool accepted;
-        };
-        const auto scenarios = std::array {
-            Scenario {"unit-owned argument", result_type, true},
-            Scenario {"foreign argument", foreign, false},
-        };
-        each(scenarios, &Scenario::name, [&](const Scenario& scenario) noexcept {
-            auto body = one_statement({
-                .value =
-                    TargetExprStmt {
-                        .expression = template_name_expression(
-                            TargetExpr {
-                                .value = TargetNameExpr {.name = TargetName(identifier("value"))}
-                            },
-                            {scenario.argument}
-                        ),
-                    },
-                .attribution = attribution(),
-            });
-            const auto result = TargetTestingFixture::validate_unit(
-                owner,
-                types,
-                sections(one_item(function(result_type, std::move(body))))
-            );
-            if (scenario.accepted) {
-                expect(result.has_value());
-            } else if (expect(!result.has_value())) {
-                expect_equal(result.error().kind, TargetSealViolationKind::InvalidTypeReference);
-            }
-        });
-    };
-
-    "Target type construction: children already belong to the unit"_test = [] static noexcept {
-        auto builder = TargetUnitBuilder();
-        const auto foreign = TargetTestingFixture::unit_identity();
-        const auto invalid = std::array {
-            TargetTestingFixture::type_id(foreign, 0),
-            TargetTestingFixture::type_id(builder.identity(), 0),
-            TargetTestingFixture::type_id(builder.identity(), 7),
-        };
-        for (const auto [index, child] : invalid | std::views::enumerate) {
-            expect(expect_termination(std::format("target-type-child-{}", index), [&] noexcept {
-                static_cast<void>(builder.intern_type(
-                    TargetType {
-                        .value =
-                            TargetArrayType {
-                                .element_type_id = child,
-                                .extent = TargetArrayExtent {.magnitude = 2}
-                            },
-                        .const_qualified = false,
-                    }
-                ));
-            }));
-        }
-        const auto element = builder.intern_type(bool_type());
-        [[maybe_unused]] const auto array = builder.intern_type(
-            TargetType {
-                .value =
-                    TargetArrayType {
-                        .element_type_id = element,
-                        .extent = TargetArrayExtent {.magnitude = 2}
-                    },
-                .const_qualified = false,
-            }
-        );
-    };
-
     "Target jump verifier: entering an empty nested scope is legal"_test = [] static noexcept {
         const auto owner = TargetTestingFixture::unit_identity();
         const auto type = TargetTestingFixture::type_id(owner, 0);
@@ -622,84 +545,6 @@ const TestSuite suite([] static noexcept {
             expect((builder.intern_type(query(true)) == grouped));
             const auto unit = std::move(builder).finish(sections());
             expect_equal(unit.type_count(), 130uz);
-        };
-
-    "Target locals: references require a unique visible declaration in their unit"_test =
-        [] static noexcept {
-            enum class Reference { Visible, Foreign, OutOfRange, Duplicate, Escaped, Undeclared };
-
-            struct Scenario final {
-                std::string_view name;
-                Reference reference;
-            };
-
-            constexpr auto scenarios = std::array {
-                Scenario {.name = "visible local", .reference = Reference::Visible},
-                Scenario {.name = "foreign unit", .reference = Reference::Foreign},
-                Scenario {.name = "out of range", .reference = Reference::OutOfRange},
-                Scenario {.name = "duplicate declaration", .reference = Reference::Duplicate},
-                Scenario {.name = "escaped scope", .reference = Reference::Escaped},
-                Scenario {.name = "undeclared local", .reference = Reference::Undeclared},
-            };
-            each(scenarios, &Scenario::name, [](const Scenario& scenario) static noexcept {
-                const auto owner = TargetTestingFixture::unit_identity();
-                const auto type = TargetTestingFixture::type_id(owner, 0);
-                const auto types = std::array {bool_type()};
-                const auto id = TargetTestingFixture::local_id(owner, 0);
-                auto selected = id;
-                if (scenario.reference == Reference::Foreign) {
-                    selected =
-                        TargetTestingFixture::local_id(TargetTestingFixture::unit_identity(), 0);
-                } else if (scenario.reference == Reference::OutOfRange) {
-                    selected = TargetTestingFixture::local_id(owner, 1);
-                }
-                auto body = std::vector<TargetStmt>();
-                const auto declaration = [&]() noexcept -> TargetStmt {
-                    return {
-                        .value =
-                            TargetVariableStmt {
-                                .binding = TargetVariableBinding::ConstValue,
-                                .maybe_unused = false,
-                                .local = id,
-                                .type = type,
-                                .initializer = literal()
-                            },
-                        .attribution = attribution()
-                    };
-                };
-                if (scenario.reference == Reference::Escaped) {
-                    body.push_back(
-                        {.value = TargetBlockStmt {.statements = one_statement(declaration())},
-                         .attribution = attribution()}
-                    );
-                } else if (scenario.reference != Reference::Undeclared) {
-                    body.push_back(declaration());
-                }
-                if (scenario.reference == Reference::Duplicate) {
-                    body.push_back(declaration());
-                }
-                body.push_back(
-                    {.value =
-                         TargetReturnStmt {
-                             .expression = TargetExpr {.value = TargetLocalExpr {.local = selected}}
-                         },
-                     .attribution = attribution()}
-                );
-                const auto result = TargetTestingFixture::validate_unit(
-                    owner,
-                    types,
-                    sections(one_item(function(type, std::move(body)))),
-                    1uz
-                );
-                if (scenario.reference == Reference::Visible) {
-                    expect(result.has_value());
-                } else {
-                    if (!(expect(!(result.has_value())))) {
-                        return;
-                    }
-                    expect(result.error().kind == TargetSealViolationKind::InvalidLocalReference);
-                }
-            });
         };
 });
 

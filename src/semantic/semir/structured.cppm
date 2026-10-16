@@ -25,6 +25,7 @@ public:
     auto resolved() const noexcept -> TypeID;
 
 private:
+    friend class SemanticArtifactAccess;
     ConstructionTypeRef value;
 };
 
@@ -35,6 +36,7 @@ public:
     auto resolved() const noexcept -> FailureSetID;
 
 private:
+    friend class SemanticArtifactAccess;
     ConstructionFailureRef value;
 };
 
@@ -708,6 +710,7 @@ public:
     auto generic_definition() const noexcept -> std::optional<GenericDeclarationID>;
 
 private:
+    friend class SemanticArtifactAccess;
     auto publish() noexcept -> void;
     SemIRBodyData data;
 

@@ -6,54 +6,6 @@ import "discarded_results/provider.hpp" using discarded_probe::{
     owner_count,
 };
 
-private import(cpp) fn discarded_invalid_scalar() -> char;
-
-export(cpp) fn divide(value: i32) {
-    let _ = 1 / value;
-}
-
-export(cpp) fn remainder(value: i32) {
-    let _ = 1 % value;
-}
-
-export(cpp) fn shift(value: i32) {
-    let _ = 1 << value;
-}
-
-export(cpp) fn index(value: usize) {
-    let array: [i32; 1] = [1];
-    let _ = array[value];
-}
-
-export(cpp) fn unicode() {
-    let _ = discarded_invalid_scalar();
-}
-
-export(cpp) fn slice_index(value: i32) {
-    let array = [1];
-    let _ = array.slice()[value];
-}
-
-export(cpp) fn slice_range(start: usize, end: usize) {
-    let array = [1];
-    let _ = array.slice(start, end);
-}
-
-export(cpp) fn slice_known_length() {
-    let array = [1];
-    let _ = array.slice(0, 2).length();
-}
-
-export(cpp) fn slice_known_empty() {
-    let array = [1];
-    let _ = array.slice(2, 2).is_empty();
-}
-
-export(cpp) fn slice_known_format() {
-    let array = [1];
-    let _ = f"{array.slice(0, 2).length()}";
-}
-
 private fn native_result() => result();
 
 test "discarded native results preserve calls and destruction" {

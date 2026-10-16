@@ -18,7 +18,7 @@ const test "source and provided aliases retain identity" {
     check(Bytes::splat(3).lane(0) == 3);
 }
 
-test "provided aliases use the native backend" {
+test "Aliases: standard types preserve their operations" {
     let text = Text::from_str("native");
     check(text.byte_length() == 6);
     check(Bytes::splat(7).lane(1) == read() as u8);

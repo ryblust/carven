@@ -1,11 +1,12 @@
 # C++ representation
 
-This reference defines how published types, constants, parameter access, and
-callable contracts select native representations. Realization owns operand
-sequencing and result storage; artifact construction places their declarations
-and dependencies.
+This reference defines native representations for published types, constants,
+parameter access, and callable contracts.
 
 ## Representation
+
+Realization owns operand sequencing and result storage; artifact construction
+places their declarations and dependencies.
 
 The backend expresses resolved operations using C++ types, constructors,
 references, scopes, calls, and control flow. Carven determines source evaluation
@@ -22,9 +23,8 @@ and runtime arguments; function-template calls and variable-template references
 use the same name representation.
 These describe native C++ syntax, with type dependencies visited normally.
 
-The current implementation lowers struct and class storage to C++ aggregates
-containing their declared fields. Source nominal identity and access rules are
-checked before lowering; this mapping is an implementation choice.
+Struct and class storage lower to C++ aggregates containing their declared
+fields. Semantic analysis establishes nominal identity and access rules.
 Payload enum factories are ordinary C++ functions. Payload access uses
 standard variant selection on the checked case record. Carven evaluates source constants during semantic analysis; their
 uses reconstruct the normalized values through the same target operations.
@@ -92,10 +92,9 @@ that storage. Target variable declarations participate in ordinary traversal,
 verification, dependency collection, and emission. The runtime slice supplies the
 read-only access and bounds operations.
 
-`const` blocks have already executed during semantic analysis. A module-scope
-block's body remains available for semantic validation but has no callable or
-module item to schedule; a block in a body is absent from every realized region.
-Neither produces a C++ body or a runtime call.
+`const` blocks execute and pass semantic validation before generation.
+Publication removes their regions and static-only bodies; they produce no C++
+body or runtime call.
 
 `SemDefault` realizes as typed C++ value initialization (`T {}`), with pointers
 using a typed null cast. Semantic analysis has already established Carven default
@@ -229,12 +228,9 @@ and invocations they perform, without requiring those operations to declare
 it, with no copy, assignment, or default construction. Function-pointer thunks
 restore the original pointer type before invocation.
 
-Ordinary class methods arrive as checked ordinary calls with explicit receiver
-arguments. Factories and field access reuse nominal product realization. Source
-privacy does not require a separate C++ class hierarchy, a runtime access check,
-or re-resolution of methods in the backend. C++ still checks delegated native
-construction and invocation expressions; external implementations remain governed
-by their interoperation contracts.
+Class methods arrive as checked calls with explicit receiver arguments.
+Factories and field access use nominal product realization; source privacy is
+already checked. C++ validates delegated construction and invocation expressions.
 
 ## Failure and test-stop ABI
 

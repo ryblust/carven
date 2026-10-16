@@ -12,10 +12,9 @@ and a `|>` operator. The first version contains `filter`, `map`, `take`,
 Functions can package a processing rule by returning a view with an inferred
 concrete type.
 
-Views describe demand-driven traversal without constructing intermediate result
-collections. This supports reusable selection and transformation while leaving
-imperative processing available at the consumption site. `collect` explicitly
-creates an owning result; `fold` explicitly performs ordered accumulation.
+Views describe demand-driven traversal. `collect` creates an owning result;
+`fold` performs ordered accumulation. Use ordinary `for` bodies for imperative
+processing at the consumption site.
 
 The design assigns the five API identities, concrete source and callback checks,
 and view type derivation to the compiler. Ordinary functions package processing
@@ -39,14 +38,13 @@ protects its backing owner against mutation, replacement, Take, and destruction.
 Write is nonexclusive. These rules remain the basis for sequence access and
 lifetimes.
 
-Existing builtins demonstrate bounded compiler knowledge. `print` checks a
-heterogeneous argument list without a public parameter-pack mechanism. Async
-composition derives operation results and failures without requiring users to
-express the composition implementation through general generic facilities.
-Sequence APIs follow this separation between usable contracts and publicly
-expressible implementations.
+The proposed sequence APIs use concrete source and callback checks, following
+the bounded call-checking model used by heterogeneous printing and async
+composition.
 
-## First version
+## Design
+
+### First version
 
 The initial source families are Read slices `[T]`, integer `Range<T>`, and views
 produced by the three lazy adapters. Arrays and vectors enter through their
@@ -65,9 +63,9 @@ existing mutation, control flow, and failure handling.
 Custom iterable protocols, mutable or consuming views, fallible or asynchronous
 traversal, additional combinators, and ECS facilities are outside this version.
 
-## Source design
+### Source design
 
-### Pipeline calls
+#### Pipeline calls
 
 Pipeline call composition is:
 
@@ -128,7 +126,7 @@ Calls execute normally; deferred element processing belongs to each adapter's
 contract. Pipeline spelling supplies no implicit access, propagation, or stage
 change.
 
-### Builtin API identity
+#### Builtin API identity
 
 The APIs belong to `std::sequence` and use existing import selection rules:
 
@@ -184,7 +182,7 @@ it, including its outward failure set.
 Generic bodies retain their definition-site restrictions on unknown types.
 Existing whole-value generic forwarding remains available.
 
-### Constructing and composing views
+#### Constructing and composing views
 
 Calling `filter`, `map`, or `take` evaluates its source, callback expression, and
 other arguments under normal call rules. It establishes the descriptor and
@@ -216,7 +214,7 @@ Diagnostics display the source shape, such as `map([i32], <closure>)`, with the
 element type and a callback declaration or source location when needed. This
 display is descriptive and is not a public type expression.
 
-### Traversal and demand
+#### Traversal and demand
 
 Consumption requests elements from the outermost view. A request proceeds
 through upstream stages in source order until it produces an element or reaches
@@ -243,7 +241,7 @@ cached across traversals, and constructing or copying a view does not traverse
 it. Stateful captures follow their normal owned-value or alias semantics; they
 are not automatically reset when traversal restarts.
 
-### Access and lifetimes
+#### Access and lifetimes
 
 Sequence traversal exposes Read elements. Pure values follow the existing
 snapshot policy; storage-containing elements retain their holders while they
@@ -310,7 +308,7 @@ replacing an accumulator, ending an iteration, and leaving by `break`, `return`,
 or failure all release their holders through the normal lifetime-exit checks.
 Unprovable relationships retain the existing conservative analysis behavior.
 
-### Failures and static execution
+#### Failures and static execution
 
 The initial callbacks have no outward typed failure effect. A function that
 handles failures internally can qualify if its completed outward contract is
@@ -364,12 +362,12 @@ itself need not be frozen. A fully consumed result can be frozen as an admitted
 scalar or Vector constant. Retained constants do not admit unconsumed views,
 directly or by value inside a collection or product.
 
-## Examples
+### Examples
 
 The proposed module and builtins are used below. The surrounding syntax follows
 the existing function, aggregate, ownership, and static-execution rules.
 
-### Reusable data processing
+#### Reusable data processing
 
 ```carven
 import std::sequence using { filter, map, take, collect };
@@ -398,7 +396,7 @@ fn preview(readings: [Reading]) -> Vector<i32> =>
 `preview` materializes at most ten accepted values. Both pipeline calls and
 `collect(take(valid_values(readings), 10))` have the same behavior.
 
-### Imperative consumption and repeated traversal
+#### Imperative consumption and repeated traversal
 
 ```carven
 let readings: [Reading; 3] = [
@@ -422,7 +420,7 @@ The returned view borrows `readings`; it owns no copied Reading collection.
 The caller can consume it through ordinary imperative control flow and later
 start a separate traversal.
 
-### Views and unit values as elements
+#### Views and unit values as elements
 
 ```carven
 import std::sequence using { map, take, collect };
@@ -445,7 +443,7 @@ let units = (0..3) |> map(discard) |> collect();
 // Inferred Vector<void> containing three ordinary unit values.
 ```
 
-### Static consumption
+#### Static consumption
 
 ```carven
 import std::sequence using { filter, map, take, fold };
@@ -466,7 +464,7 @@ const total: i32 =
 This result follows bounded static traversal. It does not require constructing
 the million source values or emitting C++ constant expressions.
 
-### Construction and consumption admission
+#### Construction and consumption admission
 
 ```carven
 import std::sequence using map;
@@ -490,9 +488,9 @@ const fn invalid_consumer(values: [i32]) -> i32 {
 Changing the consumer to an ordinary `fn` permits runtime traversal. Declaring
 the callback `const fn` enables consumption in the static stage as well.
 
-## Compiler design
+### Compiler design
 
-### Checking and publication
+#### Checking and publication
 
 Analysis resolves the selected builtin and publishes its concrete source shape,
 element and result types, callback identities and captures, operand order,
@@ -531,27 +529,24 @@ syntax, including through wrapper functions and returned views.
 Sequence operations participate in the existing child traversal, validation,
 cloning, effect queries, execution, and publication.
 
-### Semantic execution
+#### Semantic execution
 
 The structured executor represents view state and traversal progress using
 logical values and storage. Construction and element requests are separate
 actions. Callback invocation uses ordinary cleanup, control flow, checks, and
 budgets; execution does not depend on generated C++.
 
-Interpreted execution represents concrete closures by callable identity and
-capture storage. Value captures follow ordinary owning-copy rules; Write
-captures retain coordinates into live execution storage. Closure construction,
-copying, and invocation preserve existing object-selection and capture-observation
-rules. Ordinary closure calls and sequence callback calls share invocation and
-capture binding to the published body. This uses completed concrete types and
-contracts without public higher-order constraints or repeated source analysis.
+Interpreted closure callbacks require shared executor support for concrete
+closures. Invoke them through the ordinary-call path with the view's retained
+capture storage. Value captures use owning-copy rules; Write captures retain
+live execution coordinates. Preserve callee selection before argument evaluation.
+Sequence traversal owns demand, per-element holders, and relationship transfer.
 
-Required static execution, optional runtime folding, and freezing remain
-separate boundaries. Adding closure execution does not change static callback
-admission. A known final result does not authorize removal of observable callback
-work, capture construction, reads, or cleanup.
+Keep required static execution, optional runtime folding, and freezing separate.
+Static callbacks remain concrete named `const fn` functions. Preserve observable
+callback work, capture construction, reads, and cleanup when using known results.
 
-### Target realization
+#### Target realization
 
 Realization preserves demand, evaluation order, ownership, retained callback
 state, and cleanup. Adapter construction creates no intermediate result
@@ -582,12 +577,10 @@ Published source shapes and lifetime facts support these realization choices:
   Existing admission, budgets, and freezing boundaries determine when this
   applies.
 
-Implementation choices use measurements of the code being implemented, with
-runtime performance, allocation, generated-code size, or compiler cost assessed
-where relevant. Comparisons with equivalent imperative code can help assess
-the cost of the abstraction on representative workloads. This proposal sets no
-benchmark threshold or required optimization. Source behavior determines
-correctness.
+Use equivalent imperative code as a baseline for realization experiments. Measure
+runtime, allocation, generated-code size, and compiler cost where affected.
+Source behavior determines correctness; this contract requires no performance
+threshold or particular optimization.
 
 ## Decision record
 
@@ -621,9 +614,8 @@ existing owning-copy rules for retained callbacks and fold initialization.
 
 Integrate view operations with the checking and publication mechanisms above.
 Extend the structured executor and backend realization for construction,
-requests, and consumption. Add concrete closure values, capture storage, and
-capture binding to the executor's ordinary invocation path for interpreted
-execution, while retaining static admission at its checking boundary. Extend
+requests, and consumption. Integrate shared interpreted closure execution and
+retain static admission at its checking boundary. Extend
 Vector element admission for checked sequence views and retain their contained
 relationships through the existing referent graph, owns edges, call queries, and
 lifetime exits. Apply this to element construction, copies, selections,
@@ -658,12 +650,3 @@ internal tests, observable behavior and static roots in language tests, provided
 API visibility in craft tests, and pipeline formatting in formatter fixtures.
 During implementation, build with `./xmakew build` before the relevant test
 groups. Explicit native view signatures are not part of this validation scope.
-
-## References
-
-- [Expression grammar](../docs/language/grammar.md#7-expressions)
-- [Functions and callable values](../docs/language/functions.md)
-- [Access and ownership](../docs/language/ownership.md)
-- [Static execution of functions](../docs/language/constants.md#static-execution-of-functions)
-- [Semantic execution](../docs/compiler/analysis/evaluation.md)
-- [C++ generation](../docs/compiler/backend/README.md)

@@ -1,29 +1,38 @@
 # Semantic execution
 
 This reference describes the shared semantic executor, static roots,
-execution storage, freezing, and interpreted execution. Construction owns source
-admission and completion requests; execution consumes typed semantic operations
-and canonical facts.
+execution storage, freezing, and interpreted execution.
 
 ## Execution interfaces
 
-In `semantic/evaluation`, `value` owns execution representations, text and
-compound read views, and equality over execution values. `shape` caches compound
-nesting depth and slot counts for resource accounting, independently of
-execution admission. Counts saturate at the element limit plus one; size checks
-use that count separately. Incomplete declarations and types beyond the depth
-limit, including containment cycles, produce no cache entry. Cached subtrees
-remain subject to the caller's nesting depth. `operation` supplies checked
-scalar operations and retained-input queries. `freeze` interns completed
-results. `semantic.format.builtin` supplies the bounded builtin formatter to
+Construction owns source admission and completion requests; execution consumes
+typed semantic operations and canonical facts.
+
+Modules in `semantic/evaluation` have these responsibilities:
+
+| Module | Responsibility |
+| --- | --- |
+| `value` | Execution representations, text and compound read views, and execution-value equality |
+| `shape` | Cached compound nesting depth and slot counts for resource accounting |
+| `operation` | Checked scalar operations and retained-input queries |
+| `freeze` | Interning completed results |
+| `execution` | Execution entries and call context |
+| `executor` | Execution state, with `expr`, `control`, `text`, and `vector` implementation slices |
+| `memory` | Addressable objects and projection resolution |
+| `limits` | Resource bounds |
+
+Shape accounting is independent of execution admission. Counts saturate at the
+element limit plus one; size checks use that count separately. Incomplete
+declarations and types beyond the depth limit, including containment cycles,
+produce no cache entry. Cached subtrees remain subject to the caller's nesting
+depth.
+
+`semantic.format.builtin` supplies the bounded builtin formatter to
 both execution and backend preparation. It accepts numeric values, bools, chars,
 borrowed text, borrowed pointer-display text, and an unavailable-input
 alternative. Callers adapt their input storage and supply a byte budget.
 Execution translates failures into diagnostics and accounts for work; optional
-preparation uses runtime formatting on failure. `execution` defines execution
-entries and their call context; `executor` owns execution state, with `expr`,
-`control`, `text`, and `vector` implementation slices. `memory` owns addressable
-objects and resolves their projections. `limits` names resource bounds.
+preparation uses runtime formatting on failure.
 
 Object-pointer erasure and restoration use `SemCast` with
 `CastKind::PointerErase` and `CastKind::PointerRestore`. Construction and
@@ -262,8 +271,8 @@ continuations without running source code directly. When ready work is exhausted
 for host input or its nearest timer.
 
 Tasks share one memory domain and cumulative resource budget. An execution halt or
-failed semantic dependency stops the whole domain; exhaustion does not promise
-further user cleanup or output. Already written output remains observable.
+failed semantic dependency stops the whole domain. Exhaustion can stop source
+cleanup and further output; already written output remains observable.
 Arbitrary native C++ provider bodies remain outside semantic execution capability.
 Host operations use their supported semantic contracts. Await is admitted
 in static roots, `const` blocks, and `const test` bodies as well as async bodies;
@@ -365,8 +374,8 @@ constructors share array shape rules and struct initializer selection in `analys
 ### Resource limits
 
 The builtin formatter validates its supported specifications and bounds width and
-precision before calling the host C++ standard formatter. Steps,
-nested calls, text construction, aggregate size and copying work are bounded.
+precision before calling the host C++ standard formatter. Each text result is
+limited to 1 MiB. Steps, nested calls, aggregate size, and copying work are bounded.
 `ExecutionLimits` supplies cumulative step, text-work, and aggregate-work
 allowances at the execution entry. Nested calls share those allowances; each root
 starts fresh. Per-value size, aggregate depth, and call depth retain fixed limits.
@@ -568,11 +577,10 @@ A stopped test leaves later tests available; an abort ends the run. Test operati
 are admitted in helpers only for test execution. Published tests use the same
 body execution and assertion control as static tests, including wrapping integer
 arithmetic.
-Ordinary language analysis remains the authority for names, types, access, lifetimes,
-failures, and entry uniqueness; interpretation does not introduce an AST checker.
-Native source inventory and module fragments do not form an admission gate.
-The executor diagnoses unsupported native operations when reached; it does not
-load C++ code or reproduce native global initialization and destruction.
+Source validity and entry uniqueness are established before interpretation.
+Native sources and module fragments may be present, but the executor diagnoses
+reached native operations. It loads no C++ code and performs no native global
+initialization or destruction.
 
 Semantic display owns bounded text storage, escaping, and indentation in
 `semantic/evaluation/display.cpp`. Native display owns these operations in the
@@ -624,9 +632,5 @@ lane and returning the matching mask for classification. Scalar arguments are
 broadcast through the ordinary SIMD splat operation before evaluation. Ordinary
 floating runtime expressions retain the native execution environment.
 
-The backend maps these logical values to the separately included
-`carven/runtime/simd/simd.hpp`. Its shared public layer realizes operations through
-one compile-time backend: AArch64 NEON, x86 AVX2 when enabled, or portable lanes.
-Wide logical vectors use two NEON registers or one AVX2 register. The craft composes
-block traversal, byte classification and explicit static controls using ordinary
-Carven functions. Native target guards do not change static-execution semantics.
+Native SIMD backend selection does not affect the semantic executor's logical
+lane operations.

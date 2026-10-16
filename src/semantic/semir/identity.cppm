@@ -11,6 +11,8 @@ public:
     constexpr auto operator<=>(const ProgramIdentity&) const noexcept = default;
 
 private:
+    friend class SemanticArtifactAccess;
+
     explicit constexpr ProgramIdentity(std::uint64_t value) noexcept
         : identity_value(value) {}
 
@@ -30,6 +32,8 @@ public:
     constexpr auto operator<=>(const BodyIdentity&) const noexcept = default;
 
 private:
+    friend class SemanticArtifactAccess;
+
     explicit constexpr BodyIdentity(
         ProgramIdentity program,
         std::uint32_t body_index,

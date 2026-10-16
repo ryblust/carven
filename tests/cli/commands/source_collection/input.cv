@@ -1,6 +1,6 @@
-import carven::fixture using scalar;
+import std::time using nanoseconds;
 import demo::value using answer;
 
 fn main() {
-    println(char::from_u32_unchecked(scalar()) as u32, answer());
+    println(nanoseconds(65).nanoseconds, answer());
 }

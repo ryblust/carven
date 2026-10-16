@@ -22,6 +22,8 @@ count is `records.size()` in C++. The report remains valid after the streams
 are destroyed.
 
 ```sh
+./xmakew build
+./xmakew build carven-example-stream-collector
 ./xmakew run carven-example-stream-collector
 ```
 
@@ -38,5 +40,8 @@ delta
 The native declaration uses `std::string_view`; the Carven contract uses `str`.
 The generated API header supplies the complete `Report` representation, including
 its `Vector<String>`. C++ uses `auto` for the returned report, accesses its fields,
-and iterates its records directly. The native build compiles the two C++ source
-files alongside the generated Carven implementation.
+and iterates its records directly. The workflow and its C++ provider form a
+shared static target. The application and native behavior test each supply a C++
+entry and link that target, reusing the compiled workflow. `checks.cpp` checks
+record order, counts, and report ownership after the input streams are destroyed.
+All example targets are excluded from the default compiler build.

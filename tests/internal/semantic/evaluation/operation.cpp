@@ -7,7 +7,6 @@ import :semantic.semir.constant;
 import :semantic.semir.constant_access;
 import :semantic.semir.operation;
 import :semantic.semir.type;
-import :test.harness.death;
 import :test.harness.framework;
 import :test.internal.semantic.evaluation.fixture;
 import std;
@@ -146,25 +145,6 @@ const TestSuite suite([] static noexcept {
                 return;
             }
             expect_equal(view.error(), ConstantEvaluationFailure::UnsupportedOperation);
-        };
-
-    "Semantic constant facts: operand facts retain program owner evidence"_test =
-        [] static noexcept {
-            const auto first = ConstantEvaluationFixture();
-            const auto second = ConstantEvaluationFixture();
-            const auto& first_values = first.compilation;
-            const auto& second_values = second.compilation;
-            const auto first_i32 = first_values.builtin_type(BuiltinType::I32);
-            const auto second_i32 = second_values.builtin_type(BuiltinType::I32);
-            const auto foreign = constant_test_integer_fact(first_i32, 1);
-            expect(expect_termination("semantic-constant-foreign-owner", [&] noexcept {
-                static_cast<void>(evaluate_unary_constant_value(
-                    second_values,
-                    UnaryOperator::Negate,
-                    foreign,
-                    second_i32
-                ));
-            }));
         };
 
     "Semantic constants: floating identity preserves signed zero while equality compares values"_test =

@@ -1,7 +1,5 @@
 # Aggregates
 
-[Language](README.md)
-
 This page defines classes, structures, arrays, tuples, owning vectors, enums, and their construction.
 
 - [Ordinary value classes](#ordinary-value-classes)
@@ -206,8 +204,8 @@ element type supports equality, including for zero-length arrays. Nominal
 declarations may not form a by-value storage cycle through structure fields,
 enum payloads, or arrays; a zero-length array still contributes its element
 edge. Function parameter and result types do not contribute storage edges.
-Declaration-surface visibility recursively follows the
-[audience rules](modules.md#declarations-and-names).
+Every nominal type exposed by a declaration surface must be visible to that
+surface's audience, including types nested in fields and payloads.
 
 ## Tuples
 

@@ -7,7 +7,6 @@ enum class CompilationProvenanceErrorKind {
     DuplicateSource,
     DuplicateModuleSource,
     DuplicateModulePath,
-    UnorderedModules,
     MissingModuleSource,
     DuplicateSpelling,
     MissingOriginSource,

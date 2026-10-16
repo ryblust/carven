@@ -257,9 +257,11 @@ auto ConstFunctionValidator::check_function(FunctionID function) noexcept -> voi
     if (!check_contract(contract, declaration.origin)) {
         return;
     }
-    auto body = function.index() < function_bodies.size()
-        ? function_bodies[function.index()]
-        : draft.body_for_callable(declaration.callable);
+    auto body = function.index() < function_bodies.size() ? function_bodies[function.index()]
+                                                          : std::nullopt;
+    if (!body) {
+        body = draft.body_for_callable(declaration.callable);
+    }
     if (!body) {
         reject(declaration.origin, "native function has no compile-time provider");
         return;

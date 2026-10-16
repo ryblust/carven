@@ -1,11 +1,10 @@
 # C++ generation
 
-This document describes how published semantics become C++ artifacts through
-planning, representation selection, lowering, dependency collection, and emission.
-The input is a published semantic program. The representations here describe
-the current implementation.
+This overview defines the C++ generation pipeline and its ownership boundaries.
 
 ## Pipeline
+
+Generation consumes a published semantic program and produces C++ artifacts.
 
 ```text
 SemIRProgram + TargetPlanningRequest
@@ -17,122 +16,85 @@ SemIRProgram + TargetPlanningRequest
   → GeneratedArtifactSet
 ```
 
-`PlannedCompilation` borrows a sealed semantic program and owns its matching
-immutable `TargetPlan`. The program remains alive and unmoved through planning
-and lowering. Semantic type contents remain owned by `SemIRProgram`.
-`generate_artifacts` borrows the program synchronously and returns artifacts
-that own their paths, bytes, and optional implementation source origins. Source
-ownership comes from the implementation's semantic module provenance. One
-published program can serve multiple generation requests without repeating
-semantic analysis or static execution.
+`PlannedCompilation` borrows a sealed program and owns its immutable `TargetPlan`.
+Keep the program alive and unmoved through planning and lowering.
+`generate_artifacts` borrows it synchronously and returns owned paths, bytes, and
+optional implementation origins from semantic module provenance. One program can
+serve multiple requests without repeating analysis or static execution.
+
 Planning selects names, interfaces, failure representation, definition placement,
-and artifact schedules. Generation resolves requested library modules once;
-naming and artifact planning share the resulting ModuleIDs. Each artifact is
-lowered into a fresh `ArtifactLowering` and target-unit identity. Repeated lowering
-produces independent units. Type and signature-result caches belong to that
-artifact lowering and track incomplete resolution separately from completed
-target identities.
+and artifact schedules. It resolves requested library modules once; naming and
+artifact planning share those ModuleIDs. Each artifact gets a fresh
+`ArtifactLowering`, target-unit identity, type caches, and signature-result caches.
+Cache entries distinguish incomplete resolution from completed target identities.
+Repeated lowering produces independent units.
 
-`lower_body` prepares a published semantic body and finishes `BodyRealizer` while
-that preparation remains alive. `BodyLoweringInputs` supplies parameter identities,
-capture member names, and the exit contract; `LoweredBody` returns target statements
-and referenced-parameter facts.
+`lower_body` prepares the published body, then finishes `BodyRealizer` before
+releasing preparation. `BodyLoweringInputs` supplies parameters, capture member
+names, and the exit contract; `LoweredBody` returns statements and referenced
+parameter facts. `BodyPreparation` borrows semantic occurrences and derives
+operation plans and operand demands. Each fragment owns its operation preparation.
 
-`BodyPreparation` borrows the published body's occurrences; the semantic program
-outlives preparation and realization. Each realized fragment owns its operation
-preparation. `BodyRealizer` composes the published structured regions and preserves
-their evaluation, storage, and exit contracts.
+Within `realization/`, `expr` owns cleanup frames and result delivery; `fragment`
+composes completed operands; `writer` handles repeated format operands.
+`sequencing`, `storage`, and `call` preserve execution order, retain backing, and
+complete fallible calls. Semantic publication supplies source legality and
+lifetime contracts; native compilation checks delegated C++ operations.
 
-Within `realization/`, `expr` owns cleanup-frame entry and result delivery;
-`fragment` builds and composes completed operands, and `writer` handles repeated
-format operands. The `sequencing`, `storage`, and `call` slices preserve execution
-order, retain borrowed results, and complete fallible calls. Semantic publication
-owns source legality and lifetime contracts; native compilation checks delegated
-C++ operations.
+`TargetUnitBuilder::finish` verifies the target tree, collects header
+requirements, and plans directives from artifact references and ordered native
+imports. Runtime symbols, including async facilities, use shared header-provider
+metadata. Rendering serializes the finished tree and directives. Filesystem output
+and native compilation consume the resulting artifacts separately.
 
-Resolved Carven callable references use qualified target names. Import bridges
-call the native target retained by semantic analysis. C++ argument-dependent
-lookup does not add candidates to these resolved calls.
+## Realization contracts
 
-`TargetUnitBuilder::finish` verifies the target tree, collects its header
-requirements, and plans directives with artifact references and ordered native
-imports. Async runtime symbols use the same header-provider metadata and
-dependency collection as other target facilities. Rendering serializes the
-finished tree and directives. Filesystem output and native compilation
-are separate consumers.
+Preserve source effects, storage observations, lifetimes, cleanup, and native
+conversion capabilities when selecting direct expressions, storage, or control.
+Preparation establishes binding stability; realization owns C++ cleanup scopes and
+exit receivers; semantic analysis supplies residual pattern coverage. Derive facts
+at their owning stage and consume them downstream.
 
-## Realization choices
+Resolved Carven calls use qualified target names. Import bridges call the native
+target retained by semantic analysis. Argument-dependent lookup adds no candidates
+to resolved Carven calls.
 
-Carven establishes ownership, evaluation order, and failure domains before C++
-generation. Realization uses these facts to select direct expressions, storage,
-and control flow.
+Static instances arrive as ordinary residual regions with selected static arms,
+expanded iterations, and constant values. Their signatures contain only runtime
+parameters. Expanded iterations have distinct local identities and share outer
+storage. Preparation and realization use their ordinary storage and control paths.
 
-Initialization, snapshots, retained backing, and receiver storage implement source
-evaluation, observation, lifetime, and control-flow obligations. Body preparation
-establishes binding stability; realization owns C++ cleanup scopes and failure
-receivers; semantic analysis publishes residual pattern coverage. Native operations
-retain their delegated C++ access and lifetime contracts.
+Each artifact owns module contexts and one definition queue. Contexts own type
+caches, emitted query aliases, display helpers, and constant backing. The name plan
+owns support names derived from semantic content; callable-local allocators reserve
+locals and labels. Cache identity uses canonical semantic facts. When preferred
+digest-based spellings coincide, naming compares complete content.
 
-Changes preserve source effects, observations, cleanup, and delegated native
-capabilities. Derive reusable facts at their owning stage and consume them
-downstream. Structural tests check target properties; behavior and lifetime tests
-check execution and observations. Follow [Testing](../../development/testing.md)
-for test placement and performance measurement.
-
-## Static instances
-
-Each module implementation emits the static instances it calls as `inline`
-functions in the owner's module namespace. Instance names derive from the function
-and its static values. Native signatures and calls retain only runtime parameters.
-Semantic analysis supplies ordinary residual regions with selected static arms,
-expanded iterations, and constant values; preparation and realization consume
-those regions through their ordinary paths.
-
-An artifact owns module contexts and one definition queue. Each context owns its
-type cache and emitted query aliases, display helpers, and constant backing storage.
-`TargetNamePlan` owns support names derived from complete semantic content.
-Module contexts track materialized constant identities; callable-local allocators
-reserve names for locals and labels. Artifact caches use canonical semantic
-identities. Content digests select preferred spellings;
-naming compares full content when those spellings coincide. Shared bodies reference
-module-owned support names. Provider artifacts are independent of the instances
-selected by their callers.
-
-Source-template bodies have been discarded before planning. Published closure
-references supply dependency discovery. Closure names follow source-location order within their owning module, with
-semantic callable identity ordering closures that share a source location.
-
-Semantic specialization gives each expanded iteration distinct local bindings,
-patterns, and lifetimes. The backend uses these identities through its ordinary
-storage map; references to outer storage remain shared. Normal cleanup, break,
-continue, return, and failure handling still apply.
-
-## Reading by task
+## References
 
 | Task | Reference |
 | --- | --- |
 | Select types, constants, parameter policies, or callable/result ABI | [Representation](representation.md) |
-| Prepare an operation, classify operand demands, or select a known-value implementation | [Preparation](preparation.md) |
-| Preserve evaluation order, snapshots, backing storage, cleanup, or control exits | [Realization](realization.md) |
-| Place interfaces, collect dependencies, construct target syntax, or render artifacts | [Artifacts](artifacts.md) |
-| Implement String, formatting, printing, assertions, or test reports | [Builtins](builtins.md) |
+| Prepare operands, operation demands, or known-value implementations | [Preparation](preparation.md) |
+| Preserve sequencing, snapshots, backing, cleanup, or exits | [Realization](realization.md) |
+| Place interfaces, collect dependencies, construct syntax, or emit artifacts | [Artifacts](artifacts.md) |
+| Implement text, formatting, printing, assertions, or reports | [Builtins](builtins.md) |
 
 ## Extending operations
 
-Semantic analysis publishes the operation's type, evaluation and lifetime contracts.
-For ordinary operations using existing contracts, the backend describes ordered
-inputs and uses in `preparation/operands.cpp` and realizes C++ syntax in
-`realization/operation.cpp`. Inputs with a uniform storage use share the direct
-child definition in `semantic.semir.children`; mixed uses retain their operand
-adapters. Both visitors enumerate the semantic expression alternatives explicitly.
-Native operation realization also enumerates the `CppOperation` alternatives.
-Structured control retains its specialized realization paths.
+Publish an operation's type, evaluation, and lifetime contracts in semantic
+analysis. For operations using existing contracts, describe ordered inputs and
+uses in `preparation/operands.cpp`, then realize syntax in
+`realization/operation.cpp`. Uniform storage uses share the direct-child
+definition in `semantic.semir.children`; mixed uses retain operand adapters.
+Enumerate semantic expression alternatives explicitly in both visitors and
+`CppOperation` alternatives in native realization. Structured control uses its
+specialized realization paths.
 
-Tests must establish the new operation's behavior and interactions with existing
-contracts. Scheduling, storage and cleanup consume those contracts. New control
-scopes, ownership modes or partial-object lifetimes require design and checks at
-their owning boundaries.
+New control scopes, ownership modes, or partial-object lifetimes require contracts
+and checks at their owning boundaries. Aggregate changes must preserve initializer
+sequencing and partial-object cleanup. Text and reports use ordinary preparation,
+storage, and delivery contracts.
 
-Aggregate changes preserve initializer sequencing and partial-object cleanup.
-Text and report operations use the same preparation, storage, and delivery
-contracts as other operations.
+Validate target structure and source behavior separately. Include lifetime and
+observation cases when a change affects storage or sequencing.

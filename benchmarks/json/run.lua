@@ -2,13 +2,12 @@ import("core.base.json")
 import("benchmarks.harness.runner", {alias = "benchmark", rootdir = os.projectdir()})
 import("benchmarks.harness.report", {rootdir = os.projectdir()})
 import("benchmarks.harness.calibration", {rootdir = os.projectdir()})
-import("benchmarks.harness.native_build", {rootdir = os.projectdir()})
 import("benchmarks.harness.inputs", {alias = "input_snapshot", rootdir = os.projectdir()})
-import("benchmarks.json.native_project", {rootdir = os.projectdir()})
 import("benchmarks.json.workloads", {rootdir = os.projectdir()})
 
-local function observe(executable, record, iterations, timed)
-    local raw = benchmark.command(executable, {}, path.directory(executable), {capture_stdout = true,
+local function observe(target, record, iterations, timed)
+    local raw = benchmark.command(target.executable, {}, path.directory(target.executable), {
+        target = target.name, capture_stdout = true,
         envs = {CARVEN_JSON_BENCH_INPUT = record.input.path, CARVEN_JSON_BENCH_ITERATIONS = tostring(iterations),
             CARVEN_JSON_BENCH_EXPECTED = tostring(record.expected)}})
     if raw.exit_code ~= 0 then return raw end
@@ -33,9 +32,6 @@ end
 function main(options)
     local selected = benchmark.select(workloads.cases(), options)
     if not selected then return end
-    if options.cxx and (options.cxx:find("/", 1, true) or options.cxx:find("\\", 1, true)) then
-        options.cxx = path.absolute(options.cxx, os.projectdir())
-    end
     local session = benchmark.session("json", options, {
         description = {"Standard validate_bytes on API-shaped JSON documents, including UTF-8 and syntax validation.",
             "ns/document includes the exported call and outcome checksum; input creation, file I/O and correctness checks are outside timing.",
@@ -47,29 +43,24 @@ function main(options)
         benchmark.setup(session)
         session.results.metadata.calibration_target_ns = calibration.target_ns()
         session.results.metadata.backend_selection = options.portable and "forced portable" or "target default"
-        local inputs = input_snapshot.capture(session)
-        local root = path.join(session.artifacts, "validation")
-        os.mkdir(root)
-        io.writefile(path.join(root, "workload.cv"), workloads.source(path.join(inputs, "benchmarks/json")))
-        io.writefile(path.join(root, "xmake.lua"), native_project.project_text(inputs, session))
+        input_snapshot.capture(session)
+        local root = os.projectdir()
         local setup = {id = "validation", steps = benchmark.array()}
         table.insert(session.results.setup, setup)
-        benchmark.step(session, setup, "configure", os.programfile(), {"f", "-y", "-m", "release"}, root,
+        local variant = options.portable and "portable" or "native"
+        benchmark.step(session, setup, "build validation", os.programfile(),
+            {"build", "-g", "benchmarks/json/" .. variant}, root,
             {capture_stdout = true, timeout = 180000})
-        local identity = benchmark.step(session, setup, "native target identity", os.programfile(),
-            {"lua", "-c", native_build.describe_script()}, root, {capture_stdout = true})
-        local targets, error = json.decode(identity.stdout)
-        assert(targets, "invalid native target identity: %s", error)
+        local targets = import("benchmarks.harness.targets", {rootdir = root})
+            .main("benchmarks::json::" .. variant, {"validation"})
         setup.native_targets = targets
-        benchmark.step(session, setup, "build validation", os.programfile(), {"build"}, root,
-            {capture_stdout = true, timeout = 180000})
-        local executable = targets.validation.executable
+        local target = targets.validation
         local records = {}
         report.header(session)
         for index, case in ipairs(selected) do
             report.begin_case(case, index, #selected)
             for _, document in ipairs(workloads.documents(case)) do
-                local file = path.join(root, case.id .. "_" .. document.id .. ".json")
+                local file = path.join(session.artifacts, case.id .. "_" .. document.id .. ".json")
                 io.writefile(file, document.text)
                 local high_bytes = 0
                 for byte in document.text:gmatch(".") do
@@ -81,13 +72,13 @@ function main(options)
                     input = {path = file, bytes = #document.text, sha256 = hash.sha256(file):lower(), high_bytes = high_bytes},
                     records = case.records, workspace = root})
                 record.iterations = calibration.run(session, record, function (iterations)
-                    return observe(executable, record, iterations, false)
+                    return observe(target, record, iterations, false)
                 end, 128, calibration.iteration_limit(record.expected))
                 table.insert(records, record)
             end
         end
         benchmark.measure_rounds(session, records, function (record)
-            return observe(executable, record, record.iterations, true)
+            return observe(target, record, record.iterations, true)
         end)
         for _, record in ipairs(records) do
             assert(hash.sha256(record.input.path):lower() == record.input.sha256, "JSON input changed during measurement")

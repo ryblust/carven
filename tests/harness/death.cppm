@@ -1,21 +1,18 @@
 module carven:test.harness.death;
 
 import :support.function_ref;
+import :test.harness.framework;
 import std;
 
-using DeathTestAction = FunctionRef<void() noexcept>;
+auto termination_test(
+    TestFunction body,
+    std::source_location location = std::source_location::current()
+) noexcept -> TestBody;
 
-// Each input in a test case, including subcases, needs a distinct scenario for child replay.
-// Only SIGABRT satisfies the termination contract.
-// Validate fixtures before calling; the action contains production operations, not test assertions.
-auto run_death_test(
-    std::string_view scenario,
-    DeathTestAction action,
-    std::chrono::milliseconds timeout = std::chrono::milliseconds(30000)
-) noexcept -> bool;
+[[noreturn]] auto expect_termination(FunctionRef<void() noexcept> action) noexcept -> void;
 
 template<typename Function>
-    requires std::invocable<Function&>
-auto expect_termination(std::string_view scenario, Function function) noexcept -> bool {
-    return run_death_test(scenario, function);
+    requires std::is_nothrow_invocable_r_v<void, Function&>
+[[noreturn]] auto expect_termination(Function function) noexcept -> void {
+    expect_termination(FunctionRef<void() noexcept>(function));
 }

@@ -1,7 +1,6 @@
-import("core.base.json")
+import("core.project.project")
 import("benchmarks.harness.runner", {alias = "benchmark", rootdir = os.projectdir()})
 import("benchmarks.harness.inputs", {alias = "input_snapshot", rootdir = os.projectdir()})
-import("benchmarks.harness.native_build", {rootdir = os.projectdir()})
 import("benchmarks.incremental.workloads", {rootdir = os.projectdir()})
 
 function object_mtimes(root)
@@ -36,7 +35,7 @@ end
 function generated_artifacts(root)
     local result = {}
     for _, extension in ipairs({"cpp", "hpp"}) do
-        for _, file in ipairs(os.files(path.join(root, "build", ".gens", "**." .. extension))) do
+        for _, file in ipairs(os.files(path.join(root, "**." .. extension))) do
             result[path.relative(file, root)] = {sha256 = hash.sha256(file):lower(), mtime = os.mtime(file)}
         end
     end
@@ -65,15 +64,15 @@ function artifact_changes(before, after)
     return result
 end
 
-function wait_for_timestamp(root, before)
+function wait_for_timestamp(root, before, generated)
     local latest = 0
     for _, modified in pairs(before) do
         latest = math.max(latest, modified)
     end
     -- A baseline restore may rewrite sources without changing any object.
     -- Cross source, generated-file and object ticks so rewrites stay observable.
-    for _, pattern in ipairs({"*.cv", "build/.gens/**.cpp", "build/.gens/**.hpp"}) do
-        for _, file in ipairs(os.files(path.join(root, pattern))) do
+    for _, pattern in ipairs({path.join(root, "*.cv"), path.join(generated, "**.cpp"), path.join(generated, "**.hpp")}) do
+        for _, file in ipairs(os.files(pattern)) do
             latest = math.max(latest, os.mtime(file))
         end
     end
@@ -87,11 +86,11 @@ function wait_for_timestamp(root, before)
 end
 
 -- False denotes an absent file in a baseline or edit.
-function write_files(root, files)
+function write_files(root, files, fixtures)
     for name, source in pairs(files or {}) do
         local file = path.join(root, name)
         if source then
-            io.writefile(file, source)
+            io.writefile(file, io.readfile(path.join(fixtures, source)))
         else
             os.tryrm(file)
         end
@@ -103,12 +102,12 @@ function main(options)
     if not selected then return end
     local session = benchmark.session("incremental", options, {
         description = {
-            "Fixture: library -> facade -> app; independent unrelated module. Native mode: debug / C++20.",
+            "Fixture: library -> facade -> app; independent unrelated module. Native settings: C++20 / O0.",
             "Includes Xmake startup, Carven generation, native C++ compilation and linking.",
             "Setup, baseline restoration, edits, snapshots, timestamp waits and executable validation are excluded from timings.",
             "Object counts observe new or timestamp-changed files; deleted objects are excluded.",
             "Generated content changes and unchanged-content timestamp changes are observed separately.",
-            "Carven invocation counts are observed only with --timings; missing instrumentation is not zero.",
+            "Carven stage timings identify semantic analysis and C++ generation; --timings prints stage details.",
         },
         columns = {
             {key = "carven_invocations", label = "Carven runs"},
@@ -119,64 +118,64 @@ function main(options)
         },
     })
     local snapshot_root
-    local captured_cases = {}
     benchmark.run(session, selected, function (session, record, scenario, root)
-        scenario = captured_cases[scenario.id]
-        local inputs = workloads.inputs(snapshot_root)
-        inputs["xmake.lua"] = string.format([[set_project("carven-benchmark")
-add_rules("mode.debug")
-%s
-target("bench")
-    set_kind("binary")
-    set_languages("c++20")
-    add_rules("@carven/carven", {linkage_domain = "benchmark:incremental", timings = %s})
-    add_files("*.cv")
-]], native_build.carven_rules(session, snapshot_root), tostring(options.timings or false))
+        local inputs = workloads.inputs()
+        local fixtures = path.join(snapshot_root, "benchmarks/incremental")
         record.inputs = inputs
         record.baseline, record.edits = scenario.baseline or {}, scenario.edits or {}
         record.expected_stdout = scenario.stdout
-        record.linkage_domain, record.native_mode, record.language = "benchmark:incremental", "debug", "c++20"
-        record.crafts_directory = path.join(snapshot_root, "crafts")
+        local name = "benchmarks::incremental::workload"
+        root = assert(project.target(name)):rundir()
+        record.workspace = root
+        record.native_mode, record.language = import("core.project.config").mode(), "c++20"
+        record.crafts_directory = session.results.metadata.crafts_root
         benchmark.checkpoint(session)
-        write_files(root, inputs)
-        write_files(root, scenario.baseline)
-        benchmark.step(session, record, "configure", os.programfile(), {"f", "-y", "-m", "debug"}, root,
-            {capture_stdout = true, timeout = 300000})
-        local initial = benchmark.step(session, record, "initial build", os.programfile(), {"build", "bench"}, root,
-            {capture_stdout = true, timeout = 300000})
-        if options.timings then
-            assert(initial.timings and #initial.timings.reports > 0,
-                "fresh build produced no Carven timing report; invocation counts cannot be observed")
-        end
-        local identity = benchmark.step(session, record, "native toolchain identity", os.programfile(),
-            {"lua", "-c", native_build.describe_script()}, root, {capture_stdout = true})
-        local targets, errors = json.decode(identity.stdout)
-        assert(targets, "native target identity is not valid JSON: %s", errors)
+        write_files(root, inputs, fixtures)
+        write_files(root, scenario.baseline, fixtures)
+        local build = {"build", name}
+        benchmark.step(session, record, "initial build", os.programfile(), build, os.projectdir(),
+            {timings = true, capture_stdout = true, timeout = 300000})
+        local targets = import("benchmarks.harness.targets", {rootdir = os.projectdir()})
+            .main("benchmarks::incremental", {"workload"})
         record.native_targets = targets
-        local executable = assert(targets.bench and targets.bench.executable, "Xmake did not report the bench executable")
+        local target = targets.workload
+        local executable = target.executable
+        local objects, generated_directory = target.object_directory, target.generated_directory
         return function (ordinal)
             if ordinal > 1 and scenario.edits then
-                wait_for_timestamp(root, object_mtimes(root))
-                write_files(root, scenario.baseline)
+                wait_for_timestamp(root, object_mtimes(objects), generated_directory)
+                write_files(root, scenario.baseline, fixtures)
                 benchmark.step(session, record, "restore baseline " .. ordinal,
-                    os.programfile(), {"build", "bench"}, root, {capture_stdout = true, timeout = 300000})
+                    os.programfile(), build, os.projectdir(), {timings = true, capture_stdout = true, timeout = 300000})
             end
-            local before = object_mtimes(root)
+            local before = object_mtimes(objects)
             assert(#table.keys(before) > 0, "baseline build produced no C++ object files")
             local unrelated_before = unrelated_objects(before)
             assert(#table.keys(unrelated_before) > 0, "baseline build produced no unrelated module object")
-            wait_for_timestamp(root, before)
-            write_files(root, scenario.edits)
-            local generated_before = generated_artifacts(root)
-            local raw = benchmark.command(os.programfile(), {"build", "bench"}, root,
-                {timings = options.timings, capture_stdout = true, timeout = 300000})
-            local after = object_mtimes(root)
+            wait_for_timestamp(root, before, generated_directory)
+            write_files(root, scenario.edits, fixtures)
+            local generated_before = generated_artifacts(generated_directory)
+            local raw = benchmark.command(os.programfile(), build, os.projectdir(),
+                {timings = true, capture_stdout = true, timeout = 300000})
+            local after = object_mtimes(objects)
             local changed = changed_objects(before, after)
             local unrelated_changed = changed_objects(unrelated_before, unrelated_objects(after))
             raw.changed_objects, raw.unrelated_objects = benchmark.array(changed), benchmark.array(unrelated_changed)
             raw.metrics = {changed_objects = #changed, unrelated_objects = #unrelated_changed}
-            if options.timings then raw.metrics.carven_invocations = #raw.timings.reports end
-            local generated_after = generated_artifacts(root)
+            do
+                raw.metrics.carven_invocations = #raw.timings.reports
+                raw.metrics.semantic_analyses, raw.metrics.cpp_generations = 0, 0
+                for _, report in ipairs(raw.timings.reports) do
+                    for _, stage in ipairs(report.stages) do
+                        if stage.label == "Semantic analysis" then
+                            raw.metrics.semantic_analyses = raw.metrics.semantic_analyses + 1
+                        elseif stage.label == "C++ generation" then
+                            raw.metrics.cpp_generations = raw.metrics.cpp_generations + 1
+                        end
+                    end
+                end
+            end
+            local generated_after = generated_artifacts(generated_directory)
             local generated = artifact_changes(generated_before, generated_after)
             raw.generated_artifacts = {before = generated_before, after = generated_after, changes = generated}
             raw.metrics.generated_added = #generated.added
@@ -191,21 +190,22 @@ target("bench")
                     table.insert(raw.details, {label = "generated " .. name, value = file})
                 end
             end
-            raw.artifact_checks = benchmark.array()
             local validation_errors = {}
-            for module, count in table.orderpairs(scenario.artifacts or {}) do
-                for _, extension in ipairs({"cpp", "hpp"}) do
-                    local artifacts = os.files(path.join(root, "build", ".gens", "**", module .. "." .. extension))
-                    table.insert(raw.artifact_checks, {module = module, extension = extension,
-                        expected = count, actual = #artifacts, paths = benchmark.array(artifacts), passed = #artifacts == count})
-                    if #artifacts ~= count then
-                        table.insert(validation_errors, string.format("artifact count for %s.%s: expected %d, found %d",
-                            module, extension, count, #artifacts))
+            if raw.metrics.unrelated_objects ~= 0 then
+                table.insert(validation_errors, "source edit rebuilt the unrelated module")
+            end
+            if scenario.unchanged then
+                for _, metric in ipairs({"carven_invocations", "changed_objects",
+                    "generated_changes", "unchanged_generated_touched"}) do
+                    if raw.metrics[metric] ~= 0 then
+                        table.insert(validation_errors, string.format(
+                            "unchanged inputs repeated build work: %s = %d", metric, raw.metrics[metric]))
                     end
                 end
             end
             if raw.exit_code == 0 then
-                local execution = benchmark.command(executable, {}, root, {capture_stdout = true})
+                local execution = benchmark.command(executable, {}, root,
+                    {target = target.name, capture_stdout = true})
                 execution.expected_stdout = scenario.stdout
                 execution.passed = execution.exit_code == 0
                     and execution.stdout:gsub("\r\n", "\n") == scenario.stdout
@@ -221,7 +221,6 @@ target("bench")
         end
     end, function (session)
         snapshot_root = input_snapshot.capture(session)
-        for _, case in ipairs(workloads.cases(snapshot_root)) do captured_cases[case.id] = case end
         benchmark.checkpoint(session)
     end)
 end

@@ -98,6 +98,7 @@ public:
     auto ids() const noexcept -> std::vector<GenericFailureID>;
 
 private:
+    friend class SemanticArtifactAccess;
     auto normalize_members(std::vector<TypeID> members) const noexcept -> std::vector<TypeID>;
     auto bounds(GenericFailureID source, bool upper) const noexcept -> GenericFailureExpression;
     auto filter(GenericFailureID input, GenericFailureMask mask) noexcept -> GenericFailureID;
@@ -329,6 +330,7 @@ public:
     auto snapshot() const noexcept -> FrozenFailureConstraints;
 
 private:
+    friend class SemanticArtifactAccess;
     auto require_term(FailureTermID term) const noexcept -> void;
     auto require_source(ConstructionFailureRef source) const noexcept -> void;
     auto require_origin(ProgramOriginID origin) const noexcept -> void;

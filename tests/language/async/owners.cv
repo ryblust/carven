@@ -79,5 +79,5 @@ async fn aggregate() -> bool {
 export async fn run_owners() {
     await equivalent();
     assert(await read_temporary_owners());
-    println(await replacement() && await cancellation() && await aggregate());
+    assert(await replacement() && await cancellation() && await aggregate());
 }

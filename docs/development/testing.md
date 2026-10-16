@@ -1,309 +1,159 @@
 # Testing
 
-Tests establish accepted behavior, rejected inputs, and invariants at language
-and toolchain boundaries.
-Choose cases by the failure they can detect, rather than by the number of files,
-classes, or internal components they exercise. An internal component does not
-need its own suite when existing behavioral tests establish its responsibility.
+This document defines repository test responsibilities, case design, fixtures,
+and validation.
 
-Each case should identify an observable contract, a plausible failure, and the
-evidence it adds beyond existing cases. Assertions admit equivalent implementations
-that preserve that contract. Keep focused internal tests when they isolate a
-complex algorithm, cheaply exercise a difficult boundary, or establish a contract
-that broader tests cannot adequately expose. Avoid mirroring private data layouts,
-helper call sequences, or standard-library behavior.
-
-Native program tests are ordinary consumer targets using the packaged
-`@carven/carven` rule. The build system owns source selection, target
-configuration, generation scheduling, artifact publication, and native build
-caches.
-Use these targets to establish language values, effects, lifetimes, and native
-ABI behavior. A compiler-process case establishes a CLI contract; it does not
-repeat native behavior already covered by a consumer target. Keep one
-representative direct-run case for its argument, process, and installed-toolchain
-boundary.
-
-Generation tests observe artifact paths, source attribution, raw bytes, and
-interface stability. Incremental workloads observe artifact changes across edits
-and validate the resulting programs. Exact target-node counts, temporary names,
-selected runtime helpers, and optimization-specific storage layouts are not
-contracts. Focused scale cases may bound growth for deep or shared input graphs
-without fixing the generated representation. Source rejection tests exercise
-the public compilation boundary instead of reproducing semantic helper decisions.
-
-## Test responsibilities
+## Responsibilities
 
 | Group | Boundary | Evidence |
 | --- | --- | --- |
-| `internal` | Focused compiler boundaries | Algorithmic boundaries, diagnostics, and invariants not adequately established by program-level tests |
-| `language` | Compiled and executed Carven programs | Values, access, ownership, control, failure, modules, closures, and testing behavior |
-| `crafts` | Public source-package APIs | Library behavior through C++20 consumer builds |
-| `interop` | C++ providers and consumers | Boundary signatures, native calls, and source fragments |
-| `examples` | User-facing programs | Documented output, application behavior, and connected example workflows |
-| `cli` | Compiler processes and interpreted execution | Arguments, reports, exit status, source selection, and emitted files |
-| `format` | Source formatting and file operations | Source preservation, layout, errors, batch results, and replacement |
-| `workspace` | Source snapshots and analysis queries | Versioned locations, complete selection reuse, invalidation, and navigation |
+| `internal` | Compiler components | Analysis results, diagnostics, retention, algorithms, and publication |
+| `language` | Compiled Carven programs and execution hosts | Values, access, ownership, control, recovery, modules, closures, and inline tests |
+| `crafts` | Public source-package APIs | Library results through C++20 consumer builds |
+| `interop` | C++ providers and consumers | Boundary types, native calls, source fragments, and resource ownership |
+| `cli` | Compiler processes and interpretation | Arguments, exit status, reports, source selection, emitted files, and execution |
+| `format` | Formatting and file operations | Preserved source, layout, batch results, and replacement |
+| `workspace` | Source snapshots and queries | Versioned locations, selection reuse, invalidation, and navigation |
 
-Place each case in the group that owns the tested boundary. Reuse fixtures and
-assertions across applicable configurations. Merge cases that repeat the same
-input class, execution path, and observation. Prefer one behavioral case at
-the owning boundary over assertions on intermediate node kinds, temporary storage,
-helper names, or enumeration-to-enumeration mappings.
+Choose the group by the tested boundary, independently of implementation language
+or a `std::` module path. Keep application checks with their sources under `examples/`.
 
-Language and execution-host contracts belong to `language`; Standard Craft
-algorithm behavior belongs to `crafts`. Declaration ownership, a `std::` module
-path, or an implementation language does not choose the test group. Native
-provider and consumer contracts belong to `interop`.
+Use focused internal tests for algorithms and compiler results that program-level
+execution cannot expose.
 
-`interop/toolchain-consumer` checks installed Crafts, native interoperation, and
-incremental consumer builds. Run it with `./xmakew test '*/toolchain-consumer'`.
-Package installation also needs validation with a fresh consumer using the
-default package configuration and an isolated build/install tree.
+Reuse representative sources across static execution, interpretation, and native
+execution. Keep broad value and offset tables in native tests. Add a separate
+execution-context case for a distinct responsibility such as retained static
+results, interpreter accounting, native storage, or host input.
 
-Group behavior in one executable per native configuration and runner contract.
-Register fresh process scenarios on that executable when input state or
-termination requires isolation. Separate targets express different compiler
-settings or entry contracts. Preserve values, effects, cleanup, and exit status
-when merging sources.
+## Targets and execution
 
-Choose execution partitions independently of build targets: long suites can run
-disjoint selections in parallel without compiling and linking separate binaries.
-Measure both individual duration and queue delay under a fixed test job limit.
-Keep partitions coarse enough that process startup and repeated fixture setup
-remain small relative to the work. A short group need not be partitioned.
+Declare each group's targets in its own `xmake.lua`; include groups at the project
+root. Use ordinary Xmake targets with `@carven/carven` for `.cv` sources. Include
+runtime headers directly in pure C++ consumers. Mark tests, examples, benchmarks,
+and development tools as non-default targets.
 
-Standard-input scenarios share the language executable but use fresh processes:
-EOF, errors, and buffered bytes persist within one process. Printing backend
-branches, escaped entry failures, and deliberately failing runners have distinct
-native configurations or entry contracts. Independent stream inputs use separate
-processes; pipeline steps run sequentially because each consumes the preceding
-program's output.
+Group sources in one target per native configuration and entry contract.
+Declare inline-only suites as binary targets with `tests = true`.
+Keep example checks with their application declarations. Extend an existing
+target when its entry, settings, and linkage fit. Add a separate target only for a
+distinct native or entry requirement.
 
-Test current API behavior and failure contracts at the owning boundary.
+Multiple `add_tests` registrations normally share an executable; supplying per-test
+`files` creates a derived build. Use fresh processes for independent stream inputs
+and host state. Use a harness only for input setup, pipelines, or output and artifact
+observations that ordinary registrations cannot express. Keep dependent pipeline
+steps sequential. Check the specified exit status, output, and file effects.
+Bound process duration, including isolated termination checks.
 
-Use current language and standard APIs in fixture setup and incidental code.
-Preserve explicit forms when syntax, imports, evaluation, native interoperation,
-or formatting is the behavior under test. Simplification must retain that evidence.
+Pass built executable targets to the shared process checks. Use their Xmake
+runtime environment when checking exit status, ordered output, and file effects.
 
-Internal C++ tests use the shared harness and compiler configuration. Crafts,
-generated-source, and consumer tests use the C++20 baseline, with additional
-standard modes for native capability branches. Shared semantic cases use shared
-sources across these modes.
-Compiler processes for self-contained language, diagnostic, reporting, and
-artifact fixtures use `--explicit-inputs` and name their complete source set.
-This keeps their analysis cost proportional to the fixture. Source-discovery,
-installed-toolchain, and representative ordinary-command tests use normal
-discovery and establish Crafts integration.
-Default CLI cases include the bundled standard sources and a mixed Craft.
-Observe successful Carven execution with unused native code and a source-located
-diagnostic when an unsupported native operation executes. Native initialization
-effects belong to native execution; test that boundary through process output.
+Reuse the shared test entry and support modules for internal, formatter, and
+workspace executables. Xmake controls test concurrency. Choose partitions by
+execution cost; keep process startup and repeated fixture setup small relative
+to the work.
 
-Use an independent public source module in CLI installation fixtures for
-installed-path discovery and source identity. Supply production runtime headers
-to the native execution fixture for native providers and process behavior.
-Exercise library APIs through ordinary Crafts and example targets.
+Use process isolation when termination itself is the contract under test.
+Distinguish the specified termination from unrelated crashes, sanitizer failures,
+and timeouts. Do not manufacture invalid internal state solely to exercise assertion
+handlers.
 
-Static execution, interpretation, and generated native C++ implement the same
-language contracts. Use representative cases across these execution contexts;
-keep broad value tables and offset matrices in native tests. Add a context-specific
-case when it observes a distinct responsibility, such as static result retention,
-interpreter budgets, native storage, or host-resource interaction. Reuse source
-functions where possible instead of multiplying complete matrices.
+Use the internal termination module for isolated compiler cases. Let Xmake run
+native termination scenarios as separate processes and check their output.
+Construct internal fixtures in the child before observing the operation's
+termination. Use the generated entry for ordinary inline suites.
 
-Language tests use local Carven state for counters and traces. A native provider
-may expose observations Carven cannot express; cases whose subject is that native
-boundary belong in `interop`. User-facing programs live under `examples/`;
-diagnostic and termination cases belong to test suites.
+Use the main project's compiler, installed Crafts, resolved rules, and native
+configuration for consumer tests.
 
-Crafts tests mirror public package APIs. Portable and accelerated implementations
-establish the same functional contracts. Consumer targets select instruction-set
-options for accelerated tests on machines that support them. The portable matrix
-covers APIs with a distinct portable implementation; ordinary library behavior
-runs once.
+Check the same API contracts in portable and accelerated Crafts implementations.
+Select instruction-set options on consumer targets where supported. Run ordinary
+library behavior once; share sources for APIs with a distinct portable implementation.
 
-## Evidence and assertions
+## Evidence
 
-Internal C++ tests use the shared harness in `tests/harness/` and import only
-the framework and domain fixtures they need. Generated programs use Carven's
-testing support. Follow neighboring suites for registration and assertion syntax.
+Choose each case by its observable contract and the evidence it adds. Assert
+values, effects, lifetimes, output, or structured results in normally completing
+tests. Admit equivalent implementations that preserve those observations.
 
-Test names identify the owning component and observed behavior. Name independent
-inputs and preserve their identity in failure context. Scoped observations and
-ordinary traversal can remain within one case. Case tables contain inputs; empty
-values remain valid where the tested contract permits.
+Keep assertions at the owning boundary. Prefer structured diagnostic results over
+failed compiler invocations. Check diagnostic codes, severity, and source attachments
+through compiler APIs where available. Check rendered bytes in presentation tests.
+Check business failure and cancellation payloads, recovery, and cleanup in normally
+completing tests.
 
-Independent compilations can use separate ordinary cases with captured inputs.
-Each case owns its callback and any source text it needs, so process shards can
-select those inputs independently. Use `each` within one case when observations
-share state, source identity, or a dependent sequence of operations.
+Name tests by their observed behavior. Name independent inputs and retain those
+names in failure context. Merge cases with the same input class, execution path,
+and observation. Use separate cases for independent compilations; use `each` for
+observations sharing state or a dependent sequence.
 
-Use comparison assertions for printable values and predicates with context for
-opaque values. Compare text contents and retain explicit lengths for binary data.
-Compute expensive failure context only when needed.
-Compare optional results directly with values or `std::nullopt`; the harness
-prints their state and recursively prints present payloads.
+Use comparison assertions for values and contextual predicates for opaque objects.
+Compare text contents with explicit lengths for binary data. Compare optional
+results with their expected values or `std::nullopt`. Compute expensive failure
+context only when needed.
 
-When tests repeat observation or diagnostic boilerplate, improve the shared
-assertion or domain fixture at its owning boundary. Keep helpers focused on
-recurring checks and preserve useful failure values, source locations, and
-explicit control over dependent observations.
+Guard premises before indexing, dereferencing, or reading a result variant. After a
+failed nonfatal premise assertion, return from the case before making dependent
+observations. Reserve the internal harness's `require` for unrecoverable fixture
+construction.
 
-Guard premises before indexing, dereferencing, or reading an error. When a premise
-assertion fails, explicitly return from the current case or input before dependent
-observations. Nonfatal assertions record failure and continue execution. In the
-internal C++ harness, a failed `require` terminates the process; reserve it for
-unrecoverable fixture construction.
+Observe control flow through values and local counters or traces. Observe ownership
+through construction, transfer, mutation, execution, and destruction. Include
+conditional paths and recovered failures. Use native fixtures only for observations
+Carven cannot express. Use observable progress to establish async order; do not
+infer suspension or input consumption from fixed sleeps.
 
-Registered test targets must build successfully. Drivers return success when
-assertions pass, including expected rejection or termination. Compile-only targets
-verify compilation and linking; generated runners also report that cases ran and
-passed.
+Use exact text for output contracts, raw payload preservation, and serialization
+encoding. Do not fix generated temporary names, selected helpers, complete bodies,
+intermediate node kinds, or storage layouts. Test public native signatures by
+compiling consumers and test generated behavior by running them.
 
-Check valid and malformed states at the boundary that owns the invariant. Assert
-structured violations when available. Diagnostic tests compare identity, severity,
-and relevant source attribution; presentation tests also check wording and transport.
+State the bound or work avoided in each cost assertion. Use deep, wide, or shared
+inputs when validating stack use or growth bounds. Scope measurements to the
+operation under test. Keep ordinary resource-accounting cases small; do not exhaust
+production budgets in routine tests.
 
-Check generated-code behavior by compiling and executing it. Exact text belongs
-to serialization, source attribution, raw payload preservation, artifact paths,
-and other byte-level contracts. Avoid assertions on temporary names, helper
-spellings, or complete generated bodies.
+Check retained generic and staged definitions, source ownership, and ordinary and
+test generation in artifact-reuse cases. Observe static effects to verify that
+retained generation does not execute analysis again. Distinguish retained results
+from fresh input or time observations in host-effect cases. Measure work across
+edits and execute the resulting programs in incremental workloads.
 
-Structure assertions establish properties such as bounded growth or single
-execution. Scope cost assertions to the measured operation and state the bound.
-Optimization cases check required effects and the work removed without fixing
-the complete emitted form.
+## Fixtures
 
-Execution-selection tests use valid, terminating operands and observe call counts
-or traces. Invalid inputs and resource limits have separate diagnostic cases.
-Resource accounting exercises actual operations at accepted and rejected limits;
-small configured limits establish accounting. Representative recursion limits
-establish source diagnostics and traces. Large inputs serve a stated
-scale-dependent property; routine tests do not exhaust production iteration,
-instance, or expanded-node budgets. Semantic limit cases stop at analysis and
-publication; backend cases cover generated operations.
+Initialize observable state in each case. Give concurrent invocations independent
+temporary directories and streams. Retain failed artifacts and remove successful
+temporary state. Reuse a working directory only when later steps depend on earlier
+files or effects.
 
-Lifecycle tests observe construction, transfer, execution, and destruction,
-including conditional paths and failure cleanup. Cover interactions among copying,
-mutation, scope exit, and calls for captures and views. Compile-time checks or
-diagnostic cases establish static restrictions; compiled uses of runtime helpers
-exercise the native capabilities required by the operation.
-Async fixtures establish ordering through observable progress at the tested
-boundary. Fixed sleeps do not establish that an input was consumed or an operation
-suspended; timeouts guard stalled tests.
-
-Performance comparisons use equal results, effects, and output contracts. Define
-measurement boundaries, workloads, configuration, and sampling conditions before
-comparing implementations. Measure the costs named in the claim separately and
-limit conclusions to that evidence. Keep raw logs outside reference documents.
-
-## Organization and fixtures
-
-Each group owns its `xmake.lua`, including its integration targets. The project
-root includes groups; it does not register their internal scenarios or subdirectories.
-Topic directories name the rule under test;
-features and scenarios belong in filenames and case names. Helpers remain with
-their owning domain; harnesses select scenarios. Filenames and local type names
-avoid repeating context already supplied by their directory or module, such as
-`async/failure.cv` and its `Failure` type. Keep qualifiers where a flat directory
-or shared namespace needs them to distinguish responsibilities.
-
-Extend existing targets when entry definitions, compiler settings, linkage, and
-execution requirements match. Run ordinary async scenarios through a shared
-driver. Keep distinct entry contracts, escaped failures, and cancellation in
-separate processes. Use ordinary Xmake targets and assertions for execution and
-output checks. Pure C++ consumers include runtime headers directly and do not
-attach the Carven source-generation rule. Custom harnesses supply additional
-process, diagnostic, or artifact observations.
-
-Cases initialize their own observable state. Temporary directories and captured
-streams use fresh paths for each invocation, including concurrent runs. Fixtures
-own setup and observations; file-operation cases use independent I/O to prepare
-and observe bytes. Process harnesses bound execution time, retain failed artifacts,
-and clean up successful temporary state.
-
-Fixtures with significant source bytes use `.cv.fixture` inputs copied to source
-files by their harness. Behavioral tests use ordinary sources and avoid fixed
-line numbers unless source attribution is the contract. Formatting fixtures check
-source preservation, expected output, idempotence, and stability under irrelevant
-whitespace changes. Corpus tests establish formatting, parsing, and idempotence
-for repository programs.
-
-Independent CLI invocations register separate named Xmake tests even when they
-share fixture bytes. Each receives a fresh working directory. Keep sequential
-steps when later observations depend on earlier files or process effects.
-Xmake's test job limit controls concurrent invocations; avoid an internal serial
-case list becoming the critical path of the whole group.
-
-Native rejection fixtures establish successful Carven generation before checking
-the expected diagnostic, subject, and source attribution. Accepted counterparts
-use the normal interop build. Rejections compile on each run and retain artifacts
-on failure.
-
-Exercise runtime behavior through generated C++20 consumers in Crafts, language,
-and interop tests. Place direct C++ observations of native signatures, inputs,
-and storage validity in interop.
-
-Terminating operations run in isolated processes with a specific expected outcome.
-Validate setup before entering a death-test action; the action contains only the
-production operations under test. Assertions inside it can abort and falsely
-satisfy the observation.
-
-Native exception-boundary cases execute the throwing operation and verify that it
-reaches the installed termination handler; escaped exceptions are failures.
+Use ordinary source files for behavioral tests. Use `.cv.fixture` where fixture bytes
+are the subject. Fix source positions only when attribution is the contract.
+Check expected bytes, source preservation, idempotence, and stability under irrelevant
+whitespace in formatter fixtures. Format and parse repository programs in corpus tests.
 
 ## Validation
 
-Commands run from the repository root through `./xmakew`; Windows uses
-`.\xmakew.ps1` with the same arguments.
+Run commands from the repository root through `./xmakew`; use `.\xmakew.ps1` on
+Windows with the same arguments.
 
-| Command | Capability |
+Build the compiler before testing. After a successful build, select the relevant
+groups or the full suite. Rebuild after code changes before rerunning tests.
+
+| Command | Action |
 | --- | --- |
-| `./xmakew build` | Build or update the local compiler |
-| `./xmakew test -g <group>` | Build and run one group from the responsibility table |
-| `./xmakew test` | Build and run all registered tests, including examples, formatting, and workspace analysis |
-| `./xmakew build carven-format` | Build the formatter used by formatting tasks |
-| `./xmakew format-check` | Check C++ and Carven formatting without changing sources |
+| `./xmakew build` | Build the compiler |
+| `./xmakew test -g <group>` | Run a selected test group |
+| `./xmakew test` | Run all registered tests |
+| `./xmakew build carven-format` | Build the formatter |
+| `./xmakew format-check` | Check C++ and Carven formatting |
 | `./xmakew format` | Apply C++ and Carven formatting |
+| `./xmakew check clang.tidy` | Analyze handwritten and generated C++ |
 | `./xmakew clean` | Clear build outputs |
 
-Generated-test preparation invokes the local compiler before target dependencies
-are built. `./xmakew build` supplies an up-to-date compiler before testing.
-Formatting tasks require a built `carven-format`. Applying formatting changes sources;
-subsequent builds and tests use those changes. A clean followed by a build recreates
-module build state.
+For unexpected compiler, module, BMI, dependency-order, or apparently impossible
+type errors, run `./xmakew clean` and `./xmakew build`, then reproduce before
+diagnosing source code.
 
-Measure compiler build, generated-source preparation, native compilation,
-incremental checks, and test execution separately. Xmake records execution time
-per registered case. Harness-driven native compilation and rejection checks run
-on each test invocation and contribute to that time; ordinary consumer targets
-reuse their build outputs.
-
-For internal case costs, build `carven-test-internal`, then run
-`./xmakew run carven-test-internal --timings`.
-The report lists case execution durations from slowest to fastest.
-Combine it with `--filter`, `--exclude`, or
-`--test` to reproduce a selected workload; `--list-tests` lists names without
-running them. These timings include each case's fixtures and assertions but
-exclude process startup, test registration, and reporting. Normal runs do not
-collect timings. Keep machine-specific timing logs outside reference documents.
-
-`--shard INDEX/COUNT` selects an interleaved part of the sorted cases after name
-filtering, with indices starting at 1. The six internal registrations partition
-the complete selection; Xmake's test job limit controls their concurrency.
-Use `./xmakew run carven-test-internal --shard 1/6 --timings` to measure one part.
-
-`carven-test-internal` selects all cases under `tests/internal`. Fixture modules
-belong to `carven-test-fixtures`; `carven-test-runner` supplies the entry object.
-`carven-test-support` owns assertions, diagnostics, temporary directories, and
-termination checks. Run the suite with `./xmakew test -g internal`.
-Workspace scenarios use `carven-test-workspace`; run them with
-`./xmakew test -g workspace`.
-
-Static analysis is available through `./xmakew check clang.tidy` for handwritten
-and generated C++. `.clang-tidy` configures handwritten checks;
-`xmake/generated.clang-tidy` configures generated-code checks.
-
-`.github/workflows/ci.yml` defines CI platforms, sanitizer configurations, and
-static-analysis jobs. Sanitizer coverage includes native compilation launched
-outside build targets. Targets and harnesses own test selections and timeouts.
+Build `carven-format` before checking or applying formatting. Rebuild and test after
+formatting changes sources.

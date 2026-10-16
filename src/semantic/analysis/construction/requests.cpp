@@ -78,7 +78,7 @@ auto ConstructionRequests::standard_declaration(
                     contract.name
                 )
             )
-                .primary(locate(owner.draft.syntax_tree(requester).view().source_id(), span))
+                .primary(locate(owner.draft.module_source_id(requester), span))
                 .build()
         ));
     }
@@ -137,10 +137,10 @@ auto ConstructionRequests::standard_type(
                     contract.name
                 )
             )
-                .primary(locate(owner.draft.syntax_tree(requester).view().source_id(), span))
+                .primary(locate(owner.draft.module_source_id(requester), span))
                 .related(
                     locate(
-                        owner.draft.syntax_tree(source->module_id).view().source_id(),
+                        owner.draft.module_source_id(source->module_id),
                         source->declaration_span
                     ),
                     declaration == StandardDeclaration::Duration
@@ -178,7 +178,7 @@ auto ConstructionRequests::number_parser(
             DiagnosticCode::TypeMismatch,
             "standard NumberParseError requires a numeric enum with an Invalid case"
         )
-            .primary(locate(owner.draft.syntax_tree(requester).view().source_id(), span))
+            .primary(locate(owner.draft.module_source_id(requester), span))
             .build()
     ));
 }

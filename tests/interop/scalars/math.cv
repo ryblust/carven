@@ -1,3 +1,0 @@
-export(cpp) fn discard_clamp32(lower: f32, upper: f32) {
-    0.0f32.clamp(lower, upper);
-}

@@ -65,10 +65,7 @@ auto AnalysisCatalogView::declaration_location(
     if (declaration == nullptr) {
         invariant_violation("catalog declaration location used an invalid symbol");
     }
-    return locate(
-        draft.syntax_tree(declaration->module_id).view().source_id(),
-        declaration->declaration_span
-    );
+    return locate(draft.module_source_id(declaration->module_id), declaration->declaration_span);
 }
 
 auto AnalysisCatalogView::field_location(
@@ -77,6 +74,13 @@ auto AnalysisCatalogView::field_location(
     std::size_t index
 ) const noexcept -> SourceSpan {
     const auto* declaration = symbol(struct_symbol(owner));
+    if (draft.imported(declaration->module_id)) {
+        const auto structure = draft.construction_struct_declaration_copy(owner);
+        if (index >= structure.fields.size()) {
+            invariant_violation("catalog field location used an invalid field");
+        }
+        return draft.source_span(structure.fields[index].origin);
+    }
     const auto syntax = draft.syntax_tree(declaration->module_id).view();
     const auto* record = std::get_if<ASTRecordDecl>(&syntax.item(*declaration->item_id).value);
     if (record == nullptr || index >= record->fields.size()) {
@@ -86,10 +90,10 @@ auto AnalysisCatalogView::field_location(
 }
 
 auto AnalysisCatalogView::function_symbol(FunctionID id) const noexcept -> CatalogSymbolID {
-    if (id.index() >= catalog->function_symbols.size()) {
+    if (id.index() >= catalog->function_symbols.size() || !catalog->function_symbols[id.index()]) {
         invariant_violation("catalog function lookup used an invalid identity");
     }
-    const auto symbol = catalog->function_symbols[id.index()];
+    const auto symbol = *catalog->function_symbols[id.index()];
     const auto* form = std::get_if<CatalogFunctionForm>(&catalog->symbols[symbol.index()].form);
     if (form == nullptr || form->function != id) {
         invariant_violation("catalog function lookup crossed semantic program owners");
@@ -111,10 +115,10 @@ auto AnalysisCatalogView::generic_symbol(GenericDeclarationID id) const noexcept
 }
 
 auto AnalysisCatalogView::struct_symbol(StructID id) const noexcept -> CatalogSymbolID {
-    if (id.index() >= catalog->struct_symbols.size()) {
+    if (id.index() >= catalog->struct_symbols.size() || !catalog->struct_symbols[id.index()]) {
         invariant_violation("catalog struct lookup used an invalid identity");
     }
-    const auto symbol = catalog->struct_symbols[id.index()];
+    const auto symbol = *catalog->struct_symbols[id.index()];
     const auto* form = std::get_if<CatalogStructForm>(&catalog->symbols[symbol.index()].form);
     if (form == nullptr || form->structure != id) {
         invariant_violation("catalog struct lookup crossed semantic program owners");
@@ -123,10 +127,10 @@ auto AnalysisCatalogView::struct_symbol(StructID id) const noexcept -> CatalogSy
 }
 
 auto AnalysisCatalogView::enum_symbol(EnumID id) const noexcept -> CatalogSymbolID {
-    if (id.index() >= catalog->enum_symbols.size()) {
+    if (id.index() >= catalog->enum_symbols.size() || !catalog->enum_symbols[id.index()]) {
         invariant_violation("catalog enum lookup used an invalid identity");
     }
-    const auto symbol = catalog->enum_symbols[id.index()];
+    const auto symbol = *catalog->enum_symbols[id.index()];
     const auto* form = std::get_if<CatalogEnumForm>(&catalog->symbols[symbol.index()].form);
     if (form == nullptr || form->enumeration != id) {
         invariant_violation("catalog enum lookup crossed semantic program owners");
@@ -135,10 +139,11 @@ auto AnalysisCatalogView::enum_symbol(EnumID id) const noexcept -> CatalogSymbol
 }
 
 auto AnalysisCatalogView::enum_case_symbol(EnumCaseID id) const noexcept -> CatalogSymbolID {
-    if (id.index() >= catalog->enum_case_symbols.size()) {
+    if (id.index() >= catalog->enum_case_symbols.size()
+        || !catalog->enum_case_symbols[id.index()]) {
         invariant_violation("catalog enum-case lookup used an invalid identity");
     }
-    const auto symbol = catalog->enum_case_symbols[id.index()];
+    const auto symbol = *catalog->enum_case_symbols[id.index()];
     const auto* form = std::get_if<CatalogEnumCaseForm>(&catalog->symbols[symbol.index()].form);
     if (form == nullptr || form->enum_case != id) {
         invariant_violation("catalog enum-case lookup crossed semantic program owners");

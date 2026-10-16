@@ -1,14 +1,16 @@
-import "testing/reporting.hpp";
+import "testing/observations.hpp";
 
-private import(cpp) fn cv_test_reporting_mark(bit: i32);
-private import(cpp) fn cv_test_reporting_condition(bit: i32, value: bool) -> bool;
+fn mark(value: i32) {
+    println("reached", value);
+}
 
 fn traced_reporting_condition(bit: i32, value: bool) -> bool {
-    return cv_test_reporting_condition(bit, value);
+    mark(bit);
+    return value;
 }
 
 fn traced_reporting_message(bit: i32, value: str) -> str {
-    cv_test_reporting_mark(bit);
+    mark(bit);
     return value;
 }
 
@@ -21,47 +23,38 @@ test "Testing: check failure reports and continues" {
         ),
         traced_reporting_message(1, "check message"),
     );
-    cv_test_reporting_mark(2);
+    mark(2);
 }
 
 test "Testing: require failure reports and exits" {
     require(traced_reporting_condition(3, false), traced_reporting_message(4, "require message"));
-    cv_test_reporting_mark(5);
+    mark(5);
 }
 
 test "Testing: fail reports and exits" {
     fail(traced_reporting_message(6, "fail message"));
-    cv_test_reporting_mark(7);
+    mark(7);
 }
 
 test "Testing: require exits across nested control" {
     while true {
         if true { require(traced_reporting_condition(8, false)); }
     }
-    cv_test_reporting_mark(9);
-}
-
-private import(cpp) fn cv_test_reporting_verify();
-
-// Entry points: ordinary results are discarded after local cleanup.
-fn main() -> i32 {
-    let owner = ::cv_test_entry_begin();
-    cv_test_reporting_verify();
-    return 29;
+    mark(9);
 }
 
 fn stop_in_helper(action: fn() -> void) -> i32 {
-    let owner = ::ReportingOwner(10);
+    let owner = ::observations::Owner(10);
     action();
-    cv_test_reporting_mark(11);
+    mark(11);
     return 42;
 }
 
 test "Testing: callback failure leaves helpers and cleans up" {
-    let owner = ::ReportingOwner(12);
+    let owner = ::observations::Owner(12);
     let stop: fn() -> void = fail;
     let value = stop_in_helper(stop);
-    cv_test_reporting_mark(13);
+    mark(13);
     check(value == 42);
 }
 
@@ -71,7 +64,7 @@ fn stop_with_failure_view(
     action: fn() -> void throw ReportingFailure
 ) -> i32 throw ReportingFailure {
     action()?;
-    cv_test_reporting_mark(14);
+    mark(14);
     return 1;
 }
 
@@ -82,16 +75,16 @@ test "Testing: test exit bypasses typed catches and widened views" {
         stop_with_failure_view(widened)?
     } catch {
         _ => {
-            cv_test_reporting_mark(15);
+            mark(15);
             2
         },
     };
-    cv_test_reporting_mark(16);
+    mark(16);
     check(value == 1);
 }
 
 test "Testing: runner continues after failed helpers" {
-    cv_test_reporting_mark(17);
+    mark(17);
     let assertion: fn(bool, String) -> void = check;
     assertion(true, "owned test message");
 }
@@ -102,14 +95,14 @@ fn stop_in_result() -> i32 {
 
 test "Testing: a non-completing builtin can occupy a result position" {
     let value = stop_in_result();
-    cv_test_reporting_mark(18);
+    mark(18);
     check(value == 0);
 }
 
 fn require_in_helper(value: bool) {
-    let owner = ::ReportingOwner(19);
+    let owner = ::observations::Owner(19);
     require(value);
-    cv_test_reporting_mark(20);
+    mark(20);
 }
 
 fn require_through_tail(value: bool) {
@@ -121,9 +114,9 @@ fn require_through_tail(value: bool) {
 }
 
 test "Testing: require failure leaves helpers and the current test" {
-    let owner = ::ReportingOwner(21);
+    let owner = ::observations::Owner(21);
     require_through_tail(false);
-    cv_test_reporting_mark(22);
+    mark(22);
 }
 
 test "Testing: temporary messages survive direct and callable reports" {
@@ -170,7 +163,7 @@ test "Testing: explanation preserves short circuit and require exit" {
     check(false || comparison_next(&calls) == 2);
     check(calls == 1);
     require(calls == 4);
-    cv_test_reporting_mark(23);
+    mark(23);
 }
 
 fn observed_boolean(&calls: i32, result: bool) -> bool {

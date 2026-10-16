@@ -3,25 +3,29 @@
 - **Status:** Draft
 - **Scope:** Static capabilities, associated types, generic class operations, and finite boundary extensions
 
-## Extension boundary
+## Summary
+
+Add static capabilities and associated types so generic bodies can require
+checked operations on unknown types. The capability design is accepted; its
+implementation scope and remaining decisions are open. Parameterized class
+operations and generic C++ boundaries select their own delivery scopes.
+
+## Context
 
 Type and failure-set parameters on named functions and nominal declarations,
 definition-site body checking, local call inference, fixed tuple substitution,
 and first-order recursive-growth rejection are implemented. Static function
-parameters and residual specialization are also implemented; they do not add
-value-dependent types or generic value arguments. Their current contracts belong
-in the language references rather than implementation tasks here.
+parameters and residual specialization keep parameter types, result types, and
+layouts fixed. Value-dependent types and generic value arguments remain deferred.
 
 Unknown type parameters admit forwarding and whole-value Take; additional
 operations need capability evidence. Associated projections must extend finite
 instance formation with a termination argument. Parameterized class operations
 and generic C++ boundary declarations remain unsupported.
 
-`concept`, `impl`, `Self`, and `where` are ordinary identifiers today. The accepted
-capability contracts below still require a concrete implementation scope and
-closure of its open decisions.
+`concept`, `impl`, `Self`, and `where` are ordinary identifiers today.
 
-## Static capability design
+## Design
 
 ### Unified static capability model
 
@@ -42,8 +46,8 @@ diagnostics, and resolved-operation representation. The capability identity
 defines which producers may supply evidence. Compiler-derived evidence can be
 represented as a synthesized impl within this same model.
 
-A `concept` is a compile-time contract. It has no runtime value representation
-and introduces neither subtyping nor a dynamic interface.
+A `concept` is a compile-time contract with no runtime value representation or
+subtyping. Runtime holding and dispatch require a separate value contract.
 
 ### Concept and impl declarations
 
@@ -89,11 +93,9 @@ fn minimum<T: Comparable>(&&left: T, &&right: T) -> T {
 }
 ```
 
-The resolved concept is the lookup anchor for a qualified operation. Impl
-operations do not enter member lookup, ADL, or free-function search. This keeps
-selection consistent in generic and concrete contexts. Parameter access, result,
-and failure contracts are ordinary callable facts, matched exactly after
-substituting `Self`.
+Resolve qualified operations through the concept in generic and concrete contexts.
+Keep impl operations outside member lookup, ADL, and free-function search. Match
+parameter access, result, and failure contracts exactly after substituting `Self`.
 
 ### Contextual Self
 
@@ -220,11 +222,11 @@ normalize associated projections first: a projection resolving to `u8` makes
 `Box<Projection>` the same instance as `Box<u8>`. The key retains each argument's
 kind and declaration position.
 
-Canonical evidence is a semantic and lowering dependency, not a hidden
-caller-selected identity argument. Import aliases, filesystem spelling,
-generated names, and target representation do not change identity. Storage,
-interning, hashing, caches, emitted-text deduplication, mangling, and artifact
-location remain implementation choices.
+Select evidence canonically during analysis and retain it as a semantic and
+lowering dependency. Use normalized
+declaration and argument identities across imports, aliases, generated names,
+and target representations. Storage, interning, hashing, caches, emitted-text
+deduplication, mangling, and artifact location remain implementation choices.
 
 ### Definition-site integration
 
@@ -233,15 +235,16 @@ associated projections. Applications first infer ordinary type and failure-set
 arguments, then validate bounds and select canonical evidence. They do not use
 available impls to infer otherwise unknown arguments or reinterpret the body.
 
-Requirement signatures must define access, failure, and any constant-execution
-admission used by a consumer. A comparison capability alone does not grant copying
-an unknown value. Evidence dependencies and normalized projections must close
-before concrete publication, including applications demanded by static execution.
+Define access, failure, and constant-execution admission in requirement signatures.
+Require separate evidence for copying an unknown value. Close evidence
+dependencies and normalized projections before concrete publication, including
+applications demanded by static execution.
 
 Cross-module evidence retains canonical module identity and ordinary visibility.
 Lowering may share concrete declarations, use C++ templates, or erase distinctions
-that no longer affect behavior. Representation sharing needs valid typed calls;
-equal storage size or function-pointer casts do not establish equivalence.
+that no longer affect behavior. Validate each shared representation through its
+typed calls, access, failure, and lifetime contracts. Equal storage size and
+function-pointer casts do not establish typed-call compatibility.
 
 ## Decision record
 
@@ -289,7 +292,7 @@ entry points, those entries must obey the same closure rule.
 
 Validate same-key recursion, finite permutations and concrete resets, recursive
 associated projections, overlapping evidence, and growing obligations, including
-unused definitions. C++ template depth is not the source termination rule.
+unused definitions. Check finite source formation before C++ lowering.
 
 ### OPEN-04 — Parameterized class operations
 
@@ -338,8 +341,8 @@ value-dependent types remain deferred here.
 
 ### DEFER-04 — Specialization and candidate ranking
 
-- **Reason deferred:** Multiple applicable evidence would replace strong
-  coherence with priority and compatibility rules not needed by the first model.
+- **Reason deferred:** Selecting among multiple applicable evidence requires
+  ordering and overlap rules beyond strong coherence.
 - **Depends on:** Canonical evidence, coherence, and candidate-selection rules
 - **Reactivation condition:** A concrete API cannot use explicit strategy
   types and can define stable ordering and evolution behavior.
@@ -386,29 +389,30 @@ unavailable. Define the disposition of every field, including unused fields and
 borrowed backing, on success, failure, and rejected patterns. No usable partially
 moved owner may remain.
 
-## Implementation and validation
+## Implementation
 
 Deliver the chosen capability identities, declarations, definition-site operations,
 conformance, coherence, normalization, and finite closure as one usable slice.
+
+Class operations and native generic boundaries select their own slices and need
+only the capability features their contracts use.
+
+## Validation
+
+### Static capabilities
+
 Validate missing and duplicate members, signature mismatch, module-domain locality,
 anchored heads, overlapping impls, projection cycles, and canonical instance reuse.
 Include static calls, failures, exactly-once operand evaluation, borrowed backing,
 and Take across generic and concrete callers.
 
-Class operations and native generic boundaries select their own slices and need
-only the capability features their contracts use. Test private arguments and
-cross-module dependencies through self-contained generated interfaces and C++20
-compile, link, and execution. Do not fix private names or a concrete/template
-representation in the contract.
+### Class operations and native boundaries
+
+Test private arguments and cross-module dependencies through self-contained
+generated interfaces and C++20 compile, link, and execution. Do not fix private
+names or a concrete/template representation in the contract.
 
 ## References
 
-- [Parameterized types](../docs/language/types.md#nominal-type-parameters),
-  [functions](../docs/language/functions.md#parameterized-functions), and
-  [failure sets](../docs/language/failures.md#failure-set-parameters): implemented rules.
-- [Dynamic values](dynamic-values.md): runtime holding and dispatch.
-- [Compiler optimization](compiler-optimization.md#workspace-reuse): further workspace and persistent reuse experiments.
-- [Generic declaration construction](../src/semantic/analysis/decl/generic.cpp): implemented parameter kinds and rejection of class operations.
-- [Generic analysis tests](../tests/internal/semantic/analysis/generics.cpp): definition checking, concrete applications, and finite formation.
 - [Go parameter-flow checking](https://go.dev/src/cmd/compile/internal/types2/mono.go):
   a reference for the first-order recursive-growth boundary that extensions must preserve.

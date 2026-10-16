@@ -1,9 +1,9 @@
 # JSON validation
 
 ```sh
+./xmakew bench json
 ./xmakew bench json --list
-./xmakew bench json --case=events_32 --samples=7 --warmups=2
-./xmakew bench json --portable --output=build/benchmarks/json/portable.json
+./xmakew bench json --case=events_32 --portable
 ```
 
 This benchmark calls `validate_bytes` from `std::json` through an exported
@@ -57,18 +57,7 @@ stop the run.
 
 Generated C++ and the harness occupy separate translation units with LTO disabled.
 There are no volatile accesses or optimization barriers in the measured loop.
-Native targets use C++20 and optimized builds. `--cxx` selects the native compiler;
+Native targets use C++20 and optimized builds. The main project selects the native
+compiler and supplies the built Carven executable and resolved rules.
 `--portable` selects the portable SIMD backend used by the standard library.
 The report retains actual native flags and architecture.
-
-`--compiler` permits the same harness and documents to compare compiler/craft
-builds. Check input hashes and native flags before comparing results. Input
-serialization uses the recorded Xmake version, so hashes also expose serialization
-changes. This is an implementation comparison of the same Carven API; no external
-JSON parser is used as a performance baseline.
-
-The measurement boundary follows the separation of input loading and timed calls
-in [simdjson's parsing benchmarks](https://github.com/simdjson/simdjson/blob/master/benchmark/bench_parse_call.cpp)
-and its guidance on [buffer reuse and allocation costs](https://github.com/simdjson/simdjson/blob/master/doc/performance.md).
-Calibration follows the principle of duration-based iteration selection described
-by [Google Benchmark](https://github.com/google/benchmark/blob/main/docs/user_guide.md#runtime-and-reporting-considerations).

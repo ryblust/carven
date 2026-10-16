@@ -1,6 +1,7 @@
 import("core.base.json")
 import("core.project.config")
 import("core.project.project")
+import("private.action.run.runenvs")
 import("benchmarks.harness.report", {rootdir = os.projectdir()})
 import("benchmarks.harness.timings", {rootdir = os.projectdir()})
 import("benchmarks.harness.inputs", {rootdir = os.projectdir()})
@@ -47,13 +48,13 @@ end
 function setup(session)
     local external = session.options.compiler
     config.load()
+    project.load_targets()
     session.compiler = path.absolute(external or project.target("carven"):targetfile(), os.projectdir())
     session.results.metadata.compiler = compiler_identity(session.compiler, external)
     checkpoint(session)
     assert(os.isfile(session.compiler), "Carven compiler does not exist: %s; build it first", session.compiler)
-    if session.results.topic ~= "compile" then
-        session.results.metadata.crafts_root = inputs.crafts_root(session.compiler)
-    end
+    session.results.metadata.crafts_root = external and inputs.crafts_root(session.compiler)
+        or path.join(os.projectdir(), "crafts")
     session.results.metadata.compiler.sha256 = hash.sha256(session.compiler):lower()
 end
 
@@ -151,17 +152,17 @@ end
 -- C++ remains discarded even when the benchmark retains its results.
 function command(program, argv, cwd, options)
     options = options or {}
-    if program == os.programfile() and path.absolute(cwd) ~= os.projectdir() then
-        argv = table.copy(argv)
-        table.insert(argv, 2, cwd)
-        table.insert(argv, 2, "-P")
+    local envs = options.envs
+    if options.target then
+        local additions, overrides = runenvs.make(assert(project.target(options.target)))
+        envs = table.join(runenvs.join(additions, overrides), envs or {})
     end
     local stderr_file = os.tmpfile()
     local stdout_file = options.capture_stdout and os.tmpfile() or nil
     local started = os.mclock()
     local status, errors = os.execv(program, argv, {curdir = cwd,
         stdout = stdout_file or os.nuldev(), stderr = stderr_file,
-        timeout = options.timeout or 60000, envs = options.envs, try = true})
+        timeout = options.timeout or 60000, envs = envs, try = true})
     local elapsed = os.mclock() - started
     local result = {wall_ms = elapsed, exit_code = status == nil and -1 or status,
         stdout_mode = stdout_file and "captured" or "discarded",
@@ -181,7 +182,7 @@ end
 
 function step(session, case, label, program, argv, cwd, options)
     options = table.copy(options or {})
-    options.timings = session.options.timings
+    if options.timings == nil then options.timings = session.options.timings end
     local result = command(program, argv, cwd, options)
     result.operation = label
     table.insert(case.steps, result)

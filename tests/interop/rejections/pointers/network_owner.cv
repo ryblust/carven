@@ -1,5 +1,0 @@
-import <carven/std/net/native.hpp>;
-
-fn copy(
-    connection: ::carven::standard::net::Connection
-) -> ::carven::standard::net::Connection => connection;

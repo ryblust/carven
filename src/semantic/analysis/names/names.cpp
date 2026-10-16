@@ -23,7 +23,7 @@ auto check_class_representation_access(
                 DiagnosticCode::AccessClassPrivate,
                 "class representation is accessible only inside its defining class"
             )
-                .primary(locate(draft.syntax_tree(source_module).view().source_id(), span))
+                .primary(locate(draft.module_source_id(source_module), span))
                 .build()
         ));
     }
@@ -69,7 +69,7 @@ auto lookup_cpp_name(
                     DiagnosticCode::CppIdentifier,
                     "external name cannot be represented as a C++ identifier"
                 )
-                    .primary(locate(draft.syntax_tree(source_module).view().source_id(), component))
+                    .primary(locate(draft.module_source_id(source_module), component))
                     .build()
             ));
         }
@@ -100,11 +100,11 @@ auto lookup_class_operation(
     const auto fail = [&](DiagnosticCode code, std::string message) noexcept {
         return std::unexpected(draft.diagnostics().error(
             DiagnosticBuilder(code, std::move(message))
-                .primary(locate(draft.syntax_tree(source_module).view().source_id(), span))
+                .primary(locate(draft.module_source_id(source_module), span))
                 .build()
         ));
     };
-    if (owner.index() >= catalog.struct_count()) {
+    if (draft.generic_nominal_instance_copy(owner)) {
         return fail(DiagnosticCode::TypeMethodCall, "class has no operation with this name");
     }
     const auto* symbol = catalog.symbol(catalog.struct_symbol(owner));
@@ -146,7 +146,7 @@ auto select_catalog_entity(
     SourceObservation* observations,
     DiagnosticCode unresolved
 ) noexcept -> AnalysisResult<CatalogEntity> {
-    const auto location = locate(draft.syntax_tree(module).view().source_id(), origin);
+    const auto location = locate(draft.module_source_id(module), origin);
     const auto candidates = catalog.lookup(module, name);
     if (candidates.empty()) {
         return std::unexpected(draft.diagnostics().error(

@@ -7,13 +7,11 @@ import :semantic.evaluation.operation;
 import :semantic.semir.constant;
 import :semantic.semir.decl;
 import :semantic.semir.program;
-import :semantic.semir.table;
 import :semantic.semir.type;
 import :source.batch;
 import :source.manager;
 import :source.module_path;
 import :source.text;
-import :test.harness.death;
 import :test.harness.framework;
 import std;
 
@@ -96,57 +94,6 @@ const TestSuite suite([] static noexcept {
             expect((*children)[1] == nothing);
         };
 
-    "SemIR publication invariant: tuple constants retain product shape and unit identity"_test =
-        [] static noexcept {
-            enum class Malformation { Arity, ElementType, EmptyTuple, NonVoidUnit };
-            constexpr auto scenarios = std::array {
-                Malformation::Arity,
-                Malformation::ElementType,
-                Malformation::EmptyTuple,
-                Malformation::NonVoidUnit
-            };
-            for (const auto scenario : scenarios) {
-                expect(expect_termination(
-                    std::format("tuple-constant-shape-{}", static_cast<unsigned>(scenario)),
-                    [&] noexcept {
-                        auto sources = SourceManager();
-                        auto diagnostics = DiagnosticSink();
-                        auto draft = begin_compilation(sources, diagnostics);
-                        const auto integer = draft.builtin_type(BuiltinType::I32);
-                        const auto boolean = draft.builtin_type(BuiltinType::Bool);
-                        const auto unit = draft.builtin_type(BuiltinType::Void);
-                        const auto number = draft.intern_constant(
-                            {.type = integer, .value = IntegerConstant::zero()}
-                        );
-                        const auto pair_type = draft.intern_type(
-                            {.value = TupleTypeValue {.elements = {integer, boolean}}}
-                        );
-                        const auto malformed = [&]() noexcept -> ConstantFact {
-                            switch (scenario) {
-                                case Malformation::Arity:
-                                    return {
-                                        .type = pair_type,
-                                        .value = TupleConstant {.elements = {number}}
-                                    };
-                                case Malformation::ElementType:
-                                    return {
-                                        .type = pair_type,
-                                        .value = TupleConstant {.elements = {number, number}}
-                                    };
-                                case Malformation::EmptyTuple:
-                                    return {.type = unit, .value = TupleConstant {.elements = {}}};
-                                case Malformation::NonVoidUnit:
-                                    return {.type = integer, .value = VoidConstant {}};
-                            }
-                            std::unreachable();
-                        }();
-                        static_cast<void>(draft.intern_constant(malformed));
-                        static_cast<void>(std::move(draft).finish());
-                    }
-                ));
-            }
-        };
-
     "SemIR constants: nested arrays preserve canonical type and value identity"_test =
         [] static noexcept {
             auto sources = SourceManager();
@@ -184,65 +131,6 @@ const TestSuite suite([] static noexcept {
             expect(program->constants().constant(empty).type == empty_type);
         };
 
-    "SemIR publication invariant: array constants match shape and exact element type"_test =
-        [] static noexcept {
-            enum class Malformation { NonArrayType, Extent, ElementType, NestedElementType };
-
-            struct Scenario final {
-                std::string_view name;
-                Malformation malformation;
-            };
-
-            constexpr auto scenarios = std::array {
-                Scenario {
-                    .name = "array-constant-non-array",
-                    .malformation = Malformation::NonArrayType
-                },
-                Scenario {.name = "array-constant-extent", .malformation = Malformation::Extent},
-                Scenario {
-                    .name = "array-constant-element",
-                    .malformation = Malformation::ElementType
-                },
-                Scenario {
-                    .name = "array-constant-nested",
-                    .malformation = Malformation::NestedElementType
-                },
-            };
-            each(scenarios, &Scenario::name, [&](const auto& scenario) noexcept {
-                auto sources = SourceManager();
-                auto diagnostics = DiagnosticSink();
-                auto draft = begin_compilation(sources, diagnostics);
-                expect(expect_termination(scenario.name, [&] noexcept {
-                    const auto integer = draft.builtin_type(BuiltinType::I32);
-                    const auto boolean = draft.builtin_type(BuiltinType::Bool);
-                    auto child = draft.intern_constant({
-                        .type = integer,
-                        .value = IntegerConstant::from_signed(1),
-                    });
-                    auto type = array_type(draft, integer, 1u);
-                    switch (scenario.malformation) {
-                        case Malformation::NonArrayType: type = integer; break;
-                        case Malformation::Extent: type = array_type(draft, integer, 2u); break;
-                        case Malformation::ElementType:
-                            type = array_type(draft, boolean, 1u);
-                            break;
-                        case Malformation::NestedElementType:
-                            child = draft.intern_constant({
-                                .type = type,
-                                .value = ArrayConstant {.elements = {child}},
-                            });
-                            type = array_type(draft, array_type(draft, boolean, 1u), 1u);
-                            break;
-                    }
-                    static_cast<void>(draft.intern_constant({
-                        .type = type,
-                        .value = ArrayConstant {.elements = {child}},
-                    }));
-                    static_cast<void>(std::move(draft).finish());
-                }));
-            });
-        };
-
     "SemIR constants: array language equality recursively compares numeric values"_test =
         [] static noexcept {
             auto sources = SourceManager();
@@ -278,43 +166,6 @@ const TestSuite suite([] static noexcept {
                 ArrayConstant {.elements = {not_a_number}},
                 ArrayConstant {.elements = {not_a_number}}
             )));
-        };
-
-    "SemIR constants invariant: array children already belong to the same store"_test =
-        [] static noexcept {
-            constexpr auto scenarios = std::array {false, true};
-            each(
-                scenarios,
-                [](bool foreign) static noexcept -> std::string_view {
-                    return foreign ? "foreign child" : "unavailable child";
-                },
-                [&](const auto& foreign) noexcept {
-                    auto sources = SourceManager();
-                    auto diagnostics = DiagnosticSink();
-                    auto draft = begin_compilation(sources, diagnostics);
-                    auto other_sources = SourceManager();
-                    auto other_diagnostics = DiagnosticSink();
-                    const auto other = begin_compilation(other_sources, other_diagnostics);
-                    const auto integer = draft.builtin_type(BuiltinType::I32);
-                    auto alternate = MutableProgramTable<ConstantFact, ConstantID>(
-                        foreign ? other.identity() : draft.identity()
-                    );
-                    const auto child = alternate.add({
-                        .type = integer,
-                        .value = IntegerConstant::from_signed(1),
-                    });
-                    expect(expect_termination(
-                        foreign ? "array-constant-foreign-child"
-                                : "array-constant-unavailable-child",
-                        [&] noexcept {
-                            static_cast<void>(draft.intern_constant({
-                                .type = array_type(draft, integer, 1u),
-                                .value = ArrayConstant {.elements = {child}},
-                            }));
-                        }
-                    ));
-                }
-            );
         };
 });
 

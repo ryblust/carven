@@ -9,22 +9,13 @@ import .tuples using run_tuples;
 import .waiting using run_waiting;
 
 export async fn run_behavior() {
-    println("containers");
     await run_containers();
-    println("tuples");
     await run_tuples();
-    println("tail");
     await run_tail();
-    println("constant");
     await run_constant();
-    println("contracts");
     await run_contracts();
-    println("owners");
     await run_owners();
-    println("composition");
     await run_composition();
-    println("waiting");
     await run_waiting();
-    println("scheduling");
     await run_scheduling();
 }

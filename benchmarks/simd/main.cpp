@@ -1,6 +1,8 @@
 #include "scan.hpp"
 #if CARVEN_SIMD_BENCH_CARVEN
-#include <carven/api/workload.hpp>
+#define CARVEN_SIMD_BENCH_HEADER_IMPL(workload) <carven/api/benchmarks/simd/workload.hpp>
+#define CARVEN_SIMD_BENCH_HEADER(workload) CARVEN_SIMD_BENCH_HEADER_IMPL(workload)
+#include CARVEN_SIMD_BENCH_HEADER(CARVEN_SIMD_BENCH_WORKLOAD)
 #endif
 #include <array>
 #include <chrono>
@@ -105,7 +107,7 @@ auto main() -> int {
     }
 #endif
 #if CARVEN_SIMD_BENCH_CARVEN
-    constexpr auto kernel = &carven::api::workload::scan_kernel;
+    constexpr auto kernel = &carven::api::benchmarks::simd::CARVEN_SIMD_BENCH_WORKLOAD::scan_kernel;
 #else
     constexpr auto kernel = &simd_benchmark::scan;
 #endif

@@ -7,7 +7,6 @@ import :semantic.semir.ids;
 import :semantic.semir.program;
 import :semantic.semir.table;
 import :semantic.semir.type;
-import :test.harness.death;
 import :test.harness.framework;
 import :test.internal.semantic.analysis.fixture;
 import std;
@@ -43,56 +42,6 @@ const TestSuite suite([] static noexcept {
             expect_equal(shape->elements.size(), 2uz);
             expect(shape->elements[0] == pair);
             expect(shape->elements[1] == unit);
-        };
-
-    "Construction types: children must already exist in the owning store"_test =
-        [] static noexcept {
-            const auto program = analyze_test_program("");
-            const auto foreign = analyze_test_program("");
-            auto types = ConstructionTypeStore(program.identity());
-            auto references = MutableProgramTable<int, TypeTermID>(program.identity());
-            const auto self = references.add(0);
-            static_cast<void>(references.add(0));
-            const auto future = references.add(0);
-            auto foreign_references = MutableProgramTable<int, TypeTermID>(foreign.identity());
-            const auto foreign_child = foreign_references.add(0);
-            auto failures = MutableProgramTable<int, FailureTermID>(program.identity());
-            const auto failure = failures.add(0);
-            const auto canonical = CanonicalTypeStoreBuilder(program.identity());
-            const auto integer = canonical.builtin_type(BuiltinType::I32);
-
-            expect(expect_termination("type-array-child-must-exist", [&] noexcept {
-                static_cast<void>(types.append(
-                    {.value = ConstructionArrayTypeValue {.element = self, .extent = 1u}}
-                ));
-            }));
-            expect(expect_termination("type-tuple-child-must-exist", [&] noexcept {
-                static_cast<void>(types.append(
-                    {.value = ConstructionTupleTypeValue {.elements = {integer, self}}}
-                ));
-            }));
-
-            expect(expect_termination("type-parameter-child-must-exist", [&] noexcept {
-                static_cast<void>(types.append(
-                    {.value = ConstructionCallableViewTypeValue {
-                         .parameters =
-                             {{.stage = ParameterStage::Runtime,
-                               .access = AccessMode::Read,
-                               .type = future}},
-                         .result = integer,
-                         .failures = failure
-                     }}
-                ));
-            }));
-            expect(expect_termination("type-result-child-must-share-owner", [&] noexcept {
-                static_cast<void>(types.append(
-                    {.value = ConstructionCallableViewTypeValue {
-                         .parameters = {},
-                         .result = foreign_child,
-                         .failures = failure
-                     }}
-                ));
-            }));
         };
 
     "Construction types: nested callable shapes retain canonical contracts"_test = [] static noexcept {

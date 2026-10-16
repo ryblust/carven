@@ -97,3 +97,7 @@ GeneratedArtifactSet::GeneratedArtifactSet(std::vector<GeneratedArtifact> values
 auto GeneratedArtifactSet::entries() const noexcept -> std::span<const GeneratedArtifact> {
     return artifacts;
 }
+
+auto GeneratedArtifactSet::take_entries() && noexcept -> std::vector<GeneratedArtifact> {
+    return std::move(artifacts);
+}

@@ -2,7 +2,7 @@
 
 - **Status:** Exploration
 - **Scope:** Closed user-defined semantic hooks for existing operator tokens
-- **Depends on:** [Generic extensions](generic-extensions.md), including canonical evidence and associated-type normalization
+- **Depends on:** Canonical static capability evidence, coherence, and associated-type normalization
 
 ## Summary
 
@@ -13,6 +13,20 @@ token set, signatures, equality, and compound-assignment rules remain unaccepted
 `OPEN-02` first evaluates identity and visibility for the leading candidate.
 `OPEN-01` then accepts, revises, or rejects that carrier. Token and signature
 choices follow in `OPEN-03` through `OPEN-06`. Additional families are deferred.
+
+### Goals and non-goals
+
+The initial goal is checked nominal behavior for selected existing tokens,
+including heterogeneous right operands and results where required. Each token
+must resolve to one semantic operation before lowering, with ordinary evaluation,
+access, failure, and diagnostics.
+
+The scope excludes new tokens or precedence, ADL, overload sets, SFINAE,
+implicit-conversion ranking, specialization, priority, local impl activation,
+blanket impls, and caller-selected witnesses. It also excludes hooks for
+short-circuiting, calls, indexing, member access, plain assignment, and access
+markers. No general attribute namespace or new `@` meaning is proposed.
+Owning string concatenation requires explicit allocation intent.
 
 ## Context
 
@@ -25,9 +39,8 @@ Meter  * Meter  -> SquareMeter
 Matrix * Matrix -> Matrix
 ```
 
-Fieldwise derivation covers only some of these cases. Ordinary source operations
-would keep algorithmic behavior, evaluation, failure, and access within Carven
-analysis.
+Use ordinary source operations to express algorithmic behavior with checked
+evaluation, failure, and access contracts.
 
 The design must preserve these existing or accepted constraints:
 
@@ -48,24 +61,9 @@ The design must preserve these existing or accepted constraints:
 
 C++ export eligibility and concurrency guarantees require separate contracts.
 
-## Goals and non-goals
-
-The initial goal is checked nominal behavior for selected existing tokens,
-including heterogeneous right operands and results where required. Each token
-must resolve to one semantic operation before lowering, with ordinary evaluation,
-access, failure, and diagnostics.
-
-The scope excludes new tokens or precedence, ADL, overload sets, SFINAE,
-implicit-conversion ranking, specialization, priority, local impl activation,
-blanket impls, and caller-selected witnesses. It also excludes hooks for
-short-circuiting, calls, indexing, member access, plain assignment, and access
-markers. No general attribute namespace or new `@` meaning is proposed.
-Owning string concatenation requires explicit allocation intent.
-
 ## Design
 
-The following capability design is a candidate. Its identity model must be
-evaluated before selecting the carrier.
+Evaluate the following candidate's identity model before selecting the carrier.
 
 ### Candidate capability carrier
 
@@ -88,7 +86,7 @@ impl Mul for Meter {
 }
 ```
 
-The examples show required behavior, not accepted spelling. `Rhs` may be an
+The examples use provisional spelling. `Rhs` may be an
 associated type, capability argument, or another bounded static input. Canonical
 evidence must uniquely determine `Output`.
 
@@ -100,8 +98,8 @@ parsed operator
   -> one resolved named capability operation in SemIRProgram
 ```
 
-This path has no member/non-member fallback, ADL, implicit-conversion candidate
-set, specialization, priority, or declaration-order tie-break.
+Resolve the obligation through canonical evidence. Diagnose missing or conflicting
+evidence at the source operation.
 
 ### Candidate operator surface
 
@@ -155,16 +153,20 @@ C++ operators. Operand representation does not initiate further semantic lookup.
 ### OPEN-02 — What identity and visibility do compiler-known capabilities use?
 
 - **Status:** Active
-- **Depends on:** Generics `GEN-05`, `GEN-06`, `GEN-11`, `GEN-12`
+- **Depends on:** Named capabilities, canonical compiler/source evidence,
+  compilation-wide coherence, and module-domain locality for nominal impl heads
 - **Question:** Make desugaring and source `impl Add` name the same capability
   and coherence domain. This evaluates the candidate without accepting it.
 - **Constraints:** One source identity, deterministic visibility, and evidence
   domain; a runtime-header path cannot supply that identity.
-- **Options:** Language-builtin identities; official declarations at reserved
-  `crafts.carven.std...` paths referenced through `std::`; or compiler-provided
-  declarations visible through ordinary imports or a prelude. Standard-module
-  imports and local `using` aliases already exist; they can expose a declaration
-  but do not themselves establish compiler-known capability identity or evidence.
+- **Current boundary:** Standard entries combine source and compiler-provided
+  declarations under one canonical `crafts.carven.std...` module identity.
+  Imports and local aliases resolve through that identity.
+- **Options:** A compiler-provided capability in a standard module, or a
+  compiler-recognized source capability in that module. Define how desugaring
+  selects it, how source impls name it, and which producer supplies evidence.
+  Consider a separate language identity only with a concrete lookup requirement
+  that the standard-module model cannot satisfy.
 - **Closure condition:** Define consistent lookup, desugaring, coherence, and
   missing-name diagnostics for the candidate. `OPEN-01` selects the carrier.
 
@@ -269,9 +271,3 @@ Decision experiments and the delivered slice cover:
 - left-to-right, exactly-once operands with ordinary failure and access behavior;
 - C++20/C++23 compilation, linking, and execution, without fixing private generated
   names or capability representation.
-
-## References
-
-- [Generic extensions](generic-extensions.md): unimplemented evidence and normalization contracts.
-- [Aggregates](../docs/language/aggregates.md): current equality and value rules.
-- [Modules](../docs/language/modules.md): standard imports, visibility, and local aliases.

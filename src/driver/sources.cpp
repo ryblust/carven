@@ -1,5 +1,6 @@
 module carven:driver.sources.impl;
 
+import :backend.generation.request;
 import :driver.input_path;
 import :driver.process;
 import :driver.sources;
@@ -30,22 +31,36 @@ auto find_crafts_directory(std::string_view executable) noexcept -> std::filesys
     return {};
 }
 
-// Application inputs remain explicit. Only the two fixed Crafts roots are
-// collected; imports, manifests, and parent directories are not searched.
-auto collect_crafts_sources(
+enum class CollectedSourceKind {
+    Standard,
+    Project,
+    Explicit,
+};
+
+// Installed sources supply references; project discovery and explicit inputs
+// supply implementations. Mapped input batches own project source selection.
+auto collect_sources(
     std::span<const std::string_view> inputs,
-    const std::filesystem::path& crafts,
-    bool explicit_inputs,
+    const std::optional<std::filesystem::path>& crafts,
     std::span<const SourceInput> mapped_inputs
 ) noexcept -> std::expected<CommandSources, std::string> {
-    auto result = CommandSources {.crafts = crafts, .carven = {}, .native = {}};
+    auto result = CommandSources {
+        .crafts = crafts.value_or(std::filesystem::path()),
+        .carven = {},
+        .native = {},
+        .standard_modules = {},
+        .owned_modules = {},
+    };
     auto seen = std::map<std::filesystem::path, std::optional<CanonicalModulePath>>();
     const auto add = [&](const std::filesystem::path& path,
                          std::string_view logical_path,
+                         CollectedSourceKind kind,
                          const CanonicalModulePath* mapped =
                              nullptr) noexcept -> std::expected<void, std::string> {
         auto error = std::error_code();
-        const auto identity = std::filesystem::canonical(path, error);
+        const auto physical = std::filesystem::absolute(path, error).lexically_normal();
+        const auto identity =
+            error ? std::filesystem::path() : std::filesystem::canonical(physical, error);
         if (error) {
             return std::unexpected(
                 std::format(
@@ -61,6 +76,11 @@ auto collect_crafts_sources(
                     std::format("conflicting module identities for source '{}'", logical_path)
                 );
             }
+            if (kind == CollectedSourceKind::Explicit
+                && previous->second
+                && !std::ranges::contains(result.owned_modules, *previous->second)) {
+                result.owned_modules.push_back(*previous->second);
+            }
             return {};
         }
         if (path.extension() == ".cv") {
@@ -70,18 +90,29 @@ auto collect_crafts_sources(
                 return std::unexpected(module_path.error());
             }
             seen.emplace(identity, *module_path);
+            if (kind == CollectedSourceKind::Standard) {
+                result.standard_modules.push_back(*module_path);
+            } else {
+                result.owned_modules.push_back(*module_path);
+            }
             result.carven.push_back({
-                .path = path_to_generic_utf8(path),
+                .path = path_to_generic_utf8(physical),
                 .module_path = std::move(*module_path),
             });
         } else {
             seen.emplace(identity, std::nullopt);
-            result.native.push_back(path_to_generic_utf8(path));
+            result.native.push_back(path_to_generic_utf8(physical));
         }
         return {};
     };
-    const auto roots = std::array {crafts / "carven", std::filesystem::path("crafts")};
-    for (auto index = 0uz; !explicit_inputs && index < roots.size(); ++index) {
+    const auto roots = std::array {
+        crafts ? *crafts / "carven" : std::filesystem::path(),
+        std::filesystem::path("crafts"),
+    };
+    for (auto index = 0uz; index < roots.size(); ++index) {
+        if ((index == 0uz && !crafts) || (index == 1uz && !mapped_inputs.empty())) {
+            continue;
+        }
         const auto& root = roots[index];
         auto error = std::error_code();
         const auto exists = std::filesystem::exists(root, error);
@@ -115,13 +146,19 @@ auto collect_crafts_sources(
             const auto logical = (index == 0 ? std::filesystem::path("crafts/carven")
                                              : std::filesystem::path("crafts"))
                 / path.lexically_relative(root);
-            if (const auto added = add(path, path_to_generic_utf8(logical)); !added) {
+            const auto kind =
+                index == 0uz ? CollectedSourceKind::Standard : CollectedSourceKind::Project;
+            if (const auto added = add(path, path_to_generic_utf8(logical), kind); !added) {
                 return std::unexpected(added.error());
             }
         }
     }
     for (const auto& input : mapped_inputs) {
-        if (const auto added = add(path_from_utf8(input.path), input.path, &input.module_path);
+        if (const auto added =
+                add(path_from_utf8(input.path),
+                    input.path,
+                    CollectedSourceKind::Explicit,
+                    &input.module_path);
             !added) {
             return std::unexpected(added.error());
         }
@@ -133,17 +170,14 @@ auto collect_crafts_sources(
         if (path.extension() != ".cv") {
             return std::unexpected(std::format("input '{}' does not have a .cv extension", input));
         }
-        if (!path.is_absolute()) {
-            if (const auto module_path = derive_input_module_path(input); !module_path) {
-                return std::unexpected(module_path.error());
-            }
-        }
-        if (const auto added = add(path, input); !added) {
+        if (const auto added = add(path, input, CollectedSourceKind::Explicit); !added) {
             return std::unexpected(added.error());
         }
     }
     std::ranges::sort(result.carven, {}, &SourceInput::path);
     std::ranges::sort(result.native);
+    std::ranges::sort(result.standard_modules);
+    std::ranges::sort(result.owned_modules);
     return result;
 }
 
@@ -170,19 +204,41 @@ auto collect_command_sources(
     std::string_view executable,
     std::span<const std::string_view> inputs,
     TimingOutput timings,
-    bool explicit_inputs,
     std::span<const SourceInput> mapped_inputs
 ) noexcept -> std::expected<CommandSources, std::string> {
-    if (!mapped_inputs.empty() && !explicit_inputs) {
-        return std::unexpected("source mappings require --explicit-inputs");
-    }
     const auto collection = TimingScope(timings, TimingStage::SourceCollection);
-    const auto crafts =
-        explicit_inputs ? std::filesystem::path() : find_crafts_directory(executable);
-    if (!explicit_inputs && crafts.empty()) {
+    const auto crafts = find_crafts_directory(executable);
+    if (crafts.empty()) {
         return std::unexpected(
             "cannot locate Crafts in the Carven installation or source checkout"
         );
     }
-    return collect_crafts_sources(inputs, crafts, explicit_inputs, mapped_inputs);
+    return collect_sources(inputs, crafts, mapped_inputs);
+}
+
+auto collect_project_sources(
+    std::span<const std::string_view> inputs,
+    TimingOutput timings,
+    std::span<const SourceInput> mapped_inputs
+) noexcept -> std::expected<CommandSources, std::string> {
+    const auto collection = TimingScope(timings, TimingStage::SourceCollection);
+    return collect_sources(inputs, std::nullopt, mapped_inputs);
+}
+
+auto standard_source_library(const CommandSources& sources, bool own_all_standard) noexcept
+    -> std::optional<SourceLibrary> {
+    if (sources.standard_modules.empty()) {
+        return std::nullopt;
+    }
+    auto owned = std::vector<CanonicalModulePath>();
+    for (const auto& module : sources.standard_modules) {
+        if (own_all_standard || std::ranges::contains(sources.owned_modules, module)) {
+            owned.push_back(module);
+        }
+    }
+    return SourceLibrary {
+        .modules = sources.standard_modules,
+        .linkage_domain = *LinkageDomain::explicit_value("carven:standard"),
+        .owned_modules = std::move(owned),
+    };
 }

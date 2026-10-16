@@ -2,6 +2,8 @@ module carven:compiler.analysis;
 
 import :diagnostics.diagnostic;
 import :frontend.program.parse;
+import :semantic.analysis.program;
+import :semantic.analysis.program.checked;
 import :semantic.analysis.source;
 import :semantic.evaluation.execution;
 import :semantic.evaluation.output;
@@ -44,12 +46,31 @@ public:
     auto source_occurrences() const noexcept -> std::span<const SourceOccurrence>;
     // The extracted published program independently retains its provenance.
     auto take_program() && noexcept -> std::optional<SemIRProgram>;
+    auto take_checked_unit() && noexcept -> std::optional<CheckedUnit>;
 
 private:
+    friend auto analyze_checked_compilation(
+        SourceManager sources,
+        SourceBatch batch,
+        std::optional<CheckedDefinitions> seed,
+        bool retain_definitions,
+        CompilationAnalysisOptions options,
+        std::span<const ParsedSourceInput> parsed
+    ) noexcept -> CompilationAnalysis;
+
+    static auto analyze(
+        SourceManager sources,
+        SourceBatch batch,
+        std::optional<CheckedDefinitions> seed,
+        CompilationAnalysisOptions options,
+        std::span<const ParsedSourceInput> parsed,
+        bool retain_definitions
+    ) noexcept -> CompilationAnalysis;
+
     explicit CompilationAnalysis(SourceManager sources) noexcept;
 
     SourceManager source_manager;
-    std::optional<SemIRProgram> semantic_program;
+    std::optional<CheckedUnit> semantic;
     Diagnostics findings;
     std::vector<CompilationOutput> execution_output;
     std::vector<SourceOccurrence> occurrences;
@@ -65,6 +86,20 @@ private:
 auto analyze_compilation(
     SourceManager sources,
     SourceBatch batch,
+    CompilationAnalysisOptions options =
+        {.output = {},
+         .timings = {},
+         .collect_source_observations = false,
+         .capture_output = false,
+         .host_effects = HostEffects::Deny},
+    std::span<const ParsedSourceInput> parsed = {}
+) noexcept -> CompilationAnalysis;
+
+auto analyze_checked_compilation(
+    SourceManager sources,
+    SourceBatch batch,
+    std::optional<CheckedDefinitions> seed = std::nullopt,
+    bool retain_definitions = true,
     CompilationAnalysisOptions options =
         {.output = {},
          .timings = {},

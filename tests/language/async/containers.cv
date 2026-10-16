@@ -46,5 +46,5 @@ async fn run_containers() {
         JSONError(_) => false,
         ValueError(_) => false,
     };
-    println(result);
+    assert(result);
 }

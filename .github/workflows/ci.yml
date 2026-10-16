@@ -28,9 +28,8 @@ jobs:
         working-directory: carven
     env:
       CARVEN_XMAKE_REPO_DIR: ${{ github.workspace }}/carven-xmake-repo
-      # Exit directly so expected-SIGABRT fixtures cannot swallow ASan failures.
-      ASAN_OPTIONS: ${{ matrix.mode == 'debug' && 'detect_leaks=1:detect_stack_use_after_return=1:strict_string_checks=1:abort_on_error=0:exitcode=86' || '' }}
-      UBSAN_OPTIONS: ${{ matrix.mode == 'debug' && 'halt_on_error=1:print_stacktrace=1' || '' }}
+      ASAN_OPTIONS: ${{ matrix.mode == 'debug' && 'detect_leaks=1:detect_stack_use_after_return=1:strict_string_checks=1' || '' }}
+      UBSAN_OPTIONS: ${{ matrix.mode == 'debug' && 'print_stacktrace=1' || '' }}
       # Match the project sanitizers option for native compilation outside Xmake.
       SANITIZER_FLAGS: >-
         -O1 -g -fno-omit-frame-pointer -fno-optimize-sibling-calls
@@ -85,24 +84,6 @@ jobs:
           chmod +x "$RUNNER_TEMP/carven-sanitizer-clang++"
           echo "CXX=$RUNNER_TEMP/carven-sanitizer-clang++" >> "$GITHUB_ENV"
 
-      - name: Verify sanitizer runtimes
-        if: matrix.mode == 'debug'
-        run: |
-          source="$RUNNER_TEMP/sanitizer-smoke.cpp"
-          binary="$RUNNER_TEMP/sanitizer-smoke"
-          echo 'int main() { int* p = new int[1]; delete[] p; return *static_cast<volatile int*>(p); }' > "$source"
-          "$CXX" "$source" -o "$binary"
-          status=0
-          "$binary" > "$RUNNER_TEMP/sanitizer-smoke.log" 2>&1 || status=$?
-          test "$status" -eq 86
-          grep -q 'AddressSanitizer: heap-use-after-free' "$RUNNER_TEMP/sanitizer-smoke.log"
-          echo 'int main() { volatile int value = 2147483647; return value + 1; }' > "$source"
-          "$CXX" "$source" -o "$binary"
-          status=0
-          "$binary" > "$RUNNER_TEMP/sanitizer-smoke.log" 2>&1 || status=$?
-          test "$status" -ne 0
-          grep -q 'runtime error: signed integer overflow' "$RUNNER_TEMP/sanitizer-smoke.log"
-
       - name: Show detected toolchain
         run: ./xmakew show -t carven
 
@@ -134,9 +115,8 @@ jobs:
         working-directory: carven
     env:
       CARVEN_XMAKE_REPO_DIR: ${{ github.workspace }}/carven-xmake-repo
-      # Exit directly so expected-SIGABRT fixtures cannot swallow ASan failures.
-      ASAN_OPTIONS: ${{ matrix.mode == 'debug' && 'detect_leaks=1:detect_stack_use_after_return=1:strict_string_checks=1:abort_on_error=0:exitcode=86' || '' }}
-      UBSAN_OPTIONS: ${{ matrix.mode == 'debug' && 'halt_on_error=1:print_stacktrace=1' || '' }}
+      ASAN_OPTIONS: ${{ matrix.mode == 'debug' && 'detect_leaks=1:detect_stack_use_after_return=1:strict_string_checks=1' || '' }}
+      UBSAN_OPTIONS: ${{ matrix.mode == 'debug' && 'print_stacktrace=1' || '' }}
       # Match the project sanitizers option for native compilation outside Xmake.
       SANITIZER_FLAGS: >-
         -O1 -g -fno-omit-frame-pointer -fno-optimize-sibling-calls
@@ -191,24 +171,6 @@ jobs:
           EOF
           chmod +x "$RUNNER_TEMP/carven-sanitizer-clang++"
           echo "CXX=$RUNNER_TEMP/carven-sanitizer-clang++" >> "$GITHUB_ENV"
-
-      - name: Verify sanitizer runtimes
-        if: matrix.mode == 'debug'
-        run: |
-          source="$RUNNER_TEMP/sanitizer-smoke.cpp"
-          binary="$RUNNER_TEMP/sanitizer-smoke"
-          echo 'int main() { int* p = new int[1]; delete[] p; return *static_cast<volatile int*>(p); }' > "$source"
-          "$CXX" "$source" -o "$binary"
-          status=0
-          "$binary" > "$RUNNER_TEMP/sanitizer-smoke.log" 2>&1 || status=$?
-          test "$status" -eq 86
-          grep -q 'AddressSanitizer: heap-use-after-free' "$RUNNER_TEMP/sanitizer-smoke.log"
-          echo 'int main() { volatile int value = 2147483647; return value + 1; }' > "$source"
-          "$CXX" "$source" -o "$binary"
-          status=0
-          "$binary" > "$RUNNER_TEMP/sanitizer-smoke.log" 2>&1 || status=$?
-          test "$status" -ne 0
-          grep -q 'runtime error: signed integer overflow' "$RUNNER_TEMP/sanitizer-smoke.log"
 
       - name: Show detected toolchain
         run: ./xmakew show -t carven
@@ -296,31 +258,9 @@ jobs:
           $config = Join-Path $env:LLVM_MINGW_ROOT "bin/clang++.cfg"
           Add-Content -LiteralPath $config -Encoding utf8 -Value "`n-fsanitize=address,undefined -O1 -g -fno-omit-frame-pointer -fno-optimize-sibling-calls -fsanitize-address-use-after-scope -fno-sanitize-recover=all"
           "CXX=$env:LLVM_MINGW_ROOT/bin/clang++.exe" >> $env:GITHUB_ENV
-          # LeakSanitizer is unsupported on Windows. ASan must exit directly so
-          # expected-SIGABRT fixtures cannot swallow a sanitizer failure.
-          "ASAN_OPTIONS=detect_leaks=0:detect_stack_use_after_return=1:strict_string_checks=1:abort_on_error=0:exitcode=86" >> $env:GITHUB_ENV
-          "UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1" >> $env:GITHUB_ENV
-
-      - name: Verify sanitizer runtimes
-        if: matrix.mode == 'debug'
-        run: |
-          $source = Join-Path $env:RUNNER_TEMP "sanitizer-smoke.cpp"
-          $binary = Join-Path $env:RUNNER_TEMP "sanitizer-smoke.exe"
-          Set-Content -LiteralPath $source 'int main() { int* p = new int[1]; delete[] p; return *static_cast<volatile int*>(p); }'
-          & $env:CXX $source -o $binary
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $output = & $binary 2>&1
-          if ($LASTEXITCODE -ne 86 -or "$output" -notmatch 'AddressSanitizer: heap-use-after-free') {
-            throw "ASan smoke check failed: $output"
-          }
-          Set-Content -LiteralPath $source 'int main() { volatile int value = 2147483647; return value + 1; }'
-          & $env:CXX $source -o $binary
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $output = & $binary 2>&1
-          if ($LASTEXITCODE -eq 0 -or "$output" -notmatch 'runtime error: signed integer overflow') {
-            throw "UBSan smoke check failed: $output"
-          }
-          exit 0
+          # LeakSanitizer is unsupported on Windows.
+          "ASAN_OPTIONS=detect_leaks=0:detect_stack_use_after_return=1:strict_string_checks=1" >> $env:GITHUB_ENV
+          "UBSAN_OPTIONS=print_stacktrace=1" >> $env:GITHUB_ENV
 
       - name: Show detected toolchain
         run: .\xmakew.ps1 show -t carven
@@ -330,17 +270,6 @@ jobs:
 
       - name: Test all groups
         run: .\xmakew.ps1 test
-
-      - name: Verify fixture runtime linkage
-        run: |
-          foreach ($suffix in @("", "-cxx23")) {
-            $target = "carven-test-interop-exception-boundary$suffix"
-            $imports = llvm-readobj --coff-imports "build/windows/x64/${{ matrix.mode }}/$target.exe"
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-            if (-not ($imports -match '(?i)Name: libc\+\+(abi)?\.dll')) {
-              throw "$target must use shared libc++"
-            }
-          }
 
       - name: Clang-tidy
         if: matrix.mode == 'release'

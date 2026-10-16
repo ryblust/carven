@@ -21,7 +21,7 @@ mechanisms appear only where they explain that remaining scope.
 | [Operator capabilities](operator-capabilities.md) | Mapping existing tokens to checked operations; consumes generic evidence |
 | [Dynamic values](dynamic-values.md) | Erased holding forms, nominal conformance, and dispatch |
 | [Dynamic ownership](dynamic-ownership.md) | Unique/shared and native resource owners, allocator policy, construction in owned storage, and move-only Vector capabilities |
-| [Semantic execution](semantic-execution.md) | Address observations, retained reference graphs, and deferred host scripting/build-stage execution |
+| [Semantic execution](semantic-execution.md) | Interpreted closures, additional address observations, retained reference graphs, and host scripting/build-stage execution |
 | [Compiler optimization](compiler-optimization.md) | Compiler and workspace-reuse costs, C++ realization, and formatting/output experiments preserving source contracts |
 | [Frontend analysis](frontend-analysis.md) | Recovering syntax, partial semantics, diagnostic ownership, query coordination, publication, and analysis fault isolation |
 | [Data representation](data-representation.md) | Record, tuple, and enum representations, native-layout boundaries, compact handles, and collection layouts |
@@ -54,20 +54,33 @@ current contract is covered by permanent documentation.
 
 ## Maintenance
 
-- Describe behavior, rationale, and constraints in concise, factual, neutral prose.
-  Distinguish current behavior, accepted design, candidates, and provisional syntax.
-  State limits directly; omit rhetorical defenses and repeated scope disclaimers.
+- Use these second-level headings in this order: `Summary`, `Context`, `Design`,
+  `Decision record`, `Open decisions`, `Deferred work`, `Implementation`,
+  `Validation`, `References`. Always include `Summary` first, stating the problem,
+  intended outcome, and unresolved work from existing content. Include `Context`
+  only for necessary background beyond the summary; omit other sections without
+  substantive content. Keep the remaining names and order. Put specific topics at
+  level three or below; use sentence case for titles and headings. This structure
+  applies to proposals; this index retains its navigation and maintenance sections.
+- Describe current behavior factually. State design rules and implementation steps
+  directly; label candidates and provisional syntax. Keep explanations concise,
+  neutral, and specific to the decision or mechanism they explain.
+  Replace rhetorical defenses with the applicable rule, consequence, or evidence.
 - Preserve design reasoning, methods, practical guidance, and validation criteria
   when condensing text. Keep accepted decisions and identifiers stable; a changed
   decision explicitly supersedes its predecessor.
 - Keep each rule in its design section. Order open questions by dependency and
   give independently deferred directions separate identifiers and reactivation
   conditions. Omit empty sections, redundant fields, and personal task queues.
-- State each necessary dependency at the scope that consumes it and explain the
-  contract it supplies. Keep unrelated prerequisites, follow-up commitments, and
-  historical compatibility obligations out of the selected scope.
-- Make the design understandable on its own. Collect related designs and research
-  sources under `References` at the end. Keep inline citations only where essential.
+- State each necessary dependency at the scope that consumes it and identify the
+  contract it supplies. Scope compatibility requirements to a named source or
+  native interface. Separate selected delivery requirements from candidate and
+  deferred directions. Retain their decision criteria; omit unrelated migration
+  obligations and delivery promises.
+- Make each proposal self-contained. State the required dependency contract
+  locally. Keep document navigation in this index; use cross-document references
+  only when essential detail cannot be stated concisely in place. Collect external
+  research sources under `References` at the end.
 - Retain useful reasoning, counterexamples, and source references. Omit completed
   task lists, experiment logs, and superseded implementation detail.
 - Give distinct semantic domains separate owners. Related implementation
@@ -80,7 +93,3 @@ current contract is covered by permanent documentation.
   feature inventories without a concrete problem or decision.
   Update inbound links when moving or removing material.
   Keep the remaining document self-contained.
-
-## References
-
-- [Current contracts](../docs/README.md)

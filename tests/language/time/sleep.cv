@@ -75,6 +75,4 @@ async fn run_sleep() throw RangeError {
     let (_, direct_due_cancelled) = await wait_ready(direct_due);
     assert(direct_due_cancelled);
     await close(direct_due);
-
-    println(true);
 }

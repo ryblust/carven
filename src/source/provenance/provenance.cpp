@@ -614,3 +614,28 @@ auto CompilationProvenanceStorage::source_origin(ProgramOriginID id) const noexc
         id = std::get<ProgramExpansionOrigin>(origin).parent_origin_id;
     }
 }
+
+auto CompilationProvenance::rebind_sources(SourceManager& sources) noexcept -> void {
+    for (auto& source : storage.sources) {
+        source.source_manager_id =
+            sources.append_shared(source.input->sources(), source.input->source().source_id);
+    }
+}
+
+CompilationProvenanceBuilder::CompilationProvenanceBuilder(
+    CompilationProvenance provenance
+) noexcept
+    : storage(std::move(provenance.storage)) {
+    for (auto index = 0uz; index < storage.sources.size(); ++index) {
+        program_source_ids_by_source_id.emplace(
+            storage.sources[index].manager_source_id(),
+            storage.source_id_at(index)
+        );
+    }
+    for (auto index = 0uz; index < storage.modules.size(); ++index) {
+        module_ids_by_path.emplace(storage.modules[index].path, storage.module_id_at(index));
+    }
+    for (auto index = 0uz; index < storage.spellings.size(); ++index) {
+        spelling_ids_by_value.emplace(storage.spellings[index], storage.spelling_id_at(index));
+    }
+}

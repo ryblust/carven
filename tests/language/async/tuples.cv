@@ -27,5 +27,4 @@ async fn run_tuples() {
     assert(forwarded.0);
     let _ = forwarded.2;
     assert(await (&&forwarded).1 == 42);
-    println(number);
 }

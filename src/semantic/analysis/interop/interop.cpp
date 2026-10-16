@@ -27,7 +27,7 @@ auto is_strict_prefix(
 }
 
 auto source_id(const ProgramDraft& draft, ProgramModuleID module_id) noexcept -> SourceID {
-    return draft.syntax_tree(module_id).view().source_id();
+    return draft.module_source_id(module_id);
 }
 
 } // namespace

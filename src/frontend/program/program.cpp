@@ -6,7 +6,7 @@ import std;
 
 SyntaxProgramParts::SyntaxProgramParts(
     CompilationProvenance provenance_value,
-    std::vector<SyntaxTree> syntax_trees,
+    std::vector<std::optional<SyntaxTree>> syntax_trees,
     ResolvedModuleImportGraph resolved_imports
 ) noexcept
     : provenance(std::move(provenance_value)),
@@ -16,14 +16,22 @@ SyntaxProgramParts::SyntaxProgramParts(
 SyntaxProgram::SyntaxProgram(SyntaxProgramParts storage_value) noexcept
     : storage(std::move(storage_value)) {}
 
+auto SyntaxProgram::has_syntax(ProgramModuleID id) const noexcept -> bool {
+    return storage.provenance.view().contains(id)
+        && storage.syntax_by_module[id.index()].has_value();
+}
+
 auto SyntaxProgram::syntax_tree(ProgramModuleID id) const noexcept -> const SyntaxTree& {
     if (!storage.provenance.view().contains(id)) {
         invariant_violation("syntax lookup used a foreign or invalid module identity");
     }
-    return storage.syntax_by_module[id.index()];
+    if (!has_syntax(id)) {
+        invariant_violation("checked module has no source syntax");
+    }
+    return *storage.syntax_by_module[id.index()];
 }
 
-auto SyntaxProgram::syntax_trees() const noexcept -> std::span<const SyntaxTree> {
+auto SyntaxProgram::syntax_trees() const noexcept -> std::span<const std::optional<SyntaxTree>> {
     static_cast<void>(storage.provenance.view());
     return storage.syntax_by_module;
 }

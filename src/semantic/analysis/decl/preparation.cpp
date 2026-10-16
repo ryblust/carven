@@ -292,7 +292,7 @@ auto DeclResolver::prepare_type_dependencies(
     co_return (co_await canonical.value.visit(
         Overloaded {
             [&](const StructTypeValue& value) noexcept -> AnalysisTask<void> {
-                if (value.structure.index() >= catalog.struct_count()) {
+                if (draft.generic_nominal_instance_copy(value.structure)) {
                     const auto instance =
                         draft.construction_struct_declaration_copy(value.structure);
                     for (const auto& field : instance.fields) {
@@ -330,7 +330,7 @@ auto DeclResolver::prepare_type_dependencies(
                 co_return {};
             },
             [&](const EnumTypeValue& value) noexcept -> AnalysisTask<void> {
-                if (value.enumeration.index() >= catalog.enum_count()) {
+                if (draft.generic_nominal_instance_copy(value.enumeration)) {
                     const auto instance = draft.enum_declaration_copy(value.enumeration);
                     for (const auto case_id : instance.cases) {
                         const auto declaration =

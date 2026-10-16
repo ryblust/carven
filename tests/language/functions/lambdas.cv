@@ -109,7 +109,7 @@ test "Captures: immutable closure owners preserve write access to referents" {
     check(source == 5);
 }
 
-test "Closures: assignment rebinds Write targets with default C++ assignment" {
+test "Closures: assignment rebinds captured Write references" {
     let factory = [](&target: i32) {
         return [&target](delta: i32) {
             target += delta;

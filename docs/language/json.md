@@ -1,11 +1,11 @@
 # JSON
 
-[Language](README.md) · [Standard capabilities](standard.md)
-
-`std::json` validates, parses, constructs, modifies, and writes JSON values.
-Import its value types, errors, and functions from this module.
+This page defines JSON values, parsing, construction, modification, validation,
+and writing in `std::json`.
 
 ## Parsing and writing
+
+Import value types, errors, and functions from `std::json`.
 
 | Operation | Result | Failure |
 | --- | --- | --- |
@@ -91,7 +91,9 @@ input byte offset. Conversions use the entire number spelling.
 | `validate_bytes(bytes: [u8])` | Check UTF-8, then JSON; throws `UTF8Error` or `JSONError` |
 | `decode_string(text: str)` | Decode exactly one quoted string without surrounding whitespace into an owning `String`; throws `JSONError` |
 
-Byte parsing and validation use the shared [UTF error contract](utf.md#error-and-streaming-contract).
+`UTF8Error` records the error kind, rejected byte offset, and invalid sequence's
+starting offset. Offsets are zero-based bytes in the input; EOF truncation points
+at the input end.
 
 Whitespace is space, tab, LF, or CR. Escaped surrogate pairs decode to Unicode
 scalars; unpaired surrogates are rejected. Input nesting and writing are limited

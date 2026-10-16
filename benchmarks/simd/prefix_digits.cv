@@ -1,0 +1,7 @@
+import std::simd.scan using { byte_range, prefix_end };
+
+private const selected = byte_range(48, 57);
+
+export(cpp) fn scan_kernel(bytes: [u8], start: usize) -> usize {
+    return prefix_end(bytes, start, selected);
+}

@@ -1,5 +1,5 @@
 export fn child_value() -> i32 => 29;
 
-test "Modules: a colliding child module receives a target-only suffix" {
+test "Modules: a child module remains callable beside a same-named declaration" {
     check(child_value() == 29);
 }

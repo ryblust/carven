@@ -28,6 +28,8 @@ public:
     constexpr auto operator<=>(const ProgramID&) const noexcept = default;
 
 private:
+    friend class SemanticArtifactAccess;
+
     explicit constexpr ProgramID(ProgramIdentity owner, std::uint32_t index) noexcept
         : program_identity(owner),
           row_index(index) {}
@@ -56,6 +58,8 @@ public:
     constexpr auto operator<=>(const BodyLocalID&) const noexcept = default;
 
 private:
+    friend class SemanticArtifactAccess;
+
     explicit constexpr BodyLocalID(BodyIdentity owner, std::uint32_t index) noexcept
         : body_identity(owner),
           row_index(index) {}

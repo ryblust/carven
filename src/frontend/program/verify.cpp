@@ -305,6 +305,15 @@ auto verify_program(const SyntaxProgram& program) noexcept
 
     for (auto index = 0uz; index < module_count; ++index) {
         const auto module_id = provenance.module_id_at(index);
+        if (!program.has_syntax(module_id)) {
+            if (!import_graph[index].empty()) {
+                return verification_error(
+                    SyntaxProgramErrorKind::InvalidResolvedImportGraph,
+                    "checked module unexpectedly has unresolved syntax imports"
+                );
+            }
+            continue;
+        }
         const auto& module_record = provenance.module_record(module_id);
         const auto syntax = program.syntax_tree(module_id).view();
         const auto& source = provenance.source_snapshot(module_record.source_id);

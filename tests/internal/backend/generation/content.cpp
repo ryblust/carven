@@ -118,7 +118,7 @@ const TestSuite suite([] static noexcept {
                          SourceLibrary {
                              .modules = {semantic_test_module_path()},
                              .linkage_domain = *LinkageDomain::explicit_value("fixed-library"),
-                             .emit_implementations = false,
+                             .owned_modules = {},
                          }},
                     library
                 );

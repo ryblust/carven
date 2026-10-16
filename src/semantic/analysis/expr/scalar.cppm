@@ -247,6 +247,16 @@ auto interpret_binary(
             source.operator_span
         );
     }
+    // Comparison results do not determine their operand types.
+    switch (source.op) {
+        case ASTBinaryOperator::Equal:
+        case ASTBinaryOperator::NotEqual:
+        case ASTBinaryOperator::Less:
+        case ASTBinaryOperator::LessEqual:
+        case ASTBinaryOperator::Greater:
+        case ASTBinaryOperator::GreaterEqual: expected.reset(); break;
+        default:                              break;
+    }
     const auto operand_context =
         [&](const typename Site::Value& operand) noexcept -> std::optional<ConstructionTypeRef> {
         if (site.external(site.type(operand))) {

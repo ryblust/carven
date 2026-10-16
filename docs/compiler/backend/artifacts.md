@@ -1,12 +1,14 @@
 # C++ artifacts
 
-Artifact planning selects names, interfaces, and definition schedules. Target-unit
-construction owns syntax, dependencies, verification, and emission.
+This reference defines artifact planning, target syntax construction,
+dependencies, verification, and emission.
 
 ## Names and interfaces
 
+Artifact planning selects names, interfaces, and definition schedules.
+
 Concrete `import(cpp)` declarations add `carven/providers/<module>.hpp`
-artifacts with the existing C++ API header role. Dependency collection separates
+artifacts with the C++ API header role. Dependency collection separates
 provider access from ordinary signature declarations: providers need the source
 type definitions reachable through parameters, results, and failures, including
 private types behind slices and pointers. Weak references require publication
@@ -89,9 +91,9 @@ function reached joins the surface. A reached private function keeps external
 linkage and is declared in its owner's interface; a reached staged function
 contributes its published surface facts. Semantic collection covers every runtime
 arm and excludes static conditions, ranges, initializers, and arguments.
-Everything else private stays internal to its implementation. The selection
-depends only on the owner's source, never on its callers; the backend does not
-traverse source templates.
+Other private declarations stay internal. Selection uses the owner's published
+surface, independently of caller instances; source templates are unavailable to
+the backend.
 
 Ordinary type-parameterized definitions publish a dependency summary from their
 checked rigid bodies: concrete types, ordinary callables, and referenced generic
@@ -156,10 +158,12 @@ qualified alias name across translation units; exact references and
 cv-qualification remain in the alias definition. Local `decltype` expressions
 retain their local scope.
 
-The [external result type contract](representation.md#external-result-types)
-defines the exact query type and normalization before alias placement.
+Alias placement preserves the exact query type. Object-type normalization is
+explicit `std::remove_cvref_t`; it is selected before placement.
 
 ## Target syntax and emission
+
+Target-unit construction owns syntax, dependencies, verification, and emission.
 
 Generated references to standard-library, runtime, and resolved global symbols
 use leading `::` so enclosing declarations cannot redirect lookup. Namespace
@@ -183,10 +187,9 @@ classification reads the primary expression through `template_primary_expression
 Type construction accepts only children already present in the same unit;
 append-only insertion establishes acyclicity. Finishing validates occurrence type
 references and local control transfers.
-Target verification does not recheck Carven evaluation order, object lifetime
-semantics, or C++ overload and constructor feasibility. Realization preserves
-those input contracts through operand use, frame ownership, result destinations
-and failure dispatch, with local invariants and generated-program tests.
+Realization preserves evaluation order and lifetimes through operand use, frame
+ownership, result destinations, and failure dispatch. Target verification checks
+syntax structure; C++ checks overload and constructor feasibility.
 Owned syntax nodes define occurrence identity. `TreeValue` uses an explicit work
 stack to clear descendants, including partially moved trees, statement bodies,
 and namespace items. Child cleanup also bounds the stack depth of variant

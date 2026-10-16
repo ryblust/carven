@@ -5,7 +5,7 @@ struct Envelope {
     value: ::DisplayCopyable
 }
 
-export(cpp) fn structural_output() {
+test "Native printing: structural values and explicit formatters retain their output" {
     let value = ::DisplayNative();
     println(value);
     println(f"{value}");

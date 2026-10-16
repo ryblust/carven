@@ -1,10 +1,12 @@
 # Ownership analysis
 
 This reference describes ownership flow, backing relationships, interprocedural
-queries, and local pointer nullability. These analyses consume resolved semantic
-facts and run before semantic publication.
+queries, and local pointer nullability.
 
 ## Ownership and backing relationships
+
+Ownership and pointer-nullability analyses consume resolved semantic facts and
+run before semantic publication.
 
 ### Flow state and type contents
 
@@ -75,7 +77,6 @@ modified external storage. Async native Read inputs retain their holder from col
 construction. Static instances map facts by source binding identity after removing
 static parameters. Parameter declarations and argument storage consume the same
 facts, so a retained holder remains the original object throughout a call chain.
-This uses the existing loan graph and does not add a separate native type solver.
 
 Storage loans record known Carven backing separately from callable loans and Write
 captures. Backing can select projected owner storage. Literal storage needs no
@@ -105,7 +106,7 @@ object state, projection, normalization, and call answers as other owned values.
 Lifetime protection retains the selected place and its owner lifetime. It permits
 storage-preserving scalar mutation and accesses to disjoint sibling places while
 rejecting overlapping Take or replacement of a retained owner. Content protection
-continues to reject backing invalidation for ordinary views and captures.
+rejects backing invalidation for ordinary views and captures.
 
 Await consumes a cold owner or a child's observation right. Observation closes
 active loans while the lexical scope keeps responsibility for closing child state.
@@ -163,7 +164,7 @@ an owns edge immediately. Checked element type participates in selection identit
 including enum payloads with different types. Vector elements contain no loans
 or callable storage and cannot be taken through their fields. Availability follows
 all possible owning sources in the current flow, including when a retained query
-domain is reused before a local declaration has initialized its owner.
+domain is reused before a local declaration initializes its owner.
 
 Checked input shapes and body operations determine whether evaluation observes
 storage relations. Input loans and captures, Take, non-scalar assignments, and
@@ -219,7 +220,7 @@ join as alternatives. This finite widening retains boundary distinctions rather
 than full interior path correlations; path depth and caller history do not enter
 the descriptor. Sources with contained relationships and non-interface backing
 or capture histories retain their site provenance. Outside recursive feedback,
-finite calls and selections retain arbitrary depth and distinguish fields,
+finite calls and selections retain their depth and distinguish fields,
 indices, owners, and subtrees. Sites outside the callee's component are renamed
 in first-occurrence order.
 
@@ -316,10 +317,9 @@ effects join monotonically.
 Retained identities stay fixed; graph facts grow monotonically. Completion states
 expand to the shared referent domain, including exits temporarily absent while a
 callee answer is pending. Finite source sites, inline paths, interface roles,
-and graph relations bound query identity; solver-growth budgets provide evidence
-for representative source families. Loop headers
-accumulate the entry and reached backedges, including while a pending call has no
-answer.
+and graph relations bound query identity. Solver-growth budgets measure work
+for representative source families. Loop headers accumulate entry and reached
+backedges, including while a pending call has no answer.
 Break, return, failure, and test-stop exits accumulate alongside the header.
 Convergence requires both state equality and an unchanged topology revision;
 new owns edges, owning sources, and many upgrades affect the next transfer even

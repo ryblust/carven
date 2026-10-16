@@ -1,21 +1,21 @@
 # Async benchmark
 
 ```sh
+./xmakew bench async
 ./xmakew bench async --list
-./xmakew bench async --cxx=/path/to/clang++ --output=build/benchmarks/async/run.json
-./xmakew bench async --cxx=/path/to/clang++ --libcoro=/path/to/libcoro \
-    --samples=7 --iterations=200000 --depth=1024 --stack-depth=16384 \
-    --output=build/benchmarks/async/comparison.json
+./xmakew f --libcoro=/path/to/libcoro
+./xmakew build
+./xmakew bench async
 ```
 
-`--compiler` selects an already built Carven executable. The implementations are:
+The benchmark uses the main project's built Carven executable. The implementations are:
 
 | ID | Implementation |
 | --- | --- |
 | `carven` | Generated Carven program using the execution runtime |
 | `cpp_task` | C++20 scalar Task with lazy activation and symmetric transfer |
 | `carven_runtime` | Direct C++ orchestration using the Carven execution runtime |
-| `libcoro` | Lazy `coro::task` from the checkout selected by `--libcoro` |
+| `libcoro` | Lazy `coro::task` from the checkout configured with `xmake f --libcoro=...` |
 
 The first three run by default. The optional libcoro checkout supplies its headers;
 the report records its revision and local changes. `cpp_task` and `libcoro` cover
@@ -67,33 +67,28 @@ recorded as `allocation_iterations`, independently of calibrated timing work.
 
 The stack build enables address observations with `-O0 -fno-optimize-sibling-calls`
 at chain depths 32, 512 and `stack-depth`. It records each implementation's observed
-span and requires Carven's span growth to stay within 4096 bytes. A crashed process
-is a failed observation. The span measures sampled address range, not total stack
+span and requires Carven's span growth to stay within 4096 bytes. Every observation
+must complete successfully. The span measures sampled address range, not total stack
 memory use.
 
-Native targets use C++20, `-O3 -DNDEBUG -fno-rtti`, and the compiler selected by
-`--cxx` for compilation and linking. Exception support is enabled for the common
-comparison; Carven also runs with `-fno-exceptions`. Native projects select
-LLVM-MinGW on Windows and LLVM on Unix, with libc++ selected on Windows and Linux.
-The report retains actual compiler, linker, runtime and flags.
+Native targets use C++20, `-O3 -DNDEBUG -fno-rtti`, and the main project's
+configured native toolchain. Exception support is enabled for the common
+comparison. The report retains the actual compiler, linker, runtime and flags.
 
 The runner takes warmups and then shuffled, interleaved samples with order seed
 1729. It records raw intervals, minimum, median, maximum, checksums, process wall
 time, host, revisions, source hashes and native build observations. Reports default
-to a fresh JSON file under `build/benchmarks/async/`. Input snapshots, generated
-sources and native build artifacts remain beside the report under
-`<report-name>-artifacts/`. Changes to workloads, instrumentation, code generation
+to a fresh JSON file under `build/benchmarks/async/`. Workload snapshots remain
+beside the report under `<report-name>-artifacts/`; native outputs remain in the
+main build directories. Changes to workloads, instrumentation, code generation
 or runtime require fresh measurements. These workloads measure direct await,
 suspension, allocation and chains; I/O and cross-thread scheduling require their
 own workloads.
 
-`run.lua` owns sampling and reports; `native_project.lua` defines native targets.
-`workloads.lua` fills explicit markers in `workload.cv.fixture`, adding
-`static_factory.cv.fixture` for static cases. `workload.cpp` runs the C++ Task
-implementations, and `runtime_workload.cpp` supplies direct runtime orchestration.
-Timing, allocation, stack, and no-exception profiles use separate
-`measurement.cpp` object targets. Each profile's executables depend on its
-measurement target.
-`measurement.hpp` and `measurement.cpp` own configuration, measured intervals,
-allocation tracking and stack observations. Source generation and native builds
-read the saved input snapshot.
+`run.lua` owns sampling and reports; `xmake.lua` declares ordinary targets in
+the main project. Each `.cv` file supplies a fixed workload. `workload.cpp` runs
+the C++ Task implementations, and `runtime_workload.cpp` supplies direct runtime
+orchestration. Each native profile shares one `measurement.cpp` object target.
+`--case` selects one workload group. The chain workload includes stack observation
+programs. `measurement.hpp` and `measurement.cpp` own configuration, measured
+intervals, allocation tracking and stack observations.

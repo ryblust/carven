@@ -9,7 +9,10 @@ import std;
 
 class AnalysisCatalogBuilder final {
 public:
-    explicit AnalysisCatalogBuilder(ProgramDraft& draft) noexcept;
+    explicit AnalysisCatalogBuilder(
+        ProgramDraft& draft,
+        CheckedDefinitions* seed = nullptr
+    ) noexcept;
     auto build() && noexcept -> std::expected<AnalysisCatalog, Diagnostics>;
 
 private:

@@ -8,6 +8,7 @@ enum class GeneratedArtifactRole {
     ModuleImplementation,
     TestRunnerHeader,
     TestEntry,
+    SemanticIR,
 };
 
 enum class ArtifactSourceMappingPolicy {
@@ -32,9 +33,12 @@ public:
     explicit GeneratedArtifactSet(std::vector<GeneratedArtifact> values) noexcept;
     GeneratedArtifactSet(const GeneratedArtifactSet&) = default;
     GeneratedArtifactSet(GeneratedArtifactSet&&) = default;
+
     auto operator=(const GeneratedArtifactSet&) -> GeneratedArtifactSet& = delete;
     auto operator=(GeneratedArtifactSet&&) -> GeneratedArtifactSet& = delete;
+
     auto entries() const noexcept -> std::span<const GeneratedArtifact>;
+    auto take_entries() && noexcept -> std::vector<GeneratedArtifact>;
 
 private:
     std::vector<GeneratedArtifact> artifacts;

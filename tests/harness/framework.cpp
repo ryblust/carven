@@ -43,8 +43,8 @@ struct RunOptions final {
     std::string_view include_pattern;
     std::string_view exclude_pattern;
     std::string_view test_name;
-    std::size_t shard_index;
-    std::size_t shard_count;
+    std::ptrdiff_t shard_index;
+    std::ptrdiff_t shard_count;
     bool list_tests;
     bool timings;
     bool show_help;
@@ -92,8 +92,8 @@ auto parse_options(int argc, const char* const* argv) noexcept -> std::optional<
         .include_pattern = {},
         .exclude_pattern = {},
         .test_name = {},
-        .shard_index = 0uz,
-        .shard_count = 1uz,
+        .shard_index = 0,
+        .shard_count = 1,
         .list_tests = false,
         .timings = false,
         .show_help = false,
@@ -133,8 +133,8 @@ auto parse_options(int argc, const char* const* argv) noexcept -> std::optional<
     }
     if (!shard.empty()) {
         const auto separator = shard.find('/');
-        auto index = 0uz;
-        auto count = 0uz;
+        auto index = std::ptrdiff_t {};
+        auto count = std::ptrdiff_t {};
         if (separator == std::string_view::npos) {
             std::print(std::cerr, "Invalid test shard: {} (expected INDEX/COUNT).\n", shard);
             return std::nullopt;
@@ -148,7 +148,7 @@ auto parse_options(int argc, const char* const* argv) noexcept -> std::optional<
             || parsed_index.ptr != middle
             || parsed_count.ec != std::errc()
             || parsed_count.ptr != end
-            || index == 0uz
+            || index < 1
             || index > count) {
             std::print(
                 std::cerr,
@@ -157,7 +157,7 @@ auto parse_options(int argc, const char* const* argv) noexcept -> std::optional<
             );
             return std::nullopt;
         }
-        options.shard_index = index - 1uz;
+        options.shard_index = index - 1;
         options.shard_count = count;
     }
     return options;
@@ -263,13 +263,12 @@ auto record_test_assertion(bool passed, std::source_location location) noexcept 
     const auto outside_test = runner.current_test_name.empty();
     if (outside_test) {
         ++runner.harness_errors;
-        passed = false;
-    }
-    if (passed) {
+    } else if (passed) {
         ++runner.assertions_passed;
         return true;
+    } else {
+        ++runner.assertions_failed;
     }
-    ++runner.assertions_failed;
     std::print(std::cerr, "{}:{}: ", location.file_name(), location.line());
     if (outside_test) {
         std::print(std::cerr, "assertion outside a test");
@@ -316,6 +315,11 @@ auto current_test_name() noexcept -> std::string_view {
     return runner_state().current_test_name;
 }
 
+auto test_execution_failed() noexcept -> bool {
+    const auto& runner = runner_state();
+    return runner.assertions_failed != 0uz || runner.harness_errors != 0uz;
+}
+
 auto run_tests(int argc, const char* const* argv) noexcept -> int {
     const auto options = parse_options(argc, argv);
     if (!options.has_value()) {
@@ -342,58 +346,12 @@ auto run_tests(int argc, const char* const* argv) noexcept -> int {
         runner.phase = Phase::Complete;
         return 1;
     }
-    runner.phase = Phase::Execution;
-    auto candidate_index = 0uz;
-    auto selected_count = 0uz;
-    auto passed_count = 0uz;
-    auto failed_count = 0uz;
-    auto timings = std::vector<TestTiming>();
-    for (const auto& entry : runner.tests) {
-        if (!is_selected(entry.name, *options)) {
-            continue;
-        }
-        if (candidate_index++ % options->shard_count != options->shard_index) {
-            continue;
-        }
-        ++selected_count;
-        if (options->list_tests) {
-            std::print(std::cout, "{}\n", entry.name);
-            continue;
-        }
-        runner.current_test_name = entry.name;
-        const auto passed_before = runner.assertions_passed;
-        const auto failed_before = runner.assertions_failed;
-        const auto errors_before = runner.harness_errors;
-        if (options->timings) {
-            const auto started = std::chrono::steady_clock::now();
-            entry.body();
-            timings.push_back({
-                .name = entry.name,
-                .elapsed = std::chrono::steady_clock::now() - started,
-            });
-        } else {
-            entry.body();
-        }
-        runner.current_test_name = {};
-        if (runner.assertions_passed == passed_before
-            && runner.assertions_failed == failed_before) {
-            std::print(
-                std::cerr,
-                "{}:{}: Test executed no assertions: {}\n",
-                entry.location.file_name(),
-                entry.location.line(),
-                quote_text(entry.name)
-            );
-            ++failed_count;
-        } else if (runner.assertions_failed != failed_before
-                   || runner.harness_errors != errors_before) {
-            ++failed_count;
-        } else {
-            ++passed_count;
-        }
-    }
-    runner.phase = Phase::Complete;
-    if (selected_count == 0uz) {
+    auto selected = runner.tests | std::views::filter([&](const TestCase& entry) noexcept {
+                        return is_selected(entry.name, *options);
+                    })
+        | std::views::drop(options->shard_index) | std::views::stride(options->shard_count);
+    if (selected.empty()) {
+        runner.phase = Phase::Complete;
         std::print(std::cerr, "No tests matched the selection.\n");
         if (!options->test_name.empty()) {
             std::print(std::cerr, "  test: {}\n", quote_text(options->test_name));
@@ -406,25 +364,79 @@ auto run_tests(int argc, const char* const* argv) noexcept -> int {
         }
         return 1;
     }
-    if (!options->list_tests) {
-        std::print(
-            std::cerr,
-            "Tests: {} passed, {} failed; assertions: {} passed, {} failed\n",
-            passed_count,
-            failed_count,
-            runner.assertions_passed,
-            runner.assertions_failed
-        );
+    if (options->list_tests) {
+        for (const auto& entry : selected) {
+            std::print(std::cout, "{}\n", entry.name);
+        }
+        runner.phase = Phase::Complete;
+        return 0;
+    }
+    runner.phase = Phase::Execution;
+    auto passed_count = 0uz;
+    auto failed_count = 0uz;
+    auto total_assertions_passed = 0uz;
+    auto total_assertions_failed = 0uz;
+    auto timings = std::vector<TestTiming>();
+    for (const auto& entry : selected) {
+        runner.current_test_name = entry.name;
+        runner.assertions_passed = 0uz;
+        runner.assertions_failed = 0uz;
         if (options->timings) {
-            std::ranges::stable_sort(timings, std::greater(), &TestTiming::elapsed);
-            for (const auto& timing : timings) {
-                std::print(
-                    std::cerr,
-                    "Test time: {:9.3f} ms  {}\n",
-                    std::chrono::duration<double, std::milli>(timing.elapsed).count(),
-                    timing.name
-                );
-            }
+            const auto started = std::chrono::steady_clock::now();
+            entry.body();
+            timings.push_back({
+                .name = entry.name,
+                .elapsed = std::chrono::steady_clock::now() - started,
+            });
+        } else {
+            entry.body();
+        }
+        runner.current_test_name = {};
+        total_assertions_passed += runner.assertions_passed;
+        total_assertions_failed += runner.assertions_failed;
+        if (test_execution_failed()) {
+            ++failed_count;
+        } else if (runner.assertions_passed == 0uz && runner.assertions_failed == 0uz) {
+            std::print(
+                std::cerr,
+                "{}:{}: Test executed no assertions: {}\n",
+                entry.location.file_name(),
+                entry.location.line(),
+                quote_text(entry.name)
+            );
+            ++failed_count;
+        } else {
+            ++passed_count;
+        }
+        if (runner.harness_errors != 0uz) {
+            std::print(
+                std::cerr,
+                "Test run stopped after a harness error in {}.\n",
+                quote_text(entry.name)
+            );
+            break;
+        }
+    }
+    runner.phase = Phase::Complete;
+    std::print(
+        std::cerr,
+        "Executed tests: {} passed, {} failed; "
+        "assertions: {} passed, {} failed; harness errors: {}\n",
+        passed_count,
+        failed_count,
+        total_assertions_passed,
+        total_assertions_failed,
+        runner.harness_errors
+    );
+    if (options->timings) {
+        std::ranges::stable_sort(timings, std::greater(), &TestTiming::elapsed);
+        for (const auto& timing : timings) {
+            std::print(
+                std::cerr,
+                "Test time: {:9.3f} ms  {}\n",
+                std::chrono::duration<double, std::milli>(timing.elapsed).count(),
+                timing.name
+            );
         }
     }
     return failed_count != 0uz || runner.harness_errors != 0uz ? 1 : 0;

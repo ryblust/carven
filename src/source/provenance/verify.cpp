@@ -63,12 +63,6 @@ auto verify_compilation_provenance(CompilationProvenanceView provenance) noexcep
                 )
             );
         }
-        if (index != 0 && module_record.path < provenance.module_records()[index - 1].path) {
-            return verification_error(
-                CompilationProvenanceErrorKind::UnorderedModules,
-                "program modules are not in canonical path order"
-            );
-        }
     }
 
     auto spellings = std::flat_set<std::string_view, std::less<>>();

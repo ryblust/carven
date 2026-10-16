@@ -263,6 +263,7 @@ public:
     auto size() const noexcept -> std::size_t;
 
 private:
+    friend class SemanticArtifactAccess;
     CanonicalTypeStore(
         ImmutableProgramTable<CanonicalType, TypeID> rows,
         std::array<TypeID, builtin_types.size()> builtins
@@ -291,6 +292,7 @@ public:
     auto seal() && noexcept -> CanonicalTypeStore;
 
 private:
+    friend class SemanticArtifactAccess;
     auto intern_row(const CanonicalType& type) noexcept -> TypeID;
 
     auto intern_resolved_callable_view(
@@ -319,6 +321,7 @@ public:
     auto size() const noexcept -> std::size_t;
 
 private:
+    friend class SemanticArtifactAccess;
     explicit FailureSetStore(ImmutableProgramTable<FailureSet, FailureSetID> rows) noexcept;
 
     ImmutableProgramTable<FailureSet, FailureSetID> rows;
@@ -342,6 +345,7 @@ public:
     auto snapshot() const noexcept -> FailureSetStore;
 
 private:
+    friend class SemanticArtifactAccess;
     MutableProgramTable<FailureSet, FailureSetID> rows;
 };
 
@@ -362,6 +366,7 @@ public:
     auto size() const noexcept -> std::size_t;
 
 private:
+    friend class SemanticArtifactAccess;
     explicit CallableSignatureStore(
         ImmutableProgramTable<CallableSignature, CallableSignatureID> rows
     ) noexcept;
@@ -385,6 +390,7 @@ public:
     auto seal() && noexcept -> CallableSignatureStore;
 
 private:
+    friend class SemanticArtifactAccess;
     MutableProgramTable<CallableSignature, CallableSignatureID> rows;
 };
 
@@ -575,5 +581,6 @@ public:
     }
 
 private:
+    friend class SemanticArtifactAccess;
     MutableProgramTable<ConstructionType, TypeTermID> rows;
 };

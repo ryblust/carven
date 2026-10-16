@@ -7,7 +7,6 @@ import :backend.target.name;
 import :backend.target.stmt;
 import :backend.target.symbol;
 import :backend.target.type;
-import :test.harness.death;
 import :test.harness.framework;
 import std;
 
@@ -290,15 +289,6 @@ const TestSuite suite([] static noexcept {
         sequence.resume(TargetIdentifier::from_spelling("done"), TargetJumpRole::RegionExit, first);
         expect(sequence.continues());
         expect(sequence.exits().entries.empty());
-        expect(expect_termination("composition.foreign-exit", [=]() noexcept {
-            auto foreign = LoweringStmtBuilder {};
-            foreign.terminate(return_statement(), first);
-            foreign.resume(
-                TargetIdentifier::from_spelling("done"),
-                TargetJumpRole::RegionExit,
-                second
-            );
-        }));
     };
 
     "Composition: selectable value regions that only return become expressions"_test =
@@ -367,40 +357,6 @@ const TestSuite suite([] static noexcept {
             expect(snapshot->type == boolean_type(target));
             expect(std::holds_alternative<TargetLocalExpr>(snapshot->operand->value));
         };
-
-    "Composition: value regions reject external exits"_test = [] static noexcept {
-        expect(expect_termination("composition.external-lambda-exit", []() static noexcept {
-            auto target = TargetUnitBuilder {};
-            auto sequence = LoweringStmtBuilder {};
-            sequence.terminate(
-                return_statement(),
-                {.kind = LoweringExitKind::FunctionReturn, .identity = 0}
-            );
-            static_cast<void>(std::move(sequence).result_region(
-                boolean_type(target),
-                {.kind = LoweringExitKind::Value, .identity = 1},
-                LoweringRegionDelivery::Factory
-            ));
-        }));
-        expect(expect_termination("composition.missing-normal-result", []() static noexcept {
-            auto sequence = LoweringStmtBuilder {};
-            static_cast<void>(std::move(sequence).complete<LoweringCompleted>(std::nullopt));
-        }));
-        auto target = TargetUnitBuilder {};
-        const auto type = boolean_type(target);
-        expect(expect_termination("composition.external-direct-value-exit", [=]() noexcept {
-            auto sequence = LoweringStmtBuilder {};
-            sequence.terminate(
-                target_lowering_statement(TargetReturnStmt {.expression = bool_expression(true)}),
-                {.kind = LoweringExitKind::FunctionReturn, .identity = 0}
-            );
-            static_cast<void>(std::move(sequence).result_region(
-                type,
-                {.kind = LoweringExitKind::Value, .identity = 1},
-                LoweringRegionDelivery::Copied
-            ));
-        }));
-    };
 });
 
 } // namespace

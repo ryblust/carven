@@ -17,7 +17,6 @@ Build and run from the repository root:
 ./xmakew run carven-example-log-analyzer
 ./xmakew run carven-example-audio-mixer
 ./xmakew run carven-example-stream-collector
-./xmakew test -g examples
 ```
 
 The programs include their sample input. The collector demonstrates C++ calling
@@ -40,6 +39,3 @@ applications:
 ./xmakew run -q carven-example-audio-mixer --logs > mixer.log
 ./xmakew run -q carven-example-log-analyzer --stdin < mixer.log
 ```
-
-The example test group checks documented output, application behavior, and the
-connected pipeline.

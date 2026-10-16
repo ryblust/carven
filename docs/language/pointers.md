@@ -1,9 +1,9 @@
 # Pointer values
 
-[Language](README.md)
-
 This page defines pointer values, target access, local non-null checks, and
 the lifetime responsibilities of native integrations.
+
+## Pointer types and addresses
 
 `ptr<T>` stores an address that grants Read access to T; `ptr<&T>` grants Write
 access. Both are ordinary nullable, copyable address values. `let` and `var`
@@ -27,6 +27,8 @@ owner's identity, so later assignment does not revive old pointers. An address
 returned from a Read array parameter may still refer to its caller's storage.
 If the caller supplied a temporary array, that storage lasts through the
 containing full expression; saving the address does not extend its lifetime.
+
+## Indirection and conversion
 
 `*p` accesses the target as a place; `p->member` is `(*p).member`. The address
 must be available and locally proven non-null. Target access comes from the
@@ -56,11 +58,6 @@ caller's slot and require the complete pointer type to match. Take parameters
 also require an exact type, transfer the address value, and make its source
 owner unavailable. Take does not zero other aliases or release the target.
 
-`nullptr` needs a pointer type context, including in an explicitly typed
-`const`. There is no independent null type. Pointers support `==` and `!=` with
-`nullptr` and with pointers to the same target type. They have no implicit
-boolean conversion, ordering, arithmetic, direct indexing, integer conversion.
-
 ## Erasure, comparison, and display
 
 Explicit `as ptr<void>` erases an object pointer's target type. Write pointers
@@ -75,6 +72,11 @@ appropriate alignment, object type, aliasing, and lifetime. The conversion itsel
 does not access or construct an object. Static and interpreted dereference
 select a live object of the requested type at the retained address; an unavailable
 object or type relation produces an execution diagnostic.
+
+`nullptr` needs a pointer type context, including in an explicitly typed
+`const`. There is no independent null type. Pointers support `==` and `!=` with
+`nullptr` and with pointers to the same target type. They have no implicit
+boolean conversion, ordering, arithmetic, direct indexing, integer conversion.
 
 Pointer equality compares addresses. Static and interpreted execution retain
 storage origins and subobject paths, and establish address relations from known

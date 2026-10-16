@@ -29,29 +29,26 @@ private async fn parent() -> ::Fixed throw ParentFailure {
 
 export async fn run_fixed() throw ParentFailure + Timeout + RangeError {
     assert(await fixed_aligned_frames());
-    println(
-        fixed_created(),
-        fixed_destroyed(),
-        fixed_live(),
-        fixed_trace(),
-        fixed_identity_stable()
+    assert(
+        (fixed_created(), fixed_destroyed(), fixed_live(), fixed_trace(), fixed_identity_stable())
+            == (0, 0, 0, 0, 0)
     );
     if true {
         let held = await parent()?;
-        println(
-            fixed_created(),
-            fixed_destroyed(),
-            fixed_live(),
-            fixed_trace(),
-            fixed_identity_stable()
+        assert(
+            (
+                fixed_created(),
+                fixed_destroyed(),
+                fixed_live(),
+                fixed_trace(),
+                fixed_identity_stable()
+            )
+                == (1, 0, 1, 1, 1)
         );
     }
-    println(
-        fixed_created(),
-        fixed_destroyed(),
-        fixed_live(),
-        fixed_trace(),
-        fixed_identity_stable()
+    assert(
+        (fixed_created(), fixed_destroyed(), fixed_live(), fixed_trace(), fixed_identity_stable())
+            == (1, 1, 0, 12, 0)
     );
     if true {
         let held = await timeout(parent(), 1s)?;

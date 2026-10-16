@@ -1,32 +1,29 @@
 # Carven tutorial
 
 This tutorial introduces the basic forms used to write Carven programs.
-It starts with a first program, then covers imports, types, functions, and their
-bodies. Each snippet is a separate example, with declarations before their uses.
 
 ## Reading guide
 
-Follow the lessons in order, or use the language reference to look up the full
-rules for a topic. Each reference can be read independently of this tutorial.
+Follow the lessons in order, from a first program through imports, types,
+functions, and their bodies. Each snippet is a separate example, with declarations
+before their uses.
 
-| Lesson | Language reference |
-| --- | --- |
-| [A first program](#a-first-program) | [Entry points](execution.md#entry-points), [printing](io.md#printing) |
-| [Modules](#modules) | [Modules and names](modules.md) |
-| [Records and arrays](#records-and-arrays) | [Aggregates](aggregates.md) |
-| [Enums and matches](#enums-and-matches) | [Enums](aggregates.md#enums) and [pattern matching](control-flow.md#patterns-and-matches) |
-| [Functions](#functions) | [Functions and callable values](functions.md) |
-| [Read, Write, and Take](#read-write-and-take) | [Access and ownership](ownership.md) |
-| [Bindings and values](#bindings-and-values) | [Access and ownership](ownership.md) |
-| [Conditions and loops](#conditions-and-loops) | [Evaluation and control flow](control-flow.md) |
-| [Recoverable failures](#recoverable-failures) | [Failure contracts](failures.md) |
-| [Closures and callbacks](#closures-and-callbacks) | [Functions and callable values](functions.md) |
-| [Calling C++](#calling-c) | [C++ interoperation](interop.md) |
-| [Acquiring an external address](#acquiring-an-external-address) | [Pointers](pointers.md) |
-| [Assertions](#assertions) | [Entry points and tests](execution.md) |
-| [Tests](#tests) | [Entry points and tests](execution.md) |
-| [Compile-time execution](#compile-time-execution) | [Compile-time execution](constants.md) |
-| [Structural printing and assertion explanations](#structural-printing-and-assertion-explanations) | [Printing](io.md#printing), [tests](execution.md#tests) |
+- [A first program](#a-first-program)
+- [Modules](#modules)
+- [Records and arrays](#records-and-arrays)
+- [Enums and matches](#enums-and-matches)
+- [Functions](#functions)
+- [Read, Write, and Take](#read-write-and-take)
+- [Bindings and values](#bindings-and-values)
+- [Conditions and loops](#conditions-and-loops)
+- [Recoverable failures](#recoverable-failures)
+- [Closures and callbacks](#closures-and-callbacks)
+- [Calling C++](#calling-c)
+- [Acquiring an external address](#acquiring-an-external-address)
+- [Assertions](#assertions)
+- [Tests](#tests)
+- [Compile-time execution](#compile-time-execution)
+- [Structural printing and assertion explanations](#structural-printing-and-assertion-explanations)
 
 ## A first program
 
@@ -265,8 +262,9 @@ specification follows a colon inside a hole, as in `f"ID: {42:04x}"`.
 
 Raw strings keep backslashes verbatim, for example `r"C:\data\input.cv"`.
 Use hash delimiters when the text contains quotes: `r#"say "hello""#`.
-Triple-quoted ordinary, raw, and interpolated strings support multiline text
-with common source indentation removed; see [text literals](text.md#string-literals-and-multiline-layout).
+Triple-quoted ordinary, raw, and interpolated strings support multiline text.
+Start the body on the next line and put the closing delimiter on its own line;
+common source indentation is removed.
 
 `_` discards a binding name. Its runtime initializer still executes.
 Use `//` for a line comment.
@@ -612,8 +610,7 @@ println(scaled_sum(10, 3)); // 33
 
 The static parameter is omitted from the runtime signature. Every source arm
 still undergoes semantic checking. Ordinary control inside a `const fn` executes
-in the stage of its call; it does not request specialization. See
-[static parameters and control](functions.md#static-parameters).
+in the stage of its call; it does not request specialization.
 
 ## Structural printing and assertion explanations
 

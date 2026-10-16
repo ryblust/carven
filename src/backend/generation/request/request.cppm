@@ -31,12 +31,12 @@ private:
     std::string domain_value;
 };
 
-// A closed, independently analyzed source library. Its native implementation
-// has one identity independent of the consuming program's test mode.
+// A closed source library has one native identity independent of the consuming
+// program's test mode. Only owned modules emit implementations and runtime tests.
 struct SourceLibrary final {
     std::vector<CanonicalModulePath> modules;
     LinkageDomain linkage_domain;
-    bool emit_implementations;
+    std::vector<CanonicalModulePath> owned_modules;
 };
 
 struct TargetPlanningRequest final {

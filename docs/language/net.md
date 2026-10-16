@@ -1,6 +1,8 @@
 # TCP networking
 
-[Language](README.md) · [Standard capabilities](standard.md)
+This page defines TCP operations and native host responsibilities for `std::net`.
+
+## Source operations
 
 `std::net` provides `ConnectionView`, `NetError`, and cold operations
 over connections supplied by a native host:
@@ -45,9 +47,8 @@ views, connections, or the network.
 
 POSIX uses poll and suppresses SIGPIPE per send (`MSG_NOSIGNAL`) or per socket
 (`SO_NOSIGPIPE`); it does not change process signal handlers. Windows uses WSAPoll;
-Network owns WSAStartup/WSACleanup. The Carven Xmake rule configures `ws2_32` for
-both native producers and final consumers. Native sources are collected from the
-installed Crafts inventory and compile as C++20.
+Network owns WSAStartup/WSACleanup. Windows native producers and final consumers
+link `ws2_32`.
 
 The source API borrows host connections; it does not create connections or
 listeners, resolve names, or provide TLS. Its native calls require native

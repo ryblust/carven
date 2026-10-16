@@ -8,7 +8,7 @@ function main(options)
     local command = options.command or "compile"
     local session = benchmark.session("compile", options, {
         description = {
-            "Uses exactly the generated workload sources; no automatic Crafts discovery.",
+            "Loads the generated workload sources and the selected compiler's installed Crafts.",
             command == "compile"
                 and "Includes process startup, complete analysis, C++ generation and fresh artifact writes."
                 or "Includes process startup and complete analysis, including compile-time execution; no C++ generation.",
@@ -23,23 +23,22 @@ function main(options)
             table.insert(paths, filename)
             source_bytes = source_bytes + #source
         end
-        local domain = "benchmark:compile" .. (case.count and ":" .. case.count or "")
         record.inputs, record.compiler_command = inputs, command
         record.source_count, record.source_bytes = #paths, source_bytes
-        record.source_selection = "explicit"
+        record.source_selection = "workload-and-toolchain"
         record.output_mode = command == "compile" and "fresh-artifacts" or "none"
-        if command == "compile" then record.linkage_domain = domain end
         return function (ordinal)
-            local args = {command, "--explicit-inputs"}
+            local args = {command}
             if options.timings then table.insert(args, "--timings") end
             if command == "compile" then
-                table.join2(args, {"--output-dir", "out-" .. ordinal, "--linkage-domain=" .. domain})
+                table.join2(args, {"-o", "out-" .. ordinal})
             end
             table.join2(args, paths)
             return benchmark.command(session.compiler, args, root,
-                {timings = options.timings, capture_stdout = true})
+                {target = not options.compiler and "carven" or nil,
+                    timings = options.timings, capture_stdout = true})
         end
     end, function (session)
-        input_snapshot.capture(session, {crafts = false})
+        input_snapshot.capture(session)
     end)
 end

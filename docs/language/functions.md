@@ -1,19 +1,18 @@
 # Functions and callable values
 
-[Language](README.md)
-
-This page defines ordinary calls, closures, and callable views.
-[Async functions](async.md) construct cold operations and deliver results on await. Calls executed
-in the static stage additionally follow [Static execution of functions](constants.md#static-execution-of-functions).
+This page defines calls, function parameters, specialization, closures, and callable
+views.
 
 ## Functions and calls
+
+Async calls construct cold operations; results arrive on await. Static calls
+to source functions require `const fn` capability.
 
 Read parameters snapshot pure Carven values and borrow Carven owned storage.
 For native-containing values, C++ chooses a const value when copy construction
 and destruction are both trivial, and a const reference otherwise. A parameter
 whose storage must survive the call uses a const reference throughout the call
-chain. Write and Take retain their mutation and ownership contracts. See
-[Read values and aliases](ownership.md#read-values-and-aliases).
+chain. Write permits mutation through borrowed storage; Take transfers ownership.
 
 Function and lambda parameters may use recursive tuple targets, for example
 `fn sum((left, right): (i32, i32)) -> i32 => left + right;`. A tuple target
@@ -21,8 +20,8 @@ still occupies one parameter position. Access markers apply to the complete
 parameter: Read and Write names project its existing storage, while Take names
 are independent immutable owners. Names are unique across the entire parameter
 list. A static parameter may likewise use a tuple target; lambda targets may
-infer their complete type from an expected callable view. See
-[Tuples](aggregates.md#tuples) for shape and projection rules.
+infer their complete type from an expected callable view. Targets match the
+parameter type's arity and nesting.
 
 Every ordinary function parameter requires an explicit type. A function with a
 body may omit its result type. Block and expression bodies infer it from return
@@ -85,8 +84,7 @@ no implicit copying, default construction, comparison, or formatting capability.
 Known arrays, slices, Tuple shapes, and nominal fields retain their ordinary
 operations. Array extents and nominal failure payload types must be independent
 of type parameters. A failure-set parameter represents a set of those payload
-types, including the empty set; see
-[Failure-set parameters](failures.md#failure-set-parameters).
+types, including the empty set.
 Named external C++ types may depend on type parameters. Their native
 construction, calls, and conversions are checked by C++ after concrete
 substitution.
@@ -114,13 +112,14 @@ Each actual argument is evaluated once.
 
 An actual type or failure set may depend on an inferred callable contract.
 The application waits for those declaration dependencies to complete before
-selecting a concrete instance. It does not assume that a currently unfinished
-failure set is empty. This also applies to generic calls in static roots.
+selecting a concrete instance. An unfinished failure set is not an empty set.
+This also applies to generic calls in static roots.
 
-`const fn` definitions use the same universal rules and additionally require
-their calls to support static execution. Generic static calls and the limit on
-parameter-dependent local constants follow
-[Static execution of functions](constants.md#static-execution-of-functions).
+`const fn` definitions use the same universal rules and require semantically
+reachable source calls to select known `const fn` targets. Static calls need concrete
+type and failure-set arguments. A body-local `const` initializer cannot require an
+unresolved generic environment; ordinary generic calls can execute once their type
+and failure-set arguments are concrete.
 Recursion requires a completed result signature. Concrete applications share
 instances keyed by the definition and ordered canonical type or failure-set
 arguments.
@@ -184,8 +183,7 @@ or exported to C++. Lambda parameters and callable-view types do not accept
 Async source functions use the same static-parameter instance selection. The
 residual body keeps its async execution identity and only runtime parameters are
 captured by the cold operation. `const async fn` additionally permits cooperative
-static execution through await and lexical children; see
-[static async execution](async.md#static-parameters-and-execution). A synchronous
+static execution through await and lexical children. A synchronous
 `const fn` can return a cold operation without executing it.
 
 ### Static control
@@ -223,8 +221,8 @@ fn scale(value: i32, const divisor: i32) -> i32 {
 
 Type formation still computes constant extents in every arm before
 specialization, without executing their declarations. A `const { ... }` block
-in the body executes with its local constants; see the
-[`const` block rules](constants.md#const-blocks).
+executes with the body's local constants once per selected instance or expanded
+occurrence; runtime control does not select or repeat it.
 
 `const for` expands a Read integer range, array, slice, Vector, or character view
 whose source is static. The source evaluates once and remains alive during

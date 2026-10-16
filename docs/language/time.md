@@ -1,9 +1,11 @@
 # Time and waiting
 
-[Language](README.md) · [Standard capabilities](standard.md)
+This page defines signed intervals, monotonic time points, cancellable waits,
+and deadlines in `std::time`.
 
-Carven provides signed intervals, monotonic time points, and cancellable waits
-through `std::time`. Import the types and callables being used from that module.
+## Types and imports
+
+Import the types and callables being used from `std::time`.
 `Duration`, `RangeError`, `Timeout`, and `TimePoint` are declared in the standard
 source module.
 
@@ -157,8 +159,7 @@ Native clock ticks contain a positive whole number of nanoseconds, and clock
 readings must fit the signed nanosecond domain. Conversion uses checked integer
 arithmetic and rounds a waiting deadline to the later native tick.
 
-The [native async host contract](async.md#native-providers-and-hosts) defines
-`EventSource`, polling, waiting, and retained resources. Native cancellation uses
+Native cancellation uses
 the current task's `request_cancel()` on the driver thread. It records intent and
 notifies parked timers; writing the request flag directly does not perform that
 notification. Closing retains registrations and borrowed resources until the

@@ -182,6 +182,9 @@ auto BodyBatchElaborator::run() noexcept -> AnalysisTask<void> {
         co_return std::unexpected(formed.error());
     }
     for (const auto& source_module : catalog_data.modules()) {
+        if (draft->imported(source_module.module_id)) {
+            continue;
+        }
         const auto ast = draft->syntax_tree(source_module.module_id).view();
         for (const auto& source_item : source_module.items) {
             const auto& item = ast.item(source_item.item_id);
@@ -279,7 +282,9 @@ auto BodyBatchElaborator::run() noexcept -> AnalysisTask<void> {
         }
     }
     for (const auto body : draft->completed_body_ids()) {
-        if (static_bodies.contains(body) || draft->body_draft(body).specialized) {
+        if (draft->imported(body)
+            || static_bodies.contains(body)
+            || draft->body_draft(body).specialized) {
             continue;
         }
         auto realized = co_await stage.realize_body(body);
@@ -295,7 +300,7 @@ auto BodyBatchElaborator::ensure_function_signature(
     ProgramModuleID requester,
     Span span
 ) noexcept -> AnalysisTask<void> {
-    if (id.index() >= functions.size()) {
+    if (id.index() >= functions.size() || functions[id.index()] == nullptr) {
         co_return {};
     }
 
@@ -314,15 +319,12 @@ auto BodyBatchElaborator::ensure_function_signature(
             DiagnosticCode::TypeResultInferenceCycle,
             "function result inference forms a cycle; add an explicit '-> T' result type"
         );
-        diagnostic.primary(locate(draft->syntax_tree(requester).view().source_id(), span));
+        diagnostic.primary(locate(draft->module_source_id(requester), span));
         const auto first = std::ranges::find(active_path, id);
         for (auto current = first; current != active_path.end(); ++current) {
             const auto& symbol = *functions.at(current->index());
             diagnostic.related(
-                locate(
-                    draft->syntax_tree(symbol.module_id).view().source_id(),
-                    symbol.declaration_span
-                ),
+                locate(draft->module_source_id(symbol.module_id), symbol.declaration_span),
                 std::format("result of '{}' is being inferred", symbol.name)
             );
         }
@@ -337,7 +339,7 @@ auto BodyBatchElaborator::ensure_function_body(
     Span span
 ) noexcept -> AnalysisTask<BodyID> {
     auto body = std::optional<BodyID>();
-    if (id.index() >= functions.size()) {
+    if (id.index() >= functions.size() || functions[id.index()] == nullptr) {
         const auto declaration = draft->function_declaration_copy(id);
         auto prepared = co_await requests.ensure_callable(declaration.callable, requester, span);
         if (!prepared) {
@@ -358,7 +360,7 @@ auto BodyBatchElaborator::ensure_function_body(
                     DiagnosticCode::ConstEvaluation,
                     "compile-time execution depends on an unfinished function body"
                 )
-                    .primary(locate(draft->syntax_tree(requester).view().source_id(), span))
+                    .primary(locate(draft->module_source_id(requester), span))
                     .build()
             ));
         }
@@ -373,7 +375,7 @@ auto BodyBatchElaborator::ensure_function_body(
                     DiagnosticCode::ConstAdmission,
                     "compile-time execution requires a Carven function body"
                 )
-                    .primary(locate(draft->syntax_tree(requester).view().source_id(), span))
+                    .primary(locate(draft->module_source_id(requester), span))
                     .build()
             ));
         }
@@ -532,6 +534,9 @@ auto BodyBatchElaborator::ensure_generic_function(
     ProgramModuleID requester,
     Span span
 ) noexcept -> AnalysisTask<void> {
+    if (draft->has_generic_function_body(definition)) {
+        co_return {};
+    }
     auto [found, inserted] = generic_states.try_emplace(definition, Unvisited {});
     auto& state = found->second;
     if (std::holds_alternative<Complete>(state)) {
@@ -559,7 +564,7 @@ auto BodyBatchElaborator::ensure_generic_function(
                 DiagnosticCode::TypeResultInferenceCycle,
                 "generic function result inference forms a cycle; add an explicit '-> T' result type"
             )
-                .primary(locate(draft->syntax_tree(requester).view().source_id(), span))
+                .primary(locate(draft->module_source_id(requester), span))
                 .build()
         ));
     }

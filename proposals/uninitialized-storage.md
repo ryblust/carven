@@ -25,7 +25,7 @@ completed elements. Allocator policy, container APIs, synchronization, and gener
 borrow checking belong to their consumers. Delayed local initialization is a
 separate possible feature.
 
-## Current boundary
+## Context
 
 Bindings require initializers, and aggregate construction initializes the whole
 value. Empty construction requests the type's defined default. Write accesses an
@@ -41,16 +41,17 @@ lifetime checks.
 The backend already constructs results in final storage and uses `DeferredResult`
 for delayed construction and cleanup. Recursive tuples directly initialize
 immovable elements, and fallible delivery can construct a success in its carrier.
-These native realization mechanisms are implemented; they do not expose a
-source-level raw-storage API, completion assertion, or library-defined cleanup
-protocol. Generated C++ has a C++20 baseline.
+Source-level raw storage, completion assertions, and library-defined cleanup
+protocols remain unimplemented. Generated C++ has a C++20 baseline.
 
 An immovable native component completed in separate operand storage across a
 failure barrier cannot then be transferred into the final aggregate. Existing
 operand storage does not model partial-object initialization and cleanup. This
 boundary is a concrete use case for explicit construction destinations.
 
-## Candidate contracts
+## Design
+
+### Candidate contracts
 
 Track storage availability, object lifetime, and value validity separately.
 Construction requires suitable size and alignment and type-specific initialization.
@@ -83,8 +84,8 @@ needs a provider contract and a way to assert completion. A conceptual
 it would perform no construction or validation and extend no borrow. A returned
 count or status gains initialization meaning through the adapter's contract.
 Each unchecked operation must state its preconditions and which checks remain.
-Statically known violations receive diagnostics; unmodeled preconditions remain
-provider and caller obligations.
+Diagnose statically known violations. State unmodeled provider and caller
+preconditions at the operation that requires them.
 
 For each candidate, define the subject and validity interval of completion facts,
 invalidation by writes, callbacks, escaping aliases, or owner movement, and the
@@ -126,7 +127,7 @@ execution need their respective operation admission and retained-result rules.
 Text output also needs UTF-8 validity and a failure policy beyond initialized
 byte extents.
 
-## Constant execution and library storage
+### Constant execution and library storage
 
 A library-defined owner needs admitted construction, access, mutation, and cleanup
 operations in each selected execution mode. Generic bodies remain checked at
@@ -218,15 +219,3 @@ Compare direct fill and construction with default initialization followed by
 writes under equal results and effects. Inspect generated and optimized native
 code, then measure initialization traffic, constructor calls, bookkeeping, and
 compilation cost separately.
-
-## References
-
-- [C++ interoperation](../docs/language/interop.md): existing concrete native
-  adapters and provider obligations.
-- [Generic extensions](generic-extensions.md): prerequisites for a generic storage surface.
-- [Async](../docs/language/async.md): lifetime closure before suspending operations release or
-  reuse storage.
-- [Concurrency](concurrency.md): synchronization and visibility for cross-thread
-  construction and access.
-- [Realization](../docs/compiler/backend/realization.md) and
-  [tuple lifetime cases](../tests/interop/lifetimes/tuples.cv): existing direct construction and its native boundary.

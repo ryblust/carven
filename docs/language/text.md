@@ -1,7 +1,5 @@
 # Text and interpolation
 
-[Language](README.md) · [Standard capabilities](standard.md)
-
 This page defines Unicode values, owning text, borrowing, and interpolation.
 
 - [Unicode text](#unicode-text)
@@ -111,9 +109,10 @@ In multiline interpolation, each hole counts as one nonblank content unit.
 The hole's code, including nested strings, comments, format specifications, and
 physical line endings, does not participate in the surrounding text's layout.
 Text after the hole continues the same logical body line until a text line
-ending. Format specifications follow the escape and newline rules in
-[Grammar](grammar.md#24-character-and-string-literals). Inserted values retain
-their own whitespace; no indentation is removed or added.
+ending. Format text uses ordinary escapes and ends at a brace; decoded escapes
+are not rescanned for interpolation delimiters. Hole expressions admit physical
+line endings under ordinary expression rules. Inserted values retain their own
+whitespace; no indentation is removed or added.
 
 Multiline layout applies equally to ordinary, raw, and interpolated strings.
 Escapes such as `\t` and `\u{20}` express content indentation independently of
@@ -133,9 +132,10 @@ unchanged while the view is used. Convert the result with `as String` when an
 independent owner is needed.
 
 Import `UnicodeScalarError`, `UTF8Error`, and `UTF8ErrorKind` from `std::utf` when
-naming them. UTF failures carry the first invalid byte offset and sequence start;
-the [UTF error contract](utf.md#error-and-streaming-contract)
-defines their kinds. Both constructors support static and ordinary execution,
+naming them. UTF failures carry zero-based byte offsets for the rejected byte and
+invalid sequence start; EOF truncation points at the input end. Kinds are
+`InvalidLead`, `InvalidContinuation`, `Overlong`, `Surrogate`, `TooLarge`, and
+`Truncated`. Both constructors support static and ordinary execution,
 with the usual typed failure and result-retention rules.
 
 ## Unchecked text construction
@@ -150,9 +150,7 @@ These operations do not validate content. The caller must satisfy their content
 preconditions; violating them is outside the language's valid text contract.
 Carven checks argument types and tracks the returned text's backing through
 ordinary borrow analysis. Construction does not extend the backing lifetime.
-Use the [checked constructors](#checked-text-construction) for input that has
-not been validated. The [UTF APIs](utf.md) provide encoding, streaming validation,
-and text-processing algorithms.
+Use the checked constructors for input that has not been validated.
 
 Both constructors are available in constant initializers, `const fn`, and
 interpretation. The executor checks their content preconditions when they execute
@@ -319,9 +317,17 @@ aggregate, enum, or callable formatting protocol.
 Interpolation supports ordinary expression composition and failure propagation.
 An early failure skips later holes and formatting, retaining completed effects
 and destroying temporary values. Discarding the result still executes formatting.
-Direct interpolation and interpolation in functions executed in the static stage use the same
-[supported builtin formatting subset](constants.md#static-execution-of-functions)
-in static roots. For example,
+Static interpolation supports default integer, bool, char, unit, text, and known
+C string formatting. Integer presentations are `b`, `B`, `o`, `d`, `x`, and `X`,
+with decimal width and optional zero padding. Floating formatting uses native
+standard-library conversion for `f32`/`f64`, accepting alignment, Unicode fill,
+sign, alternate form, zero padding, width, precision, and `a/A/e/E/f/F/g/G`, but
+not locale-dependent `L`. Erased pointers accept an empty specification or `p`.
+Dynamic integer widths and floating widths/precisions must be nonnegative integers;
+width, precision, and output bytes are bounded by the static text budget. Unsupported
+specifications produce an execution diagnostic.
+
+For example,
 `const title = f"build-{42:04}";` retains an owning `String` constant, and
 `const bytes = f"{'我'}".byte_length();` produces `3usize`. Nested calls, `String {}`,
 `String::from_str(...)`, `.as_str()`, `.byte_length()` and `.is_empty()` compose before

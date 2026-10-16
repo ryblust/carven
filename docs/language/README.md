@@ -1,9 +1,7 @@
 # Language
 
 This directory covers writing Carven programs, their syntax, and their validity
-and observable behavior for the current checkout. The tutorial
-introduces the language in learning order; the grammar defines its
-spelling and parsing. Topic references define the rules for each language feature.
+and observable behavior for the current checkout.
 
 ## Find a document
 
@@ -28,30 +26,9 @@ spelling and parsing. Topic references define the rules for each language featur
 | Read input, print values, or frame byte records | [Input and output](io.md) |
 | Define an entry or test, or interpret an assertion or diagnostic | [Entry points, tests, and diagnostics](execution.md) |
 
-## Reading across topics
-
-Start with the page for the operation you are using. Each page includes its
-local validity, evaluation, and lifetime rules. Shared concepts include type
-context, Read/Write/Take access, and evaluation order.
-
-The [standard capability index](standard.md) connects language-provided APIs and
-standard API references.
-
-Some tasks cross a specific boundary:
-
-- `const fn` follows ordinary call rules and static-execution admission.
-  `const test` uses the same executor subset with test ordering and assertions.
-- Runtime slices borrow live backing; frozen constant slices have program-lifetime
-  backing.
-- Pointer access combines local non-null checks with native target-lifetime
-  obligations.
-- Interpolation constructs formatted text; printing performs direct output and
-  structural display.
-
 ## Reference boundaries
 
-Language-visible rules remain here even when they involve C++.
-[Compiler](../compiler/README.md) covers analysis, semantic publication, and C++
-generation. [Toolchain](../toolchain/README.md) covers invocation and native
-integration. [Development](../development/README.md) covers repository conventions,
-test placement, and validation.
+Each topic defines the validity, evaluation, and lifetime rules for its operations,
+including language-visible C++ boundaries. Compiler references describe analysis
+and generation; toolchain references cover invocation and native integration.
+Development references govern repository conventions and validation.

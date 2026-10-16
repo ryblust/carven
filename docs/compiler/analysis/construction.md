@@ -1,6 +1,6 @@
 # Semantic construction
 
-This reference describes declaration and expression construction, dependency
+This reference covers declaration and expression construction, dependency
 completion, solving, and delegated C++ operations.
 
 ## Module and name selection
@@ -127,9 +127,9 @@ tokens, independently of expected types.
 
 ## Nominal type parameters
 
-The declaration store reserves a generic definition identity rather than a concrete
-struct or enum identity. Each parameter has a type or failure-set kind; an
-application keeps those argument domains distinct. Declaration construction binds
+The declaration store reserves a generic definition identity; concrete struct
+or enum identities belong to instances. Each parameter has a type or failure-set
+kind; applications keep those argument domains distinct. Declaration construction binds
 parameter references, nominal applications, and array, Tuple, slice, Vector,
 pointer, and Operation constructors into checked type expressions. These descriptors
 contain semantic identities rather than AST nodes or unresolved names. Definition
@@ -164,8 +164,7 @@ C++ planning. Parameterized function bodies are not part of this path.
 A function definition owns rigid type and failure descriptors and one checked
 `StructuredBodyDraft`. Ordinary body construction checks universal operations,
 field access, calls, completion, and static admission against that environment.
-The definition uses its own body identity domain. It does not borrow an identity
-from the table of published concrete bodies.
+The definition owns a body identity domain separate from concrete bodies.
 
 Concrete instance formation reserves a callable before replacing types and
 already bound generic calls in the checked body. It reuses that reservation for
@@ -304,20 +303,17 @@ Iteration binding remaps the selected region and extends one copy of its local
 tables. Residual installation transfers that region and its tables while retaining
 the checked region and body inputs.
 
-Publication verifies residual regions through ordinary semantic contracts and
-checks instance identities and argument types. Executable bodies contain no static
-control or static initializers. After validation, publication computes
-callable/type surfaces and closure reference order, then discards checked
-source regions and static-only bodies. Declarations and tests clear references
-to removed bodies. Surviving body IDs and local table identities remain stable.
-Specialization does not change parameter, result, or layout types.
+Validate residual regions, instance identities, and argument types before
+publication. Executable regions contain no static control or static initializers.
+Specialization preserves parameter, result, and layout types. Retain checked
+regions until semantic checks and source-surface collection finish.
 
 ## Ordinary class declarations
 
 `ASTRecordDecl` carries the source record kind, fields, and nested operation
 identities. Catalog class operations have explicit owner, visibility, and receiver
 metadata and do not enter module lookup. Both record forms use the nominal product
-storage currently identified by `StructID`; `RecordKind` preserves the source
+storage identified by `StructID`; `RecordKind` preserves the source
 distinction through semantic publication. Published class operations are ordinary
 function declarations; the catalog retains their source ownership during analysis.
 
@@ -330,11 +326,10 @@ Declaration analysis checks the receiver contract; recursive default
 initialization rejects classes in both construction and published-program queries.
 Private representation remains available to type contents, ownership, and target
 realization. Class `const fn` operations use the same execution capability and
-lexical representation rules as ordinary function bodies. Direct class-operation
-calls in module constant initializers, local `const`
-initializers outside a static block or test, and type-forming constant expressions
-require a `const fn` wrapper. These entry sites do not grant class representation
-access.
+lexical representation rules as ordinary function bodies. Module and local
+constant initializers and type-forming roots admit direct const operation calls.
+Call sites retain operation visibility, argument access, and lexical class
+authority; static execution grants no additional representation access.
 
 ## Completion requests
 

@@ -156,23 +156,21 @@ auto run_interpret_command(std::string_view executable, std::span<const char* co
     if (args.size() == 1
         && (std::string_view(args[0]) == "--help" || std::string_view(args[0]) == "-h")) {
         std::print(
-            "Run the supported Carven language subset with the interpreter.\n"
+            "Interpret supported Carven programs and tests.\n"
             "\n"
             "Usage:\n"
             "  carven interpret [options] <source-file>... [-- <arguments>...]\n"
             "\n"
             "Options:\n"
-            "      --explicit-inputs Use exactly the supplied source files\n"
-            "      --tests           Run runtime tests instead of the program entry\n"
-            "      --timings         Show total and stage timings on stderr\n"
-            "      --trace           Show executed statements, calls, and returns on stderr\n"
-            "      --max-steps <n>   Set the execution step budget (default: 100000)\n"
-            "  -h, --help            Show this help\n"
+            "      --tests                     Run runtime tests instead of the program\n"
+            "      --timings                   Show total and stage timings on stderr\n"
+            "      --trace                     Show statements, calls, and returns on stderr\n"
+            "      --max-steps <n>             Set the step budget (default: 100000)\n"
+            "  -h, --help                      Show this help\n"
             "\n"
-            "Sources include the fixed toolchain and working-directory Crafts roots.\n"
-            "Program execution requires top-level statements or main.\n"
-            "The entry must take no parameters; arguments after '--' are ignored.\n"
-            "Native C++ inputs are collected but are not compiled or initialized.\n"
+            "Sources include installed Crafts and optional project Crafts.\n"
+            "Program execution requires top-level statements or a parameterless main.\n"
+            "Arguments after '--' are ignored. Native C++ inputs are not built or run.\n"
             "Executing a native C++ operation requires compiled execution.\n"
         );
         return 0;
@@ -181,7 +179,6 @@ auto run_interpret_command(std::string_view executable, std::span<const char* co
     auto trace = false;
     auto tests = false;
     auto show_timings = false;
-    auto explicit_inputs = false;
     auto limits = static_execution_limits();
     auto seen_steps = false;
     for (auto index = 0uz; index < args.size(); ++index) {
@@ -197,8 +194,6 @@ auto run_interpret_command(std::string_view executable, std::span<const char* co
             tests = true;
         } else if (arg == "--timings") {
             show_timings = true;
-        } else if (arg == "--explicit-inputs") {
-            explicit_inputs = true;
         } else if (arg == "--trace") {
             if (trace) {
                 return emit_driver_error("--trace may be specified only once", "carven interpret");
@@ -238,8 +233,7 @@ auto run_interpret_command(std::string_view executable, std::span<const char* co
         ExecutionOutput([](ExecutionOutputStream stream, std::string_view bytes) static noexcept {
             std::print(stream == ExecutionOutputStream::Error ? std::cerr : std::cout, "{}", bytes);
         });
-    const auto sources =
-        collect_command_sources(executable, paths, timings.output(), explicit_inputs);
+    const auto sources = collect_command_sources(executable, paths, timings.output());
     if (!sources) {
         return emit_driver_error(sources.error());
     }

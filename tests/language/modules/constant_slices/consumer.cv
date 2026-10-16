@@ -5,7 +5,7 @@ const tail = table.slice(1, table.length());
 
 fn from_consumer() -> [i32] => table;
 
-test "Modules: frozen slices retain static contents across artifact boundaries" {
+test "Modules: constant slices keep their contents across modules" {
     let provider = from_provider();
     let consumer = from_consumer();
     let row = provider_row();

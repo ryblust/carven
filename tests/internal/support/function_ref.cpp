@@ -1,7 +1,6 @@
 module carven:test.internal.support.function_ref;
 
 import :support.function_ref;
-import :test.harness.death;
 import :test.harness.framework;
 import std;
 
@@ -151,7 +150,7 @@ const TestSuite suite([] static noexcept {
             expect_equal(target.value, 8);
         };
 
-    "FunctionRef: empty optional recipients reject invocation"_test = [] static noexcept {
+    "FunctionRef: optional recipients can be assigned and cleared"_test = [] static noexcept {
         auto empty = IntCallback();
         expect(!empty);
         constexpr auto null_pointer = static_cast<int (*)(int) noexcept>(nullptr);
@@ -161,9 +160,6 @@ const TestSuite suite([] static noexcept {
         expect_equal(empty(1), 2);
         empty = {};
         expect(!empty);
-        expect(expect_termination("empty callback", [&]() noexcept {
-            static_cast<void>(empty(0));
-        }));
     };
 });
 

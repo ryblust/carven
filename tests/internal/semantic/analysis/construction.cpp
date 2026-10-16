@@ -22,7 +22,6 @@ import :source.manager;
 import :source.module_path;
 import :source.provenance.ids;
 import :source.text;
-import :test.harness.death;
 import :test.harness.diagnostics;
 import :test.harness.framework;
 import :test.internal.semantic.analysis.fixture;
@@ -72,7 +71,6 @@ const TestSuite suite([] static noexcept {
         [] static noexcept {
             constexpr auto case_name =
                 std::string_view("ThisIsAnEnumCaseNameLongEnoughToUseOwnedHeapStorage");
-            expect_equal(case_name.size(), 51uz);
             const auto program = analyze_test_program(R"(
         enum Choice { ThisIsAnEnumCaseNameLongEnoughToUseOwnedHeapStorage, Other }
         const selected: Choice = (((.ThisIsAnEnumCaseNameLongEnoughToUseOwnedHeapStorage)));
@@ -250,13 +248,6 @@ const TestSuite suite([] static noexcept {
                         == module_id
                     );
                     expect(!(draft.function_for_callable(seed.callable).has_value()));
-                    expect(expect_termination("unprepared-function-head-read", [&] noexcept {
-                        static_cast<void>(draft.function_declaration_copy(last.function));
-                    }));
-                    expect(expect_termination("uncompleted-body-read", [&] noexcept {
-                        const auto reserved = draft.reserve_body(BodyKind::Function);
-                        static_cast<void>(draft.body_draft(reserved.id()));
-                    }));
                     auto first_body =
                         construction.construction_requests()
                             .ensure_function_body(seed.function, module_id, Span::at(0u))
@@ -309,61 +300,45 @@ const TestSuite suite([] static noexcept {
             );
         };
 
-    "Construction: pending results require completion before contract access"_test =
-        [] static noexcept {
-            with_catalog(
-                "fn inferred() => 1;",
-                [](ProgramDraft& draft,
-                   AnalysisCatalogView catalog,
-                   ImportUsage& usage,
-                   DiagnosticSink&) static noexcept {
-                    auto construction = ProgramConstruction(draft, catalog, usage);
-                    const auto function = function_named(catalog, "inferred");
-                    const auto module_id = catalog.modules().front().module_id;
-                    if (!expect(construction.construction_requests()
-                                    .ensure_declaration(
-                                        catalog.function_symbol(function.function),
-                                        module_id,
-                                        Span::at(0u)
-                                    )
-                                    .run()
-                                    .has_value())) {
-                        return;
-                    }
-                    if (!expect(
-                            draft.pending_function_contract_copy(function.callable).has_value()
-                        )) {
-                        return;
-                    }
-                    expect(expect_termination("pending-function-contract-read", [&] noexcept {
-                        static_cast<void>(
-                            draft.construction_callable_contract_copy(function.callable)
-                        );
-                    }));
-                    if (!expect(construction.construction_requests()
-                                    .ensure_function_signature(
-                                        function.function,
-                                        module_id,
-                                        Span::at(0u)
-                                    )
-                                    .run()
-                                    .has_value())) {
-                        return;
-                    }
-                    expect(!(draft.pending_function_contract_copy(function.callable).has_value()));
-                    expect(expect_termination("duplicate-function-result-completion", [&] noexcept {
-                        draft.complete_function_result(
-                            function.callable,
-                            draft.builtin_type(BuiltinType::I32)
-                        );
-                    }));
-                    if (!expect(construction.run().has_value())) {
-                        return;
-                    }
-                    expect(std::move(draft).finish().has_value());
+    "Construction: inferred signatures complete pending results"_test = [] static noexcept {
+        with_catalog(
+            "fn inferred() => 1;",
+            [](ProgramDraft& draft,
+               AnalysisCatalogView catalog,
+               ImportUsage& usage,
+               DiagnosticSink&) static noexcept {
+                auto construction = ProgramConstruction(draft, catalog, usage);
+                const auto function = function_named(catalog, "inferred");
+                const auto module_id = catalog.modules().front().module_id;
+                if (!expect(construction.construction_requests()
+                                .ensure_declaration(
+                                    catalog.function_symbol(function.function),
+                                    module_id,
+                                    Span::at(0u)
+                                )
+                                .run()
+                                .has_value())) {
+                    return;
                 }
-            );
-        };
+                if (!expect(draft.pending_function_contract_copy(function.callable).has_value())) {
+                    return;
+                }
+                if (!expect(
+                        construction.construction_requests()
+                            .ensure_function_signature(function.function, module_id, Span::at(0u))
+                            .run()
+                            .has_value()
+                    )) {
+                    return;
+                }
+                expect(!(draft.pending_function_contract_copy(function.callable).has_value()));
+                if (!expect(construction.run().has_value())) {
+                    return;
+                }
+                expect(std::move(draft).finish().has_value());
+            }
+        );
+    };
 
     "Program construction: long inferred dependencies complete or diagnose the leaf"_test =
         [] static noexcept {

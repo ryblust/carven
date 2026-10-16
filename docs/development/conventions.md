@@ -1,53 +1,56 @@
-# C++ Conventions
+# Source conventions
 
-These rules apply to project-authored C++ in `src/`, `tests/`, `crafts/`, `benchmarks/`, and `tools/`.
-Vendored source and fixtures that preserve an external interface follow their
-owning format. Generated artifacts follow the C++ baseline below; the remaining
-source-layout and style rules apply to handwritten code. `.clang-format` owns
-formatting; neighboring code demonstrates local idioms.
+This document defines project source layout, Carven source style, and handwritten
+C++ conventions.
+
+## Scope and formatting
+
+| Source | Applicable rules |
+| --- | --- |
+| Project source in `src/`, `tests/`, `crafts/`, `benchmarks/`, and `tools/` | Apply these source conventions |
+| Vendored source and external-interface fixtures | Follow their owning format |
+| Generated artifacts | Apply the C++ baseline and header-order rules |
+
+Use `.clang-format` for C++ formatting and neighboring code for local idioms.
 
 ## C++ baseline
 
-- Source in `src/`, `tests/internal/`, and `tools/` may use C++26.
-- Crafts, installed support source, generated code, and baseline consumer
-  fixtures and native benchmarks must compile with C++20. Implementations may
-  select newer facilities when the consumer's standard and library support them,
-  while preserving the Carven operation's semantics and functionality.
-  Prefer library feature detection for library capabilities.
-- The consumer project selects its C++ standard. Optional implementations do
-  not raise the required baseline. Explicit newer-standard interop targets may
-  exercise APIs from that standard.
+| Source | Requirement |
+| --- | --- |
+| `src/`, `tests/internal/`, and `tools/` | May use C++26 |
+| Crafts, installed support source, generated code, baseline consumer fixtures, and native benchmarks | Must compile with C++20 |
+
+Select newer facilities only when the consumer's standard and library support them,
+preserving the operation's semantics and functionality. Prefer library feature
+detection. Let consumers select their C++ standard; optional implementations must
+not raise the baseline. Explicit newer-standard interop targets may exercise that
+standard's APIs.
 
 ## Source layout
 
-- An owner directory contains files for one responsibility. A branch directory
-  contains subdirectories. Split owners only into independently understandable
-  responsibilities.
-- Use directory levels to express ownership and dependency boundaries. Keep an
-  owner's entry, state, and implementation slices in the same directory.
+- Owner directories contain files for one responsibility; branch directories
+  contain subdirectories. Split owners only at independently understandable
+  responsibility and dependency boundaries. Avoid catch-all directory names.
+- Keep an owner's entry, state, contracts, and implementation slices together.
+  Split files by coherent operations, algorithms, or contracts, defining state
+  ownership and dependency direction across slices.
 - Mixed file and directory layouts are permitted at the repository root, the
   `src/` compiler entry boundary, and where required by build metadata,
   test-group harnesses, or fixtures whose layout is under test.
-- Place a contract and its implementation together. A contract may have
-  multiple implementation slices within the same owner directory.
-- Split files by coherent operations, algorithms, or contracts. Define state
-  ownership and dependency direction across implementation slices.
 
 ### Native interoperation
 
-- Keep native type and function declarations in `.hpp` files and ordinary
-  implementations in `.cpp` files selected by the consumer build. Keep template
-  definitions visible in headers.
+- Put native type and function declarations in `.hpp` files and ordinary
+  implementations in consumer-selected `.cpp` files. Keep templates visible in headers.
 - Import native headers from `.cv` files. Declare `import(cpp)` boundaries when
   source access, failure, or async contracts are needed.
-- Native bridges owned by a Standard Craft use `carven::standard::<domain>` namespaces;
-  shared builtin support uses `carven::runtime::<domain>`.
-  Bind `import(cpp)` declarations to their qualified native function names.
-  Language module paths and native namespace names are independent. Use `std::`
-  for C++ standard-library references; avoid native namespaces that shadow it.
+- Standard Craft bridges use `carven::standard::<domain>`; shared builtin support
+  uses `carven::runtime::<domain>`. Bind `import(cpp)` declarations to qualified
+  native function names, independently of language module paths. Use `std::` for
+  C++ standard-library references; avoid native namespaces that shadow it.
 - Use source fragments for small module-local adapters and implementation-only
-  includes. Follow the [interoperation reference](../language/interop.md#source-fragments)
-  for headers that depend on generated Carven types.
+  includes, including headers that depend on generated Carven signature types.
+  Publish native declarations through headers; fragments remain implementation-only.
 
 ### Runtime domains
 
@@ -69,25 +72,18 @@ contracts and implementation slices by domain:
 | `text/` | String storage, borrowed text views, and UTF-8 operations |
 | `value/` | Value representations, result storage, and stateless values |
 
-Expose self-contained contract headers within each domain, such as
-`collection/array.hpp` and `format/writer.hpp`. Include the contracts used by
-generated code and native consumers. Use a domain entry such as `text/text.hpp`
-for implementation headers that share one contract. Keep implementation headers
-internal to their domain. Compiler source in `src/` does not include Crafts
-headers; generated programs consume the runtime through native headers.
+Expose self-contained contract headers such as `collection/array.hpp` and
+`format/writer.hpp`. Consumers include the contracts they use. Keep implementation
+headers internal to the domain, using an entry such as `text/text.hpp` when they
+share one contract. Compiler source in `src/` does not include Crafts headers;
+generated programs and source Crafts consume them through native interoperation.
+Library-specific host bridges and platform dependencies stay with their Craft.
 
-Source Crafts import these headers directly through ordinary native interoperation
-when needed. Keep library-specific host bridges and their platform dependencies
-with the owning Craft, such as networking's socket adapter.
-
-Use angle brackets and the complete `carven/` path for Carven headers,
-including dependencies within the same domain. Use the corresponding native
-import in Carven source. Native consumers add the Crafts root to their include
-search directories:
+Use angle brackets and complete `carven/` paths, including within a domain. Native
+consumers add the Crafts root to their include paths; Carven source uses native imports:
 
 ```cpp
 #include <carven/runtime/collection/array.hpp>
-#include <carven/runtime/text/string.hpp>
 ```
 
 ```carven
@@ -96,8 +92,7 @@ import <carven/std/net/native.hpp>;
 
 ### Header order
 
-Order independent C++ includes in these categories, with lexical path order
-within each category:
+Order independent includes by category, then lexically by path:
 
 1. The implementation's associated interface header, when one exists.
 2. Carven runtime headers.
@@ -105,49 +100,62 @@ within each category:
 4. Other project and craft headers, then third-party headers.
 5. C++ standard-library headers, then platform headers.
 
-Make each public header supply its own dependencies.
-By default, keep independent Carven-owned headers in one block and separate
-external library headers with a blank line. Use one blank line to separate
-authored groups when needed, including runtime and generated API headers.
-Preserve the order required by macro configuration, conditional compilation,
-and implementation-header dependencies. Generated artifacts place explicit
-native import environments after the associated header and before synthesized
-dependency groups; those environments retain source order. Formatters preserve
-include order.
+Public headers supply their own dependencies. Keep independent Carven-owned headers
+in one block by default; separate external library headers and any needed authored
+groups with one blank line. Preserve ordering required by macros, conditional
+compilation, and implementation-header dependencies. Generated artifacts place
+explicit native import environments, in source order, after the associated header
+and before synthesized dependency groups. Formatters preserve include order.
+
+### Carven source style
+
+Write combined function modifiers as `const async fn`, with static capability
+before execution kind.
+
+Group imports in official source in this order:
+
+1. Modules in the current craft, using unprefixed or leading-`.` references.
+2. Modules in other crafts, using craft-qualified references.
+3. Standard-library modules, using `std::`.
+4. Native C++ headers.
+
+Sort module references lexically within each group. Use one blank line to
+separate authored groups when needed. Keep each selection list with its module
+import. Preserve the required order of native headers; order independent headers
+by the header categories above.
+Keep `std::` imports in the standard-library group within the official craft
+as well.
+The formatter preserves the written order.
 
 ## Modules and visibility
 
 - `src/carven.cppm` is the compiler's primary interface. Other compiler module
   units are partitions.
 - Use `.cppm` for contract partitions and `.cpp` for implementation partitions.
-  Implementation partition names end in `.impl`. File stems match the final
+  End implementation partition names in `.impl`; match file stems to the final
   module segment before `.impl`.
 - Partition names use the owning responsibility and the file's role. Collapse a
   repeated owner name at its entry.
-- Put imports in one block after the module declaration. Order partitions
-  lexically and put `import std;` last. Import only dependencies used by the
-  unit. An implementation partition imports its contract.
-- Shared declarations in compiler, tool, and internal-test partitions use
-  names that identify their domain without named C++ namespaces. Imports control
-  visibility; partitions of the same named module still share declaration
-  identity. Keep shared names distinct.
-- Use a global module fragment for required platform
-  headers, macro-only test headers, or consumer headers exercised by tests.
+- Put imports in one block after the module declaration, partitions in lexical
+  order and `import std;` last. Import only used dependencies; implementations
+  import their contract.
+- Shared declarations in compiler, tool, and internal-test partitions use distinct
+  names identifying their domain, without named C++ namespaces. Imports control
+  visibility; partitions of one named module still share declaration identity.
+- Use global module fragments for required platform headers, macro-only test
+  headers, or consumer headers exercised by tests.
 - Put translation-unit-private declarations in an anonymous namespace.
-- Separate every namespace opening from its contents with a blank line. Close
-  every namespace with a namespace comment; include the name for named namespaces.
-- Combine consecutive named namespace openings into a qualified namespace
-  definition when the entire body belongs to the innermost namespace. Preserve
-  any inline namespace qualifiers.
-- A support component exposes the contract used by generated code and craft
-  support sources through its owning namespace. A subsystem namespace supplies
-  the domain qualifier for its member names.
-- An internal interface shared by headers of one subsystem uses a namespace
-  named for its role. Keep implementation helpers there when they serve that
-  same responsibility. Header-local helpers may use a separate private scope.
-- Backend-dependent support types may live in an inline namespace within their
-  component. Callers use the component name; the defining namespace retains the
-  selected backend's type identity.
+- Follow each namespace opening with a blank line and close it with a namespace
+  comment, including the name for named namespaces. Combine consecutive named
+  openings into a qualified definition when the whole body belongs to the innermost
+  namespace; preserve inline qualifiers.
+- Support components expose contracts through their owning namespaces, which
+  supply the domain qualifier for member names.
+- Interfaces shared by subsystem headers use a namespace named for their role,
+  including helpers serving that responsibility. Header-local helpers may use a
+  separate private scope.
+- Backend-dependent support types may use an inline namespace: callers use the
+  component name; the defining namespace retains the selected backend's type identity.
 - Helpers used only by one class belong in its private scope where C++
   template rules permit it.
 - Expose operations needed by production callers through the owning interface.
@@ -161,21 +169,17 @@ include order.
 | Type, class, enum, enum case | `UpperCamelCase` |
 | Function, member, local, parameter, file, directory | `lower_snake_case` |
 
-- Preserve acronyms.
-- ID type names end in `ID`. Use `id` when context identifies its role;
-  otherwise qualify the role. ID collections use `_ids`.
+- Preserve acronyms. ID types end in `ID` and ID collections in `_ids`. Use `id`
+  when context identifies the role; otherwise qualify it.
 - Use the same domain vocabulary in directories, module partitions, types,
   operations, and tests. Use `decl`, `expr`, and `stmt` for those concepts in
   directory names, module segments, and file stems.
-- Use concise names that are precise in context. Omit domain qualifiers already
-  supplied by the parent directory. Retain qualifiers needed to distinguish
-  responsibilities.
-- Name types and APIs for their roles at use sites. Update names, callers, and
-  architecture documentation when responsibilities change.
-- Name builders for their results and analyzers for their scope. Name
-  implementation slices for their responsibility. Do not introduce plural long
-  forms merely to distinguish an owner from its vocabulary.
-- Avoid catch-all directory names; each owner names a coherent responsibility.
+- Use concise names precise in context. Name types and APIs for their roles at use
+  sites; omit domain qualifiers supplied by the parent directory and retain those
+  distinguishing responsibilities. Update names, callers, and architecture
+  documentation when responsibilities change.
+- Name builders for results, analyzers for scope, and implementation slices for
+  responsibility. Avoid plural long forms merely distinguishing owners from vocabulary.
 - Compiler module-name segments are non-keyword C++ identifiers. Do not use the
   bare contextual keyword `module` as a segment; choose a name that states its
   role.
@@ -185,82 +189,75 @@ include order.
 
 - In compiler source, declare ordinary member functions in the class and define
   them out of class in `.cpp`, including constructors and single-line accessors.
-  Private helper classes in `.cpp` follow the same rule in that file.
+  Private helper classes in `.cpp` follow the same rule within that file.
 - Keep template and `constexpr`/`consteval` definitions visible where needed.
   Keep `= default` and `= delete` in the class declaration.
-- Use compiler time traces to identify repeated heavy template instantiations.
-  When several implementation files use the same concrete context, place its
-  calls behind an ordinary entry in an existing implementation file that already
-  instantiates that context.
-- Keep consecutive single-line member function declarations compact within
-  each group. Separate adjacent declarations with one blank line when either is
-  multiline, including template heads, attributes, and requires clauses.
-  Keep comments with their declarations and preserve documented responsibility
-  groups. Separate access sections and data members as needed.
-- Named functions use trailing return types where C++ permits. Constructors,
-  destructors, and conversion functions are exceptions.
-- Single-argument constructors other than copy and move constructors are
-  `explicit`. Template type parameters use `typename`.
-- Project-defined classes and structs are `final` unless a C++ protocol
-  requires inheritance.
+- Use time traces to find repeated heavy template instantiations. When multiple
+  files use one concrete context, put calls behind an ordinary entry in an existing
+  implementation file that already instantiates it.
+- Keep consecutive single-line member function declarations compact. Separate
+  adjacent declarations by one blank line when either spans multiple lines, including
+  template heads, attributes, or requires clauses. Preserve attached comments and
+  responsibility groups; separate access sections and data members as needed.
+- Use trailing return types for named functions except constructors, destructors,
+  and conversion functions.
+- Mark single-argument constructors `explicit`, except copy and move constructors.
+  Use `typename` for template type parameters.
+- Mark project-defined classes and structs `final` unless a C++ protocol requires
+  inheritance.
 - Use `struct` for transparent aggregate records and `class` for types that
   own invariants or a lifecycle.
-- Every noncapturing lambda in `src/` and `tests/internal/` is `static`.
+- Mark every noncapturing lambda in `src/` and `tests/internal/` as `static`.
 
 ## Values and initialization
 
-- Use `constexpr` for immutable value locals that permit constant-expression
-  initialization. Use `const auto` for immutable runtime values and `auto` for
-  values that are modified, moved from, or mutably borrowed.
+- Use `constexpr` for immutable value locals permitting constant-expression
+  initialization, `const auto` for immutable runtime values, and `auto` for values
+  modified, moved from, or mutably borrowed.
 - Choose storage duration by object lifetime and identity.
-- `auto` may deduce a pointer; `auto*` is optional. Apply top-level constness to
-  the pointer value independently of pointee constness. Preserve pointee
-  constness through deduction; spell a pointer type explicitly when narrowing
-  mutable access to the pointee.
-- Use designated initializers in declaration order for non-empty project
-  records. Explicitly initialize every field at each construction site, including
-  booleans, empty containers, and empty optionals. Use empty braces for fieldless
-  values and braces for container literals.
-- Declare transparent record fields without default member initializers.
-  An exception requires a consumed C++ protocol that cannot be satisfied through
-  explicit construction; document that requirement at the declaration.
-  Classes may initialize their private execution state in members.
-- When an integer literal's type is intentional, use a lowercase literal suffix
-  instead of constructing a fixed-width alias solely to type the literal.
+- `auto` may deduce pointers; `auto*` is optional. Pointer-value constness is
+  independent of pointee constness. Preserve pointee constness in deduction;
+  spell the pointer type when narrowing mutable access to the pointee.
+- Use designated initializers in declaration order for non-empty project records.
+  Initialize every field explicitly, including booleans, empty containers, and
+  empty optionals. Use empty braces for fieldless values and braces for container
+  literals.
+- Transparent record fields have no default member initializers unless a consumed
+  C++ protocol cannot be satisfied by explicit construction; document that requirement
+  at the declaration. Classes may initialize private execution state in members.
+- Give intentionally typed integer literals lowercase suffixes rather than
+  constructing fixed-width aliases solely to type them.
 - Compiler-owned size literals use `uz`. Consumer-facing source uses deduction
   or an explicitly typed `std::size_t` value.
 - Use `static_cast` for explicit conversions it supports.
 
 ## Ownership and borrowing
 
-- Variable-size owned storage uses standard value containers.
-- Borrowed storage remains alive and valid throughout every use. State borrow
-  lifetimes and invalidating operations at the owning interface. Do not return
-  borrows into temporaries or local storage that dies on return.
-- Ordinary task forwarders return the existing task directly. Callers retain
-  borrowed contexts until the task completes, including across `co_await`.
+- Use standard value containers for variable-size owned storage.
+- Keep borrowed storage alive and valid throughout use. State lifetimes and
+  invalidating operations at the owning interface; do not return borrows into
+  temporaries or locals that die on return.
+- Ordinary task forwarders return the existing task directly. Retain borrowed
+  contexts until completion, including across `co_await`.
 - Treat moving or consuming an owner as ending its outstanding borrows.
 - Construction-time readers return values when subsequent container growth
   could invalidate an exposed borrow.
-- Pass trivial values by value. For borrowed input, use `std::string_view` for
-  text and `std::span<const T>` for read-only ranges. Use references for required
-  object borrows and pointers for nullable object borrows. Do not use output
-  parameters.
+- Pass trivial values by value. Borrow text with `std::string_view`, read-only
+  ranges with `std::span<const T>`, required objects with references, and nullable
+  objects with pointers. Do not use output parameters.
 - Use `const auto&` for read-only lvalue borrows.
 
 ## Failure handling
 
-- Project implementation functions are `noexcept` unless a consumed C++
+- Declare project implementation functions `noexcept` unless a consumed C++
   protocol requires a conditional exception specification.
 - Defaulted special members use the native exception specification unless an
   explicit protocol boundary requires `noexcept`; deleted members need none.
 - Template requirements follow the operations needed by the consumer. A
   `noexcept` template may accept potentially throwing operations when escaping
   exceptions are defined to terminate.
-- Compiler code does not use `throw`, `try`, or `catch`.
-- Failed internal invariants terminate.
-- Interop tests may enable C++ exceptions in isolated processes to verify
-  exception boundaries.
+- Do not use `throw`, `try`, or `catch` in compiler code.
+- Terminate on failed internal invariants.
 
 ## Control flow
 
@@ -273,16 +270,6 @@ include order.
   otherwise use `std::get_if`.
 - Preserve evaluation order when simplifying expressions.
 - Use member `visit` for one variant and `std::visit` for multiple variants.
-
-## Tests
-
-Test names identify a stable owning component and the observed behavior. Name
-inputs before iterating and preserve their identity in assertion context. Use
-comparison assertions for printable values and guard premises before dependent
-observations. Tests establish accepted behavior, rejected inputs, and invariants
-at their owning boundaries. Test contracts admit equivalent implementations that
-preserve the observed property. Neighboring suites demonstrate registration and
-assertion syntax.
 
 ## Comments
 

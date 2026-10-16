@@ -3,26 +3,28 @@
 - **Status:** Exploration
 - **Scope:** Runtime values whose concrete type is hidden behind a checked contract
 
-## Current boundary
-
-Ordinary classes encapsulate a known nominal value. Their operations are checked
-as ordinary calls with Read, Write, or Take receivers. Callable views already
-provide borrowed indirect calls through a fixed checked signature. The language
-has no general nominal erased-value or dynamic-conformance facility.
-
-Owning closure values and builtin `Operation<T, throw E>` also have implemented
-call or completion contracts. Neither supplies general nominal conformance,
-existential type packaging, or an open dynamic operation table.
+## Summary
 
 A dynamic value needs a contract for available operations and a holding form for
 its concrete value. The holding form determines ownership, borrowing, allocation,
 nullability, and lifetime. Static generic evidence is selected during compilation.
-A dynamic value would need runtime dispatch information. Conversion between them
-needs an explicit cost and lifetime contract.
+For the proposed dynamic value, define runtime dispatch information. Specify
+conversion costs and lifetimes when a selected API converts between the two.
 
 A callback, heterogeneous collection, or service API can establish the required
 operations and value lifetime. `class(form)` and `dyn Contract` are syntax
 candidates.
+
+## Context
+
+Ordinary classes encapsulate a known nominal value. Their operations are checked
+as ordinary calls with Read, Write, or Take receivers. Callable views
+provide borrowed indirect calls through a fixed checked signature. The language
+has no general nominal erased-value or dynamic-conformance facility.
+
+Owning closures and builtin `Operation<T, throw E>` have fixed call or completion
+contracts. General nominal conformance, existential packaging, and dynamic
+operation tables remain unimplemented.
 
 ## Open decisions
 
@@ -57,7 +59,7 @@ dispatch representation is selected.
 - **Reason deferred:** Polymorphic elimination adds hidden-type call and result
   contracts beyond fixed-operation dispatch.
 - **Depends on:** The holding and lifetime contracts of the selected consumer;
-  checked polymorphic calls and a finite instance contract from Generics
+  checked polymorphic calls and finite formation of their concrete instances
 - **Reactivation condition:** A concrete API must apply external algorithms to a
   container whose element type is hidden, and ordinary fixed-operation dispatch
   cannot express the requirement.
@@ -96,10 +98,5 @@ testing a C++ representation.
 
 ## References
 
-- [Ordinary aggregates](../docs/language/aggregates.md#ordinary-value-classes):
-  current value, access, and lifetime rules.
-- [Generic extensions](generic-extensions.md): checked polymorphic calls, static evidence, and finite
-  instances required by generic elimination.
-- [Functions](../docs/language/functions.md) and [async](../docs/language/async.md): existing closures, callable views, and operation values.
 - [Mitchell and Plotkin, Abstract Types Have Existential Type](https://www.cs.cmu.edu/~crary/819-f09/MitchellPlotkin88.pdf):
   existential packaging, hidden type identity, and polymorphic elimination.

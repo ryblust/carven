@@ -1,8 +1,10 @@
 # Input and output
 
-[Language](README.md) · [Standard capabilities](standard.md)
+This page defines printing, asynchronous standard input, and byte framing through
+`std::io`.
 
-`std::io` provides printing, asynchronous standard input, and byte framing.
+## Capabilities and imports
+
 Printing and `stdin` are available by default. Import other declarations when
 naming them.
 
@@ -150,8 +152,9 @@ count. A zero-sized chunk returns `.Data([])` without reading. Empty input read
 through EOF returns empty owning data.
 
 Byte reads preserve arbitrary bytes, including internal NUL and malformed UTF-8.
-Text reads validate the completed byte sequence and report the
-[shared UTF error detail](utf.md#error-and-streaming-contract).
+Text reads validate the completed byte sequence. `UTF8Error` records the error kind,
+rejected byte offset, and invalid sequence's starting offset; EOF truncation points
+at the input end. Offsets are zero-based bytes in the completed input.
 Completed text reads consume their bytes before validation, including when
 validation fails.
 

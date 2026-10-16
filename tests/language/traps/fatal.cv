@@ -1,0 +1,14 @@
+test "earlier failed case" {
+    check(false, "earlier failure retained");
+}
+
+test "fatal assertion" {
+    check(false, "earlier check retained");
+    var condition = false;
+    assert(condition, "stop the run");
+    eprintln("unreachable");
+}
+
+test "later test must not run" {
+    eprintln("unreachable");
+}

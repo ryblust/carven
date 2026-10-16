@@ -58,7 +58,7 @@ input.
 
 The shared runner performs warmups followed by shuffled, interleaved samples.
 Defaults are one warmup and seven measured samples. `--samples`, `--warmups`,
-`--cxx`, and `--output` control the run. `--portable` forces the portable runtime
+and `--output` control the run. `--portable` forces the portable runtime
 backend; portable implementations may still use compiler vector operations.
 The default selects the backend supported by the native target's enabled ISA;
 this harness does not enable AVX2 automatically.
@@ -66,12 +66,13 @@ this harness does not enable AVX2 automatically.
 JSON records individual intervals, checksums, execution order, native target
 architecture, compiler identity and flags, and source hashes. Carven results also
 record `runtime_backend`; the byte loop has no runtime backend selection.
-Input snapshots, generated C++, build projects, and executables remain beside the
-report. The selected compiler's standard craft sources are captured and checked
-for changes across the run. Results characterize these workloads and the recorded
-machine and configuration.
+Workload snapshots remain beside the report. Generated C++ and executables
+remain in the main project's build directories. The compiler and Crafts inputs
+are hashed and checked for changes across the run.
 
-`run.lua` owns sampling and reports; `native_project.lua` defines native targets.
+`run.lua` owns sampling and reports; `xmake.lua` defines native targets.
+Workloads use the main project's resolved dependency and shared standard-library
+build. `--case` selects one workload group for building and measurement.
 `main.cpp` prepares inputs and measures calls through the scan contract.
 `scan.hpp` declares that contract for `byte_loop.cpp`; the Carven implementation
 comes from the generated workload API.

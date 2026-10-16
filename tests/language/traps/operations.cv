@@ -1,0 +1,111 @@
+import "native.hpp";
+
+private import(cpp) fn invalid_scalar() -> char;
+
+export(cpp) fn divide(value: i32) {
+    let _ = 1 / value;
+}
+
+export(cpp) fn index(value: usize) {
+    let array = [1];
+    let _ = array[value];
+}
+
+export(cpp) fn slice_length() {
+    let array = [1];
+    let _ = array.slice(0, 2).length();
+}
+
+export(cpp) fn assertion(value: bool) {
+    assert(value, "native assertion");
+}
+
+export(cpp) fn remainder(value: i32) {
+    let _ = 1 % value;
+}
+
+export(cpp) fn shift(value: i32) {
+    let _ = 1 << value;
+}
+
+export(cpp) fn unicode() {
+    let _ = invalid_scalar();
+}
+
+export(cpp) fn formatted_text() {
+    println(42, f"{::invalid_text()}");
+}
+
+export(cpp) fn slice_index(value: i32) {
+    let array = [1];
+    let _ = array.slice()[value];
+}
+
+export(cpp) fn slice_range(start: usize, end: usize) {
+    let array = [1];
+    let _ = array.slice(start, end);
+}
+
+export(cpp) fn slice_known_empty() {
+    let array = [1];
+    let _ = array.slice(2, 2).is_empty();
+}
+
+export(cpp) fn slice_known_format() {
+    let array = [1];
+    let _ = f"{array.slice(0, 2).length()}";
+}
+
+export(cpp) fn accept_unicode_scalar(value: char) {
+    let _ = value;
+}
+
+export(cpp) fn clamp(lower: f32, upper: f32) {
+    0.0f32.clamp(lower, upper);
+}
+
+export(cpp) fn simd_clamp(lower: f32) {
+    f32x4::splat(0.0).clamp(f32x4::splat(lower), f32x4::splat(1.0));
+}
+
+export(cpp) fn simd_load() {
+    let values: [u8; 15] = [0; 15];
+    let _ = u8x16::load(values, 0);
+}
+
+export(cpp) fn simd_partial() {
+    let values: [u8; 0] = [];
+    let _ = u8x16::load_partial(values, 1, 0);
+}
+
+export(cpp) fn simd_lane(index: usize) {
+    let _ = u8x16::splat(0).lane(index);
+}
+
+export(cpp) fn simd_with_lane(index: usize) {
+    let _ = u8x16::splat(0).with_lane(index, 1);
+}
+
+export(cpp) fn simd_prefix(count: usize) {
+    let _ = mask16::prefix(count);
+}
+
+export(cpp) fn check_without_test() {
+    check(false);
+}
+
+export(cpp) fn assertion_snapshot() {
+    var actual = [1, 11];
+    let expected = [2, 22];
+    assert(
+        actual == expected,
+        if true {
+            actual[0] = 99;
+            eprintln("message evaluated");
+            "array mismatch"
+        } else {
+            "unused"
+        }
+    );
+    eprintln("unreachable");
+}

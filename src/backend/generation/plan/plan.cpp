@@ -525,7 +525,7 @@ auto TargetPlan::build(
     const auto closures = plan_closures(semantic);
     auto names = plan_names(semantic, request, library_modules, closures);
     auto failures = plan_failure_abi(semantic);
-    auto artifacts = plan_artifacts(semantic, request, library_modules, closures, identity);
+    auto artifacts = plan_artifacts(semantic, request, library_modules, closures, names, identity);
     return TargetPlan(
         semantic.identity(),
         identity,
@@ -608,9 +608,15 @@ auto module_implementation_logical_path(std::span<const std::string> canonical_c
     return logical_path({}, canonical_components, ".cpp");
 }
 
-auto interface_component_logical_path(std::span<const std::string> anchor_components) noexcept
-    -> std::string {
-    return logical_path("carven/generated", anchor_components, ".hpp");
+auto interface_component_logical_path(
+    std::string_view linkage_namespace,
+    std::span<const std::string> anchor_components
+) noexcept -> std::string {
+    return logical_path(
+        std::format("carven/generated/{}", linkage_namespace),
+        anchor_components,
+        ".hpp"
+    );
 }
 
 auto cpp_api_header_logical_path(std::span<const std::string> canonical_components) noexcept

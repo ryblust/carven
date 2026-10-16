@@ -12,9 +12,9 @@ to choose C++ storage and operations. Explicit native forms would fix the releva
 interoperability contract. Compact collections have separate access and mutation
 rules.
 
-All forms and plan names below are candidates. No layout syntax or optimization
-is accepted by this document. Select each experiment using target facts and a
-workload; a smaller representation alone does not establish a performance gain.
+All forms and plan names below are candidates. Select each experiment using
+target facts and a workload. Measure representation size and execution cost
+separately.
 
 | Slice | Next evidence or decision |
 | --- | --- |
@@ -26,7 +26,7 @@ workload; a smaller representation alone does not establish a performance gain.
 | Frozen compact collections | Select a builder/reader API with independently checked retention and representation contracts |
 | Access-driven layout | Establish a workload where a size-only policy loses and a stable profile or access summary helps |
 
-## Current architecture
+## Context
 
 `lower_structure` in `src/backend/lowering/decl/nominal.cpp` emits semantic fields
 in declaration order. Payload enums use generated case records and `std::variant`;
@@ -36,32 +36,32 @@ Field contents determine ownership and native lifecycle behavior.
 
 `TargetPlan` owns names, failure ABI ordering, and artifact plans over a published
 immutable `SemIRProgram`. `TargetPlanningRequest` contains test mode, linkage
-domain, and an optional `SourceLibrary` describing shared library modules, linkage,
-and implementation emission. It supplies no target layout facts. Structure
+domain, and an optional `SourceLibrary` describing library modules, linkage,
+and module ownership. It supplies no target layout facts. Structure
 constants are reconstructed in semantic field order by `backend.lowering.constant`.
 These consumers need one representation plan if physical order or encoding changes.
 
-Tuples already use the recursive `runtime::Tuple<Head, Tail...>` aggregate in
+Tuples use the recursive `runtime::Tuple<Head, Tail...>` aggregate in
 `value/tuple.hpp`, with `[[no_unique_address]]` members, direct construction of
 immovable elements, and positional access. Flat-product selection remains a
 measurement candidate. Existing enum case records and failure carriers supply no
 niche or pointer-tag plan, and no source `struct(c)` or `struct(cpp)` layout form
 is implemented.
 
-Vector already encodes retained storage in its length field. Compound constants
-already retain typed logical contents and reconstruct immutable native backing.
-These specific representations provide no general layout plan or compact
-collection reader API.
+Vector encodes retained storage in its length field. Compound constants retain
+typed logical contents and reconstruct immutable native backing. General layout
+planning and compact collection readers remain unimplemented.
 
-The evaluator already works with logical values and object identities rather than
-native record bytes. Keep that separation. Generated programs use C++20; a
-representation expressible in LLVM IR is not automatically legal C++20 storage,
-aliasing, object lifetime, or constant initialization.
+The evaluator uses logical values and object identities. It establishes address
+equality between a supported standard-layout struct and its source first field,
+recursively; erased-pointer restoration uses those relations. Preserve them when
+selecting physical storage. Generated programs use C++20; validate storage,
+aliasing, object lifetime, and constant initialization under that baseline.
 
-## Lessons from existing systems
+### Lessons from existing systems
 
-The following are precedents, not guarantees inherited by Carven. References
-identify the implementations and research behind each observation.
+Use these precedents to select experiments. Validate each transferred mechanism
+against Carven's access, lifetime, and native-interface contracts.
 
 | Source | Relevant mechanism | Candidate transfer and limit |
 | --- | --- | --- |
@@ -76,9 +76,11 @@ identify the implementations and research behind each observation.
 | packed-data, ECOOP 2025 | Typed builders and readers for packed values implemented as a library | Try an explicit craft/container boundary before changing the representation of every source record |
 | Floorplan, GPCE 2019 | Declarative layout descriptions generate address calculations | Keep layout arithmetic and its verification in one owner instead of duplicating offsets across consumers |
 
-## Representation contracts
+## Design
 
-### Ordinary and native records
+### Representation contracts
+
+#### Ordinary and native records
 
 The proposed default for ordinary `struct` and `class` preserves logical field
 identity and behavior without promising physical declaration order. A source
@@ -97,23 +99,19 @@ Possible source forms, pending grammar and ABI decisions:
 | `struct(c)` | Target C ABI record with an explicitly admitted set of C-compatible fields and a C-consumable declaration |
 | `struct(cpp)` | Ordinary generated C++ record with source member order and native member lifecycle; no Carven-specific field reordering or tag compression |
 
-`struct(c)` does not mean packed. Its field types, alignment, padding, enum and
-Boolean representations, and by-value calling convention need a specified target
-contract. Source unit fields, empty records, Carven strings, operations, closures,
-and payload enums need an explicit mapping or rejection; source familiarity does
-not establish C compatibility. The current C++ export mechanism does not itself
-provide C headers or C linkage.
+For `struct(c)`, specify target field types, natural alignment and padding, enum
+and Boolean representations, and by-value calling conventions. Map or reject unit
+fields, empty records, strings, operations, closures, and payload enums explicitly.
+Deliver C-consumable declarations and linkage with the selected form.
 
 `struct(cpp)` does not identify an existing C++ type or promise cross-compiler ABI
 stability. Existing types remain imported native types. Native layout retains the
 C++ compiler's ordinary padding and optimization under the selected ABI.
 
-An outer layout marker never recursively changes a field's representation.
-By-value nested types must satisfy the selected boundary; opaque pointers have
-their own pointee and lifetime contracts. A native outer record containing an
-ordinary optimized inner record cannot promise a stable recursive layout unless
-that dependency is explicitly pinned. Specify admissibility or reject the field;
-do not silently reinterpret it as another type.
+Apply a layout marker only to its declared type. Require each by-value nested
+type to satisfy the selected boundary and reject inadmissible fields. Pin nested
+representations when the boundary requires stable recursive layout. Opaque
+pointers retain their pointee and lifetime contracts.
 
 Publishing an ordinary type through a generated C++ interface need not disable
 optimization. It exposes that compilation's exact generated representation and
@@ -121,7 +119,7 @@ requires matching headers, runtime, and layout configuration. Durable native ABI
 or independently evolving binary libraries need a separate explicit contract.
 Changing an export annotation must not silently change a nominal type's layout.
 
-### Addressable fields and encoded projections
+#### Addressable fields and encoded projections
 
 Field reordering can retain one aligned C++ object per field. Bit packing, niche
 encoding, and relative handles may instead represent a logical field through an
@@ -134,20 +132,19 @@ without changing aliasing, reentry, and observation order. Two nonexclusive Writ
 arguments make this particularly visible. A field loan retained across an await
 has the same problem.
 
-Ordinary source places keep their promised address and access behavior. A
-candidate either provides real stable storage, proves the transformation
-unobservable within a closed scope, or uses an explicitly restricted handle/view
-API. It must not reject otherwise valid ordinary source merely because an
-optional optimization was selected. Opaque native calls and separate consumers
-preclude assuming that an address never escapes.
+Preserve the address and access behavior of ordinary source places. Provide
+stable storage, prove the transformation unobservable within a closed scope, or
+select an explicitly restricted handle/view API. Keep the ordinary representation
+when address escape or native use prevents that proof.
 
-## Field ordering candidate
+### Field ordering candidate
 
 The candidate aims to reduce padding and array stride while preserving semantic field
 identity, source evaluation order, ownership, and borrowing. For illustration,
 if u64 has size and alignment eight and u8 has size and alignment one, ordinary
-member alignment can make `u8, u64, u8` occupy 24 bytes and `u64, u8, u8` occupy 16.
-Actual sizes must be measured on the selected target.
+member alignment can make `u8, u64, u8` occupy 24 bytes and `u8, u8, u64` occupy 16.
+This permutation keeps the source first field first. Measure actual sizes on the
+selected target.
 
 One implementation stores `physical_order[physical index] = semantic field index`
 and its inverse in the target plan. Unchanged records use the identity mapping;
@@ -160,6 +157,7 @@ all artifacts consume the same plan rather than copying semantic field tables.
 | Operand sequencing | Preserve source order exactly once, retaining earlier values when needed |
 | Frozen-value reconstruction | Use the same positional or designated order |
 | Field access, ownership, evaluation, and display | Continue using semantic field identity and order |
+| Pointer equality and restoration | Preserve established parent/first-field relations, including nested projections |
 
 A restricted experiment can admit builtin scalar/pointer fields with known target
 layout and unobservable member lifecycles. Unknown native layouts retain source
@@ -167,8 +165,11 @@ order. Nested records and arrays need eligibility proofs. Effectful initializers
 require sequencing that preserves their source observations.
 
 Specify supported targets, layout sources, eligibility, and a deterministic
-policy, such as stable alignment-first ordering. Use size and alignment facts
-from the selected target, and state the heuristic's limits.
+policy. For supported standard-layout structs, preserve the source first field
+at the parent address; stable alignment-first ordering of the remaining fields
+is one candidate. Use target size and alignment facts and state the heuristic's
+limits. Keep source order when the candidate cannot preserve an established
+address relation.
 
 Start with a natural-alignment policy rather than packed accesses. Stable ties
 retain source order. Measure enclosing records and enum carriers too: a field
@@ -182,7 +183,7 @@ object-identity rules still apply.
 Bit packing removes independent Boolean places and can couple otherwise separate
 writes to one physical read-modify-write operation.
 
-## Lifecycle and native interface
+### Lifecycle and native interface
 
 C++ member order affects construction, implicit copy/assignment, and destruction.
 Temporaries can add observable operations or destroy direct construction of an
@@ -207,7 +208,7 @@ Either every admitted construction has a legal realization or the type keeps its
 ordinary representation. Failure before full construction cleans only completed
 members under the existing semantic order.
 
-## Tuple representation
+### Tuple representation
 
 A measured large-product cost may justify flat aggregates selected by canonical
 product identity. Compare generated size and native compile time with recursive
@@ -218,7 +219,7 @@ Preserve nested shapes, unit slots, ordered construction, stable element storage
 immovable native results, partial construction, retained loans, and cleanup.
 Representation changes do not expand the source tuple API.
 
-## Enum representation candidates
+### Enum representation candidates
 
 A niche is a representation state unavailable to a valid payload, reserved to
 encode another alternative. It differs from padding and from a spare bit whose
@@ -242,7 +243,7 @@ likewise have a logical validity contract distinct from their backend registers.
 The plan supplies construction, discrimination, payload projection, replacement,
 copy, Take, and cleanup. Project a native payload only when its lifetime is active.
 Replacing `std::variant` can affect triviality, callable passing, exception-related
-native traits, and constant reconstruction. Initial experiments should retain
+native traits, and constant reconstruction. Begin experiments with
 trivial payloads and use the existing representation as the fallback.
 
 Typed failure and async completion carriers are later consumers of this mechanism.
@@ -251,7 +252,7 @@ state that is actually observable by the runtime. Compression never merges those
 states. `FailureABI` member order stays independent of physical discriminant
 encoding; import/export providers require a matching carrier contract.
 
-## Pointer-plus-state candidate
+### Pointer-plus-state candidate
 
 Identify a real pointer-plus-small-state value: a node kind, an ownership-defined
 handle, or a restricted pointer payload enum. Identify the actual runtime state:
@@ -291,7 +292,7 @@ pointers, capability pointers, and unsupported targets keep the plain carrier.
 A target-specific C++ helper must establish legality independently of LLVM's
 ability to represent the operation.
 
-## Pool-relative handles
+### Pool-relative handles
 
 A relative handle is a logical reference into a named owning region, represented
 by an offset or element index. It is distinct from a tagged machine address.
@@ -320,7 +321,7 @@ Define the relocated closure and treatment of outbound links before permitting
 bytewise region relocation. Restoring bytes is not enough to create native objects
 or to validate hostile input.
 
-## Frozen compact collections
+### Frozen compact collections
 
 Explore an explicit builder and immutable reader for variable-size records or
 recursive values. Keep ordinary structs and classes fixed-size native values in
@@ -340,15 +341,15 @@ ordinary values are explicit operations with measured costs.
 
 Readers returning decoded values or cursors do not pretend to provide native
 `T&` places. Aligned real payload storage may support a checked borrow when its
-lifetime is established; unaligned bytes need legal loads/decoding. A byte buffer
-does not by itself create an array of nontrivial C++ objects. Initial eligibility
-should exclude native resources and externally owned pointers. Region release
+lifetime is established; unaligned bytes need legal loads/decoding. Establish
+native object lifetimes before exposing typed payloads. Initially exclude native
+resources and externally owned pointers. Region release
 may skip per-element cleanup only for values whose contract permits it.
 
-Build-in-destination and failure cleanup belong to the uninitialized-storage
-proposal. A failed builder must not expose a partial value or leave valid handles
-to reclaimed construction storage. Allocation failure and offset overflow need
-an explicit failure policy rather than an invented source failure type.
+Construction destinations must track completed elements and cleanup ownership.
+On builder failure, clean up completed objects, invalidate construction handles,
+and release construction storage. Define allocation-failure and offset-overflow
+behavior before publishing a completed collection.
 
 Runtime compact storage, compile-time retained data, and a persistent wire format
 are separate contracts. A file format additionally fixes versioning, endianness,
@@ -365,12 +366,12 @@ must provide the same reader contract.
 Compare static and runtime builders with the same reader and expected values.
 Cover empty data, construction failure, escaping backing, offset overflow, and
 cross-module storage; measure static bytes, native compilation, and access costs.
-Shared or cyclic collections additionally need the retained-reference-graph
-contract defined in semantic execution.
+Shared or cyclic collections additionally need retained node identities, closed
+root-reachable references, checked access permissions, and legal static relocations.
 
-## Target representation planning
+### Target representation planning
 
-### Target inputs and ABI consistency
+#### Target inputs and ABI consistency
 
 Extend the planning input with a validated target description before selecting
 layout. Required facts include scalar size/alignment, pointer model and address
@@ -389,9 +390,9 @@ Headers, implementations, constant backing, imports/exports, and separately buil
 consumers must agree. Define compile/link-time mismatch detection where practical;
 do not rely on silently compatible-looking sizes or a cache key alone. Adding a
 call site or changing an optimization level cannot privately alter one copy of a
-shared type. Cross-version binary compatibility remains an explicit promise.
+shared type. Scope ABI guarantees to the selected interface and configuration.
 
-### One plan and its consumers
+#### One plan and its consumers
 
 A proposed `TargetRepresentationPlan`, owned by `TargetPlan`, records:
 
@@ -421,7 +422,7 @@ Begin with identity and reordered-record plans; add enum recipes only with an
 actual carrier experiment. The research on dual representations motivates the
 boundary, not an obligation to reproduce its compiler.
 
-## Execution and retained data
+### Execution and retained data
 
 Symbolic execution locations and target addresses are different facts. Static
 results need legal target references, not serialized execution coordinates.
@@ -443,8 +444,9 @@ whose offsets are derived from final target storage, not execution coordinates.
 
 SIMD layout work distinguishes compact scalar storage from computation layout.
 Natural alignment, vector loads, access stride, and conversion cost can outweigh
-padding savings. AoSoA or SoA should start as explicit collection representations
-with view contracts, not as invisible rewriting of an addressable array of structs.
+padding savings. Explore AoSoA or SoA through explicit collection representations
+with view and invalidation contracts. Preserve the place and address behavior
+of ordinary arrays of structs.
 
 Async lowering may reuse the plan for Carven-generated closure or completion
 records. It does not directly control the C++ compiler's coroutine frame layout.
@@ -452,7 +454,7 @@ Evaluate layout after existing fusion and tail-await transformations remove
 unneeded carriers; do not optimize storage that disappears. Surviving loans,
 suspension, cancellation, failure, and cleanup retain their existing semantics.
 
-## Open decisions and bounded experiments
+## Open decisions
 
 ### OPEN-01 — Target contract and native forms
 
@@ -468,11 +470,14 @@ suspension, cancellation, failure, and cleanup retain their existing semantics.
 
 - **Status:** Active
 - **Depends on:** The target facts from OPEN-01; native layout syntax is independent.
-- **Question:** Which record families preserve source construction, address,
-  cleanup, and Read policy under a deterministic reorder?
+- **Question:** Which record families preserve source construction, parent/first-field
+  address relations, pointer restoration, cleanup, and Read policy under a
+  deterministic reorder?
 - **Closure condition:** Identity/reordered plans for scalar records and nested
   eligible products, with native assertions, sequencing/failure counterexamples,
-  and an array-traversal workload. Retain source order when eligibility is unknown.
+  and an array-traversal workload. Compare nested erased-pointer equality and
+  restoration in static, interpreted, and native execution. Retain source order
+  when eligibility is unknown.
 
 ### OPEN-03 — First compact carrier
 
@@ -493,7 +498,7 @@ suspension, cancellation, failure, and cleanup retain their existing semantics.
   Static promotion also needs eligible contents and legal static reconstruction;
   acyclic collections do not require a retained-cycle design.
 
-## Deferred directions
+## Deferred work
 
 ### DEFER-01 — Access-driven ordering and data organization
 
@@ -509,8 +514,8 @@ preferences. Bound search cost and compare with simple heuristics before adding
 an ILP solver. One ABI domain chooses one layout; per-function layouts require
 explicitly distinct representations and conversion costs. Packed recursive layout
 research does not establish legality for arbitrary mutable native-containing
-records. Concurrency-sensitive packing additionally needs the concurrency
-proposal's memory-location and synchronization contracts.
+records. For concurrently accessed storage, define the physical memory locations
+and synchronization needed when packing combines distinct source fields.
 
 ### DEFER-02 — High-bit tags and multi-payload bit encodings
 
@@ -533,11 +538,12 @@ Boolean bit packing, empty-member overlap, varint fields, and bytewise compariso
 each need an observable contract. Equality must preserve field semantics, including
 floating values and ignored padding, rather than assuming byte equality.
 
-## Validation and stopping conditions
+## Validation
 
 Field-order checks cover named, positional, default, and constant construction;
 source order differing from physical order; Read followed by Write; early failure;
-display; cross-module backing; and unknown or immovable native components.
+display; parent/first-field equality and restoration through erased pointers;
+cross-module backing; and unknown or immovable native components.
 Size assertions are conditional on the target, not portable language guarantees.
 
 Tag checks cover null and every tag, range bounds, low/over-alignment, copy and
@@ -567,7 +573,7 @@ a universal query for arbitrary C++ classes.
 A test-only layout permutation mode can expose accidental dependence on physical
 field order. Keep one seed/configuration per ABI domain and test multiple legal
 permutations against identity layout. Passing these tests is not a proof of
-representation independence. A proposed layout report should explain semantic
+representation independence. A layout report must explain semantic
 versus physical fields, padding, encoding, target assumptions, and fallback reasons.
 
 Separate payload bytes, allocator overhead, committed/resident memory, and virtual
@@ -577,17 +583,6 @@ distribution as well as geometric means; results from another language's benchma
 suite do not predict Carven's gains.
 
 ## References
-
-- [Read values and aliases](../docs/language/ownership.md#read-values-and-aliases): snapshot policy.
-- [Uninitialized storage](uninitialized-storage.md): construction destinations.
-- [Semantic execution](semantic-execution.md): address observations and retained graphs.
-- [C++ representation](../docs/compiler/backend/representation.md) and [compiler architecture](../docs/compiler/README.md): current ownership and publication boundaries.
-- [Async](../docs/language/async.md) and [tuples](../docs/language/aggregates.md#tuples): implemented completion and product contracts.
-- [Concurrency](concurrency.md): future shared-memory obligations.
-- [Planning request](../src/backend/generation/request/request.cppm),
-  [nominal lowering](../src/backend/lowering/decl/nominal.cpp), and
-  [constant reconstruction](../src/backend/lowering/constant/constant.cpp): current plan inputs and physical order.
-- [Tuple runtime](../crafts/carven/runtime/value/tuple.hpp): current product representation.
 
 ### Compiler and runtime precedents
 

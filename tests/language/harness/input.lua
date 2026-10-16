@@ -1,3 +1,5 @@
+local runenvs = import("private.action.run.runenvs")
+
 local inputs = {
     ["utf-errors"] = io.readfile(path.join(os.projectdir(), "tests", "language", "io", "utf_errors.txt"), {encoding = "binary"}),
     lines = "a\r\n\n世界\nlast",
@@ -11,25 +13,15 @@ local inputs = {
     ["cold-fifo"] = "one\ntwo\nxy",
 }
 
-local function run(target, name)
+function main(target, name)
     local input = os.tmpfile()
-    io.writefile(input, inputs[name] or "", {encoding = "binary"})
+    io.writefile(input, inputs[name], {encoding = "binary"})
+    local addenvs, setenvs = runenvs.make(target)
     local output, errors = os.iorunv(target:targetfile(), {name, "世界", ""}, {
-        stdin = input, timeout = 10000,
+        stdin = input, timeout = 10000, envs = runenvs.join(addenvs, setenvs),
     })
     os.tryrm(input)
     assert(output:gsub("\r\n", "\n") == "ok\n" and errors == "",
         "standard input " .. name .. ": " .. output .. errors)
-end
-
-function main(target)
-    -- EOF, errors, and prefetched bytes belong to a process input cursor.
-    -- Reuse the binary while starting each independent input in a fresh process.
-    for _, name in ipairs({
-        "lines", "empty", "bytes", "text", "limit", "line-limit", "invalid", "invalid-text", "utf-errors", "io-error", "cold-fifo",
-        "partial-cancel", "fragmented-crlf", "fragmented-utf8",
-    }) do
-        run(target, name)
-    end
     return true
 end

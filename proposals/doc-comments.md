@@ -1,4 +1,4 @@
-# Documentation Comments
+# Documentation comments
 
 - **Status:** Exploration
 - **Scope:** Source documentation attachment and documentation tooling input
@@ -6,9 +6,8 @@
 ## Summary
 
 Carven has ordinary comments but no source form whose content is retained as
-documentation for a module or declaration. This proposal will define the
-source attachment contract and the compiler facts needed by future
-documentation tools.
+documentation for a module or declaration. Select a documentation consumer and
+define the source attachment and retained facts it requires.
 
 The first consumer (`OPEN-04`) and source forms (`OPEN-01`) remain open. Their
 requirements determine attachment and retention (`OPEN-02`) and markup
@@ -54,11 +53,9 @@ fn add(a: i32, b: i32) -> i32 {
 }
 ```
 
-Any selected design must preserve documentation as a distinct source event,
-attach it according to syntax rather than name or type lookup, and reject
-orphaned or ambiguous forms at the owning source range. The compiler must
-retain the resulting content and attachment identity long enough for the
-selected artifact consumer.
+Preserve documentation as a distinct source event. Attach it through syntax.
+Reject orphaned or ambiguous forms with diagnostics at their source ranges.
+Retain content and attachment identity for the selected artifact consumer.
 
 The selected consumer determines the facts that need a durable interface. Themes,
 hosting, runtime reflection, and private compiler containers are outside that
@@ -78,9 +75,8 @@ source contract.
 
 ### OPEN-01 — Which source forms denote documentation?
 
-- **Question:** The spelling determines lexical compatibility,
-  module-level documentation, and whether documentation is visually distinct
-  from ordinary comments.
+- **Question:** Which spellings distinguish module and declaration documentation
+  from ordinary comments?
 - **Constraints:** Recognition cannot require name or type lookup; module and
   declaration documentation both need unambiguous source forms.
 - **Options:** A — Rust-style `//!` and `///` line forms; B — dedicated line
@@ -96,7 +92,7 @@ source contract.
   `OPEN-04`.
 - **Question:** The stage and representation determine how documentation
   survives parsing, where orphan/duplicate attachment is diagnosed, and which
-  compiler facts future tools can consume.
+  compiler facts the selected tool consumes.
 - **Constraints:** The selected representation handles module documentation,
   declarations, fields, and enum cases.
 - **Options:** A — retain distinct documentation tokens and attach them while
@@ -121,7 +117,7 @@ source contract.
   cross-references, and code snippets and identify which features require
   compiler knowledge.
 
-## Delivery scope
+## Implementation
 
 Select one consumer and the source contract it needs before retaining new
 compiler facts. The first delivery covers source recognition, attachment and
@@ -138,9 +134,3 @@ end-of-file behavior.
 Validate the selected consumer's output against source content and attachment,
 including cross-module use. Ordinary comments have no documentation meaning by
 default. Retaining either comment form must preserve generated program behavior.
-
-## References
-
-- [Grammar](../docs/language/grammar.md): ordinary comments and declarations.
-- [Lexer](../src/frontend/lex/lex.cpp): current comment skipping.
-- [Parsed documents](../src/frontend/document/document.cpp): retained source and syntax ownership.

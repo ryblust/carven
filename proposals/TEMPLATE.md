@@ -5,39 +5,49 @@
 - **Scope:** <design domain>
 - **Depends on:** <whole-proposal prerequisites; omit when there are none>
 
-Use only fields and sections that contain useful information. Status describes
+Use only metadata fields that contain useful information. Status describes
 design maturity. Record implementation progress only against a selected contract
 and completion evidence; omit it for an exploration without a selected delivery.
 Deferred status needs a reactivation condition; Superseded names the replacement.
-Write concise, factual, neutral prose. Preserve useful alternatives,
-counterexamples, and rationale; omit rhetorical defenses and task history.
+Describe current behavior factually and state proposed rules and steps directly.
+Use concise, neutral prose. Preserve alternatives, counterexamples, and reasons
+that affect a decision. Distinguish selected delivery requirements from exploratory
+and deferred work. Omit rhetorical defenses, task history, and unrelated delivery
+commitments.
+
+Use the second-level headings below with their exact names and relative order.
+Always include Summary first. Include other sections when they have substantive
+content. Keep the remaining sections separate; place topic-specific headings at
+level three or below. Use sentence case for titles and headings. Keep goals and
+scope limits in Summary or Design.
+
+Preserve design reasons, counterexamples, alternatives, and guidance for future work
+when reorganizing sections. Keep examples and local validation criteria with the
+design they explain; use Validation for evidence across the selected scope.
 
 ## Summary
 
-State the problem, intended outcome, and remaining work in a few paragraphs.
-For a mixed-maturity domain, a compact table can identify each slice's maturity
-and next decision.
+Summarize the problem, intended outcome, and unresolved work from the proposal's
+existing content. Introduce no new commitments or repeated background. One or
+two sentences suffice for a short proposal. For a mixed-maturity domain, a compact
+table can identify each slice's maturity and next decision.
 
 ## Context
 
-Explain the current behavior and constraints needed to understand the design.
+Include this section when current behavior or constraints need explanation beyond
+Summary. Keep that background specific to understanding the design.
 Keep the proposal understandable without following references.
 Keep only the current constraints needed to understand unfinished decisions.
 Remove completed design sections once permanent documentation covers them.
-An implemented prerequisite is context, not an unfinished implementation slice.
-Name the remaining extension precisely when a neighboring mechanism already
-exists.
-
-## Goals and non-goals
-
-List intended outcomes and adjacent concerns outside the scope. Omit this
-section when the summary and design already establish these boundaries.
+Record implemented prerequisites as context. Name the remaining extension and
+its completion evidence separately.
 
 ## Design
 
 Describe observable behavior before compiler representation and lowering.
 Explain consequential choices where they are introduced. Label unsettled syntax
-and candidates, including examples.
+and candidates, including examples. State compatibility requirements only for
+interfaces covered by the design.
 
 ## Decision record
 
@@ -90,6 +100,7 @@ Tie experiments to the specific decision or claim they test.
 
 ## References
 
-Collect relevant current contracts, related designs, and research sources here.
-Group them by subject if needed. Use inline citations only where essential to
-understanding the statement. Omit this section when there are no useful references.
+Collect external research sources here. State required project contracts in the
+section that uses them; keep navigation in the proposal index. Use a cross-document
+reference only when essential detail cannot be stated concisely in place. Omit
+this section when there are no external sources to cite.

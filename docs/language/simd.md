@@ -1,6 +1,8 @@
 # SIMD
 
-[Language](README.md) · [Standard capabilities](standard.md)
+This page defines SIMD vector and mask types, operations, and source helpers.
+
+## Types and modules
 
 Vector and mask types are available by default and belong to `std::simd`.
 Explicit imports and aliases select the same types. Import block helpers from
@@ -16,8 +18,6 @@ execution rules.
 | `f32x8` | `f32` | 8 | `mask8` | `u8` |
 
 Logical lane widths and operations are independent of native register widths.
-[Native SIMD configuration](../toolchain/artifacts.md#simd-configuration) defines
-target flags and backend consistency for generated programs.
 
 ## Operators and masks
 
@@ -94,17 +94,17 @@ interpretation, and native execution:
 | Method | Result and contract |
 | --- | --- |
 | `value.is_finite()` | `mask4` or `mask8`; each lane is true for finite values. |
-| `value.sqrt()` / `value.abs()` | A vector of the same shape, applying the scalar operation per lane. |
-| `value.min(other)` / `value.max(other)` | Per-lane selection in a vector of the same shape. |
-| `value.clamp(lower, upper)` | Per-lane bounds check and selection in a vector of the same shape. |
+| `value.sqrt()` | Preserve signed zero and +infinity; negative nonzero values, -infinity, and NaN produce NaN. |
+| `value.abs()` | Positive magnitude per lane; either zero becomes +0; NaN remains NaN. |
+| `value.min(other)` / `value.max(other)` | Propagate either NaN; equal values retain the receiver, including its zero sign. |
+| `value.clamp(lower, upper)` | Check bounds per lane; preserve a NaN value and return the selected bound or value. |
 
 `other`, `lower`, and `upper` each accept either the receiver's vector type or
 an `f32` scalar broadcast to every lane. Unsuffixed literals receive `f32`
 context. Other scalar types require an explicit conversion to `f32`; vector
 arguments must match the receiver's shape.
 
-Every lane follows the [scalar floating method contracts](types.md#floating-methods),
-including NaN propagation and signed-zero selection. Clamp requires
+Numeric results retain the receiver's vector shape. Clamp requires
 `lower <= upper` in every lane; a reversed or NaN bound in any lane causes an
 assertion failure, even when the result is discarded. The receiver and arguments
 evaluate once in source order before the operation.
@@ -184,5 +184,5 @@ false. Constant identity preserves floating bit patterns, including zero signs
 and NaN representations. Static execution uses compiler-host arithmetic;
 ordinary runtime arithmetic retains the target's floating environment. Identical
 results across differing floating environments, NaN payload propagation, and
-nondefault rounding modes are not promised. Fused operations, approximations,
+nondefault rounding modes are unspecified. Fused operations, approximations,
 and floating horizontal reductions are not provided.

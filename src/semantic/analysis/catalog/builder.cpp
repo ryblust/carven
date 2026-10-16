@@ -6,8 +6,22 @@ import :semantic.analysis.catalog.builder;
 import :semantic.analysis.program;
 import std;
 
-AnalysisCatalogBuilder::AnalysisCatalogBuilder(ProgramDraft& draft) noexcept
-    : draft(draft) {}
+AnalysisCatalogBuilder::AnalysisCatalogBuilder(
+    ProgramDraft& draft,
+    CheckedDefinitions* seed
+) noexcept
+    : draft(draft),
+      result(seed ? std::move(*seed->catalog) : AnalysisCatalog()) {
+    if (seed) {
+        for (auto& symbol : result.symbols) {
+            symbol.item_id.reset();
+        }
+        for (auto& module : result.modules) {
+            module.items.clear();
+        }
+        seed->catalog.reset();
+    }
+}
 
 auto AnalysisCatalogBuilder::build() && noexcept -> std::expected<AnalysisCatalog, Diagnostics> {
     collect_declarations();
@@ -29,7 +43,7 @@ auto AnalysisCatalogBuilder::binding_error(SourceID source, std::string message,
         .build();
 }
 
-auto build_analysis_catalog(ProgramDraft& draft) noexcept
+auto build_analysis_catalog(ProgramDraft& draft, CheckedDefinitions* seed) noexcept
     -> std::expected<AnalysisCatalog, Diagnostics> {
-    return AnalysisCatalogBuilder(draft).build();
+    return AnalysisCatalogBuilder(draft, seed).build();
 }

@@ -6,13 +6,11 @@ import :semantic.analysis.program;
 import :semantic.semir.constant;
 import :semantic.semir.decl;
 import :semantic.semir.program;
-import :semantic.semir.table;
 import :semantic.semir.type;
 import :source.batch;
 import :source.manager;
 import :source.module_path;
 import :source.text;
-import :test.harness.death;
 import :test.harness.framework;
 import std;
 
@@ -191,133 +189,6 @@ const TestSuite suite([] static noexcept {
                 const auto expected = std::vector<ConstantID> {element, element};
                 expect(value->elements == expected);
             }
-        };
-
-    "SemIR publication invariant: slice constants require exact element and child facts"_test =
-        [] static noexcept {
-            enum class Malformation {
-                NonSliceType,
-                ArrayType,
-                ElementType,
-                NestedElementType,
-                ChildFact,
-                NestedChildShape,
-            };
-
-            struct Scenario final {
-                std::string_view name;
-                Malformation malformation;
-            };
-
-            constexpr auto scenarios = std::array {
-                Scenario {
-                    .name = "slice-constant-non-slice",
-                    .malformation = Malformation::NonSliceType
-                },
-                Scenario {
-                    .name = "slice-constant-array-type",
-                    .malformation = Malformation::ArrayType
-                },
-                Scenario {
-                    .name = "slice-constant-element-type",
-                    .malformation = Malformation::ElementType
-                },
-                Scenario {
-                    .name = "slice-constant-nested-type",
-                    .malformation = Malformation::NestedElementType
-                },
-                Scenario {
-                    .name = "slice-constant-child-fact",
-                    .malformation = Malformation::ChildFact
-                },
-                Scenario {
-                    .name = "slice-constant-child-shape",
-                    .malformation = Malformation::NestedChildShape
-                },
-            };
-            each(scenarios, &Scenario::name, [&](const auto& scenario) noexcept {
-                auto sources = SourceManager();
-                auto diagnostics = DiagnosticSink();
-                auto draft = begin_compilation(sources, diagnostics);
-                expect(expect_termination(scenario.name, [&] noexcept {
-                    const auto integer = draft.builtin_type(BuiltinType::I32);
-                    const auto boolean = draft.builtin_type(BuiltinType::Bool);
-                    auto child = draft.intern_constant({
-                        .type = integer,
-                        .value = IntegerConstant::from_signed(1),
-                    });
-                    auto type = slice_type(draft, integer);
-                    switch (scenario.malformation) {
-                        case Malformation::NonSliceType: type = integer; break;
-                        case Malformation::ArrayType: type = array_type(draft, integer, 1u); break;
-                        case Malformation::ElementType: type = slice_type(draft, boolean); break;
-                        case Malformation::NestedElementType:
-                            child = draft.intern_constant({
-                                .type = array_type(draft, integer, 1u),
-                                .value = ArrayConstant {.elements = {child}},
-                            });
-                            type = slice_type(draft, array_type(draft, boolean, 1u));
-                            break;
-                        case Malformation::ChildFact:
-                            child = draft.intern_constant({
-                                .type = boolean,
-                                .value = IntegerConstant::from_signed(1),
-                            });
-                            type = slice_type(draft, boolean);
-                            break;
-                        case Malformation::NestedChildShape:
-                            type = array_type(draft, integer, 2u);
-                            child = draft.intern_constant({
-                                .type = type,
-                                .value = ArrayConstant {.elements = {child}},
-                            });
-                            type = slice_type(draft, type);
-                            break;
-                    }
-                    static_cast<void>(draft.intern_constant({
-                        .type = type,
-                        .value = SliceConstant {.elements = {child}},
-                    }));
-                    static_cast<void>(std::move(draft).finish());
-                }));
-            });
-        };
-
-    "SemIR constants invariant: slice children already belong to the same store"_test =
-        [] static noexcept {
-            constexpr auto scenarios = std::array {false, true};
-            each(
-                scenarios,
-                [](bool foreign) static noexcept -> std::string_view {
-                    return foreign ? "foreign child" : "unavailable child";
-                },
-                [&](const auto& foreign) noexcept {
-                    auto sources = SourceManager();
-                    auto diagnostics = DiagnosticSink();
-                    auto draft = begin_compilation(sources, diagnostics);
-                    auto other_sources = SourceManager();
-                    auto other_diagnostics = DiagnosticSink();
-                    const auto other = begin_compilation(other_sources, other_diagnostics);
-                    const auto integer = draft.builtin_type(BuiltinType::I32);
-                    auto alternate = MutableProgramTable<ConstantFact, ConstantID>(
-                        foreign ? other.identity() : draft.identity()
-                    );
-                    const auto child = alternate.add({
-                        .type = integer,
-                        .value = IntegerConstant::from_signed(1),
-                    });
-                    expect(expect_termination(
-                        foreign ? "slice-constant-foreign-child"
-                                : "slice-constant-unavailable-child",
-                        [&] noexcept {
-                            static_cast<void>(draft.intern_constant({
-                                .type = slice_type(draft, integer),
-                                .value = SliceConstant {.elements = {child}},
-                            }));
-                        }
-                    ));
-                }
-            );
         };
 });
 

@@ -72,5 +72,4 @@ async fn run_timeout() throw RangeError {
     let (_, cancelled) = await wait_ready(parent);
     await close(parent);
     assert(cancelled && closed == 2);
-    println(true);
 }

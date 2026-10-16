@@ -26,38 +26,50 @@ private fn local_factory(value: i32) {
 }
 
 export async fn run_tracked() {
-    println(
-        tracked_created(),
-        tracked_copied(),
-        tracked_moved(),
-        tracked_destroyed(),
-        tracked_live(),
-        tracked_trace()
-    );
-    if true {
-        let held = await tracked();
-        // This statement begins after the initializer's full-expression cleanup.
-        println(
+    assert(
+        (
             tracked_created(),
             tracked_copied(),
             tracked_moved(),
             tracked_destroyed(),
             tracked_live(),
             tracked_trace()
+        )
+            == (0, 0, 0, 0, 0, 0)
+    );
+    if true {
+        let held = await tracked();
+        // This statement begins after the initializer's full-expression cleanup.
+        assert(
+            (
+                tracked_created(),
+                tracked_copied(),
+                tracked_moved(),
+                tracked_destroyed(),
+                tracked_live(),
+                tracked_trace()
+            )
+                == (1, 0, 1, 1, 1, 123)
         );
     }
-    println(
-        tracked_created(),
-        tracked_copied(),
-        tracked_moved(),
-        tracked_destroyed(),
-        tracked_live(),
-        tracked_trace()
+    assert(
+        (
+            tracked_created(),
+            tracked_copied(),
+            tracked_moved(),
+            tracked_destroyed(),
+            tracked_live(),
+            tracked_trace()
+        )
+            == (1, 0, 1, 2, 0, 1234)
     );
     let destroyed_before = tracked_destroyed();
     let selected = await local_after_yield(-7);
-    println(selected, tracked_live(), tracked_destroyed() - destroyed_before);
+    assert((selected, tracked_live(), tracked_destroyed() - destroyed_before) == (-7, 0, 1));
     let factory_destroyed_before = tracked_destroyed();
     let factory_selected = await local_factory(-7);
-    println(factory_selected, tracked_live(), tracked_destroyed() - factory_destroyed_before);
+    assert(
+        (factory_selected, tracked_live(), tracked_destroyed() - factory_destroyed_before)
+            == (-7, 0, 2)
+    );
 }

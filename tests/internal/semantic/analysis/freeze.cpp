@@ -77,17 +77,17 @@ const TestSuite suite([] static noexcept {
         };
 
     "Constant freezing invariant: retained constants belong to the receiving program"_test =
-        [] static noexcept {
+        termination_test([] static noexcept {
             auto first = ConstantEvaluationFixture();
             auto second = ConstantEvaluationFixture();
             const auto foreign = second.compilation.intern_constant({
                 .type = second.compilation.builtin_type(BuiltinType::Bool),
                 .value = BooleanConstant {.value = true},
             });
-            expect(expect_termination("freeze-foreign-retained-constant", [&]() noexcept {
+            expect_termination([&]() noexcept {
                 static_cast<void>(freeze_constant_value(first.compilation, foreign));
-            }));
-        };
+            });
+        });
 });
 
 } // namespace

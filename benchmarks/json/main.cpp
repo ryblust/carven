@@ -1,5 +1,5 @@
 #include <carven/runtime/collection/slice.hpp>
-#include <carven/api/workload.hpp>
+#include <carven/api/benchmarks/json/workload.hpp>
 
 #include <chrono>
 #include <cstdint>
@@ -28,13 +28,13 @@ auto main() -> int {
         std::istreambuf_iterator<char>()
     );
     const auto bytes = carven::runtime::Slice<std::uint8_t>(std::span(storage));
-    if (carven::api::workload::validate_document(bytes) != expected) {
+    if (carven::api::benchmarks::json::workload::validate_document(bytes) != expected) {
         return 2;
     }
     auto checksum = std::uint64_t {0};
     const auto begin = std::chrono::steady_clock::now();
     for (auto iteration = 0ull; iteration < iterations; ++iteration) {
-        checksum += carven::api::workload::validate_document(bytes);
+        checksum += carven::api::benchmarks::json::workload::validate_document(bytes);
     }
     const auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(
                              std::chrono::steady_clock::now() - begin

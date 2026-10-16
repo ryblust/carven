@@ -3,6 +3,7 @@ module carven:semantic.analysis.program.impl;
 import :diagnostics.sink;
 import :frontend.ast.tree;
 import :frontend.program;
+import :semantic.analysis.catalog;
 import :semantic.analysis.diagnostics;
 import :semantic.analysis.failure;
 import :semantic.analysis.program;
@@ -12,6 +13,7 @@ import :semantic.semir.program;
 import :semantic.semir.stage;
 import :semantic.semir.structured;
 import :semantic.semir.type;
+import :source.provenance;
 import :support.invariant;
 import std;
 
@@ -21,7 +23,8 @@ auto ProgramDraft::begin(
     ExecutionOutput output,
     SourceAnalysisBuilder* source_analysis,
     TimingOutput timings,
-    HostEffects host_effects
+    HostEffects host_effects,
+    CheckedDefinitions* seed
 ) noexcept -> ProgramDraft {
     return ProgramDraft(
         std::move(syntax).decompose(),
@@ -29,7 +32,8 @@ auto ProgramDraft::begin(
         output,
         source_analysis,
         timings,
-        host_effects
+        host_effects,
+        seed
     );
 }
 
@@ -39,9 +43,10 @@ ProgramDraft::ProgramDraft(
     ExecutionOutput output,
     SourceAnalysisBuilder* source_analysis,
     TimingOutput timings,
-    HostEffects host_effects
+    HostEffects host_effects,
+    CheckedDefinitions* seed
 ) noexcept
-    : program_identity(ProgramIdentity::fresh()),
+    : program_identity(seed ? seed->program_identity : ProgramIdentity::fresh()),
       provenance_appender(std::move(parts.provenance)),
       analysis_diagnostics(sink),
       output(output),
@@ -49,12 +54,20 @@ ProgramDraft::ProgramDraft(
       analysis_timings(timings),
       execution_host_effects(host_effects),
       state(State::Declarations),
+      syntax_by_module(std::move(parts.syntax_by_module)),
+      resolved_import_graph(std::move(parts.resolved_import_graph)),
+      imported_module_count(seed ? seed->catalog->view().modules().size() : 0uz),
+      imported_body_count(seed ? seed->construction->bodies.size() : 0uz),
+      reusable(true),
       storage(
-          program_identity,
-          provenance_appender.reader().identity(),
-          std::move(parts.syntax_by_module),
-          std::move(parts.resolved_import_graph)
-      ) {}
+          seed ? std::move(*seed->construction)
+               : make_storage(program_identity, provenance_appender.reader().identity())
+      ) {
+    if (seed) {
+        storage.declarations.state = DeclarationBuilder::State::Reserving;
+        seed->construction.reset();
+    }
+}
 
 auto ProgramDraft::timings() const noexcept -> TimingOutput {
     return analysis_timings;
@@ -72,11 +85,30 @@ auto ProgramDraft::syntax_tree(ProgramModuleID id) const noexcept -> const Synta
     if (!owns(id)) {
         invariant_violation("semantic syntax lookup used a foreign module identity");
     }
-    return storage.syntax_by_module[id.index()];
+    if (!syntax_by_module[id.index()]) {
+        invariant_violation("imported checked module has no source syntax");
+    }
+    return *syntax_by_module[id.index()];
 }
 
-auto ProgramDraft::syntax_trees() const noexcept -> std::span<const SyntaxTree> {
-    return storage.syntax_by_module;
+auto ProgramDraft::syntax_trees() const noexcept -> std::span<const std::optional<SyntaxTree>> {
+    return syntax_by_module;
+}
+
+auto ProgramDraft::imported(ProgramModuleID module) const noexcept -> bool {
+    return owns(module) && module.index() < imported_module_count;
+}
+
+auto ProgramDraft::imported(BodyID body) const noexcept -> bool {
+    return body.owner() == program_identity && body.index() < imported_body_count;
+}
+
+auto ProgramDraft::cacheable() const noexcept -> bool {
+    return reusable;
+}
+
+auto ProgramDraft::record_host_effect() const noexcept -> void {
+    reusable = false;
 }
 
 auto ProgramDraft::resolved_imports(ProgramModuleID id) const noexcept
@@ -84,7 +116,7 @@ auto ProgramDraft::resolved_imports(ProgramModuleID id) const noexcept
     if (!owns(id)) {
         invariant_violation("semantic import lookup used a foreign module identity");
     }
-    return storage.resolved_import_graph[id.index()];
+    return resolved_import_graph[id.index()];
 }
 
 auto ProgramDraft::module_count() const noexcept -> std::size_t {
@@ -898,22 +930,73 @@ auto ProgramDraft::diagnostics() const noexcept -> AnalysisDiagnostics {
     return analysis_diagnostics;
 }
 
-ProgramDraft::ConstructionStorage::ConstructionStorage(
+auto ProgramDraft::make_storage(ProgramIdentity identity, ProvenanceIdentity provenance) noexcept
+    -> ConstructionStorage {
+    return {
+        .types = CanonicalTypeStoreBuilder(identity),
+        .constants = ConstantStoreBuilder(identity, provenance),
+        .failure_sets = FailureSetStoreBuilder(identity),
+        .callable_signatures = CallableSignatureStoreBuilder(identity),
+        .construction_types = ConstructionTypeStore(identity),
+        .declarations = DeclarationBuilder(identity, provenance),
+        .failure_constraints = FailureConstraintStore(identity, provenance),
+        .pending_function_contracts = {},
+        .functions_by_callable = {},
+        .provided_functions = {},
+        .number_parsers = {},
+        .generic_definitions = {},
+        .generic_function_bodies = {},
+        .generic_function_instances = {},
+        .generic_function_instance_index = {},
+        .generic_record_shapes = {},
+        .generic_enum_shapes = {},
+        .generic_types = {},
+        .generic_type_index = {},
+        .generic_instances = {},
+        .vector_elements = {},
+        .failure_members = {},
+        .generic_instance_index = {},
+        .generic_instance_nominals = {},
+        .checked_generic_definitions = {},
+        .generic_instance_depth = 0uz,
+        .bodies = {},
+        .static_instances = {},
+        .static_instance_index = {},
+        .instance_callables = {},
+        .test_slots = ReservedProgramTable<TestDeclaration, TestID>(identity),
+    };
+}
+
+CheckedDefinitions::CheckedDefinitions(
     ProgramIdentity identity,
-    ProvenanceIdentity provenance,
-    std::vector<SyntaxTree> syntax,
-    ResolvedModuleImportGraph imports
+    CompilationProvenance provenance_value,
+    std::unique_ptr<ProgramDraft::ConstructionStorage> construction_value,
+    std::unique_ptr<AnalysisCatalog> catalog_value
 ) noexcept
-    : syntax_by_module(std::move(syntax)),
-      resolved_import_graph(std::move(imports)),
-      types(identity),
-      constants(identity, provenance),
-      failure_sets(identity),
-      callable_signatures(identity),
-      construction_types(identity),
-      declarations(identity, provenance),
-      failure_constraints(identity, provenance),
-      test_slots(identity) {}
+    : program_identity(identity),
+      provenance(std::move(provenance_value)),
+      construction(std::move(construction_value)),
+      catalog(std::move(catalog_value)) {}
+
+CheckedDefinitions::CheckedDefinitions(CheckedDefinitions&&) noexcept = default;
+CheckedDefinitions::~CheckedDefinitions() = default;
+
+auto CheckedDefinitions::provenance_view() const noexcept -> CompilationProvenanceView {
+    if (!provenance) {
+        invariant_violation("checked definitions provenance was already transferred");
+    }
+    return provenance->view();
+}
+
+auto CheckedDefinitions::take_provenance(SourceManager& sources) noexcept -> CompilationProvenance {
+    if (!provenance) {
+        invariant_violation("checked definitions provenance was already transferred");
+    }
+    provenance->rebind_sources(sources);
+    auto result = std::move(*provenance);
+    provenance.reset();
+    return result;
+}
 
 auto ProgramDraft::write_output(ExecutionOutputStream stream, std::string_view bytes) const noexcept
     -> void {
@@ -960,4 +1043,8 @@ auto ProgramDraft::display_names(TypeID type) const noexcept -> ExecutionDisplay
         }
     }
     return result;
+}
+
+auto ProgramDraft::module_source_id(ProgramModuleID module) const noexcept -> SourceID {
+    return provenance_appender.reader().source_manager_id(module_source(module));
 }

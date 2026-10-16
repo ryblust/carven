@@ -96,6 +96,7 @@ auto StaticExecutionContext::host_effects_rejection() const noexcept
     if (purpose == StaticEvaluationPurpose::ResolveType) {
         return "a type dependency query cannot observe host state; evaluate the value in an explicit const root first";
     }
+    draft.record_host_effect();
     return std::nullopt;
 }
 
@@ -408,6 +409,9 @@ auto StaticStage::realizing(BodyID body) const noexcept -> bool {
 }
 
 auto StaticStage::realize_body(BodyID body) noexcept -> AnalysisTask<void> {
+    if (program.imported(body)) {
+        co_return {};
+    }
     if (const auto found = realized_bodies.find(body); found != realized_bodies.end()) {
         if (found->second) {
             co_return std::unexpected(*found->second);

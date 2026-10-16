@@ -1,3 +1,0 @@
-lane.cv:2:12: error: SIMD index or memory range is out of bounds
-  note: execution aborted
-

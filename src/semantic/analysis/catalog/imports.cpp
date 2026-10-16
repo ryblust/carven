@@ -199,9 +199,12 @@ auto AnalysisCatalogBuilder::bind_imports() noexcept -> void {
     const auto module_count = draft.module_count();
     for (auto module_index = 0uz; module_index < module_count; ++module_index) {
         const auto module_id = draft.provenance_module_at(module_index);
-        const auto source_id = syntax_trees[module_index].view().source_id();
+        if (draft.imported(module_id)) {
+            continue;
+        }
+        const auto source_id = syntax_trees[module_index]->view().source_id();
         const auto source_module_path = draft.module_path_copy(module_id);
-        const auto ast = syntax_trees[module_index].view();
+        const auto ast = syntax_trees[module_index]->view();
         const auto& ast_module = ast.ast_module();
         const auto& local_module = result.modules[module_index];
         auto& candidates = result.visible_candidates[module_index];
@@ -426,11 +429,15 @@ auto AnalysisCatalogBuilder::bind_imports() noexcept -> void {
     }
 
     for (auto module_index = 0uz; module_index < module_count; ++module_index) {
+        const auto module_id = draft.provenance_module_at(module_index);
+        if (draft.imported(module_id)) {
+            continue;
+        }
         for (const auto& binding : result.cpp_bindings[module_index]) {
             if (!binding.opens_namespace
                 && result.visible_candidates[module_index].contains(binding.components.back())) {
                 diagnostics.push_back(binding_error(
-                    syntax_trees[module_index].view().source_id(),
+                    draft.module_source_id(module_id),
                     "a C++ import conflicts with a Carven binding",
                     binding.origin
                 ));

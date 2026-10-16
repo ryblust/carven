@@ -92,11 +92,22 @@ auto AnalysisCatalogBuilder::collect_declarations() noexcept -> void {
     result.modules.reserve(module_count);
     result.visible_candidates.reserve(module_count);
     auto first_entry = std::optional<SourceSpan>();
+    for (const auto& symbol : result.symbols) {
+        if (const auto* function = std::get_if<CatalogFunctionForm>(&symbol.form)) {
+            const auto declaration = draft.function_declaration_copy(function->function);
+            if (declaration.entry_point) {
+                first_entry = draft.source_span(declaration.origin);
+            }
+        }
+    }
 
     for (auto module_index = 0uz; module_index < module_count; ++module_index) {
         const auto module_id = draft.provenance_module_at(module_index);
-        const auto source_id = syntax_trees[module_index].view().source_id();
-        const auto ast = syntax_trees[module_index].view();
+        if (draft.imported(module_id)) {
+            continue;
+        }
+        const auto source_id = syntax_trees[module_index]->view().source_id();
+        const auto ast = syntax_trees[module_index]->view();
         const auto& ast_module = ast.ast_module();
         const auto declaration = draft.reserve_module_declaration();
         if (declaration.index() != module_index) {
@@ -239,10 +250,8 @@ auto AnalysisCatalogBuilder::collect_declarations() noexcept -> void {
                             return CatalogGenericForm {.definition = definition};
                         }
                         const auto function = draft.reserve_function_declaration();
-                        if (function.index() != result.function_symbols.size()) {
-                            invariant_violation("semantic function reservation is not aligned");
-                        }
-                        result.function_symbols.push_back(symbol_id);
+                        result.function_symbols.resize(function.index() + 1uz);
+                        result.function_symbols[function.index()] = symbol_id;
                         return CatalogFunctionForm {
                             .function = function,
                             .callable = draft.reserve_callable_declaration(),
@@ -258,10 +267,8 @@ auto AnalysisCatalogBuilder::collect_declarations() noexcept -> void {
                             return CatalogGenericForm {.definition = definition};
                         }
                         const auto structure = draft.reserve_struct_declaration();
-                        if (structure.index() != result.struct_symbols.size()) {
-                            invariant_violation("semantic struct reservation is not aligned");
-                        }
-                        result.struct_symbols.push_back(symbol_id);
+                        result.struct_symbols.resize(structure.index() + 1uz);
+                        result.struct_symbols[structure.index()] = symbol_id;
                         return CatalogStructForm {
                             .structure = structure,
                             .operations = {},
@@ -277,10 +284,8 @@ auto AnalysisCatalogBuilder::collect_declarations() noexcept -> void {
                             return CatalogGenericForm {.definition = definition};
                         }
                         const auto enumeration = draft.reserve_enum_declaration();
-                        if (enumeration.index() != result.enum_symbols.size()) {
-                            invariant_violation("semantic enum reservation is not aligned");
-                        }
-                        result.enum_symbols.push_back(symbol_id);
+                        result.enum_symbols.resize(enumeration.index() + 1uz);
+                        result.enum_symbols[enumeration.index()] = symbol_id;
                         return CatalogEnumForm {
                             .enumeration = enumeration,
                             .cases = {},
@@ -387,7 +392,8 @@ auto AnalysisCatalogBuilder::collect_declarations() noexcept -> void {
                                binding_target_span(operation.parameters.front().target)
                            ) == "self";
                     const auto audience = result.symbols[symbol_id.index()].visibility;
-                    result.function_symbols.push_back(member_id);
+                    result.function_symbols.resize(function.index() + 1uz);
+                    result.function_symbols[function.index()] = member_id;
                     result.symbols.push_back({
                         .symbol_id = member_id,
                         .module_id = module_id,
@@ -424,10 +430,8 @@ auto AnalysisCatalogBuilder::collect_declarations() noexcept -> void {
                 const auto& owner_form =
                     std::get<CatalogEnumForm>(result.symbols[symbol_id.index()].form);
                 const auto case_id = draft.reserve_enum_case_declaration();
-                if (case_id.index() != result.enum_case_symbols.size()) {
-                    invariant_violation("semantic enum-case reservation is not aligned");
-                }
-                result.enum_case_symbols.push_back(case_symbol);
+                result.enum_case_symbols.resize(case_id.index() + 1uz);
+                result.enum_case_symbols[case_id.index()] = case_symbol;
                 result.symbols.push_back({
                     .symbol_id = case_symbol,
                     .module_id = module_id,

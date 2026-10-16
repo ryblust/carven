@@ -15,29 +15,30 @@ function crafts_root(compiler)
     raise("cannot locate the selected compiler's crafts")
 end
 
-function capture(session, options)
-    options = options or {}
+function capture(session)
     local root = path.join(session.artifacts, "inputs")
     local manifest = {}
-    local function copy(file, relative)
-        local destination = path.join(root, relative)
-        os.mkdir(path.directory(destination))
-        os.cp(file, destination)
-        manifest[relative] = {source = file, sha256 = hash.sha256(destination):lower(), bytes = os.filesize(destination)}
+    local function record(file, relative, snapshot)
+        if snapshot then
+            local destination = path.join(root, relative)
+            os.mkdir(path.directory(destination))
+            os.cp(file, destination)
+        end
+        manifest[relative] = {source = file, sha256 = hash.sha256(file):lower(),
+            bytes = os.filesize(file), snapshot = snapshot or false}
     end
-    local function directory(source, relative)
+    local function directory(source, relative, snapshot)
         for _, file in ipairs(os.files(path.join(source, "**"))) do
-            copy(file, path.join(relative, path.relative(file, source)))
+            record(file, path.join(relative, path.relative(file, source)), snapshot)
         end
     end
-    if options.crafts ~= false then
-        directory(path.join(session.results.metadata.crafts_root, "carven"), "crafts/carven")
-    end
+    directory(path.join(session.results.metadata.crafts_root, "carven"), "crafts/carven")
+    record(path.join(os.projectdir(), "xmake.lua"), "xmake.lua", true)
+    local carven_package = import("core.project.project").required_package("carven")
+    directory(path.join(carven_package:installdir(), "rules"), "rules", true)
     local topic = path.join("benchmarks", session.results.topic)
-    directory(path.join(os.projectdir(), topic), topic)
-    directory(path.join(os.projectdir(), "benchmarks/harness"), "benchmarks/harness")
-    copy(path.join(os.projectdir(), "xmake.lua"), "xmake.lua")
-    copy(path.join(os.projectdir(), "xmake/consumer.lua"), "xmake/consumer.lua")
+    directory(path.join(os.projectdir(), topic), topic, true)
+    directory(path.join(os.projectdir(), "benchmarks/harness"), "benchmarks/harness", true)
     if session.options.libcoro then
         directory(path.join(session.options.libcoro, "include"), "libcoro/include")
     end
@@ -50,8 +51,10 @@ function finish(session)
     for relative, entry in pairs(inputs.files) do
         assert(hash.sha256(entry.source):lower() == entry.sha256,
             "benchmark input changed during measurement: %s", entry.source)
-        assert(hash.sha256(path.join(inputs.directory, relative)):lower() == entry.sha256,
-            "benchmark input snapshot changed: %s", relative)
+        if entry.snapshot then
+            assert(hash.sha256(path.join(inputs.directory, relative)):lower() == entry.sha256,
+                "benchmark input snapshot changed: %s", relative)
+        end
     end
     local generated = {}
     for _, file in ipairs(os.files(path.join(session.artifacts, "**"))) do

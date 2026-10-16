@@ -48,6 +48,7 @@ constexpr auto operator""_test(const char* name, std::size_t length) noexcept ->
 
 auto run_tests(int argc, const char* const* argv) noexcept -> int;
 auto current_test_name() noexcept -> std::string_view;
+auto test_execution_failed() noexcept -> bool;
 
 auto record_test_assertion(bool passed, std::source_location location) noexcept -> bool;
 auto test_failure_output() noexcept -> std::ostream&;

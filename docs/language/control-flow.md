@@ -1,7 +1,5 @@
 # Evaluation and control flow
 
-[Language](README.md)
-
 This page defines operand evaluation, branches, loops, and pattern selection.
 
 - [Operators and evaluation](#operators-and-evaluation)

@@ -5,14 +5,16 @@ import :artifacts.materialize;
 import :backend.generate;
 import :backend.generation.request;
 import :compiler.manifest;
-import :driver.analysis;
 import :driver.compile;
 import :driver.diagnostic;
+import :driver.input;
 import :driver.options;
 import :driver.sources;
 import :driver.timings;
 import :semantic.evaluation.output;
+import :semantic.semir.decl;
 import :semantic.semir.program;
+import :semantic.semir.table;
 import :source.module_path;
 import :support.file;
 import :support.invariant;
@@ -23,12 +25,9 @@ import std;
 
 namespace {
 
-auto resolve_linkage_domain(CompileCommandOptions& options) noexcept
+auto resolve_linkage_domain(const ArtifactDestination& destination) noexcept
     -> std::expected<LinkageDomain, std::string> {
-    if (options.linkage_domain.has_value()) {
-        return std::move(*options.linkage_domain);
-    }
-    const auto root = options.destination.visit(
+    const auto root = destination.visit(
         Overloaded {
             [](const DirectoryArtifactDestination& destination) static noexcept {
                 return destination.root;
@@ -66,67 +65,12 @@ auto print_artifacts(const GeneratedArtifactSet& artifacts) noexcept -> void {
     }
 }
 
-auto validate_manifest_destination(
-    const std::filesystem::path& path,
-    const CommandSources& sources,
-    const ArtifactDestination& destination,
-    const GeneratedArtifactSet& artifacts
-) noexcept -> std::expected<void, std::string> {
-    constexpr auto resolve = [](const std::filesystem::path& candidate) static noexcept
-        -> std::expected<std::filesystem::path, std::error_code> {
-        auto error = std::error_code();
-        const auto absolute = std::filesystem::absolute(candidate, error);
-        if (error) {
-            return std::unexpected(error);
-        }
-        const auto resolved = std::filesystem::weakly_canonical(absolute, error);
-        if (error) {
-            return std::unexpected(error);
-        }
-        return resolved;
-    };
-    const auto manifest = resolve(path);
-    if (!manifest) {
-        return std::unexpected(
-            std::format(
-                "cannot resolve artifact manifest '{}': {}",
-                path.string(),
-                manifest.error().message()
-            )
-        );
-    }
-    const auto collides = [&](const std::filesystem::path& candidate) noexcept {
-        const auto resolved = resolve(candidate);
-        if (resolved && *resolved == *manifest) {
-            return true;
-        }
-        auto error = std::error_code();
-        return std::filesystem::equivalent(path, candidate, error) && !error;
-    };
-    for (const auto& input : sources.carven) {
-        if (collides(path_from_utf8(input.path))) {
-            return std::unexpected("artifact manifest would overwrite a source input");
-        }
-    }
-    for (const auto& input : sources.native) {
-        if (collides(path_from_utf8(input))) {
-            return std::unexpected("artifact manifest would overwrite a source input");
-        }
-    }
-    if (const auto* directory = std::get_if<DirectoryArtifactDestination>(&destination)) {
-        for (const auto& artifact : artifacts.entries()) {
-            if (collides(directory->root / path_from_utf8(artifact.logical_path))) {
-                return std::unexpected("artifact manifest would overwrite a generated artifact");
-            }
-        }
-    }
-    return {};
-}
-
 auto write_manifest(
     const std::filesystem::path& path,
-    std::span<const SourceInput> sources,
-    const GeneratedArtifactSet& artifacts
+    const CommandSources& sources,
+    const GeneratedArtifactSet& artifacts,
+    std::size_t runtime_test_count,
+    bool cacheable
 ) noexcept -> std::expected<void, std::string> {
     auto error = std::error_code();
     const auto current = std::filesystem::current_path(error);
@@ -142,10 +86,10 @@ auto write_manifest(
         );
     }
     auto paths = std::vector<std::string>();
-    paths.reserve(sources.size());
+    paths.reserve(sources.carven.size());
     auto inputs = std::vector<CompilationManifestInput>();
-    inputs.reserve(sources.size());
-    for (const auto& source : sources) {
+    inputs.reserve(sources.carven.size());
+    for (const auto& source : sources.carven) {
         const auto absolute =
             std::filesystem::absolute(path_from_utf8(source.path), error).lexically_normal();
         if (error) {
@@ -157,6 +101,14 @@ auto write_manifest(
         const auto inside = !relative.empty() && *relative.begin() != "..";
         paths.push_back(path_to_generic_utf8(inside ? relative : absolute));
         inputs.push_back({.path = paths.back(), .module = source.module_path.value()});
+    }
+    auto owned_modules = std::vector<std::string_view>();
+    for (const auto& module : sources.owned_modules) {
+        owned_modules.push_back(module.value());
+    }
+    auto standard_modules = std::vector<std::string_view>();
+    for (const auto& module : sources.standard_modules) {
+        standard_modules.push_back(module.value());
     }
     if (path.has_parent_path()) {
         std::filesystem::create_directories(path.parent_path(), error);
@@ -172,7 +124,15 @@ auto write_manifest(
     }
     if (const auto written = write_file(
             path,
-            format_compilation_manifest(path_to_generic_utf8(workspace_root), inputs, artifacts)
+            format_compilation_manifest(
+                path_to_generic_utf8(workspace_root),
+                inputs,
+                artifacts,
+                runtime_test_count,
+                cacheable,
+                owned_modules,
+                standard_modules
+            )
         );
         !written) {
         return std::unexpected(
@@ -188,76 +148,111 @@ auto write_manifest(
 
 } // namespace
 
-auto run_compile_command(std::string_view executable, std::span<const char* const> args) noexcept
-    -> int {
+auto run_compilation_command(
+    std::string_view executable,
+    std::span<const char* const> args,
+    CompilationCommand command
+) noexcept -> int {
     if (args.size() == 1
         && (std::string_view(args[0]) == "--help" || std::string_view(args[0]) == "-h")) {
+        if (command == CompilationCommand::Check) {
+            std::print(
+                "Check sources, evaluate compile-time code, and run const tests.\n"
+                "\n"
+                "Usage:\n"
+                "  carven check [options] [<input>...]\n"
+                "\n"
+                "Options:\n"
+                "  -o <dir>                        Retain semantics and a manifest below <dir>\n"
+                "      --source=<module>=<path>    Map an owned source module (repeatable)\n"
+                "      --timings                   Show total and stage timings on stderr\n"
+                "  -h, --help                      Show this help\n"
+                "\n"
+                "Without -o, checking writes no artifacts. C++ is not generated.\n"
+            );
+        } else {
+            std::print(
+                "Generate C++ artifacts from sources or retained semantics.\n"
+                "\n"
+                "Usage:\n"
+                "  carven compile [options] [<input>...]\n"
+                "\n"
+                "Output options:\n"
+                "  -o <dir>                        Write artifacts below <dir> (default: .)\n"
+                "      --stdout                    Print selected C++ with path headings\n"
+                "\n"
+                "Test options:\n"
+                "      --tests                     Emit runtime tests, runner, and a test entry\n"
+                "      --tests=runner              Emit tests and runner; keep the program entry\n"
+                "                                  (default: no runtime test artifacts)\n"
+                "\n"
+                "Input options:\n"
+                "      --source=<module>=<path>    Map an owned source module (repeatable)\n"
+                "\n"
+                "Options:\n"
+                "      --timings                   Show total and stage timings on stderr\n"
+                "  -h, --help                      Show this help\n"
+            );
+        }
         std::print(
-            "Generate C++ headers and sources from application inputs and fixed Crafts roots.\n"
             "\n"
-            "Usage:\n"
-            "  carven compile [options] <source-file>...\n"
-            "\n"
-            "Output options:\n"
-            "  -o, --output-dir <dir>    Write files below <dir> (default: .)\n"
-            "      --stdout              Print explicit inputs with path headings\n"
-            "      --artifact-manifest=<file>     Write JSON input and artifact facts\n"
-            "      --linkage-domain=<id> Set the private namespace identity\n"
-            "                            (default: derived from the output directory)\n"
-            "      --library-domain=<id> Set the identity of a fixed source library\n"
-            "      --library-module=<path> Select a canonical library module (repeatable)\n"
-            "      --emit-library        Emit library implementations for their owning build\n"
-            "                            (default: emit only consumer implementations)\n"
-            "\n"
-            "Test options:\n"
-            "      --tests=main          Emit runtime tests, runner, and test entry\n"
-            "      --tests=runner        Emit runtime tests and runner without test entry\n"
-            "                            (default: no runtime test artifacts)\n"
-            "\n"
-            "Options:\n"
-            "      --explicit-inputs     Use exactly the supplied source files\n"
-            "      --source=<module>=<path> Supply a mapped source (repeatable)\n"
-            "      --timings             Show total and stage timings on stderr\n"
-            "  -h, --help                Show this help\n"
-            "\n"
-            "Sources include the fixed toolchain and working-directory Crafts roots.\n"
-            "C++ compilation and linking belong to the consuming build.\n"
+            "Installed Crafts supply source dependencies. Source inputs also collect\n"
+            "project Crafts; mapped inputs select the complete project source set.\n"
+            "A standard-library artifact directory can accompany new sources.\n"
+            "Use 'check -o <dir>' to retain semantics and 'compile' to generate C++.\n"
+            "The consuming build system compiles and links the generated C++.\n"
         );
         return 0;
     }
-    auto request = parse_compile_command_options(args);
+    auto request = parse_compilation_options(args, command);
     if (!request) {
-        return emit_driver_error(format_compile_option_error(request.error()), "carven compile");
+        return emit_driver_error(
+            format_compilation_option_error(request.error()),
+            command == CompilationCommand::Check ? "carven check" : "carven compile"
+        );
     }
 
-    auto timings = CommandTimings(request->timings, "compilation");
-    auto linkage_domain = resolve_linkage_domain(*request);
-    if (!linkage_domain.has_value()) {
-        return emit_driver_error(linkage_domain.error());
-    }
-
-    const auto sources = collect_command_sources(
-        executable,
-        request->input_paths,
-        timings.output(),
-        request->explicit_inputs,
-        request->mapped_inputs
+    auto timings = CommandTimings(
+        request->timings,
+        command == CompilationCommand::Check ? "check" : "compilation"
     );
-    if (!sources) {
-        return emit_driver_error(sources.error());
-    }
+    const auto finish = [&]() noexcept {
+        timings.set_outcome(command == CompilationCommand::Check ? "passed" : "finished");
+        if (command == CompilationCommand::Check && !request->timings) {
+            std::cout.flush();
+            std::println(std::cerr, "carven: check passed");
+        }
+        return 0;
+    };
+    const auto printing_artifacts = request->destination
+        && std::holds_alternative<StandardOutputArtifactDestination>(*request->destination);
     const auto write_output = [&](ExecutionOutputStream stream, std::string_view bytes) noexcept {
-        const auto to_error = stream == ExecutionOutputStream::Error
-            || std::holds_alternative<StandardOutputArtifactDestination>(request->destination);
+        const auto to_error = stream == ExecutionOutputStream::Error || printing_artifacts;
         std::print(to_error ? std::cerr : std::cout, "{}", bytes);
     };
-    auto semantic = load_and_analyze_sources(sources->carven, write_output, timings.output());
-    if (!semantic) {
+    auto input = load_compilation_input(executable, *request, write_output, timings.output());
+    if (!input) {
         return 1;
     }
+    if (!request->destination) {
+        return finish();
+    }
+    const auto& destination = *request->destination;
+    const auto manifest_path = destination.visit(
+        Overloaded {
+            [](const DirectoryArtifactDestination& destination) static noexcept
+                -> std::optional<std::filesystem::path> {
+                return destination.root / "carven/manifest.json";
+            },
+            [](const StandardOutputArtifactDestination&) static noexcept
+                -> std::optional<std::filesystem::path> { return std::nullopt; },
+        }
+    );
+    const auto* sources = &input->sources;
+    const auto* semantic = &input->semantic.program;
     auto displayed_modules = std::vector<CanonicalModulePath>();
     auto selection = std::optional<std::span<const CanonicalModulePath>>();
-    if (std::holds_alternative<StandardOutputArtifactDestination>(request->destination)) {
+    if (printing_artifacts) {
         for (const auto& source : sources->carven) {
             if (std::ranges::any_of(request->mapped_inputs, [&](const SourceInput& input) noexcept {
                     return input.module_path == source.module_path;
@@ -277,31 +272,52 @@ auto run_compile_command(std::string_view executable, std::span<const char* cons
                 }
             }
         }
+        if (displayed_modules.empty() && request->mapped_inputs.empty()) {
+            displayed_modules = sources->owned_modules;
+        }
         selection = displayed_modules;
     }
-    const auto generation = TargetPlanningRequest {
-        .test_mode = request->test_mode,
-        .linkage_domain = std::move(*linkage_domain),
-        .library = std::move(request->library),
-    };
-    const auto artifacts = generate_artifacts(*semantic, generation, selection, timings.output());
+    const auto runtime_test_count = static_cast<std::size_t>(
+        std::ranges::count_if(semantic->tests().entries(), [&](const auto& record) noexcept {
+            const auto& test = record.value;
+            const auto& module = semantic->declarations().module_decl(test.module_id);
+            const auto& path = semantic->provenance().module_record(module.provenance_module).path;
+            return !test.is_const && std::ranges::contains(sources->owned_modules, path);
+        })
+    );
+    const auto artifacts = [&]() noexcept -> std::expected<GeneratedArtifactSet, std::string> {
+        if (command == CompilationCommand::Compile) {
+            auto linkage_domain = resolve_linkage_domain(destination);
+            if (!linkage_domain) {
+                return std::unexpected(std::move(linkage_domain.error()));
+            }
+            const auto generation = TargetPlanningRequest {
+                .test_mode = request->test_mode,
+                .linkage_domain = std::move(*linkage_domain),
+                .library = standard_source_library(*sources),
+            };
+            return generate_artifacts(*semantic, generation, selection, timings.output());
+        }
+        auto bytes = encode_compilation_input(*input);
+        if (!bytes) {
+            return std::unexpected(std::move(bytes.error()));
+        }
+        auto entries = std::vector<GeneratedArtifact>();
+        entries.push_back({
+            .logical_path = "carven/semantic",
+            .role = GeneratedArtifactRole::SemanticIR,
+            .source_mapping = ArtifactSourceMappingPolicy::StableInterface,
+            .source_path = std::nullopt,
+            .content = std::move(*bytes),
+        });
+        return GeneratedArtifactSet(std::move(entries));
+    }();
     if (!artifacts) {
         return emit_driver_error(artifacts.error());
     }
-    if (request->artifact_manifest) {
-        if (const auto valid = validate_manifest_destination(
-                *request->artifact_manifest,
-                *sources,
-                request->destination,
-                *artifacts
-            );
-            !valid) {
-            return emit_driver_error(valid.error());
-        }
-    }
 
     auto writing = TimingScope(timings.output(), TimingStage::ArtifactWriting);
-    const auto written = request->destination.visit(
+    const auto written = destination.visit(
         Overloaded {
             [&](const DirectoryArtifactDestination& destination) noexcept {
                 return write_artifacts(destination.root, *artifacts);
@@ -316,25 +332,18 @@ auto run_compile_command(std::string_view executable, std::span<const char* cons
     if (!written) {
         return emit_driver_error(written.error());
     }
-    if (request->artifact_manifest) {
-        // Newly materialized paths can reveal filesystem aliases that did not
-        // exist when the destination was first checked.
-        if (const auto valid = validate_manifest_destination(
-                *request->artifact_manifest,
+    if (manifest_path) {
+        if (const auto manifest = write_manifest(
+                *manifest_path,
                 *sources,
-                request->destination,
-                *artifacts
+                *artifacts,
+                runtime_test_count,
+                input->semantic.cacheable
             );
-            !valid) {
-            return emit_driver_error(valid.error());
-        }
-        if (const auto manifest =
-                write_manifest(*request->artifact_manifest, sources->carven, *artifacts);
             !manifest) {
             return emit_driver_error(manifest.error());
         }
     }
     writing.stop();
-    timings.set_outcome("finished");
-    return 0;
+    return finish();
 }

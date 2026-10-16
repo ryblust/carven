@@ -2,6 +2,7 @@ module carven:compiler.manifest.impl;
 
 import :artifacts;
 import :compiler.manifest;
+import :support.path;
 import std;
 
 namespace {
@@ -30,6 +31,7 @@ auto role_name(GeneratedArtifactRole role) noexcept -> std::string_view {
         case GeneratedArtifactRole::ModuleImplementation: return "module-implementation";
         case GeneratedArtifactRole::TestRunnerHeader:     return "test-runner-header";
         case GeneratedArtifactRole::TestEntry:            return "test-entry";
+        case GeneratedArtifactRole::SemanticIR:           return "semantic-ir";
     }
     std::unreachable();
 }
@@ -42,25 +44,47 @@ auto mapping_name(ArtifactSourceMappingPolicy policy) noexcept -> std::string_vi
     std::unreachable();
 }
 
+auto source_reference(std::string_view source, std::string_view workspace_root) noexcept
+    -> std::string {
+    const auto path = path_from_utf8(source);
+    if (path.is_absolute()) {
+        const auto relative = path.lexically_relative(path_from_utf8(workspace_root));
+        if (!relative.empty() && *relative.begin() != "..") {
+            return json_string(path_to_generic_utf8(relative));
+        }
+    }
+    return json_string(source);
+}
+
 } // namespace
 
 auto format_compilation_manifest(
     std::string_view workspace_root,
     std::span<const CompilationManifestInput> inputs,
-    const GeneratedArtifactSet& artifacts
+    const GeneratedArtifactSet& artifacts,
+    std::size_t runtime_test_count,
+    bool cacheable,
+    std::span<const std::string_view> owned_modules,
+    std::span<const std::string_view> standard_modules
 ) noexcept -> std::string {
     auto result = std::format(
         "{{\n  \"workspace\": {{\"root\": {}}},\n"
+        "  \"cacheable\": {},\n"
+        "  \"runtime_test_count\": {},\n"
         "  \"inputs\": [",
-        json_string(workspace_root)
+        json_string(workspace_root),
+        cacheable,
+        runtime_test_count
     );
     auto separator = std::string_view();
     for (const auto& input : inputs) {
         result += std::format(
-            "{}\n    {{\"path\": {}, \"module\": {}}}",
+            "{}\n    {{\"path\": {}, \"module\": {}, \"owned\": {}, \"standard\": {}}}",
             separator,
             json_string(input.path),
-            json_string(input.module)
+            json_string(input.module),
+            std::ranges::contains(owned_modules, input.module),
+            std::ranges::contains(standard_modules, input.module)
         );
         separator = ",";
     }
@@ -73,7 +97,8 @@ auto format_compilation_manifest(
             json_string(artifact.logical_path),
             role_name(artifact.role),
             mapping_name(artifact.source_mapping),
-            artifact.source_path ? json_string(*artifact.source_path) : std::string("null")
+            artifact.source_path ? source_reference(*artifact.source_path, workspace_root)
+                                 : std::string("null")
         );
         separator = ",";
     }

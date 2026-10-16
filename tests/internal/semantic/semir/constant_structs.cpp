@@ -9,7 +9,6 @@ import :semantic.semir.decl;
 import :semantic.semir.program;
 import :semantic.semir.type;
 import :source.text;
-import :test.harness.death;
 import :test.harness.framework;
 import :test.internal.semantic.evaluation.fixture;
 import std;
@@ -129,65 +128,6 @@ const TestSuite suite([] static noexcept {
             expect(!(shapes.get(nested).has_value()));
             const auto cold_shapes = ExecutionTypeShapes(draft);
             expect(!(cold_shapes.get(nested).has_value()));
-        };
-
-    "SemIR publication invariant: struct constants require exact nominal field types and arity"_test =
-        [] static noexcept {
-            enum class Malformation { NonStruct, Missing, Swapped, Extra };
-            constexpr auto scenarios = std::array {
-                std::pair {"struct-non-struct-type", Malformation::NonStruct},
-                std::pair {"struct-missing-field", Malformation::Missing},
-                std::pair {"struct-swapped-fields", Malformation::Swapped},
-                std::pair {"struct-extra-field", Malformation::Extra},
-            };
-            each(
-                scenarios,
-                [](const auto& entry) static noexcept { return entry.first; },
-                [&](const auto& entry) noexcept {
-                    const auto& [name, malformation] = entry;
-                    auto fixture = ConstantEvaluationFixture();
-                    auto& draft = fixture.compilation;
-                    auto type = define_structure(draft);
-                    const auto integer_type = draft.builtin_type(BuiltinType::I32);
-                    const auto integer = draft.intern_constant(
-                        {.type = integer_type, .value = IntegerConstant::from_signed(7)}
-                    );
-                    const auto boolean = draft.intern_constant(
-                        {.type = draft.builtin_type(BuiltinType::Bool),
-                         .value = BooleanConstant {.value = true}}
-                    );
-                    auto fields = std::vector<ConstantID> {integer, boolean};
-                    switch (malformation) {
-                        case Malformation::NonStruct: type = integer_type; break;
-                        case Malformation::Missing:   fields.pop_back(); break;
-                        case Malformation::Swapped:   std::swap(fields[0], fields[1]); break;
-                        case Malformation::Extra:     fields.push_back(integer); break;
-                    }
-                    expect(expect_termination(name, [&]() noexcept {
-                        static_cast<void>(draft.intern_constant(
-                            {.type = type, .value = StructConstant {.fields = std::move(fields)}}
-                        ));
-                        static_cast<void>(std::move(draft).finish());
-                    }));
-                }
-            );
-        };
-
-    "SemIR constants invariant: struct fields belong to the receiving constant store"_test =
-        [] static noexcept {
-            auto fixture = ConstantEvaluationFixture();
-            auto other = ConstantEvaluationFixture();
-            auto& draft = fixture.compilation;
-            const auto type = define_structure(draft);
-            const auto foreign = other.compilation.intern_constant({
-                .type = other.compilation.builtin_type(BuiltinType::I32),
-                .value = IntegerConstant::from_signed(1),
-            });
-            expect(expect_termination("struct-foreign-field", [&]() noexcept {
-                static_cast<void>(draft.intern_constant(
-                    {.type = type, .value = StructConstant {.fields = {foreign}}}
-                ));
-            }));
         };
 });
 

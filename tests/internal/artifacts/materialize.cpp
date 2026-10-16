@@ -76,24 +76,26 @@ const TestSuite suite([] static noexcept {
         );
     };
 
-    "Artifacts: duplicate and prefix-colliding logical paths violate the set invariant"_test =
-        [] static noexcept {
-            expect(expect_termination("artifact-set-duplicate-logical-path", []() static noexcept {
+    "Artifacts: logical paths cannot overwrite another artifact"_test =
+        termination_test([] static noexcept {
+            expect_termination([]() static noexcept {
                 const auto artifacts = GeneratedArtifactSet({
                     generated("module.cpp", "first"),
                     generated("module.cpp", "second"),
                 });
                 static_cast<void>(artifacts);
-            }));
-
-            expect(expect_termination("artifact-set-prefix-logical-path", []() static noexcept {
+            });
+        });
+    "Artifacts: logical paths cannot contain another artifact"_test =
+        termination_test([] static noexcept {
+            expect_termination([]() static noexcept {
                 const auto artifacts = GeneratedArtifactSet({
                     generated("carven/generated", "file"),
                     generated("carven/generated/module.hpp", "descendant"),
                 });
                 static_cast<void>(artifacts);
-            }));
-        };
+            });
+        });
 
     "Artifacts: ordinary writes overwrite generated files and preserve stale files"_test =
         [] static noexcept {

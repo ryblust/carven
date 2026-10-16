@@ -110,7 +110,7 @@ auto run_native_command(std::string_view executable, std::span<const char* const
         TargetPlanningRequest {
             .test_mode = tests ? TestGenerationMode::RunnerEntryPoint : TestGenerationMode::None,
             .linkage_domain = *LinkageDomain::explicit_value("carven.run"),
-            .library = std::nullopt,
+            .library = standard_source_library(*sources, true),
         },
         std::nullopt,
         timings.output()

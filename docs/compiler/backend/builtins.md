@@ -1,9 +1,13 @@
 # Builtin realization
 
-These implementations use common preparation, operand sequencing, storage, and
-representation contracts. Format plans and their budgets
-belong to preparation; this reference describes runtime and target operations
-that consume those plans.
+This reference describes the C++ realization of builtin numeric, text,
+formatting, printing, and report operations.
+
+## Realization contracts
+
+Builtin implementations use common preparation, operand sequencing, storage,
+and representation contracts. Preparation owns format plans and their budgets;
+runtime and target operations consume those plans.
 
 ## Floating realization
 
@@ -25,8 +29,8 @@ Numeric parse calls use the ordinary fallible-call transport and realize as
 `NumberParseError` type as `Error`. `numeric/parse.hpp` converts
 the entire text view with `std::from_chars`, selecting general format for floating
 types and base ten for integers. It returns an ordinary `Outcome` containing the
-scalar result or the published Invalid case. No input backing is retained by the
-result or failure. Generated consumers compile with C++20.
+scalar result or the published Invalid case. Neither result nor failure retains
+input backing.
 
 ## Owning text realization
 
@@ -87,10 +91,9 @@ rediscover field types or parse format policies.
 When the minimum exceeds available capacity, runtime reserves for the maximum, capped at the
 destination's size limit. Otherwise normal storage growth applies. Equal bounds
 reserve an exact size for the counted fragments; dynamic-width fields are excluded.
-An upper bound alone does not force allocation for a short result. Runtime checks
-size arithmetic and performs integer conversion
-with `std::to_chars`, sign handling, and padding. Writer integer inputs use the
-same `runtime::Integer` domain as arithmetic; boolean and character fields use
+An upper bound alone does not force allocation. Runtime checks size arithmetic
+and performs integer conversion with `std::to_chars`, sign handling, and padding.
+Writer integer inputs use the same `runtime::Integer` domain as arithmetic; boolean and character fields use
 their separate operations.
 
 The writer borrows private String storage and requires valid text and disjoint
@@ -123,11 +126,9 @@ required hole execution. Prepared builtin fields use the writer above. Otherwise
 `PreparedDelegatedFormat::encoding` selects `append_format_valid_utf8`
 or `append_format`, with the receiver followed by the selected format and argument pack.
 
-The append entries reuse their corresponding owning formatter, then append the
-completed valid text. The proved entry formats once, adopts that buffer, and avoids
-a UTF-8 validation scan. Standard formatting owns any partial byte writes until
-completion in a temporary native buffer. Known contents lower to direct append.
-`Writer::append` requires each supplied fragment to be complete valid text.
+The append entries reuse their owning formatter, then append completed valid
+text. Standard formatting retains partial bytes in its temporary native buffer
+until completion. `Writer::append` requires complete valid text fragments.
 
 Both entries are `noexcept` and require the source operation's destination/input
 separation, without rollback after formatting begins. Capacity growth and native
@@ -184,9 +185,9 @@ when library feature detection admits `std::print`, it prints the text through t
 facility. Earlier values and separators remain observable if a later value's
 formatting or output fails. An inner formatted String still completes, including
 its owning construction, before
-subsequent print arguments execute. Allocation counts and incidental buffers
-inside scalar output conversion are not source guarantees; source String
-construction and operand completion retain their boundaries.
+subsequent print arguments execute. Scalar conversion buffers and allocation counts
+are implementation details; source String construction and operand completion retain
+their boundaries.
 
 Structural print operands use a synchronous borrowing wrapper. The compiler
 selects an emitter type from published semantic types; scalar, sequence, and

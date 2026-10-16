@@ -25,17 +25,11 @@ function main(check)
     if #files > 0 then
         os.vrunv(tool.program, args, {curdir = os.projectdir()})
     end
-    -- These fixtures intentionally fail lexing or parsing.
-    local rejected = {
-        ["tests/cli/commands/dump/lexical_error.cv"] = true,
-        ["tests/cli/commands/dump/syntax_error.cv"] = true,
-        ["tests/cli/diagnostics/syntax/input.cv"] = true,
-    }
     local sources = {}
     for _, root in ipairs({"crafts", "examples", "tests", "benchmarks"}) do
         for _, file in ipairs(os.files(path.join(os.projectdir(), root, "**.cv"))) do
             local relative = path.relative(file, os.projectdir()):gsub("\\", "/")
-            if not rejected[relative] then table.insert(sources, relative) end
+            table.insert(sources, relative)
         end
     end
     for _, file in ipairs(os.files(path.join(os.projectdir(), "benchmarks", "**.cv.fixture"))) do

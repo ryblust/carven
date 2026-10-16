@@ -15,8 +15,14 @@ import :semantic.semir.program;
 import :semantic.semir.stage;
 import :semantic.semir.structured;
 import :semantic.semir.type;
+import :source.manager;
+import :source.provenance;
 import :support.timing;
 import std;
+
+class CheckedDefinitions;
+class AnalysisCatalog;
+class SemanticArtifactAccess;
 
 class BodyReservation final {
 public:
@@ -76,7 +82,8 @@ public:
         ExecutionOutput output = {},
         SourceAnalysisBuilder* source_analysis = nullptr,
         TimingOutput timings = {},
-        HostEffects host_effects = HostEffects::Deny
+        HostEffects host_effects = HostEffects::Deny,
+        CheckedDefinitions* seed = nullptr
     ) noexcept -> ProgramDraft;
 
     ProgramDraft(const ProgramDraft&) = delete;
@@ -92,7 +99,11 @@ public:
     auto diagnostics() const noexcept -> AnalysisDiagnostics;
     auto write_output(ExecutionOutputStream stream, std::string_view bytes) const noexcept -> void;
     auto syntax_tree(ProgramModuleID id) const noexcept -> const SyntaxTree&;
-    auto syntax_trees() const noexcept -> std::span<const SyntaxTree>;
+    auto syntax_trees() const noexcept -> std::span<const std::optional<SyntaxTree>>;
+    auto imported(ProgramModuleID module) const noexcept -> bool;
+    auto imported(BodyID body) const noexcept -> bool;
+    auto cacheable() const noexcept -> bool;
+    auto record_host_effect() const noexcept -> void;
 
     auto resolved_imports(ProgramModuleID id) const noexcept
         -> std::span<const ResolvedModuleImport>;
@@ -106,6 +117,7 @@ public:
     auto spelling(ProgramSpellingID id) const noexcept -> std::string_view override;
     auto spelling_copy(ProgramSpellingID id) const noexcept -> std::string;
     auto source_origin(ProgramOriginID id) const noexcept -> ProgramSourceOrigin;
+    auto module_source_id(ProgramModuleID id) const noexcept -> SourceID;
     auto module_source(ProgramModuleID id) const noexcept -> ProgramSourceID;
     auto module_path_copy(ProgramModuleID id) const noexcept -> CanonicalModulePath;
 
@@ -489,7 +501,8 @@ private:
         ExecutionOutput output,
         SourceAnalysisBuilder* source_analysis,
         TimingOutput timings,
-        HostEffects host_effects
+        HostEffects host_effects,
+        CheckedDefinitions* seed
     ) noexcept;
 
     auto resolve() && noexcept -> AnalysisResult<ResolvedAnalysisProgram>;
@@ -536,17 +549,13 @@ private:
     TimingOutput analysis_timings;
     HostEffects execution_host_effects;
     State state;
+    std::vector<std::optional<SyntaxTree>> syntax_by_module;
+    ResolvedModuleImportGraph resolved_import_graph;
+    std::size_t imported_module_count;
+    std::size_t imported_body_count;
+    mutable bool reusable;
 
     struct ConstructionStorage final {
-        ConstructionStorage(
-            ProgramIdentity identity,
-            ProvenanceIdentity provenance,
-            std::vector<SyntaxTree> syntax,
-            ResolvedModuleImportGraph imports
-        ) noexcept;
-
-        std::vector<SyntaxTree> syntax_by_module;
-        ResolvedModuleImportGraph resolved_import_graph;
         CanonicalTypeStoreBuilder types;
         ConstantStoreBuilder constants;
         FailureSetStoreBuilder failure_sets;
@@ -604,7 +613,7 @@ private:
             generic_instance_index;
         std::map<NominalDeclarationRef, std::size_t> generic_instance_nominals;
         std::set<GenericDeclarationID> checked_generic_definitions;
-        std::size_t generic_instance_depth = 0;
+        std::size_t generic_instance_depth;
         std::vector<BodySlot> bodies;
         std::vector<StaticInstanceSlot> static_instances;
         std::map<std::pair<FunctionID, std::vector<ConstantID>>, CallableID> static_instance_index;
@@ -612,5 +621,44 @@ private:
         ReservedProgramTable<TestDeclaration, TestID> test_slots;
     };
 
+    static auto make_storage(ProgramIdentity identity, ProvenanceIdentity provenance) noexcept
+        -> ConstructionStorage;
+
     ConstructionStorage storage;
+
+    friend class CheckedDefinitions;
+    friend class SemanticArtifactAccess;
+};
+
+// Checked construction rows retain source and generic operations independently
+// of the executable program published to the backend. Imported rows are not
+// parsed or elaborated again.
+class CheckedDefinitions final {
+public:
+    CheckedDefinitions(const CheckedDefinitions&) = delete;
+    CheckedDefinitions(CheckedDefinitions&&) noexcept;
+    ~CheckedDefinitions();
+    auto operator=(const CheckedDefinitions&) -> CheckedDefinitions& = delete;
+    auto operator=(CheckedDefinitions&&) -> CheckedDefinitions& = delete;
+    // The view borrows retained sources until this owner is consumed.
+    auto provenance_view() const noexcept -> CompilationProvenanceView;
+    // Bind retained library diagnostics to the consumer before source parsing.
+    auto take_provenance(SourceManager& sources) noexcept -> CompilationProvenance;
+
+private:
+    CheckedDefinitions(
+        ProgramIdentity identity,
+        CompilationProvenance provenance,
+        std::unique_ptr<ProgramDraft::ConstructionStorage> construction,
+        std::unique_ptr<AnalysisCatalog> catalog
+    ) noexcept;
+
+    ProgramIdentity program_identity;
+    std::optional<CompilationProvenance> provenance;
+    std::unique_ptr<ProgramDraft::ConstructionStorage> construction;
+    std::unique_ptr<AnalysisCatalog> catalog;
+
+    friend class ProgramDraft;
+    friend class AnalysisCatalogBuilder;
+    friend class SemanticArtifactAccess;
 };

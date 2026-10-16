@@ -11,6 +11,8 @@ public:
     constexpr auto operator<=>(const ProvenanceIdentity&) const noexcept = default;
 
 private:
+    friend class SemanticArtifactAccess;
+
     explicit constexpr ProvenanceIdentity(std::uint64_t value) noexcept
         : identity_value(value) {}
 
@@ -31,6 +33,8 @@ public:
     constexpr auto operator<=>(const ProvenanceID&) const noexcept = default;
 
 private:
+    friend class SemanticArtifactAccess;
+
     explicit constexpr ProvenanceID(ProvenanceIdentity owner, std::uint32_t index) noexcept
         : provenance_identity(owner),
           row_index(index) {}

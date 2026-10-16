@@ -57,12 +57,15 @@ auto ProgramConstruction::construct() noexcept -> AnalysisTask<void> {
             }
         }
         for (const auto& binding : catalog.imports()) {
+            if (draft.imported(binding.importer)) {
+                continue;
+            }
             if (binding.selection_kind == CatalogImportSelectionKind::Wildcard) {
                 continue;
             }
             for (const auto& selection : binding.selections) {
                 const auto entity = catalog.source_entity(draft, selection.entity);
-                const auto source_id = draft.syntax_tree(binding.importer).view().source_id();
+                const auto source_id = draft.module_source_id(binding.importer);
                 const auto alias = selection.aliased
                     ? std::optional(locate(source_id, selection.origin))
                     : std::nullopt;

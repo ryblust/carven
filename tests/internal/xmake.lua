@@ -11,6 +11,7 @@ target_end()
 -- Leave headroom for sanitizer instrumentation and shared-runner variability.
 -- The timeout guards against stalled tests; it is not a performance threshold.
 local internal_test_timeout = has_config("sanitizers") and 180000 or 60000
+
 target("carven-test-internal")
     set_default(false)
     set_group("tests/internal")

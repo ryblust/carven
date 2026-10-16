@@ -1,8 +1,7 @@
 # Modules and names
 
-[Language](README.md)
-
-Module resolution and declaration visibility determine which names a program can use.
+This page defines compilation units, module resolution, imports, and declaration
+visibility.
 
 ## Compilations, crafts, and modules
 
@@ -72,8 +71,8 @@ selections cannot collide with a module declaration or select one local name
 twice, and they deterministically shadow same-name wildcard candidates.
 Multiple wildcard providers are ambiguous only when an actual use requires that
 name. Importing a module selects its visible declarations. Imported bindings remain
-local to the importing module. Import declarations have
-no runtime side effects. A declaration is used
+local to the importing module. Import declarations have no runtime side effects.
+A declaration is used
 when one of its selected bindings uniquely resolves an actual reference; an
 otherwise unused declaration produces one `CV-LINT-UNUSED-IMPORT` warning.
 
@@ -94,10 +93,8 @@ This table lists public compiler-provided exports and default bindings.
 | `std::simd` | `u8x16`, `mask16`, `f32x4`, `mask4`, `u8x32`, `mask32`, `f32x8`, `mask8` | These listed names |
 | `std::time` | `timeout` | None |
 
-The table specifies which names are available by default and which module
-supplies their bindings. Explicit imports of default names use ordinary import
-usage tracking. Test helpers retain their
-active-test admission rules; `assert` works outside tests.
+Explicit imports of default names use ordinary import usage tracking. Test helpers
+require an active test; `assert` works outside tests.
 
 Standard entries expose compiler-provided declarations and source exports through
 ordinary module paths and import selections. The default `stdin` binding selects
@@ -109,8 +106,7 @@ Crafts are source packages. Import their APIs through module paths such as
 `std::json`, `std::simd.bytes`, and `std::utf`. `std::io` combines
 builtin printing with source input and framing APIs. `std::time` combines
 builtin timeout composition with source time values and waiting APIs.
-A directory alone does not define an importable module. The compiler, runtime,
-and standard sources ship together.
+A directory alone does not define an importable module.
 
 Importing an operation does not bind the types in its signature. Results and
 failures can be inferred, used, and propagated without naming their types.
@@ -157,22 +153,7 @@ Aliases preserve the selected entity and its type, ownership, failure, and call
 contracts.
 Default bindings are independent: `print as write` does not remove default `print`.
 
-## Import style
-
-Group imports in official source in this order:
-
-1. Modules in the current craft, using unprefixed or leading-`.` references.
-2. Modules in other crafts, using craft-qualified references.
-3. Standard-library modules, using `std::`.
-4. Native C++ headers.
-
-Sort module references lexically within each group. Use one blank line to
-separate authored groups when needed. Keep each selection list with its module
-import. Preserve the required order of native headers; order independent headers
-by the [C++ header style](../development/conventions.md#header-order).
-Keep `std::` imports in the standard-library group within the official craft
-as well. Module resolution and name conflicts are independent of import order.
-The formatter preserves the written order.
+Module resolution and name conflicts are independent of import order.
 
 ## Declarations and names
 

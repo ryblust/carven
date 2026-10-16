@@ -240,5 +240,5 @@ const test "Async composition: products, selection, and owned cleanup" {
 }
 
 export async fn run_composition() {
-    println(result && await exercise());
+    assert(result && await exercise());
 }

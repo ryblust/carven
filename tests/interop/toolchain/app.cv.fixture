@@ -1,9 +1,0 @@
-import "provider.hpp";
-
-import(cpp) fn provided() -> i32;
-
-private fn offset() -> i32 => 7;
-
-fn main() {
-    println(((provided() + offset()) as f64).sqrt());
-}

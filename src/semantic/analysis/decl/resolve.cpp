@@ -29,6 +29,9 @@ import std;
 
 auto DeclResolver::publish_modules() noexcept -> void {
     for (const auto& module_record : catalog.modules()) {
+        if (draft.imported(module_record.module_id)) {
+            continue;
+        }
         const auto syntax = draft.syntax_tree(module_record.module_id).view();
         const auto& source = syntax.ast_module();
         auto declaration = ModuleDeclaration {
@@ -183,7 +186,20 @@ DeclResolver::DeclResolver(
       enumerations(source_catalog.enum_count()),
       enum_cases(source_catalog.enum_case_count()),
       module_constants(source_catalog.symbols().size()),
-      cpp_imports(source_catalog.function_count()) {
+      cpp_imports() {
+    for (const auto& symbol : catalog.symbols()) {
+        if (const auto* function = std::get_if<CatalogFunctionForm>(&symbol.form)) {
+            if (cpp_imports.size() <= function->callable.index()) {
+                cpp_imports.resize(function->callable.index() + 1uz);
+            }
+        }
+    }
+    for (const auto& symbol : catalog.symbols()) {
+        if (draft.imported(symbol.module_id)) {
+            states[symbol.symbol_id.index()] = Resolved {};
+            published[symbol.symbol_id.index()] = true;
+        }
+    }
     publish_modules();
 }
 
@@ -208,7 +224,8 @@ auto DeclResolver::run() noexcept -> AnalysisTask<void> {
         );
     }
     for (const auto& symbol : catalog.symbols()) {
-        if (!std::holds_alternative<CatalogEnumForm>(symbol.form)) {
+        if (draft.imported(symbol.module_id)
+            || !std::holds_alternative<CatalogEnumForm>(symbol.form)) {
             continue;
         }
         static_cast<void>(validate_enum_codes(symbol));

@@ -17,21 +17,17 @@ Carven compiles `.cv` source files to C++ using xmake.
 
 ## Build and validation
 
-Use `./xmakew` (`.\xmakew.ps1` on Windows) for local build, test, formatting,
-analysis, and clean commands. Stock Xmake is the fallback when the wrapper cannot
-apply its versioned patch.
-
-Build the compiler before testing. During implementation, run the relevant
-test groups or the full suite. Select the applicable test commands:
+- Use `./xmakew` (`.\xmakew.ps1` on Windows) for developement
+- Build the compiler with `./xmakew build` before testing.
+- Run the relevant test groups or the full suite.
+- Select the applicable test commands:
 
 ```shell
-./xmakew build
 ./xmakew test -g internal
 ./xmakew test -g language
 ./xmakew test -g crafts
 ./xmakew test -g interop
 ./xmakew test -g cli
-./xmakew test -g examples
 ./xmakew test -g format
 ./xmakew test -g workspace
 ./xmakew test

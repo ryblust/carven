@@ -1,30 +1,31 @@
 # Bindings, access, and mutation
 
-[Language](README.md)
-
 This page defines binding roles, Read/Write/Take access, value transfer, and
 lifetime rules shared by language operations.
 
+- [Binding roles and access](#binding-roles-and-access)
 - [Read values and aliases](#read-values-and-aliases)
 - [Ownership transfer and mutation](#ownership-transfer-and-mutation)
 - [Value ownership and lifetime](#value-ownership-and-lifetime)
+
+## Binding roles and access
 
 Carven separates value type, binding role, and access mode. Binding and argument
 markers `&` and `&&` describe access; they do not construct reference types.
 Inside `ptr<&T>`, `&` is the pointer type's explicit target-access parameter.
 
-- `let` creates an immutable runtime owner.
-- `var` creates a mutable runtime owner.
-- A local `const` creates a static binding.
-- An unmarked parameter has `Read` access.
-- A parameter marked `&` has `Write` access.
-- A parameter marked `&&` has `Take` access.
-- An unmarked range binding has `Read` element access.
-- A range binding marked `&` has `Write` element access when the source permits
-  mutation.
-- An unmarked pattern binding has `Read` access to the selected value.
-- A pattern binding marked `&` has `Write` access when the subject permits
-  mutation.
+| Form | Binding or access |
+| --- | --- |
+| `let` | Immutable runtime owner |
+| `var` | Mutable runtime owner |
+| Local `const` | Static binding |
+| Unmarked parameter | `Read` access |
+| Parameter marked `&` | `Write` access |
+| Parameter marked `&&` | `Take` access |
+| Unmarked range binding | `Read` element access |
+| Range binding marked `&` | `Write` element access when the source permits mutation |
+| Unmarked pattern binding | `Read` access to the selected value |
+| Pattern binding marked `&` | `Write` access when the subject permits mutation |
 
 Every binding declaration has an initializer. An optional declared type must be
 compatible with that initializer. The exact target `_` creates no symbol, may
@@ -94,13 +95,13 @@ complete owner; the complete source is evaluated once and retained through the
 full expression, with remaining fields cleaned up normally. Nested owning field
 selection follows the same rule. `owner.field` remains an ordinary Read and
 never consumes `owner`. Returning a view into a destroyed temporary is invalid.
-Tuple binding targets provide simultaneous decomposition into independently
-owned element bindings; see [Tuples](aggregates.md#tuples).
+Tuple binding targets decompose a value into independently owned element bindings
+with matching arity and nesting.
 
 `&&expression` is the ownership-transfer expression and has its operand's value
 type. Taking a complete owner makes that binding unavailable, including for a
-copyable type. This is a state transition checked during analysis, not a runtime wrapper or a
-promise of a particular C++ move operation.
+copyable type. Analysis checks this state transition; the selected C++ operation
+must preserve its ownership and observable effects.
 
 Returning a named owner copies it; a return ends the owner but does not imply
 Take. `CV-LINT-RETURN-COPY` reports a returned owner whose type can hold Carven
@@ -156,9 +157,8 @@ are value and availability rules, not a fixed count of native constructor calls.
 A copy owns its immediate value, including structure fields, array elements,
 and enum payloads. Non-owning contents retain their backing: copying `str`, a
 callable view, or a closure containing Write captures does not clone or prolong
-the referenced storage. The recursive [callable-view restrictions](functions.md#signatures-and-views)
-and [closure holder rules](functions.md#closure-identity-copies-and-aliases)
-apply to these copies as well.
+the referenced storage. A copied view retains its escape restrictions, and every
+live closure copy retains its Write-capture associations.
 
 Local owners live in their enclosing lexical scope. Exiting that scope by
 normal completion or a control transfer ends its local lifetimes. Temporary

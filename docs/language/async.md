@@ -1,12 +1,13 @@
 # Async functions and lexical children
 
-[Language](README.md) · [Standard capabilities](standard.md)
-
-Async functions produce cold operations consumed by prefix `await` or started as
-lexical children. Source and native producers share the completion and lifetime
-contracts below.
+This page defines cold operations, awaiting, lexical children, cancellation, and
+native async hosts.
 
 ## Cold operations and await
+
+Async functions produce cold operations consumed by prefix `await` or started as
+lexical children. Source and native producers share completion and lifetime
+contracts.
 
 ```carven
 import std::async using yield_once;
@@ -31,8 +32,8 @@ have the same type even when produced by different functions.
 Import `Operation` from `std::async`; use `Operation<T>` for an operation without nominal failures, or
 `Operation<T, throw Error + OtherError>` for its complete completion contract.
 The type can also be inferred from a cold call. Inside a parameterized
-declaration, `Operation<T, throw E>` uses an independent success type and
-[failure-set parameter](failures.md#failure-set-parameters).
+declaration, `Operation<T, throw E>` separates the success type from a failure-set
+parameter containing copyable nominal payload types, possibly the empty set.
 `Operation<void, throw ()>` and `Operation<void>` both complete successfully with
 the unit value `()` and have no nominal failure alternatives. Cancellation remains
 a separate completion.
@@ -113,9 +114,6 @@ commitment. Every composite closes its children before delivering the selected
 outcome. Cancellation requests alone do not release borrowed backing. After
 commitment, later cancellation and loser failures do not replace the outcome.
 Result assembly follows ordinary value-transfer requirements.
-
-The time domain adds deadline composition through `timeout` from `std::time`.
-[Time and waiting](time.md#deadlines) defines its complete contract.
 
 ## Lexical children and cancellation
 
@@ -255,24 +253,21 @@ Executed synchronous helpers in an async body may not transitively stop a test
 through `require` or `fail`. Constructing a cold operation is distinct from
 executing its body for this effect check.
 
-The current driver is single-threaded and nonreentrant, with bounded native
-stack use for deep await chains. It does not promise preemption, fairness, or
-bounded cancellation latency. `async fn main` accepts no parameters or one
-untyped command-line parameter borrowing a `Vector<String>` with Read access.
-A private entry wrapper drives it to completion. Normal completion returns
-process status zero regardless of its source result; failure or cancelled
-completion is reported after child closure.
+The driver is single-threaded and nonreentrant, with bounded native stack use for
+deep await chains. Scheduling is cooperative, without fairness or cancellation
+latency bounds. An async entry's wrapper drives the root through child closure
+before reporting its outcome.
 
 Async tests, class receivers, async callable values, arbitrary external awaitable
 types and cross-thread resume remain outside this admission boundary.
 
 ## Static parameters and execution
 
-Async source functions can declare `const` parameters using the ordinary
-[static parameter rules](functions.md#static-parameters). Static arguments select
-a checked residual body; generated calls and signatures contain only runtime
-inputs. They do not become retained cold captures. The source function retains
-one result and failure contract across its instances.
+Async source functions can declare `const name: T` parameters. Each call supplies
+an admitted static value, evaluated and frozen during specialization. These values
+select a checked residual body; generated calls and cold captures contain only
+runtime inputs. Every instance retains the source function's result and failure
+contract.
 
 `const async fn` also admits execution in the static stage:
 

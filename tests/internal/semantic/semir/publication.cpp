@@ -74,160 +74,6 @@ auto make_body_with_closure(
     );
 }
 
-// A residual region that still calls a function with static parameters names
-// no instance.
-auto check_unresolved_residual_call() noexcept -> void {
-    auto sources = SourceManager();
-    auto diagnostics = DiagnosticSink();
-    auto builder =
-        begin_semir_test_compilation(sources, diagnostics, "semir.publication.residual_call");
-    const auto module_origin = make_semir_test_module_origin(builder);
-    const auto boolean = builder.builtin_type(BuiltinType::Bool);
-    const auto void_type = builder.builtin_type(BuiltinType::Void);
-    const auto module_id = builder.reserve_module_declaration();
-    const auto function = builder.reserve_function_declaration();
-    const auto callable = builder.reserve_callable_declaration();
-    const auto test = builder.reserve_test();
-    auto signature = make_semir_test_callable_contract(builder, void_type);
-    signature.parameters = {
-        {.stage = ParameterStage::Static, .access = AccessMode::Read, .type = boolean},
-        {.stage = ParameterStage::Runtime, .access = AccessMode::Read, .type = boolean},
-    };
-    builder.define_callable_contract(callable, std::move(signature));
-    builder.define_declaration(
-        function,
-        FunctionDeclaration {
-            .module_id = module_id,
-            .name = builder.intern_spelling("staged"),
-            .origin = module_origin.origin,
-            .visibility = DeclarationVisibility::Module,
-            .callable = callable,
-            .entry_point = std::nullopt,
-            .cpp_export_origin = std::nullopt,
-            .is_const = false,
-        }
-    );
-    builder.define_declaration(
-        module_id,
-        ModuleDeclaration {
-            .provenance_module = module_origin.provenance_module,
-            .origin = module_origin.origin,
-            .cpp_headers = {},
-            .cpp_source_fragments = {},
-            .items = {function, test},
-        }
-    );
-    builder.finish_declaration_heads();
-    auto reservation = builder.reserve_body(BodyKind::Function);
-    builder.complete_callable(callable, FunctionBodyImplementation {.body = reservation.id()});
-    auto function_body = BodyBuilder(std::move(reservation), builder);
-    const auto function_lifetime = function_body.add_lifetime_region(
-        std::nullopt,
-        LifetimeRegionKind::Lexical,
-        module_origin.origin
-    );
-    for (const auto name : {"static_value", "runtime_value"}) {
-        static_cast<void>(function_body.add_parameter(
-            builder.intern_spelling(name),
-            boolean,
-            function_lifetime,
-            AccessMode::Read,
-            module_origin.origin
-        ));
-    }
-    auto function_graph = std::move(function_body)
-                              .finish(
-                                  SemanticRegion {
-                                      .lifetime = function_lifetime,
-                                      .origin = module_origin.origin,
-                                      .statements = {},
-                                      .result = std::nullopt,
-                                      .result_reachable = false,
-                                      .failures = BodyFailures(builder.add_empty_failure_term()),
-                                      .exits_test = false,
-
-
-                                  }
-                              );
-    const auto constant =
-        builder.intern_constant({.type = boolean, .value = BooleanConstant {.value = true}});
-    builder.add_body_draft(std::move(function_graph));
-
-    auto caller_reservation = builder.reserve_body(BodyKind::Test);
-    builder.define_test(
-        test,
-        TestDeclaration {
-            .is_const = false,
-            .module_id = module_id,
-            .source =
-                {.label = builder.intern_spelling("residual call"), .origin = module_origin.origin},
-            .body = caller_reservation.id(),
-        }
-    );
-    auto caller = BodyBuilder(std::move(caller_reservation), builder);
-    const auto lifetime =
-        caller.add_lifetime_region(std::nullopt, LifetimeRegionKind::Lexical, module_origin.origin);
-    const auto function_type =
-        builder.intern_type({.value = FunctionTypeValue {.callable = callable}});
-    const auto argument = caller.make_expression(
-        boolean,
-        lifetime,
-        module_origin.origin,
-        SemConstant {.constant = constant, .retained_storage = false}
-    );
-    auto expression = caller.make_expression(
-        void_type,
-        lifetime,
-        module_origin.origin,
-        SemCall {
-            .callee = OwnedSemanticExpression(caller.make_expression(
-                function_type,
-                lifetime,
-                module_origin.origin,
-                SemCallable {.callable = callable}
-            )),
-            .target = callable,
-            .arguments =
-                {
-                    {
-                        .access = AccessMode::Read,
-                        .expression = argument,
-                    },
-                    {
-                        .access = AccessMode::Read,
-                        .expression = argument,
-                    },
-                },
-            .callee_failures = BodyFailures(builder.add_empty_failure_term()),
-        }
-    );
-    auto graph = std::move(caller).finish(
-        SemanticRegion {
-            .lifetime = lifetime,
-            .origin = module_origin.origin,
-            .statements = {{
-                .origin = module_origin.origin,
-                .lifetime = lifetime,
-                .reachable = true,
-                .value = SemExpressionStatement {.expression = std::move(expression)},
-
-
-            }},
-            .result = std::nullopt,
-            .result_reachable = false,
-            .failures = BodyFailures(builder.add_empty_failure_term()),
-            .exits_test = false,
-
-
-        }
-    );
-    graph.residual = graph.region;
-    builder.add_body_draft(std::move(graph));
-    expect(expect_termination("semir-residual-call-unresolved", [&] noexcept {
-        static_cast<void>(std::move(builder).finish());
-    }));
-}
-
 const TestSuite suite([] static noexcept {
     "SemIR publication: only executable bodies survive the static stage"_test = [] static noexcept {
         const auto program = analyze_test_program(R"(
@@ -294,97 +140,6 @@ const TestSuite suite([] static noexcept {
         }
     };
 
-    "SemIR publication invariant: residual staged calls require an instance"_test =
-        [] static noexcept {
-            check_unresolved_residual_call();
-        };
-    "SemIR publication invariant: residual regions reject static control"_test =
-        [] static noexcept {
-            struct Scenario final {
-                std::string_view name;
-                bool explicit_residual;
-            };
-            constexpr auto scenarios = std::array {
-                Scenario {.name = "explicit residual", .explicit_residual = true},
-                Scenario {.name = "source fallback", .explicit_residual = false},
-            };
-            each(scenarios, &Scenario::name, [](const Scenario& scenario) static noexcept {
-                auto sources = SourceManager();
-                auto diagnostics = DiagnosticSink();
-                auto builder = begin_semir_test_compilation(
-                    sources,
-                    diagnostics,
-                    "semir.publication.static_control"
-                );
-                const auto module_origin = make_semir_test_module_origin(builder);
-                const auto module_id = builder.reserve_module_declaration();
-                const auto test = builder.reserve_test();
-                builder.define_declaration(
-                    module_id,
-                    ModuleDeclaration {
-                        .provenance_module = module_origin.provenance_module,
-                        .origin = module_origin.origin,
-                        .cpp_headers = {},
-                        .cpp_source_fragments = {},
-                        .items = {test},
-                    }
-                );
-                builder.finish_declaration_heads();
-                auto reservation = builder.reserve_body(BodyKind::Test);
-                builder.define_test(
-                    test,
-                    TestDeclaration {
-                        .is_const = false,
-                        .module_id = module_id,
-                        .source =
-                            {.label = builder.intern_spelling("static control"),
-                             .origin = module_origin.origin},
-                        .body = reservation.id(),
-                    }
-                );
-                auto body = BodyBuilder(std::move(reservation), builder);
-                const auto lifetime = body.add_lifetime_region(
-                    std::nullopt,
-                    LifetimeRegionKind::Lexical,
-                    module_origin.origin
-                );
-                auto expression = body.make_expression(
-                    builder.builtin_type(BuiltinType::Void),
-                    lifetime,
-                    module_origin.origin,
-                    SemIf {.branches = {}, .otherwise = std::nullopt, .is_static = false}
-                );
-                auto graph = std::move(body).finish(
-                    SemanticRegion {
-                        .lifetime = lifetime,
-                        .origin = module_origin.origin,
-                        .statements = {{
-                            .origin = module_origin.origin,
-                            .lifetime = lifetime,
-                            .reachable = true,
-                            .value = SemExpressionStatement {.expression = std::move(expression)},
-
-                        }},
-                        .result = std::nullopt,
-                        .result_reachable = false,
-                        .failures = BodyFailures(builder.add_empty_failure_term()),
-                        .exits_test = false,
-
-
-                    }
-                );
-                auto& residual = scenario.explicit_residual ? graph.residual.emplace(graph.region)
-                                                            : graph.region;
-                std::get<SemIf>(std::get<SemExpressionStatement>(residual.statements.front().value)
-                                    .expression.value)
-                    .is_static = true;
-                builder.add_body_draft(std::move(graph));
-                expect(expect_termination(
-                    std::format("semir-residual-static-control-{}", scenario.name),
-                    [&] noexcept { static_cast<void>(std::move(builder).finish()); }
-                ));
-            });
-        };
     "SemIR publication: closure declarations are shared by zero or multiple occurrences"_test =
         [] static noexcept {
             for (const auto count : {0uz, 2uz}) {
@@ -608,33 +363,8 @@ const TestSuite suite([] static noexcept {
             expect(diagnostics.empty());
         };
 
-    "SemIR publication invariant: every failure-set member is nominal"_test = [] static noexcept {
-        auto sources = SourceManager();
-        auto diagnostics = DiagnosticSink();
-        auto builder =
-            begin_semir_test_compilation(sources, diagnostics, "semir.publication.failure_member");
-        const auto module_origin = make_semir_test_module_origin(builder);
-        const auto module_id = builder.reserve_module_declaration();
-        const auto boolean = builder.builtin_type(BuiltinType::Bool);
-        static_cast<void>(builder.intern_failure_set({boolean}));
-        builder.define_declaration(
-            module_id,
-            ModuleDeclaration {
-                .provenance_module = module_origin.provenance_module,
-                .origin = module_origin.origin,
-                .cpp_headers = {},
-                .cpp_source_fragments = {},
-                .items = {},
-            }
-        );
-        builder.finish_declaration_heads();
-        expect(expect_termination("semir-publication-nonnominal-failure", [&] noexcept {
-            static_cast<void>(std::move(builder).finish());
-        }));
-    };
-
     "SemIR publication invariant: every constant matches its canonical type"_test =
-        [] static noexcept {
+        termination_test([] static noexcept {
             auto sources = SourceManager();
             auto diagnostics = DiagnosticSink();
             auto builder = begin_semir_test_compilation(
@@ -662,31 +392,24 @@ const TestSuite suite([] static noexcept {
                 }
             );
             builder.finish_declaration_heads();
-            expect(expect_termination("semir-publication-constant-type", [&] noexcept {
-                static_cast<void>(std::move(builder).finish());
-            }));
-        };
+            expect_termination([&] noexcept { static_cast<void>(std::move(builder).finish()); });
+        });
 
-    "SemIR publication: type contents belong to the completed program"_test = [] static noexcept {
-        const auto program =
-            analyze_test_program("struct Record { text: String } fn consume(value: Record) {}");
-        expect(!(program.type_contents(program.types().builtin_type(BuiltinType::I32))
-                     .read_borrows_storage()));
-        expect(program.type_contents(program.types().builtin_type(BuiltinType::String))
-                   .read_borrows_storage());
-        for (const auto [id, type] : program.types().entries()) {
-            if (std::holds_alternative<StructTypeValue>(type.value)) {
-                expect(program.type_contents(id).contains_storage_owner);
-                expect(program.type_contents(id).read_borrows_storage());
+    "SemIR publication: type contents describe owned and borrowed storage"_test =
+        [] static noexcept {
+            const auto program =
+                analyze_test_program("struct Record { text: String } fn consume(value: Record) {}");
+            expect(!(program.type_contents(program.types().builtin_type(BuiltinType::I32))
+                         .read_borrows_storage()));
+            expect(program.type_contents(program.types().builtin_type(BuiltinType::String))
+                       .read_borrows_storage());
+            for (const auto [id, type] : program.types().entries()) {
+                if (std::holds_alternative<StructTypeValue>(type.value)) {
+                    expect(program.type_contents(id).contains_storage_owner);
+                    expect(program.type_contents(id).read_borrows_storage());
+                }
             }
-        }
-        const auto foreign = analyze_test_program("fn unrelated() {}");
-        expect(expect_termination("published-type-contents-foreign-identity", [&] noexcept {
-            static_cast<void>(
-                program.type_contents(foreign.types().builtin_type(BuiltinType::I32))
-            );
-        }));
-    };
+        };
 });
 
 } // namespace

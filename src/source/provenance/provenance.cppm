@@ -23,12 +23,14 @@ public:
     auto location(Span span) const noexcept -> SourceLocation;
 
 private:
+    friend class SemanticArtifactAccess;
     ProgramSourceSnapshot(const SourceManager& sources, SourceID source) noexcept;
 
     SourceID source_manager_id;
     std::shared_ptr<const SourceDocument> input;
 
     friend class CompilationProvenanceBuilder;
+    friend class CompilationProvenance;
 };
 
 struct ProgramSourceOrigin final {
@@ -68,6 +70,7 @@ class CompilationProvenanceReader;
 class CompilationProvenanceView;
 
 class CompilationProvenanceStorage final {
+    friend class SemanticArtifactAccess;
     CompilationProvenanceStorage() noexcept;
     CompilationProvenanceStorage(const CompilationProvenanceStorage&) = delete;
     CompilationProvenanceStorage(CompilationProvenanceStorage&&) noexcept = default;
@@ -109,8 +112,10 @@ public:
     auto operator=(const CompilationProvenance&) -> CompilationProvenance& = delete;
     auto operator=(CompilationProvenance&&) -> CompilationProvenance& = delete;
     auto view() const noexcept -> CompilationProvenanceView;
+    auto rebind_sources(SourceManager& sources) noexcept -> void;
 
 private:
+    friend class SemanticArtifactAccess;
     explicit CompilationProvenance(CompilationProvenanceStorage storage) noexcept;
 
     CompilationProvenanceStorage storage;
@@ -220,6 +225,7 @@ public:
     auto finish() && noexcept -> CompilationProvenance;
 
 private:
+    friend class SemanticArtifactAccess;
     CompilationProvenanceStorage storage;
     std::map<std::string, ProgramSpellingID, std::less<>> spelling_ids_by_value;
 };
@@ -227,6 +233,7 @@ private:
 class CompilationProvenanceBuilder final {
 public:
     CompilationProvenanceBuilder() = default;
+    explicit CompilationProvenanceBuilder(CompilationProvenance provenance) noexcept;
     CompilationProvenanceBuilder(const CompilationProvenanceBuilder&) = delete;
     CompilationProvenanceBuilder(CompilationProvenanceBuilder&&) noexcept = default;
     ~CompilationProvenanceBuilder() = default;

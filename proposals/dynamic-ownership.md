@@ -3,13 +3,7 @@
 - **Status:** Draft
 - **Scope:** Dynamic and native resource owners, allocation policy, construction in owned storage, and operation-specific container capabilities
 
-## Current boundary
-
-String and Vector already own dynamic storage, and async operations already have
-accountable completion and cancellation owners. Those builtin contracts do not
-provide a general `Unique<T>` or `Shared<T>`, custom source-defined lifecycle
-operations, or allocator parameters. Source `ptr<T>` remains a nullable nonowning
-handle. The owner contracts below are still proposed.
+## Summary
 
 | Slice | Design status | Remaining decision |
 | --- | --- | --- |
@@ -19,7 +13,16 @@ handle. The owner contracts below are still proposed.
 | Allocation policy | Exploration | Establish the allocator state and failure behavior required by a consumer |
 | Move-only Vector elements (`VEC-01`) | Deferred | Select a consumer for operation-specific capability and lifetime checking |
 
-## Construction and lifetime
+## Context
+
+String and Vector own dynamic storage. Async operations have completion and
+cancellation owners. General `Unique<T>` and `Shared<T>` types, source-defined
+lifecycle operations, and allocator parameters remain unimplemented. Source
+`ptr<T>` is a nullable nonowning handle. The owner contracts below are proposed.
+
+## Design
+
+### Construction and lifetime
 
 The proposed owners manage a separate object's allocation and lifetime through
 ordinary associated factories such as `Unique<T>::new(...)`. The factory name
@@ -27,12 +30,11 @@ remains an ordinary function name; the owning type supplies lifetime behavior.
 Current value classes derive copying and cleanup from their fields. Implementing
 dynamic owners requires storage/lifecycle primitives and derived capabilities.
 
-## Owning types
+### Owning types
 
-The proposed library surface uses `Unique<T>` for one accountable owner of a
-dynamic object and `Shared<T>` for shared ownership of one object. These names
-are provisional standard-library types, not new keywords or global builtin
-reservations. Owning handles remain separate from nullable, nonowning `ptr<T>`.
+Use the provisional standard-library types `Unique<T>` for one owner of a dynamic
+object and `Shared<T>` for shared ownership. Keep owning handles distinct from
+nullable, nonowning `ptr<T>`.
 
 An initial Unique owner is non-null, noncopyable, and transferable. Destruction
 destroys its live payload exactly once and releases the matching allocation.
@@ -44,27 +46,25 @@ contract.
 
 A Shared copy refers to the same object and retains its lifetime. It does not
 deep-copy the payload. The last owning handle destroys the payload and releases
-its storage. Shared ownership grants no general mutable access: Carven's current
-nonexclusive Write access is not proof that no other handle observes the object.
-Mutation requires a separately checked uniqueness or synchronization mechanism.
+its storage. Require a checked uniqueness or synchronization mechanism for shared
+mutation. Carven's Write access permits other handles to observe the same object.
 Cross-thread use, atomic reference counting, weak references, and cycles need
 their own contracts before that surface is exposed.
 
-## Allocation policy
+### Allocation policy
 
 The proposed default policy uses the platform allocation mechanism. Stateful
 allocator support must specify propagation through copying and Take, the lifetime of
 allocator state, allocation/deallocation pairing, alignment, and ownership across
-native boundaries. A stateless allocator requires no per-owner field. A future
-allocator parameter can use compressed member storage where an empty policy
-requires no distinct address.
+native boundaries. A stateless allocator requires no per-owner field. Use
+compressed member storage only when an empty policy requires no distinct address.
 
 Existing builtin allocation failure terminates without a nominal throw effect.
 Recoverable allocation, if provided, uses an explicit fallible operation and
 defines whether arguments have been consumed when allocation or construction
 fails. A successful allocation alone does not establish a live T object.
 
-## Construction destinations
+### Construction destinations
 
 Constructing directly in owned storage is a general mechanism consumed by
 factories, containers, and native adapters. It must preserve source evaluation
@@ -78,36 +78,15 @@ applicable exit. Supporting immovable native payloads requires
 delivery directly to their final location, rather than assuming a temporary can
 always be moved after a factory returns.
 
-## Delivery evidence
-
-Select an end-to-end Unique consumer such as a recursive node or an independently
-allocated native resource. Establish source capability checks, whole-owner
-transfer, retained-borrow rejection, construction failure, and exactly-once
-cleanup through ordinary and failure exits. Native representation must preserve
-the C++20 baseline and the allocator's matching release requirements.
-
-Shared ownership is activated by a concrete multi-owner consumer. Its evidence
-must cover handle copies, final release, target access, and retained borrows;
-cross-thread tests belong only to a selected concurrency contract. Vector element
-admission for either owner additionally needs conditional copying and relocation
-of move-only elements.
-
-Owner-bearing failure types retain the current Copy admission requirement.
-For admitted payloads containing Shared owners, validate retained backing and final
-release through throwing, propagation, matching, rejected guards, handler failure,
-and rethrow. Catch bindings must preserve the original failure while further
-matching or rethrow can still use it.
-
-## NET-02 — Source-owned TCP resources
+### NET-02 — Source-owned TCP resources
 
 - **Implementation:** Not started
 
 The selected consumer is an outbound TCP client connecting to a literal IPv4
-address and port, transferring bytes, and closing. The implemented
-[`std::net`](../docs/language/net.md) borrows host-owned,
-address-stable native connections. Source-owned connect and Stream remain
-unimplemented. Listen/accept, DNS, TLS, and cross-thread transfer require their
-own consumers and contracts.
+address and port, transferring bytes, and closing. The implemented `std::net`
+borrows host-owned, address-stable native connections. Source-owned connect and
+Stream remain unimplemented. Listen/accept, DNS, TLS, and cross-thread transfer
+require their own consumers and contracts.
 
 The source owner must be noncopyable, support whole-owner transfer only when no
 borrow survives, and propagate that capability through containing values. Its
@@ -126,27 +105,27 @@ inside an ordinary source struct does not establish that relationship.
 | Open/closed → destroyed | Exactly one socket release; no reachable provider survives destruction | Native RAII enforces the host contract; source destruction and borrow checks need the owner facts above |
 
 Native wrappers currently rely on C++ copyability and host lifetime contracts.
-[`network_owner.cv`](../tests/interop/rejections/pointers/network_owner.cv)
-passes Carven analysis; C++ rejects the deleted copy constructor. The shared
-`ConnectionView` nominal supports existing cold-operation holder checks, while
-the pointed-to socket's lifetime remains the host's responsibility.
+A wrapper that copies native `Connection` passes Carven analysis; C++ rejects
+the deleted copy constructor. The shared `ConnectionView` nominal supports
+existing cold-operation holder checks, while the pointed-to socket's lifetime
+remains the host's responsibility.
 
 Implement owner capability facts and explicit backing relations before exposing
 source-owned connect. Select the finite native-resource declaration mechanism,
-the access required by close, and the behavior of any surviving views. A general
-Unique API, user destructor hooks, and public concepts are not prerequisites.
-Validation must reject copies, transfers and
-scope exits with outstanding cold/active borrows, and verify failed construction,
-unstarted drops, cancellation, repeated close, and exactly-once native release.
+the access required by close, and the behavior of any surviving views. Keep this
+delivery independent of a general Unique API, user destructor hooks, and public
+concepts. Validate rejection of all owner copies and of transfers or scope exits
+with outstanding cold/active borrows. Verify failed construction, unstarted drops,
+cancellation, repeated close, and exactly-once native release.
 
-## Deferred container capabilities
+## Deferred work
 
 ### VEC-01 — Move-only Vector elements
 
 - **Reason deferred:** Current consumers use copyable elements and fixed async
   composition. Internal capability checks can evolve independently of public concepts.
-- **Reactivation condition:** A concrete move-only container consumer, or the
-  finite dynamic composition described in [structured async](structured-async.md).
+- **Reactivation condition:** A concrete move-only container consumer, such as
+  a runtime-sized finite batch of operations with retained input borrows.
 
 Check copying, transfer, relocation, destruction, and retained borrowing at each
 Vector operation. Runtime growth and push already transfer elements; copying,
@@ -155,16 +134,26 @@ not copy its elements. Operation elements additionally retain parameter borrows;
 admission needs source capability propagation, extraction/access checks, cleanup,
 and static-execution rules. The container does not start or cancel operations.
 
-Native, borrowed, and callable elements have separate lifetime requirements.
-Removing a type blacklist without the corresponding analysis is insufficient.
-Validate accepted transfers, rejected copies, growth, destruction, and retained
-borrows through the selected consumer before widening other element families.
+Check the lifetime requirements of each admitted native, borrowed, or callable
+element family. Validate accepted transfers, rejected copies, growth, destruction,
+and retained borrows through the selected consumer.
 
-## References
+## Validation
 
-- [Owning vectors](../docs/language/aggregates.md#owning-vectors) and
-  [String](../docs/language/text.md): implemented builtin storage owners.
-- [Async](../docs/language/async.md): implemented operation ownership and cancellation.
-- [Pointers](../docs/language/pointers.md): current nonowning handles.
-- [Failures](../docs/language/failures.md): Copy admission and caught-payload lifetime.
-- [Uninitialized storage](uninitialized-storage.md): proposed construction destinations and cleanup handoff.
+Select an end-to-end Unique consumer such as a recursive node or an independently
+allocated native resource. Establish source capability checks, whole-owner
+transfer, retained-borrow rejection, construction failure, and exactly-once
+cleanup through ordinary and failure exits. Native representation must preserve
+the C++20 baseline and the allocator's matching release requirements.
+
+Shared ownership is activated by a concrete multi-owner consumer. Its evidence
+must cover handle copies, final release, target access, and retained borrows;
+cross-thread tests belong only to a selected concurrency contract. Vector element
+admission for either owner additionally needs conditional copying and relocation
+of move-only elements.
+
+Owner-bearing failure types retain the current Copy admission requirement.
+For admitted payloads containing Shared owners, validate retained backing and final
+release through throwing, propagation, matching, rejected guards, handler failure,
+and rethrow. Catch bindings must preserve the original failure while further
+matching or rethrow can still use it.

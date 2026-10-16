@@ -1,9 +1,6 @@
 # Failure contracts
 
-[Language](README.md)
-
 This page defines typed failures, propagation, recovery, and payload lifetime.
-Native exceptions follow the separate [C++ exception boundary](interop.md#native-exception-boundary).
 
 - [Sets and callable contracts](#sets-and-callable-contracts)
 - [Failure-set parameters](#failure-set-parameters)
@@ -76,8 +73,11 @@ async fn consume<T, throw E>(&&operation: Operation<T, throw E>) -> T throw E {
 An explicit application can supply `throw Error + IO` or `throw ()` for `E`.
 A parameter can appear in a callable's `throw` clause or an Operation contract,
 alone or in a union such as `E + Error`. An application normalizes that union as
-a set: a member contributed by both `E` and `Error` appears once. Argument
-inference follows [Parameterized functions](functions.md#parameterized-functions).
+a set: a member contributed by both `E` and `Error` appears once. Functions infer
+omitted arguments from their public signature, actual argument types, and immediate
+expected result. A whole `Operation<T, throw E>` can determine `E`; an ambiguous
+union such as `E + Error` requires explicit arguments. Nominal applications require
+explicit arguments.
 
 The definition must satisfy its failure contract for every admitted set assigned
 to each parameter. It cannot assume that `E` contains a particular type, that two
@@ -111,9 +111,7 @@ normally.
 
 For an ordinary concrete operand, the nonempty requirement for `?` is checked
 against the solved failure set. For `private fn source() {}`, `source()?` is invalid
-because the inferred set is empty; the call is written `source()`. This also
-applies when a body change makes a previously fallible private function
-infallible.
+because the inferred set is empty; write the call as `source()`.
 
 Pending failures describe static expression composition. Evaluation stops at
 the first failure: in `(first() + second())?`, a failure from `first()` skips

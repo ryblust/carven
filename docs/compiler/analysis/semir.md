@@ -1,8 +1,7 @@
 # Semantic representation
 
 This reference defines identity, canonical data, structured operations, and facts
-available to semantic-program consumers. Construction establishes these facts
-before publication.
+available to semantic-program consumers.
 
 ## Ownership and identity
 
@@ -30,9 +29,10 @@ Only diagnostic transport converts that identity to the source manager domain.
 Every canonical type store establishes the complete builtin type domain at
 construction. Builtin identities remain stable through publication; lookup is a
 read-only operation independent of source usage and prior static execution.
-Compound types remain demand-driven. Generic construction retains parameterized
-constructor descriptors whose children are construction type references, and
-separate symbolic failure expressions. Pending inference terms stay outside the
+Compound types are interned on demand by complete value equality. Published types
+retain their insertion order. Generic construction retains parameterized constructor
+descriptors whose children are construction type references, and separate symbolic
+failure expressions. Pending inference terms stay outside the
 canonical stores. Generic environments distinguish type and failure-set
 arguments. Instance keys retain their kinds and declaration order, using only
 canonical types and failure sets. Shared execution
@@ -51,8 +51,8 @@ its nominal identity and nullary Invalid case to the builtin parse contract.
 
 Record and enum declarations retain their source module and origin. Matching,
 failure handling, display, ownership, and static execution consume their ordinary
-declaration contracts. Native representation selection belongs to the backend
-and does not replace the declaration identity.
+declaration contracts. Native representation selection preserves those
+identities.
 
 `GenericDeclarationContract` retains the generic definition's source identity.
 The standard `Read<T>` enum instantiates through ordinary nominal argument,
@@ -60,6 +60,11 @@ canonical instance, visibility, and publication machinery.
 `GenericNominalInstance.origin` records the source use position for instance
 diagnostics. It does not replace the generic definition's declaration identity
 or its source declaration.
+
+Published generic function instances retain their source declaration, canonical
+arguments, and concrete callable. Target planning uses these facts for stable
+content names and inline definitions at their uses, including when the source
+template belongs to a fixed source library.
 
 `Duration`, `RangeError`, and `Timeout` retain their standard-source identities
 when used by duration literals and builtin timeout composition. Builtin
@@ -203,6 +208,8 @@ construction publish text intrinsics with `u32` and byte-slice inputs respective
 UTF-8 construction preserves the input storage loans; the caller must establish
 content validity.
 
+### Native types and calls
+
 Generic native named applications retain construction type arguments in
 `GenericCppNamedType`. Native expression queries use `BasicCppQueryType<Type>`
 for calls, construction, static members, projections, and operators. Operands
@@ -214,11 +221,6 @@ structure. Published concrete bodies and native lowering use `CppNamedType` and
 `CppImportImplementation` retains the import origin and its global
 `CppNameReference` target. Analysis resolves explicit bindings or supplies the
 same-named global target before publishing the callable.
-
-Published generic function instances retain their source declaration, canonical
-arguments, and concrete callable. Target planning uses these facts for stable
-content names and inline definitions at their uses, including when the source
-template belongs to a fixed source library.
 
 ### Formatting facts
 
@@ -237,12 +239,9 @@ value in the residual region. Format and print
 operands retain their source expression trees and execution obligations.
 
 Publication checks source operand order, Read access, result type, and the
-String-place requirement for append. It contains no implementation preparation
-states. Static initializer and extent roots execute the same source
-`SemFormat` directly with execution-local values, a 1 MiB result-text limit, and
-source diagnostics for unsupported conversions. Initializer freezing is a separate
-boundary. Optional formatting choices, encoding proofs, residual formats, and their
-64 KiB materialization budget belong to `backend/preparation`.
+String-place requirement for append. SemIR retains the source format and operands;
+execution owns result limits and freezing, while backend preparation owns optional
+materialization, encoding proofs, and residual formats.
 
 Ownership keeps the receiver's Write access separate from formatting inputs and
 enforces ordinary backing lifetimes. Owning formatting constructs independent
@@ -360,12 +359,10 @@ Residual installation transfers its region and extended local tables together,
 retaining the checked region and body inputs. The boundary checks table ownership
 and source table ranges.
 
-Instances contain only executable operations and own copies of the source
-binding, lifetime, and pattern tables. Local IDs retain the copied tables' body
-identity; expanded iterations append distinct local IDs. Source ownership and
-nullability checks run once before source regions are discarded. Every body in
-the published `BodyStore` is executable; a source template's callable and a
-static test declaration have no body reference.
+Instances own copies of the source binding, lifetime, and pattern tables.
+Local IDs retain the copied tables' body identity; expanded iterations append
+distinct IDs. Source ownership and nullability checks run before source regions
+are discarded.
 
 Checked source bodies store local static roots as `SemStaticBinding`, which owns
 its typed initializer at a stable tree edge. The binding records the frozen local
@@ -461,6 +458,7 @@ operator, including signed minimum divided by negative one.
 
 ## Program validation
 
+Construction establishes semantic facts before publication.
 Local construction checks its preconditions. Program validation checks owner
 and range relations, type and call contracts, lifetime and control legality,
 binding relations, declaration topology, and cross-body callable relations.

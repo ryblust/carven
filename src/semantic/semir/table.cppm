@@ -116,6 +116,8 @@ public:
     }
 
 private:
+    friend class SemanticArtifactAccess;
+
     // Only publication consumes and rebuilds these rows; readers never receive
     // mutable access to a sealed table.
     auto release() && noexcept -> std::vector<Value> { return std::move(storage); }
@@ -207,6 +209,8 @@ public:
     }
 
 private:
+    friend class SemanticArtifactAccess;
+
     auto ensure_capacity() const noexcept -> void {
         if (storage.size() == std::numeric_limits<std::uint32_t>::max()) {
             resource_limit_exceeded("program table exhausted its 32-bit identity space");
@@ -313,6 +317,8 @@ public:
     }
 
 private:
+    friend class SemanticArtifactAccess;
+
     auto contains(ID id) const noexcept -> bool {
         return id.owner() == program_identity
             && static_cast<std::size_t>(id.index()) < storage.size();
@@ -390,6 +396,8 @@ public:
     }
 
 private:
+    friend class SemanticArtifactAccess;
+
     ImmutableBodyTable(BodyIdentity identity, std::vector<Value> values) noexcept
         : body_identity(identity),
           storage(std::move(values)) {}

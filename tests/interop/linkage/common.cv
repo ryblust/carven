@@ -1,0 +1,21 @@
+import std::core using String;
+
+#[cpp] ---
+static auto native_value() noexcept -> int {
+    return CARVEN_LINKAGE_VALUE;
+}
+---
+
+private import(cpp) fn native_value() -> i32;
+
+fn value() -> i32 => native_value();
+
+export struct Value {
+    number: i32,
+    label: String
+}
+
+fn make() -> Value => Value {
+    number: native_value(),
+    label: String::from_str("linked")
+};

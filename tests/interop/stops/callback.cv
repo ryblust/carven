@@ -1,0 +1,19 @@
+import "native.hpp";
+
+import(cpp) fn call_guarded();
+
+export struct Failure {}
+
+export(cpp) fn guarded(proceed: bool) -> i32 throw Failure {
+    require(proceed, "native boundary stop");
+    return 42;
+}
+
+test "test stop at a native boundary" {
+    call_guarded();
+    eprintln("unreachable Carven continuation");
+}
+
+test "later case" {
+    eprintln("unreachable later test");
+}

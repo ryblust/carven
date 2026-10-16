@@ -147,6 +147,7 @@ auto plan_artifacts(
     const TargetPlanningRequest& request,
     const std::flat_set<ModuleID>& library_modules,
     const TargetClosureCatalog& closures,
+    const TargetNamePlan& names,
     TargetPlanIdentity identity
 ) noexcept -> TargetPlanTable<TargetArtifactPlan, TargetArtifactID> {
     const auto& declarations = semantic.declarations();
@@ -169,7 +170,11 @@ auto plan_artifacts(
     auto surface_declarations = std::vector<std::vector<DeclarationRef>>(module_count);
     for (const auto module_record : declarations.modules()) {
         const auto library_module = library_modules.contains(module_record.id);
-        const auto test_mode = library_module ? TestGenerationMode::None : request.test_mode;
+        const auto& module_path =
+            provenance.module_record(module_record.value.provenance_module).path;
+        const auto owned =
+            !library_module || std::ranges::contains(request.library->owned_modules, module_path);
+        const auto test_mode = owned ? request.test_mode : TestGenerationMode::None;
         module_ids.push_back(module_record.id);
         module_by_index[module_record.id.index()] = module_record.id;
         schedules[module_record.id.index()] = TargetModuleSchedule {
@@ -508,9 +513,14 @@ auto plan_artifacts(
         }
         const auto& anchor = declarations.module_decl(component_members[component_index].front());
         const auto& anchor_path = provenance.module_record(anchor.provenance_module).path;
+        const auto& namespace_name =
+            names.module_names(component_members[component_index].front()).module_namespace_name;
         const auto id = artifacts.add(
             TargetInterfaceArtifact {
-                .logical_path = interface_component_logical_path(anchor_path.components()),
+                .logical_path = interface_component_logical_path(
+                    namespace_name.components().front().spelling(),
+                    anchor_path.components()
+                ),
                 .component_members = component_members[component_index],
                 .predecessor_artifacts = std::move(predecessor_artifacts),
                 .forward_declarations = std::move(forward_declarations),

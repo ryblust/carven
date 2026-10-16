@@ -1,10 +1,10 @@
 module carven:driver.cli.impl;
 
-import :driver.check;
 import :driver.cli;
 import :driver.compile;
 import :driver.dump;
 import :driver.interpret;
+import :driver.options;
 import :driver.run;
 import std;
 
@@ -12,23 +12,23 @@ namespace {
 
 auto print_help() noexcept -> int {
     std::print(
-        "Carven compiler and runner\n"
+        "Carven compiler and runner.\n"
         "\n"
         "Usage:\n"
         "  carven [options] <source-file>... [-- <arguments>...]\n"
-        "  carven <command> [options] <source-file>...\n"
+        "  carven <command> [options] <input>...\n"
         "\n"
         "Commands:\n"
-        "  compile      Generate C++ headers and sources\n"
-        "  check        Check sources and run const tests\n"
-        "  interpret    Run the supported language subset with the interpreter\n"
-        "  dump         Inspect tokens or the syntax tree\n"
+        "  compile                         Generate C++ artifacts\n"
+        "  check                           Check sources and run const tests\n"
+        "  interpret                       Interpret supported programs and tests\n"
+        "  dump                            Print tokens or the syntax tree\n"
         "\n"
         "Options:\n"
-        "      --tests      Compile and run runtime tests instead of the program entry\n"
-        "      --timings    Show total and stage timings on stderr\n"
-        "  -h, --help       Show this help\n"
-        "  -V, --version    Show the version\n"
+        "      --tests                     Run runtime tests instead of the program\n"
+        "      --timings                   Show total and stage timings on stderr\n"
+        "  -h, --help                      Show this help\n"
+        "  -V, --version                   Show the version\n"
         "\n"
         "Source files without a command are compiled and run natively.\n"
         "Use 'carven <command> --help' for command options.\n"
@@ -60,11 +60,10 @@ auto carven_main(int argc, const char* const* argv) noexcept -> int {
     }
 
     if (first_arg == "compile") {
-        return run_compile_command(argv[0], args.subspan(1));
+        return run_compilation_command(argv[0], args.subspan(1), CompilationCommand::Compile);
     }
-
     if (first_arg == "check") {
-        return run_check_command(argv[0], args.subspan(1));
+        return run_compilation_command(argv[0], args.subspan(1), CompilationCommand::Check);
     }
 
     if (first_arg == "interpret") {

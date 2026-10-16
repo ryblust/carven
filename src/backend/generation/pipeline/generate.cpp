@@ -27,6 +27,19 @@ auto library_modules(const SemIRProgram& semantic, const TargetPlanningRequest& 
             return std::unexpected(std::format("duplicate library module '{}'", path.value()));
         }
     }
+    auto owned = std::flat_set<CanonicalModulePath>();
+    for (const auto& path : library.owned_modules) {
+        if (!owned.insert(path).second) {
+            return std::unexpected(
+                std::format("duplicate owned library module '{}'", path.value())
+            );
+        }
+        if (!paths.contains(path)) {
+            return std::unexpected(
+                std::format("owned module '{}' is not in the library", path.value())
+            );
+        }
+    }
     auto modules = std::flat_set<ModuleID>();
     for (const auto module : semantic.declarations().modules()) {
         const auto& path = semantic.provenance().module_record(module.value.provenance_module).path;
@@ -85,10 +98,15 @@ auto generate_artifacts(
     for (const auto entry : compilation.target().artifacts()) {
         const auto artifact_id = entry.id;
         const auto& artifact = entry.value;
-        if (request.library && !request.library->emit_implementations) {
+        if (request.library) {
             if (const auto* implementation =
                     std::get_if<TargetModuleImplementationArtifact>(&artifact)) {
-                if (library->contains(implementation->schedule.module_id)) {
+                const auto module = implementation->schedule.module_id;
+                const auto& declaration = semantic.declarations().module_decl(module);
+                const auto& path =
+                    semantic.provenance().module_record(declaration.provenance_module).path;
+                if (library->contains(module)
+                    && !std::ranges::contains(request.library->owned_modules, path)) {
                     continue;
                 }
             }

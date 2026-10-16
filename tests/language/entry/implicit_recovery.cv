@@ -1,11 +1,15 @@
-struct Failure {}
-
-private fn fail() throw Failure {
-    throw Failure {};
+struct Failure {
+    value: i32,
 }
 
-try {
-    fail()?;
+private fn fail() -> i32 throw Failure {
+    throw Failure { 7 };
+}
+
+let value = try {
+    fail()?
 } catch {
-    Failure(_) => {},
-}
+    Failure(error) => error.value,
+};
+
+assert(value == 7);

@@ -82,10 +82,6 @@ inline auto fixed_object() noexcept -> Fixed* {
     return &fixed;
 }
 
-inline auto readonly_fixed() noexcept -> const Fixed* {
-    return &fixed;
-}
-
 inline auto output(std::int32_t** slot) noexcept -> void {
     *slot = &first;
 }

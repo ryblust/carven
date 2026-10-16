@@ -2,8 +2,6 @@ import("core.base.json")
 import("benchmarks.harness.runner", {alias = "benchmark", rootdir = os.projectdir()})
 import("benchmarks.harness.report", {rootdir = os.projectdir()})
 import("benchmarks.harness.calibration", {rootdir = os.projectdir()})
-import("benchmarks.async.native_project", {alias = "native_project", rootdir = os.projectdir()})
-import("benchmarks.harness.native_build", {rootdir = os.projectdir()})
 import("benchmarks.harness.inputs", {alias = "input_snapshot", rootdir = os.projectdir()})
 import("benchmarks.async.workloads", {rootdir = os.projectdir()})
 
@@ -20,8 +18,9 @@ local function checksum(case, count, seed, depth)
     return case.id == "stored" and value * 2 or value
 end
 
-local function observe(executable, case, count, seed, depth)
-    local raw = benchmark.command(executable, {}, path.directory(executable), {
+local function observe(target, case, count, seed, depth)
+    local raw = benchmark.command(target.executable, {}, path.directory(target.executable), {
+        target = target.name,
         capture_stdout = true, timeout = 60000,
         envs = {CARVEN_ASYNC_BENCH_ITERATIONS = tostring(count), CARVEN_ASYNC_BENCH_SEED = tostring(seed),
             CARVEN_ASYNC_BENCH_DEPTH = tostring(depth)},
@@ -48,55 +47,36 @@ local function validate(raw)
         raw.validation_error or raw.stderr or raw.process_error or tostring(raw.exit_code))
 end
 
-local function prepare(session, case, implementations, inputs)
-    local root = path.join(session.artifacts, case.id)
-    os.mkdir(root)
-    io.writefile(path.join(root, "workload.cv"), workloads.source(case, path.join(inputs, "benchmarks", "async")))
-    local setup = {id = case.id, label = case.label, steps = benchmark.array()}
+local function prepare(session, selected, implementations)
+    local root = os.projectdir()
+    local setup = {id = "programs", steps = benchmark.array()}
     table.insert(session.results.setup, setup)
-    io.writefile(path.join(root, "xmake.lua"), native_project.project_text(workloads.defines(case), implementations,
-        inputs, session, "benchmark:async:" .. case.id))
-    local arguments = {"f", "-y", "-m", "release"}
-    benchmark.step(session, setup, "native configure", os.programfile(), arguments, root,
-        {capture_stdout = true, timeout = 180000})
-    local identity = benchmark.step(session, setup, "native target identity", os.programfile(),
-        {"lua", "-c", native_build.describe_script()}, root, {capture_stdout = true})
-    local targets, errors = json.decode(identity.stdout)
-    assert(targets, "invalid native target identity: %s", errors)
-    setup.native_targets = targets
-    -- Configuration and build observations belong to setup, not timing rows.
-    local records = {}
-    for _, implementation in ipairs(implementations) do
-        local record = benchmark.new_case(session, {id = case.id .. "/" .. implementation,
-            label = case.label, size = "dynamic inputs", workload = case.id, implementation = implementation})
-        record.workspace = root
-        for _, profile in ipairs({"timing", "allocations"}) do
-            benchmark.step(session, record, "build " .. profile, os.programfile(),
-                {"build", implementation .. "-" .. profile}, root, {capture_stdout = true, timeout = 180000})
+    local group = "benchmarks/async/" .. (session.options.case or "*")
+    benchmark.step(session, setup, "build measurement programs", os.programfile(),
+        {"build", "-g", group}, root, {capture_stdout = true, timeout = 180000})
+    local names = {}
+    for _, case in ipairs(selected) do
+        for _, implementation in ipairs(implementations) do
+            local prefix = case.id .. "-" .. implementation .. "-"
+            table.insert(names, prefix .. "timing")
+            table.insert(names, prefix .. "allocations")
+            if case.chain then table.insert(names, prefix .. "stack") end
         end
-        if implementation == "carven" then
-            benchmark.step(session, record, "build without exceptions", os.programfile(),
-                {"build", "carven-noexceptions"}, root, {capture_stdout = true, timeout = 180000})
-            record.noexceptions = observe(targets["carven-noexceptions"].executable,
-                case, 3, session.options.seed, session.options.depth)
-            validate(record.noexceptions)
-        end
-        table.insert(records, record)
     end
-    return records, targets
+    local targets = import("benchmarks.harness.targets", {rootdir = root})
+        .main("benchmarks::async", names)
+    setup.native_targets = targets
+    return root, targets
 end
 
 function main(options)
     local selected = benchmark.select(workloads.cases(), options)
     if not selected then return end
-    if options.cxx and (options.cxx:find("/", 1, true) or options.cxx:find("\\", 1, true)) then
-        options.cxx = path.absolute(options.cxx, os.projectdir())
-    end
-    if options.libcoro then
-        options.libcoro = path.absolute(options.libcoro, os.projectdir())
-        assert(os.isfile(path.join(options.libcoro, "include", "coro", "task.hpp")),
-            "--libcoro must point to an external libcoro checkout")
-    end
+    local config = import("core.project.config")
+    config.load()
+    options.libcoro = config.get("libcoro")
+    if options.libcoro == "" then options.libcoro = nil end
+    if options.libcoro then options.libcoro = path.absolute(options.libcoro, os.projectdir()) end
     local implementations = {"carven", "cpp_task", "carven_runtime"}
     if options.libcoro then table.insert(implementations, "libcoro") end
     local session = benchmark.session("async", options, {
@@ -114,12 +94,19 @@ function main(options)
         session.results.metadata.calibration_target_ns = calibration.target_ns()
         session.results.metadata.implementations = benchmark.array(implementations)
         if options.libcoro then session.results.metadata.libcoro = benchmark.revision(options.libcoro) end
-        local inputs = input_snapshot.capture(session)
+        input_snapshot.capture(session)
         report.header(session)
+        local root, targets = prepare(session, selected, implementations)
         for index, case in ipairs(selected) do
             case.size = case.id == "chain" and (options.depth .. " levels") or (options.iterations .. " iterations")
             report.begin_case(case, index, #selected)
-            local records, targets = prepare(session, case, implementations, inputs)
+            local records = {}
+            for _, implementation in ipairs(implementations) do
+                local record = benchmark.new_case(session, {id = case.id .. "/" .. implementation,
+                    label = case.label, size = "dynamic inputs", workload = case.id, implementation = implementation})
+                record.workspace = root
+                table.insert(records, record)
+            end
             local count = case.id == "chain" and math.max(1, math.floor(options.iterations / options.depth))
                 or options.iterations
             for _, record in ipairs(records) do
@@ -127,13 +114,13 @@ function main(options)
                 local maximum_result = (modulus - 1 + (case.id == "chain" and options.depth or 1))
                     * (case.id == "stored" and 2 or 1)
                 record.iterations = calibration.run(session, record, function (iterations)
-                    return observe(targets[record.implementation .. "-timing"].executable,
+                    return observe(targets[case.id .. "-" .. record.implementation .. "-timing"],
                         case, iterations, options.seed, options.depth)
                 end, count, calibration.iteration_limit(maximum_result))
                 record.expected_checksum = checksum(case, record.iterations, options.seed, options.depth)
                 record.allocation_runs = benchmark.array()
                 for _ = 1, 2 do
-                    local raw = observe(targets[record.implementation .. "-allocations"].executable,
+                    local raw = observe(targets[case.id .. "-" .. record.implementation .. "-allocations"],
                         case, record.allocation_iterations, options.seed, options.depth)
                     table.insert(record.allocation_runs, raw)
                     benchmark.checkpoint(session)
@@ -146,7 +133,7 @@ function main(options)
                 end
             end
             benchmark.measure_rounds(session, records, function (record)
-                local raw = observe(targets[record.implementation .. "-timing"].executable,
+                local raw = observe(targets[case.id .. "-" .. record.implementation .. "-timing"],
                     case, record.iterations, options.seed, options.depth)
                 if raw.metrics then
                     if raw.metrics.elapsed_ns == 0 then raw.validation_error = "nonpositive timed sample" end
@@ -157,17 +144,13 @@ function main(options)
             end)
             if case.id == "chain" then
                 for _, record in ipairs(records) do
-                    benchmark.step(session, record, "build unoptimized stack observation", os.programfile(),
-                        {"build", record.implementation .. "-stack"}, record.workspace,
-                        {capture_stdout = true, timeout = 180000})
                     record.stack_checks = benchmark.array()
                     for _, depth in ipairs({32, 512, options["stack-depth"]}) do
-                        local raw = observe(targets[record.implementation .. "-stack"].executable,
+                        local raw = observe(targets[case.id .. "-" .. record.implementation .. "-stack"],
                             case, 1, options.seed, depth)
                         table.insert(record.stack_checks, raw)
                         benchmark.checkpoint(session)
-                        if raw.exit_code == 0 then validate(raw)
-                        elseif record.implementation == "carven" then validate(raw) end
+                        validate(raw)
                     end
                     if record.implementation == "carven" then
                         local spans = {}

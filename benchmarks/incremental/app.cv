@@ -1,4 +1,4 @@
-import facade using create_value;
+import .facade using create_value;
 
 fn main() {
     let value = create_value(41);

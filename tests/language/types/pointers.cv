@@ -48,6 +48,8 @@ test "Pointers: binding slots and target modes are independent" {
     movable_read = movable_write;
     check(read(movable_read) == 20);
     check(narrowed(fixed_write) == fixed_read);
+    check((if true { fixed_read } else { nullptr }) != nullptr);
+    check((if false { fixed_read } else { nullptr }) == nullptr);
     let saved = fixed_write;
     let moved = transfer(&&saved);
     check(moved == fixed_write);

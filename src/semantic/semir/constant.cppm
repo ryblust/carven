@@ -22,6 +22,7 @@ public:
     constexpr auto operator==(const IntegerConstant&) const noexcept -> bool = default;
 
 private:
+    friend class SemanticArtifactAccess;
     IntegerConstant(std::uint64_t magnitude, bool negative) noexcept;
 
     std::uint64_t stored_magnitude;
@@ -337,6 +338,7 @@ public:
     auto size() const noexcept -> std::size_t;
 
 private:
+    friend class SemanticArtifactAccess;
     explicit ConstantStore(ImmutableProgramTable<ConstantFact, ConstantID> rows) noexcept;
 
     ImmutableProgramTable<ConstantFact, ConstantID> rows;
@@ -359,6 +361,7 @@ public:
     auto seal() && noexcept -> ConstantStore;
 
 private:
+    friend class SemanticArtifactAccess;
     ProgramIdentity program_identity;
     ProvenanceIdentity provenance_identity;
     std::deque<ConstantFact> rows;

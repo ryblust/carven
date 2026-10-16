@@ -51,6 +51,8 @@ test "Equality: structural equality compares values recursively" {
     check(empty == .Empty);
     check(.Empty == empty);
     check(.Empty == (if true { empty } else { Value::Number(0) }));
+    check((if true { empty } else { Value::Number(0) }) == .Empty);
+    check((if false { empty } else { Value::Number(7) }) != .Empty);
     check(empty != .Number(0));
 }
 

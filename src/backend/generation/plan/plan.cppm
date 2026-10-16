@@ -328,14 +328,17 @@ auto plan_artifacts(
     const TargetPlanningRequest& request,
     const std::flat_set<ModuleID>& library_modules,
     const TargetClosureCatalog& closures,
+    const TargetNamePlan& names,
     TargetPlanIdentity identity
 ) noexcept -> TargetPlanTable<TargetArtifactPlan, TargetArtifactID>;
 
 auto module_implementation_logical_path(std::span<const std::string> canonical_components) noexcept
     -> std::string;
 
-auto interface_component_logical_path(std::span<const std::string> anchor_components) noexcept
-    -> std::string;
+auto interface_component_logical_path(
+    std::string_view linkage_namespace,
+    std::span<const std::string> anchor_components
+) noexcept -> std::string;
 
 auto cpp_api_header_logical_path(std::span<const std::string> canonical_components) noexcept
     -> std::string;

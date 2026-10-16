@@ -37,17 +37,20 @@ if has_config("sanitizers") then
         "-fsanitize-address-use-after-scope", "-fno-sanitize-recover=all")
 end
 
+-- Keep sanitizer failures distinct from program errors and observed SIGABRT.
+for _, name in ipairs({"ASAN_OPTIONS", "UBSAN_OPTIONS"}) do
+    set_runenv(name, (os.getenv(name) or "") .. ":halt_on_error=1:abort_on_error=0:exitcode=86")
+end
+
 local carven_xmake_repo_dir = os.getenv("CARVEN_XMAKE_REPO_DIR")
-local carven_repository = "carven-xmake-repo"
 if carven_xmake_repo_dir and #carven_xmake_repo_dir > 0 then
     carven_xmake_repo_dir = path.absolute(carven_xmake_repo_dir, os.projectdir())
-    carven_repository = "carven-xmake-local"
-    add_repositories(carven_repository .. " " .. carven_xmake_repo_dir)
+    add_repositories("carven-xmake-repo " .. carven_xmake_repo_dir)
 else
     add_repositories("carven-xmake-repo https://github.com/ryblust/carven-xmake-repo.git")
 end
 
-add_requires(carven_repository .. "@carven", {
+add_requires("carven-xmake-repo@carven", {
     alias = "carven",
     system = false,
     configs = {rules_only = true},
@@ -89,6 +92,10 @@ includes("tests/internal")
 includes("tests/language")
 includes("tools/format")
 includes("tools/workspace")
+includes("benchmarks/async")
+includes("benchmarks/simd")
+includes("benchmarks/json")
+includes("benchmarks/incremental")
 
 task("bench")
     set_menu({

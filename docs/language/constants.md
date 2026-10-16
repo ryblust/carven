@@ -1,20 +1,22 @@
 # Values and constants
 
-[Language](README.md)
+This page defines constant values, static execution, and result freezing.
 
-This page defines constant values, static execution, and result
-freezing. A program has two stages. The static stage executes during
-compilation; the runtime stage is the generated program. `const fn` states that
-a function can execute in the static stage. A `const` declaration, `const { ... }`,
-and `const test` execute there. `const if` selects an arm and `const for` expands
-iterations during compilation; their remaining statements execute in the body's
-stage. A constant is a completed, frozen value produced by static execution.
-
+- [Execution stages](#execution-stages)
 - [Module constants](#module-constants)
 - [Constant expressions](#constant-expressions)
 - [`const` blocks](#const-blocks)
 - [Static execution of functions](#static-execution-of-functions)
 - [Frozen views](#frozen-views)
+
+## Execution stages
+
+A program has two stages. The static stage executes during compilation; the
+runtime stage is the generated program. `const fn` states that a function can
+execute in the static stage. A `const` declaration, `const { ... }`, and
+`const test` execute there. `const if` selects an arm and `const for` expands
+iterations during compilation; their remaining statements execute in the body's
+stage. A constant is a completed, frozen value produced by static execution.
 
 ## Module constants
 
@@ -202,14 +204,14 @@ promise purity or results determined solely by its arguments. Observable work
 happens in the selected execution stage. Declaring a `const fn` does not execute
 it, and an ordinary call does not move its effects into compilation.
 
-A [static parameter](functions.md#static-parameters) is a separate input contract.
-It requires an admitted constant source in every execution mode. Executor-known
-values of ordinary parameters, `let`, and `var` do not acquire that qualification.
+A parameter declared `const name: T` requires an admitted constant source in every
+execution mode. Executor-known values of ordinary parameters, `let`, and `var` do
+not acquire that qualification.
 The compiler checks the contract before execution; executing an entire function
 in the static stage does not make its ordinary parameters static inputs.
 
 Each `const fn` definition checks its signature and semantically reachable
-operations for executor capability. Reachable calls, including through local
+operations for executor capability. Reachable source calls, including through local
 callable bindings, must select a known `const fn`. Unsupported operations or
 unproven callees produce `CV-CONST-ADMISSION` at the definition.
 Operations after an unconditional return still receive ordinary semantic checks
@@ -228,8 +230,7 @@ Execution checks budgets and dynamic errors. Completed static roots also
 check result publication. Language arithmetic and effects are the same in
 both stages.
 
-Builtin [input](io.md#input-execution-capabilities) and
-[time operations](time.md#execution-capabilities), including deadline composition,
+Builtin input and time operations, including deadline composition,
 support explicit static execution through the compiler host. They use that
 process's input and monotonic clock. Cold construction retains arguments; awaiting
 or starting the operation performs the read or wait. Cold operations remain local
@@ -272,16 +273,10 @@ recursive direct-call graph without proving termination.
 
 Text operations include `String {}`, `String::from_str`, the owning
 `str as String` conversion, `as_str`, `byte_length`, `is_empty`, `append`, `append_format`,
-`push`, `clear`, byte and character views and iteration, and interpolation. Constant formatting
-accepts default integer, bool, char, unit (`()`) and text formatting, including known C string contents,
-plus integer `b`, `B`, `o`, `d`, `x` and `X` presentations with decimal width and optional zero
-padding. Floating formatting and printing use native standard-library conversion
-for f32/f64. Floating specifications accept alignment, Unicode fill, sign, alternate form,
-zero padding, width, precision, and `a/A/e/E/f/F/g/G` presentations, without locale-dependent
-`L` formatting. Dynamic integer widths and floating widths/precisions evaluate before formatting;
-their values must be nonnegative integers. Width, precision, and output bytes are bounded by
-the constant text budget. Static execution reports invalid or unsupported specifications
-instead of deferring them to runtime.
+`push`, `clear`, byte and character views and iteration, and interpolation. Formatting
+uses the static builtin text and numeric contracts; dynamic format operands evaluate
+before formatting. Invalid or unsupported specifications produce execution diagnostics.
+Widths, precisions, and output bytes are bounded by the text budget.
 
 Fixed arrays support construction, indexing, element assignment, equality,
 independent copies, Read and Write iteration, whole-binding Take, and function

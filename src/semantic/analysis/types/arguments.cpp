@@ -14,7 +14,7 @@ auto argument_error(
 ) noexcept -> AnalysisFailure {
     return draft.diagnostics().error(
         DiagnosticBuilder(DiagnosticCode::TypeGenericArguments, std::move(message))
-            .primary(locate(draft.syntax_tree(module).view().source_id(), span))
+            .primary(locate(draft.module_source_id(module), span))
             .build()
     );
 }

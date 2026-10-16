@@ -6,17 +6,14 @@
 
 ## Summary
 
-Carven should treat incomplete source as an ordinary analysis input. Parsing and
-semantic queries should preserve useful structure and established facts, return
-diagnostics as data, and expose missing prerequisites explicitly. A compilation
-coordinator selects the requested work and admits only a fully checked program
-to generation or interpretation.
+Accept incomplete source as an analysis input. Preserve useful syntax and
+established semantic facts, return diagnostics as data, and identify missing
+prerequisites. Use a compilation coordinator to select work and admit a fully
+checked program to generation or interpretation.
 
-The target has three distinct contracts: diagnostic recording describes a
-problem; local recovery preserves meaningful results; request coordination
-decides which work to request and whether its results authorize an artifact.
-Diagnostic severity alone cannot determine whether an operation has a valid
-operand, type, body, or execution result.
+Separate diagnostic recording, local recovery, and request coordination. Track
+operand, type, body, and execution-result validity explicitly at their producing
+operations. Use those facts for dependent work and artifact admission.
 
 The design retains strict executable SemIR, source provenance, immutable snapshots,
 explicit failure propagation, and the shared semantic executor. It introduces
@@ -34,9 +31,9 @@ Request coordinator: scope, priorities, budgets, cancellation, result delivery
 LSP supervisor: document revisions, protocol, analysis-worker restart
 ```
 
-## Current architecture
+## Context
 
-- `diagnostics/sink` already stores diagnostics without printing or stopping.
+- `diagnostics/sink` stores diagnostics without printing or stopping.
   `Diagnostic` has a code, severity, message, source labels, notes, and helps.
 - `lex` returns tokens and diagnostics. `Parser::fail` records a diagnostic and
   sets parser failure state. Recovery retains complete top-level items, but
@@ -59,24 +56,36 @@ LSP supervisor: document revisions, protocol, analysis-worker restart
   Semantic execution has work limits, but source-language task cancellation is
   distinct from cancellation of a compiler or editor request.
 
-`SourceDocument`, `ParsedDocument`, and `CompilationAnalysis` already provide
+`SourceDocument`, `ParsedDocument`, and `CompilationAnalysis` provide
 shared immutable source/syntax and an owned complete analysis result, including
 failed-source diagnostics, optional source observations, and captured static
 output. Workspace bulk edits publish atomically; unchanged content reuses parsing,
 and bounded complete-selection caches retain results across version-only edits.
 Navigation records local import aliases and follows provided-contract and duration
-prerequisites as well as explicit imports.
+prerequisites as well as explicit imports. Workspace requests deny host input,
+clock sampling, and waits; reaching one currently produces an admission diagnostic.
+
+Checked units retain executable programs and, when requested, completed
+definitions for later generic and staged instantiation. Artifact-only generation
+reuses the published program without static execution. Producer roots execute
+during producer analysis; importing definitions reuses those results. Consumer
+source analysis executes its own roots. These owners require successful
+publication. Partial editor facts still need an owner
+that survives failed publication.
+
+Analysis marks observed host input, time, or waiting as noncacheable for build
+integration. This records whole-producer reuse eligibility. Per-query effects,
+dependencies, interruption, and event delivery remain part of this design.
 
 The remaining work is lossless damaged syntax, types owned independently of
 program publication, per-query semantic invalidation, request cancellation, and
-worker isolation. Further reuse measurements belong to
-[compiler optimization](compiler-optimization.md#workspace-reuse).
+worker isolation. Measure further reuse against complete-selection caching and
+checked-artifact generation under the same source coverage and execution policy.
 
-## Research basis
+### Research basis
 
-The following evidence motivates the design; none establishes correctness for
-Carven's ownership, generics, or static execution rules without additional work.
-Full source links are collected under References.
+Use the following mechanisms as design inputs. Validate recovery and publication
+against Carven's ownership, generics, and static-execution rules.
 
 | Source | Established result or practice | Application and limit |
 | --- | --- | --- |
@@ -90,7 +99,9 @@ Full source links are collected under References.
 | Build Systems à la Carte, ICFP 2018 | Scheduling and rebuilding can be separated in a model of dependency-driven computation. | Separate request planning from cache validation; this does not specify compiler error recovery. |
 | Type error debugging in Hazel, Cambridge technical report, July 2026 | Type slices explain contributing source; the report also explores cast slices and dynamic witnesses. It is a technical report based on a 2025 undergraduate dissertation. | Retain causal evidence for explanations. Dynamic witness search is outside this proposal; the report is not evidence of production maturity. |
 
-## Observable behavior
+## Design
+
+### Observable behavior
 
 Within admitted input and resource limits, every completed parse returns a root
 covering the source, including malformed text. An unfinished function does not
@@ -114,8 +125,6 @@ regardless of whether those diagnostics are hidden in an editor. An editor may
 query independent facts in that same closure. Errors do not authorize execution
 of repaired or fabricated source.
 
-## Design
-
 ### Diagnostics and execution outcomes
 
 Retain a recording-only sink. Recording returns no continue/stop decision and
@@ -131,12 +140,11 @@ Separate source issues from request completion:
 | Source issue | A source rule is violated or suspicious | Record it; recover locally or block the specific dependent fact |
 | Request cancellation | The caller no longer wants this computation | Stop cooperatively; do not diagnose the program |
 | Operational limit or input failure | Deadline, configured work/memory budget, unsupported input size, or unavailable input | Return an explicit request/input outcome; retain only independently completed results |
-| Internal fault | An implementation invariant has failed | Terminate the untrusted analysis worker; report an internal compiler error outside it |
+| Internal fault | An implementation invariant has failed | Terminate the analysis worker; report an internal compiler error outside it |
 
-A language-defined bound may produce a source diagnostic. A configurable editor
-deadline or analysis fuel limit is operational and must not declare a program
-invalid. Existing `ConstLimit` sites require this classification individually;
-neither all limits nor all cycles belong to one category.
+Classify each limit at its owner. Language-defined bounds may produce source
+diagnostics; configurable deadlines and analysis fuel limits produce operational
+outcomes. Classify existing `ConstLimit` sites individually.
 
 Query completion is either a committed result or an interruption. A committed
 result may describe invalid source and contain partial facts. Each fact has its
@@ -218,12 +226,10 @@ facts are missing, while retaining its name/type observations and checking
 independent bodies. More local continuation requires a conservative transfer
 rule for each analysis domain and dedicated evidence before adoption.
 
-The initial formalization target is a small fragment containing name lookup,
-explicit annotations, calls, and local bindings. Specify which facts remain
-established when a child is missing or erroneous, and prove that recovery does
-not manufacture the prerequisites of a successful publication. Extend these
-rules to additional forms alongside implementation; do not claim a total
-recovery theorem for the entire language from the initial fragment.
+Start formalization with name lookup, explicit annotations, calls, and local
+bindings. Specify which facts remain established when a child is missing or
+erroneous. For the covered fragment, prove that recovery preserves valid evidence
+for each publication prerequisite. State the source forms covered by that proof.
 
 Do not add `ErrorType` or recovery operations to executable SemIR. Publication
 assembles complete analyzed bodies into the existing strict representation,
@@ -300,12 +306,10 @@ Compilation admission requires all of the following for the selected closure:
 4. No source-invalidity evidence remains, and the command's warning policy passes.
 5. The results belong to the same admitted snapshot and semantic configuration.
 
-Only this boundary can deliver a `SemIRProgram` to generation or execution of
-the user program through the interpreter. Its constructor/publication path is
-the capability for these consumers; a boolean
-`has_errors == false` is insufficient. Warning promotion may reject an otherwise
-valid command, while hiding or downgrading an error cannot make invalid data
-publishable. Internal representation verification remains mandatory.
+Deliver a `SemIRProgram` through its checked publication path. Require completed
+semantic evidence and internal representation verification. Apply warning policy
+at the command boundary; diagnostic display settings leave semantic validity
+unchanged. Retained checked artifacts keep this successful-publication boundary.
 
 The partial model and the published program share semantic rules and construction
 algorithms, not two independently implemented type checkers. Publication checks
@@ -327,12 +331,13 @@ This capability never admits partial/error operations and is distinct from
 the capability to execute a published user program.
 
 Separate required-value queries from requested execution of static tests and
-other roots. Interactive requests do not run every static test or unrelated
-root. An evaluation rejected by a source rule can block its dependent fact. An
-evaluation not requested or interrupted leaves that request's coverage incomplete
+other roots. Interactive requests execute only the selected roots and their
+dependencies. An evaluation rejected by a source rule can block its dependent fact.
+An evaluation not requested or interrupted leaves that request's coverage incomplete
 and does not commit a reusable semantic answer. Neither case substitutes a
-value. Full check/build explicitly requests all mandatory roots under the
-command's defined semantics.
+value. Source check/build requests the selected batch's mandatory roots.
+Artifact-only generation reuses completed analysis without replaying roots;
+importing checked definitions retains the producer/consumer execution boundary.
 
 Reusable evaluation must account for inputs, configuration, dependencies, and
 effects. Queries do not write to terminal callbacks. Required evaluation captures
@@ -345,15 +350,14 @@ Cache value-only evaluation only when its dependencies and permitted observation
 are explicit. Reuse must not bypass per-root limits; retain sufficient work
 accounting or re-execute under that root. Existing synchronous output consumers
 move to the coordinator boundary. Define event ordering and exactly-once
-delivery within a command before enabling caching for effectful roots.
+delivery across requested roots within a command before enabling query-level
+effect caching.
 
 ### Fault isolation and the role of abort
 
-An internal invariant failure means the implementation can no longer trust its
-state. Fail-fast termination is appropriate at that boundary. Continuing with a
-fabricated value or converting the fault into a normal source diagnostic would
-hide a compiler defect. A source input that reaches an invariant failure remains
-a compiler bug even if the source is malformed.
+Terminate the analysis worker on an internal invariant failure. Report a compiler
+fault outside that worker and retain the triggering input when available.
+Malformed source reaching an invariant failure is a compiler defect.
 
 The containment unit for language-server analysis is a persistent worker
 process. The LSP supervisor owns protocol state, document revisions, cancellation,
@@ -363,7 +367,7 @@ restarts with bounded backoff, and replays current document inputs. Repeatedly
 crashing identical work is not retried indefinitely. Existing results may only
 be shown with their original revision; no stale result is relabeled current.
 
-Start with one worker per workspace session, not one process per query. IPC
+Start with one worker per workspace session. IPC
 carries versioned inputs and owned query responses; it never exports pointers
 or assumes that worker-local IDs survive restart. Old-generation replies are
 discarded. A parent-enforced deadline can terminate an unresponsive worker when
@@ -378,22 +382,65 @@ Discard unfinished reservations and construction arenas before another query
 can observe them. A wall-clock deadline is a fallback, not a replacement for
 bounded work and explicit cancellation checks.
 
-A one-shot CLI can itself be the compilation worker and terminate nonzero on an
-internal fault. Generated files are staged and committed only after successful
-generation, so a fault does not publish a partial artifact set. Crash reporting
-captures compiler version, stage/query identity, and source identity when safely
-available; it does not attempt complex allocation or serialize a damaged heap
-inside the fatal handler.
+A one-shot CLI can serve as the compilation worker and terminate nonzero on an
+internal fault. The invoking build integration owns staging and publication:
+generate into a private destination and publish only after success. Direct CLI
+output retains its documented partial-write behavior. Capture compiler version,
+stage/query identity, and source identity outside the failed worker when available.
+Keep fatal-handler work bounded and independent of damaged analysis storage.
 
-Retain the project's `noexcept` and explicit-result convention. Do not use
-`try/catch`, signal handlers, or non-local jumps as a promise of recovery from
-`abort`, stack corruption, undefined behavior, or true allocation failure.
-Predictable source-size, node-count, and work-budget limits are checked before
-low-level exhaustion and returned as operational outcomes. Unrecoverable host
-failures still terminate the worker. Process separation limits impact; it is
-not by itself a security sandbox or protection against system-wide exhaustion.
+Use `noexcept` and explicit results for handled outcomes. Check predictable
+source-size, node-count, and work-budget limits before low-level exhaustion and
+return operational outcomes. Terminate the worker on unrecoverable host failure.
+Do not use exceptions, signal handlers, or non-local jumps as recovery from abort,
+corrupted state, undefined behavior, or allocation failure. The supervisor owns
+restart and request failure reporting. Process isolation contains worker failure;
+security sandboxing and system-wide resource limits require separate mechanisms.
 
-## Delivery sequence
+## Open decisions
+
+### OPEN-01 — Recovery quality and tree representation
+
+- **Status:** Active
+- **Question:** Which grammar-specific recovery sets and immutable node layout
+  preserve the most useful structure at acceptable memory cost?
+- **Closure condition:** Compare lossless recovery on representative edit traces,
+  parser speculation cases, and malformed-input fuzzing. Choose repair bounds and
+  storage layout from those results; do not replace the parser with LR or PEG
+  solely to adopt a published repair algorithm.
+
+### OPEN-02 — Semantic unit boundaries and cyclic queries
+
+- **Status:** Active
+- **Question:** Which inferred contracts, generic formations, and static roots
+  must be solved together to avoid premature publication or dependency cycles?
+- **Closure condition:** Specify query contracts and strongly connected component
+  boundaries using existing recursive/generic/constant fixtures. Demonstrate
+  conservative invalidation before enabling fine-grained value-based reuse.
+
+### OPEN-03 — Execution event ownership
+
+- **Status:** Active
+- **Question:** Which static roots are observationally reusable, and which must
+  execute once per command regardless of cached value availability?
+- **Closure condition:** Classify current output-producing roots and define event
+  order, accounting, and observation semantics. Until then, effectful execution
+  remains uncached; it must not block introduction of syntax and ordinary queries.
+
+## Deferred work
+
+Full typed-hole metatheory for Carven, execution through holes, SMT-based error
+localization, and dynamic error-witness search are separate projects. Reconsider
+them when ordinary recovery and causal evidence demonstrate a specific gap.
+Carven's ownership and effect rules require domain-specific proofs; results for
+a gradual functional calculus do not automatically transfer.
+
+Parallel and persistent query engines require measured pressure after correct
+in-memory incrementality. Subtree parsing requires evidence that whole-file
+parsing dominates editor latency. These optimizations must preserve the same
+fresh-analysis, revision, and effect-accounting contracts.
+
+## Implementation
 
 | Slice | Changes and owners | Completion evidence |
 | --- | --- | --- |
@@ -449,64 +496,7 @@ full-check throughput, cache hit rates, peak RSS, retained-snapshot memory, and
 worker startup/IPC cost separately. A faster partial result must not be compared
 with a complete check without identifying their different coverage.
 
-## Open decisions
-
-### OPEN-01 Recovery quality and tree representation
-
-- **Status:** Active
-- **Question:** Which grammar-specific recovery sets and immutable node layout
-  preserve the most useful structure at acceptable memory cost?
-- **Closure condition:** Compare lossless recovery on representative edit traces,
-  parser speculation cases, and malformed-input fuzzing. Choose repair bounds and
-  storage layout from those results; do not replace the parser with LR or PEG
-  solely to adopt a published repair algorithm.
-
-### OPEN-02 Semantic unit boundaries and cyclic queries
-
-- **Status:** Active
-- **Question:** Which inferred contracts, generic formations, and static roots
-  must be solved together to avoid premature publication or dependency cycles?
-- **Closure condition:** Specify query contracts and strongly connected component
-  boundaries using existing recursive/generic/constant fixtures. Demonstrate
-  conservative invalidation before enabling fine-grained value-based reuse.
-
-### OPEN-03 Execution event ownership
-
-- **Status:** Active
-- **Question:** Which static roots are observationally reusable, and which must
-  execute once per command regardless of cached value availability?
-- **Closure condition:** Classify current output-producing roots and define event
-  order, accounting, and observation semantics. Until then, effectful execution
-  remains uncached; it must not block introduction of syntax and ordinary queries.
-
-## Deferred research
-
-Full typed-hole metatheory for Carven, execution through holes, SMT-based error
-localization, and dynamic error-witness search are separate projects. Reconsider
-them when ordinary recovery and causal evidence demonstrate a specific gap.
-Carven's ownership and effect rules require domain-specific proofs; results for
-a gradual functional calculus do not automatically transfer.
-
-Parallel and persistent query engines require measured pressure after correct
-in-memory incrementality. Subtree parsing requires evidence that whole-file
-parsing dominates editor latency. These optimizations must preserve the same
-fresh-analysis, revision, and effect-accounting contracts.
-
 ## References
-
-### Carven contracts and implementation
-
-- [Compiler architecture](../docs/compiler/README.md)
-- [Owned compilation analysis](../src/compiler/analysis.cppm)
-- [Workspace regression cases](../tools/workspace/tests/workspace.cpp)
-- [Failure handling conventions](../docs/development/conventions.md#failure-handling)
-- [Workspace analysis](../tools/workspace/README.md)
-- [Parser recovery](../src/frontend/parse/parser.cpp)
-- [Batch parsing](../src/frontend/program/parse.cpp)
-- [Body batch construction](../src/semantic/analysis/body/batch.cpp)
-- [Source observation ownership](../src/semantic/analysis/source/builder.cpp)
-- [Program publication](../src/semantic/analysis/program/publication.cpp)
-- [Internal failure handling](../src/support/invariant.cpp)
 
 ### Production architecture
 

@@ -1,3 +1,0 @@
-import <carven/generated/carven-test-runner.hpp>;
-
-fn main() -> i32 => ::carven::runtime::run_generated_tests();

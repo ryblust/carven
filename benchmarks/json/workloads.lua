@@ -11,10 +11,6 @@ function cases()
     return result
 end
 
-function source(root)
-    return io.readfile(path.join(root, "workload.cv.fixture"))
-end
-
 function documents(case)
     -- Serialize fields separately so object key iteration never changes input bytes.
     local records, state = {}, 1729

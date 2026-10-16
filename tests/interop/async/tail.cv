@@ -102,37 +102,37 @@ async fn composed_results(value: i32) -> i32 {
 async fn discarded_results() {
     tail_reset();
     await operation_factory(tail_actual(2, 8), tail_actual(0, 9));
-    println(tail_trace());
+    assert(tail_trace() == 89143);
     tail_reset();
     await boolean_operation(true);
     await character_operation(false);
-    println(tail_trace());
+    assert(tail_trace() == 567);
 }
 
 export async fn run_tail() {
     tail_reset();
-    println(await effects(1, 2, 2, 0), tail_trace());
+    assert((await effects(1, 2, 2, 0), tail_trace()) == (12, 123123));
     tail_reset();
     let saved = effects(1, 2, 1, 0);
-    println(await saved, tail_trace());
+    assert((await saved, tail_trace()) == (21, 123));
     tail_reset();
     async let queued = sibling();
-    println(await yielding(2));
+    assert((await yielding(2)) == 7);
     await queued;
-    println(tail_trace());
+    assert(tail_trace() == 1811);
     tail_reset();
-    println(await owned(3), tail_trace());
+    assert((await owned(3), tail_trace()) == (7, 1234));
     tail_reset();
-    println(await addressed(3));
+    assert((await addressed(3)) == 4);
     tail_reset();
-    println(await actual_cleanup(2), tail_trace());
+    assert((await actual_cleanup(2), tail_trace()) == (14141, 14141));
     tail_reset();
-    println(await outer_cleanup(2), tail_trace());
+    assert((await outer_cleanup(2), tail_trace()) == (14143, 14141));
     tail_reset();
-    println(await skipped_step(3), tail_trace());
+    assert((await skipped_step(3), tail_trace()) == (0, 0));
     tail_reset();
-    println(await composed_results(-1), tail_trace());
+    assert((await composed_results(-1), tail_trace()) == (30, 89123567));
     tail_reset();
-    println(await composed_results(2), tail_trace());
+    assert((await composed_results(2), tail_trace()) == (5, 89143567));
     await discarded_results();
 }

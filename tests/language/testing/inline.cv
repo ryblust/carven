@@ -22,6 +22,12 @@ test "Testing: inline-test conditions execute once and successful messages are s
     require(traced_condition(&trace, 3, true), traced_message(&trace, 4, "require message"));
     assert(traced_condition(&trace, 5, true), traced_message(&trace, 6, "assert message"));
     check(trace == 135);
+    trace = 0;
+    check(
+        traced_condition(&trace, 1, true) == traced_condition(&trace, 2, true),
+        traced_message(&trace, 3, "comparison message")
+    );
+    check(trace == 12);
 }
 
 test "Testing: test calls compose with control blocks and lambdas" {

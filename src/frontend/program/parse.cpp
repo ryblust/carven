@@ -21,7 +21,8 @@ class SyntaxProgramBuilder final {
 public:
     SyntaxProgramBuilder(
         CompilationProvenance provenance_value,
-        ResolvedModuleImportGraph import_graph
+        ResolvedModuleImportGraph import_graph,
+        std::size_t imported_modules
     ) noexcept;
     SyntaxProgramBuilder(const SyntaxProgramBuilder&) = delete;
     SyntaxProgramBuilder(SyntaxProgramBuilder&&) = default;
@@ -33,15 +34,17 @@ public:
 
 private:
     CompilationProvenance provenance;
-    std::vector<SyntaxTree> syntax_by_module;
+    std::vector<std::optional<SyntaxTree>> syntax_by_module;
     ResolvedModuleImportGraph resolved_import_graph;
 };
 
 SyntaxProgramBuilder::SyntaxProgramBuilder(
     CompilationProvenance provenance_value,
-    ResolvedModuleImportGraph import_graph
+    ResolvedModuleImportGraph import_graph,
+    std::size_t imported_modules
 ) noexcept
     : provenance(std::move(provenance_value)),
+      syntax_by_module(imported_modules),
       resolved_import_graph(std::move(import_graph)) {}
 
 auto SyntaxProgramBuilder::define_module_syntax(
@@ -146,15 +149,19 @@ namespace {
 
 auto close_import_graph(
     CompilationProvenanceView provenance,
-    std::span<const SyntaxTree> syntax_trees
+    std::span<const std::optional<SyntaxTree>> syntax_trees
 ) noexcept -> std::expected<ResolvedModuleImportGraph, Diagnostics> {
     auto result = ResolvedModuleImportGraph();
     auto diagnostics = Diagnostics();
     for (auto index = 0uz; index < syntax_trees.size(); ++index) {
         const auto module_id = provenance.module_id_at(index);
+        if (!syntax_trees[index]) {
+            result.emplace_back();
+            continue;
+        }
         const auto& module_record = provenance.module_record(module_id);
         const auto& source = provenance.source_snapshot(module_record.source_id);
-        const auto ast = syntax_trees[index].view();
+        const auto ast = syntax_trees[index]->view();
         auto imports = std::vector<ResolvedModuleImport>();
         imports.reserve(ast.ast_module().module_imports.size());
         for (const auto declaration : ast.ast_module().module_imports) {
@@ -254,7 +261,8 @@ auto parse_program(
     const SourceManager& sources,
     SourceBatch batch,
     TimingOutput timings,
-    std::span<const ParsedSourceInput> parsed
+    std::span<const ParsedSourceInput> parsed,
+    std::optional<CompilationProvenance> imported
 ) noexcept -> std::expected<SyntaxProgram, Diagnostics> {
     const auto inputs = batch.modules;
     auto input_diagnostics = validate_inputs(sources, inputs);
@@ -306,10 +314,21 @@ auto parse_program(
         }
     );
 
-    auto provenance_construction = CompilationProvenanceBuilder();
+    const auto imported_modules = imported ? imported->view().module_records().size() : 0uz;
+    auto provenance_construction = imported ? CompilationProvenanceBuilder(std::move(*imported))
+                                            : CompilationProvenanceBuilder();
     auto program_module_ids = std::vector<ProgramModuleID>();
     program_module_ids.reserve(ordered_inputs.size());
     for (const auto* input : ordered_inputs) {
+        if (provenance_construction.find_program_module(input->module_path)) {
+            input_diagnostics.push_back(compilation_input_error(
+                std::format(
+                    "source module '{}' is already supplied by checked definitions",
+                    input->module_path.value()
+                )
+            ));
+            continue;
+        }
         const auto program_source_id =
             provenance_construction.intern_source_snapshot(sources, input->source_id);
         program_module_ids.push_back(provenance_construction.append_module({
@@ -318,8 +337,11 @@ auto parse_program(
         }));
     }
 
+    if (!input_diagnostics.empty()) {
+        return std::unexpected(std::move(input_diagnostics));
+    }
     auto diagnostics = DiagnosticSink();
-    auto syntax_trees = std::vector<SyntaxTree>();
+    auto syntax_trees = std::vector<std::optional<SyntaxTree>>(imported_modules);
     syntax_trees.reserve(ordered_inputs.size());
     for (const auto* input : ordered_inputs) {
         const auto found = retained.find(input->source_id);
@@ -357,11 +379,12 @@ auto parse_program(
     if (!import_graph.has_value()) {
         return std::unexpected(std::move(import_graph.error()));
     }
-    auto construction = SyntaxProgramBuilder(std::move(provenance), std::move(*import_graph));
-    for (auto index = 0uz; index < syntax_trees.size(); ++index) {
+    auto construction =
+        SyntaxProgramBuilder(std::move(provenance), std::move(*import_graph), imported_modules);
+    for (auto index = 0uz; index < program_module_ids.size(); ++index) {
         construction.define_module_syntax(
             program_module_ids[index],
-            std::move(syntax_trees[index])
+            std::move(*syntax_trees[index + imported_modules])
         );
     }
     return std::move(construction).finish();

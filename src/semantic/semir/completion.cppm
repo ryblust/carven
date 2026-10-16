@@ -47,6 +47,8 @@ public:
     constexpr auto operator==(const ExitSet&) const noexcept -> bool = default;
 
 private:
+    friend class SemanticArtifactAccess;
+
     constexpr explicit ExitSet(std::uint8_t bits) noexcept
         : bits(bits) {}
 

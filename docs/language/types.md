@@ -1,7 +1,5 @@
 # Types and context
 
-[Language](README.md) · [Standard capabilities](standard.md)
-
 This page defines type compatibility, inference, numeric operations, and borrowed
 slices.
 
@@ -35,8 +33,6 @@ occupy type positions, but do shadow expression qualifiers. Only structural
 
 `u8x16`, `mask16`, `f32x4`, `mask4`, `u8x32`, `mask32`, `f32x8`, and `mask8`
 are explicit fixed-width logical SIMD types.
-Their operators, memory contracts, and native backends are documented in the
-[SIMD reference](simd.md).
 
 Structures and enums are nominal: identity comes from the declaration, not
 from structural similarity. Arrays are identified by both element type and
@@ -47,9 +43,8 @@ element type. Function-view types include parameter access, parameter types,
 success result, and failure set.
 
 For Carven types, ordinary compatibility requires the same canonical type.
-Contextual conversions are defined for numbers, slices,
-[text](text.md#owning-string-and-text-borrowing),
-[callable views](functions.md#signatures-and-views), and [pointers](pointers.md).
+Numbers, slices, text, callable views, and pointers have operation-specific
+contextual conversions.
 There are no general implicit numeric promotions, structural conversions,
 truthiness conversions, or opaque dynamically typed values.
 
@@ -77,8 +72,7 @@ including native imports and exports. Async and fallible completion carriers
 likewise retain `void` as their success type. The source call still produces
 `()` when it completes successfully.
 
-Operations involving external C++ types have delegated construction and
-conversion rules, specified under [C++ interoperation](interop.md#external-operations-and-conversions).
+C++ checks construction and conversion operations involving external types.
 
 ## Nominal type parameters
 
@@ -106,7 +100,7 @@ struct Pending<T, throw E> { operation: Operation<T, throw E> }
 
 An application supplies every argument explicitly and in its declared kind,
 for example `Pending<i32, throw Error>` or `Pending<i32, throw ()>`.
-[Failure-set parameters](failures.md#failure-set-parameters) define these sets.
+Failure sets contain copyable nominal payload types; `throw ()` supplies the empty set.
 The declaration and its ordered canonical type and failure-set arguments
 determine nominal identity;
 repeated applications share that identity.
@@ -129,8 +123,8 @@ Parameterized class operations and numeric enums are not supported.
 A parameterized class without operations uses the same field-type model and
 keeps its representation private.
 
-Functions support the same parameter kinds and local argument inference; see
-[Parameterized functions](functions.md#parameterized-functions).
+Functions support the same parameter kinds and infer omitted arguments from their
+signature, actual argument types, and immediate expected result.
 
 ## Type context and inference
 
@@ -204,7 +198,6 @@ Scaling is checked at compilation and the result must fit signed `i64`
 nanoseconds. `-9223372036854775808ns` is admitted. Floating duration literals
 are not supported. Dynamic values use the ordinary checked constructors such
 as `milliseconds(value)?`.
-The [time reference](time.md) defines interval constructors, time points, and waits.
 
 Numeric types are otherwise compatible only with the identical
 canonical type. There is no implicit integer promotion, signedness conversion,
@@ -290,8 +283,8 @@ Extracting an element also retains any borrows inside that element. Temporary
 backing follows existing expression and retained-loop rules; storing a view
 does not extend its lifetime.
 
-[Checked text construction](text.md#checked-text-construction) validates `[u8]`
-and borrows its storage. The returned text follows the same lifetime and mutation
+`str::from_utf8(bytes)` validates `[u8]` and borrows its storage.
+The returned text follows the same lifetime and mutation
 checks as slices.
 
 Constant initializers can retain completed array or Vector contents as slices
@@ -304,9 +297,6 @@ Read access and support constant initializers, `const fn`, interpretation, and
 native execution. Numeric arguments must have the receiver's precision;
 unsuffixed literals receive that expected type. Numeric results retain the
 receiver's precision.
-
-`f32x4` and `f32x8` provide the same methods per lane; their mask results and
-scalar broadcasting rules are defined in [SIMD floating methods](simd.md#floating-methods).
 
 | Method | Contract |
 | --- | --- |

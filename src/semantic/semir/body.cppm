@@ -46,6 +46,7 @@ public:
     auto clone() const noexcept -> LifetimeRegionTree;
 
 private:
+    friend class SemanticArtifactAccess;
     ImmutableBodyTable<LifetimeRegion, LifetimeRegionID> region_rows;
 };
 

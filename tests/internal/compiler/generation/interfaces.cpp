@@ -63,12 +63,20 @@ auto interfaces(const GeneratedArtifactSet& artifacts) noexcept
 
 auto interface_for(const GeneratedArtifactSet& artifacts, std::string_view module_path) noexcept
     -> const GeneratedArtifact& {
-    auto logical_path = std::string("carven/generated/");
+    auto logical_path = std::string("/");
     logical_path += module_path;
     std::ranges::replace(logical_path, '.', '/');
     logical_path += ".hpp";
     const auto found =
-        std::ranges::find(artifacts.entries(), logical_path, &GeneratedArtifact::logical_path);
+        std::ranges::find_if(artifacts.entries(), [&](const auto& artifact) noexcept {
+            if (artifact.role != GeneratedArtifactRole::Interface) {
+                return false;
+            }
+            const auto anchor =
+                artifact.logical_path.find('/', std::string_view("carven/generated/").size());
+            return anchor != std::string::npos
+                && artifact.logical_path.substr(anchor) == logical_path;
+        });
     require(found != artifacts.entries().end()).note("artifact:", logical_path);
     return *found;
 }
@@ -107,10 +115,7 @@ const TestSuite suite([] static noexcept {
             const auto& surface_header = interface_for(stable_surface, "stable");
             expect_equal(stable_header.logical_path, private_header.logical_path);
             expect_equal(stable_header.logical_path, surface_header.logical_path);
-            expect_equal(
-                stable_header.logical_path,
-                std::string_view("carven/generated/stable.hpp")
-            );
+            expect(stable_header.logical_path.ends_with("/stable.hpp"));
             expect_equal(stable_header.content, private_header.content);
             expect_not_equal(stable_header.content, surface_header.content);
             expect(!(stable_header.content.contains("#line")));
@@ -183,14 +188,8 @@ const TestSuite suite([] static noexcept {
             }
             const auto& provider_header = interface_for(used, "provider");
             const auto& consumer_header = interface_for(used, "consumer");
-            expect_equal(
-                provider_header.logical_path,
-                std::string_view("carven/generated/provider.hpp")
-            );
-            expect_equal(
-                consumer_header.logical_path,
-                std::string_view("carven/generated/consumer.hpp")
-            );
+            expect(provider_header.logical_path.ends_with("/provider.hpp"));
+            expect(consumer_header.logical_path.ends_with("/consumer.hpp"));
             expect_not_equal(provider_header.logical_path, consumer_header.logical_path);
             const auto& used_cpp = artifact(used, "consumer.cpp");
             expect(used_cpp.content.contains(component_include(provider_header)));
@@ -243,8 +242,8 @@ const TestSuite suite([] static noexcept {
         }
         const auto& left_header = interface_for(artifacts, "left");
         const auto& right_header = interface_for(artifacts, "right");
-        expect_equal(left_header.logical_path, std::string_view("carven/generated/left.hpp"));
-        expect_equal(right_header.logical_path, std::string_view("carven/generated/right.hpp"));
+        expect(left_header.logical_path.ends_with("/left.hpp"));
+        expect(right_header.logical_path.ends_with("/right.hpp"));
         expect_not_equal(left_header.logical_path, right_header.logical_path);
         expect(artifact(artifacts, "left.cpp").content.contains(component_include(right_header)));
         expect(artifact(artifacts, "right.cpp").content.contains(component_include(left_header)));
@@ -267,7 +266,7 @@ const TestSuite suite([] static noexcept {
         if (!expect_equal(headers.size(), 1uz)) {
             return;
         }
-        expect_equal(headers.front()->logical_path, std::string_view("carven/generated/left.hpp"));
+        expect(headers.front()->logical_path.ends_with("/left.hpp"));
         expect(headers.front()->content.contains("struct LeftWrap"));
         expect(headers.front()->content.contains("struct RightLeaf"));
         expect(headers.front()->content.contains("struct RightWrap"));
@@ -295,8 +294,8 @@ const TestSuite suite([] static noexcept {
             }
             const auto& model_header = interface_for(artifacts, "model");
             const auto& api_header = interface_for(artifacts, "api");
-            expect_equal(model_header.logical_path, std::string_view("carven/generated/model.hpp"));
-            expect_equal(api_header.logical_path, std::string_view("carven/generated/api.hpp"));
+            expect(model_header.logical_path.ends_with("/model.hpp"));
+            expect(api_header.logical_path.ends_with("/api.hpp"));
             expect(!(api_header.content.contains(component_include(model_header))));
             expect(api_header.content.contains("struct Model;"));
             expect(!(model_header.content.contains(component_include(api_header))));
@@ -321,13 +320,9 @@ const TestSuite suite([] static noexcept {
             }
             const auto& api_header = interface_for(artifacts, "src.api");
             const auto& model_header = interface_for(artifacts, "lib.model");
-            expect_equal(api_header.logical_path, std::string_view("carven/generated/src/api.hpp"));
-            expect_equal(
-                model_header.logical_path,
-                std::string_view("carven/generated/lib/model.hpp")
-            );
-            expect(api_header.content.contains("#include <carven/generated/lib/model.hpp>"));
-            expect(!(api_header.content.contains("#include \"carven/generated/lib/model.hpp\"")));
+            expect(api_header.logical_path.ends_with("/src/api.hpp"));
+            expect(model_header.logical_path.ends_with("/lib/model.hpp"));
+            expect(api_header.content.contains(component_include(model_header)));
         };
 
     "Interface components: read parameters and failure results require complete types"_test =
@@ -405,22 +400,13 @@ const TestSuite suite([] static noexcept {
         if (!expect_equal(interfaces(split).size(), 2uz)) {
             return;
         }
-        expect_equal(
-            interface_for(split, "a").logical_path,
-            std::string_view("carven/generated/a.hpp")
-        );
-        expect_equal(
-            interface_for(split, "b").logical_path,
-            std::string_view("carven/generated/b.hpp")
-        );
+        expect(interface_for(split, "a").logical_path.ends_with("/a.hpp"));
+        expect(interface_for(split, "b").logical_path.ends_with("/b.hpp"));
         const auto merged_headers = interfaces(merged);
         if (!expect_equal(merged_headers.size(), 1uz)) {
             return;
         }
-        expect_equal(
-            merged_headers.front()->logical_path,
-            std::string_view("carven/generated/a.hpp")
-        );
+        expect(merged_headers.front()->logical_path.ends_with("/a.hpp"));
     };
 
     "Artifacts: input order and linkage domain produce deterministic schedules"_test =
@@ -456,7 +442,11 @@ const TestSuite suite([] static noexcept {
             auto changed_content = false;
             for (const auto& [left, right] :
                  std::views::zip(first.entries(), other_domain.entries())) {
-                expect_equal(left.logical_path, right.logical_path);
+                if (left.role == GeneratedArtifactRole::Interface) {
+                    expect_not_equal(left.logical_path, right.logical_path);
+                } else {
+                    expect_equal(left.logical_path, right.logical_path);
+                }
                 expect_equal(left.role, right.role);
                 changed_content |= left.content != right.content;
             }

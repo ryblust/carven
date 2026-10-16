@@ -115,6 +115,30 @@ auto occurrence_count(std::string_view text, std::string_view needle) noexcept -
 }
 
 const TestSuite suite([] static noexcept {
+    "Compiler manifest: generation ownership is projected for build consumers"_test =
+        [] static noexcept {
+            constexpr auto inputs = std::array {
+                CompilationManifestInput {.path = "app.cv", .module = "app"},
+                CompilationManifestInput {.path = "/sdk/std.cv", .module = "crafts.carven.std"},
+            };
+            constexpr auto owned = std::array {std::string_view("app")};
+            constexpr auto standard = std::array {std::string_view("crafts.carven.std")};
+            const auto manifest = format_compilation_manifest(
+                "/workspace",
+                inputs,
+                GeneratedArtifactSet({}),
+                1uz,
+                false,
+                owned,
+                standard
+            );
+            expect(manifest.contains("\"cacheable\": false"));
+            expect(manifest.contains("\"module\": \"app\", \"owned\": true, \"standard\": false"));
+            expect(manifest.contains(
+                "\"module\": \"crafts.carven.std\", \"owned\": false, \"standard\": true"
+            ));
+        };
+
     "Compiler manifest: JSON strings preserve Unicode and escape control bytes"_test =
         [] static noexcept {
             constexpr auto inputs = std::array {
@@ -132,7 +156,8 @@ const TestSuite suite([] static noexcept {
                     .source_mapping = ArtifactSourceMappingPolicy::SourceAttributed,
                     .source_path = std::string(inputs.front().path),
                     .content = {},
-                }})
+                }}),
+                0uz
             );
             expect(manifest.contains("\"directory/雪\\u0009\\\"\\\\.cv\""));
             expect(manifest.contains("\"source\": \"directory/雪\\u0009\\\"\\\\.cv\""));
@@ -162,7 +187,7 @@ const TestSuite suite([] static noexcept {
                         .library = SourceLibrary {
                             .modules = std::move(modules),
                             .linkage_domain = *LinkageDomain::explicit_value("library"),
-                            .emit_implementations = false,
+                            .owned_modules = {},
                         },
                     }
                 );

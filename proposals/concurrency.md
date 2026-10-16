@@ -22,33 +22,28 @@ source form. Permanent language documentation defines no cross-thread memory
 model, data-race freedom, thread-safety, happens-before, Send/Sync-like capability,
 or cross-thread task-lifetime guarantee.
 
-`std::async` composition, timeout operations, and `std::time` timers already
+`std::async` composition, timeout operations, and `std::time` timers
 execute through the same-thread runtime. Their scheduling and cancellation
 contracts are implemented, but no task migration or cross-thread value admission
 is defined. Compiler-stage parallelism is a separate implementation experiment.
 
 Write access is non-owning and nonexclusive: a mutable owner can be passed to
-multiple Write parameters in one call. It therefore supplies no unique mutable
-alias proof. A future model could add concurrency-specific capabilities,
-restrict cross-thread types, strengthen access in an explicit concurrent context,
-require runtime synchronization, or use explicit C++ boundary obligations.
-No choice is selected.
+multiple Write parameters in one call. Evaluate concurrency-specific capabilities,
+cross-thread type restrictions, stronger access in concurrent contexts, runtime
+synchronization, or explicit C++ boundary obligations. No model is selected.
 
-The model must distinguish these properties:
+Check cross-thread shareability recursively through contained values and referents,
+independently of binding immutability or copyability. Define movement, shared
+access, referent lifetime, and synchronization separately.
+Require the selected synchronization rule for conflicting accesses, including
+through shared owners or nonexclusive Write aliases. Task migration must satisfy
+both cross-thread admission and async lifetime rules.
 
-- An immutable binding does not establish recursive cross-thread shareability.
-- Copyable representation and valid lifetime do not establish thread safety.
-- Shared lifetime does not synchronize access.
-- Nonexclusive Write does not define data races as valid.
-- Same-thread suspension does not establish sharing or physical parallelism.
-- Generic evidence and coherence do not supply runtime synchronization.
-
-C++ source-fragment authors, import providers, and export callers already own
+C++ source-fragment authors, import providers, and export callers own
 control, mutation, lifetime, concurrency, and undefined-behavior obligations
 outside Carven's modeled boundary. The downstream toolchain checks target and
-ABI validity. Compiling or concurrently calling generated C++ does not add a
-Carven semantic guarantee. Any promised reentrancy or thread-compatible value
-shape requires an explicit interoperation contract.
+ABI validity. Specify reentrancy and thread-compatible value shapes at the native
+boundary when the selected consumer requires them.
 
 Owner, borrowed, shared, nullable, and erased values, allocators, dispatch tables,
 and failure/control carriers all affect cross-thread validity. Migrating operations,
@@ -57,18 +52,17 @@ synchronization operations consume the value-capability, data-race, and ordering
 rules. A non-async thread, channel, shared owner, or C++ integration use case may
 also activate this work.
 
-## Design scope
+## Design
 
 Define the value, data-race, and ordering contracts required by a concrete
 cross-thread operation. Write remains nonexclusive unless a selected contract
 strengthens it.
 
-No atomic or lock API is selected. This proposal does not select capability names
-or derivation policy, a race detector, borrow checker, lifetime
-annotations, or a C++ library mechanism. Future features require source semantics,
-compiler facts, diagnostics, lowering, interoperation, tests, and documentation.
+Select capability evidence and native mechanisms with the first operation.
+Deliver its source semantics, compiler facts, diagnostics, lowering, interoperation,
+tests, and documentation together.
 
-## Memory rules
+## Open decisions
 
 ### OPEN-02 — Where do shared-state and data-race guarantees apply?
 
@@ -110,7 +104,7 @@ compiler facts, diagnostics, lowering, interoperation, tests, and documentation.
 - **Closure condition:** Specify synchronization relations, ordering, target
   lowering, and explicit C++ interoperation obligations.
 
-## Thread and synchronization operations
+## Deferred work
 
 The following slices are deferred until a concrete consumer selects the required
 memory rules. They can be delivered independently. A complete threading library,
@@ -170,9 +164,9 @@ with async semantics.
 
 ## Implementation
 
-A future feature must connect a concrete movement, sharing, or synchronization
-operation to semantic guarantees, diagnostics, SemIRProgram facts, target/runtime
-support, C++ boundary obligations, tests, and permanent documentation.
+For the selected movement, sharing, or synchronization operation, publish the
+required semantic facts and implement its diagnostics, target/runtime support,
+native boundary checks, tests, and documentation.
 
 ## Validation
 
@@ -182,12 +176,3 @@ target fallback and C++ boundary obligations; and ownership without orphaned
 work or implicit detach. Blocking operations in async contexts need an explicit
 integration contract. Check diagnostics, compile, link, and execute generated
 C++, and measure resources relevant to the selected operation.
-
-## References
-
-- [Async](../docs/language/async.md): current same-thread composition and cancellation.
-- [Ownership](../docs/language/ownership.md): nonexclusive Write and borrowing.
-- [C++ interoperation](../docs/language/interop.md): existing native concurrency obligations.
-- [Dynamic ownership](dynamic-ownership.md): proposed Unique/Shared owner contracts.
-- [Compiler optimization](compiler-optimization.md#bounded-stage-parallelism):
-  compiler-stage parallelism.

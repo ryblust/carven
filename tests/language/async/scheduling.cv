@@ -189,11 +189,11 @@ const test "Constant scheduler: source execution contracts" {
 }
 
 export async fn run_scheduling() {
-    println(await ordering() == ordered);
-    println(await cancellation() == cancelled);
-    println(await child_failure() == caught);
-    println(await backing_close() == closed);
-    println(await return_before_close() == selected);
-    println(await nested_turn() == nested);
-    println(await repeated_close() == recycled);
+    assert(await ordering() == ordered);
+    assert(await cancellation() == cancelled);
+    assert(await child_failure() == caught);
+    assert(await backing_close() == closed);
+    assert(await return_before_close() == selected);
+    assert(await nested_turn() == nested);
+    assert(await repeated_close() == recycled);
 }

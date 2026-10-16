@@ -1,7 +1,7 @@
 # Grammar
 
 This document defines source encoding, tokens, productions, precedence, and
-syntactic disambiguation. Semantic analysis checks the validity of parsed programs.
+syntactic disambiguation.
 
 ## Contents
 
@@ -41,8 +41,9 @@ The notation has the following meaning:
 - prose following `where` denotes a syntactic predicate that is not
   conveniently expressed in context-free EBNF.
 
-Productions describe token sequences. Whitespace and comments are discarded by
-lexical analysis except inside literals and opaque C++ source fragments.
+Productions describe token sequences. Semantic analysis checks the validity of
+parsed programs. Whitespace and comments are discarded by lexical analysis except
+inside literals and opaque C++ source fragments.
 
 ## 2. Lexical Grammar
 
@@ -101,18 +102,18 @@ keyword token whose spelling matches the identifier alphabet. Accepting a keywor
 in one name position does not change its token kind or make it a bare identifier.
 There is no escaped-identifier syntax.
 
-| Class | Recognition layer | Grammar role and legal positions | Reservation scope | Shadowing | Evidence |
-| --- | --- | --- | --- | --- | --- |
-| Reserved keywords, including `async`, `await`, `cancel`, and `fn` | Lexical token classification | Their language productions; also identifier-shaped name positions below | Bare declaration, binding, and expression names cannot use these tokens | Cannot be shadowed as bare names | [Token classification](../../tests/internal/frontend/lex/tokens.cpp) |
-| `self` and `cpp` | Identifier token; contextual syntax or semantic checks | `self` is an untyped first class-operation receiver; `cpp` selects the native declaration form | Only those positions have special meaning | Ordinary names elsewhere | [Class operations](../../tests/language/types/classes.cv), [declaration parser](../../tests/internal/frontend/parse/decl.cpp) |
-| `ptr` | Identifier token; structural type parsing | `ptr<T>` and `ptr<&T>` | Module declarations, type parameters, and import local names are reserved | Runtime bindings do not change structural type syntax | [Type parser](../../tests/internal/frontend/parse/type.cpp) |
-| Provided type names, including `String`, `i32`, `Vector`, `Range`, and `Operation` | Identifier token; shared binding selection | Named types, construction, and associated operations | No additional reservation | Type parameters and module bindings may shadow them; runtime locals shadow only expression uses | [Modules and names](modules.md) |
-| Provided callables, including `print`, `assert`, `addressof`, and `when_all` | Identifier token; ordinary name lookup | Ordinary expression and call productions | No lexical or module-name reservation | Local bindings, module declarations, and imports may shadow them | Source call contracts |
-| Literal prefixes `c`, `r`, and `f` | Lexical recognition of an adjacent literal introducer | C strings, raw strings, and interpolated strings under their literal productions | Bare `c`, `r`, and `f` remain identifiers | Ordinary names may use them; bindings do not alter adjacent prefix recognition | [Literal and prefix boundaries](../../tests/internal/frontend/lex/literals.cpp) |
-| `#[cpp]` | Exact lexical source-fragment introducer | One complete `CPP_SOURCE_FRAGMENT` token at module scope | Bare `cpp` remains an identifier; no general attribute-name grammar | Name lookup does not participate in fragment recognition | [Fragment tokens](../../tests/internal/frontend/lex/literals.cpp), [fragment placement](../../tests/internal/frontend/parse/decl.cpp) |
-| Module path components | Identifier-shaped tokens; module-reference parsing | Module and craft path components; `std::` selects the standard-library domain | Paths do not reserve bare names | Path selection follows module resolution | [Module paths](../../tests/internal/source/module_path.cpp), [import parser](../../tests/internal/frontend/parse/decl.cpp) |
-| Qualified and member name components | Identifier-shaped tokens; name-position parsing | After expression `.`, `::`, or `->`; after type or pattern `::`; global C++ path roots; native header selections | Keywords are accepted only in these positions | Carven or C++ lookup determines the selected declaration | [Expression parser](../../tests/internal/frontend/parse/expr.cpp), [type parser](../../tests/internal/frontend/parse/type.cpp), [pattern parser](../../tests/internal/frontend/parse/control.cpp), [native keyword names](../../tests/interop/bindings/keyword_names.cv) |
-| Tuple positions | Number token with syntax-checked decimal spelling | After expression `.` or `->`; zero-based positional fields | Not names and not subject to name lookup | Semantic analysis requires a tuple and an existing slot | [Position parsing](../../tests/internal/frontend/parse/expr.cpp), [position diagnostics](../../tests/internal/compiler/diagnostics/types.cpp) |
+| Class | Recognition layer | Grammar role and legal positions | Reservation scope | Shadowing |
+| --- | --- | --- | --- | --- |
+| Reserved keywords, including `async`, `await`, `cancel`, and `fn` | Lexical token classification | Their language productions; also identifier-shaped name positions below | Bare declaration, binding, and expression names cannot use these tokens | Cannot be shadowed as bare names |
+| `self` and `cpp` | Identifier token; contextual syntax or semantic checks | `self` is an untyped first class-operation receiver; `cpp` selects the native declaration form | Only those positions have special meaning | Ordinary names elsewhere |
+| `ptr` | Identifier token; structural type parsing | `ptr<T>` and `ptr<&T>` | Module declarations, type parameters, and import local names are reserved | Runtime bindings do not change structural type syntax |
+| Provided type names, including `String`, `i32`, `Vector`, `Range`, and `Operation` | Identifier token; shared binding selection | Named types, construction, and associated operations | No additional reservation | Type parameters and module bindings may shadow them; runtime locals shadow only expression uses |
+| Provided callables, including `print`, `assert`, `addressof`, and `when_all` | Identifier token; ordinary name lookup | Ordinary expression and call productions | No lexical or module-name reservation | Local bindings, module declarations, and imports may shadow them |
+| Literal prefixes `c`, `r`, and `f` | Lexical recognition of an adjacent literal introducer | C strings, raw strings, and interpolated strings under their literal productions | Bare `c`, `r`, and `f` remain identifiers | Ordinary names may use them; bindings do not alter adjacent prefix recognition |
+| `#[cpp]` | Exact lexical source-fragment introducer | One complete `CPP_SOURCE_FRAGMENT` token at module scope | Bare `cpp` remains an identifier; no general attribute-name grammar | Name lookup does not participate in fragment recognition |
+| Module path components | Identifier-shaped tokens; module-reference parsing | Module and craft path components; `std::` selects the standard-library domain | Paths do not reserve bare names | Path selection follows module resolution |
+| Qualified and member name components | Identifier-shaped tokens; name-position parsing | After expression `.`, `::`, or `->`; after type or pattern `::`; global C++ path roots; native header selections | Keywords are accepted only in these positions | Carven or C++ lookup determines the selected declaration |
+| Tuple positions | Number token with syntax-checked decimal spelling | After expression `.` or `->`; zero-based positional fields | Not names and not subject to name lookup | Semantic analysis requires a tuple and an existing slot |
 
 Source declaration names, unqualified expression names, and source-module `using`
 selections require `IDENTIFIER`. A global C++ path or a qualified/member name may
@@ -207,8 +208,10 @@ single-line-string = "\"",
 STRING_LITERAL = single-line-string | multiline-string | raw-string;
 ```
 
-`multiline-string` uses three quotes and the layout rules in
-[Text: string literals and multiline layout](text.md#string-literals-and-multiline-layout).
+`multiline-string` opens with three quotes immediately followed by LF or CRLF.
+Its closing triple quote starts on a separate line after optional spaces or tabs;
+ordinary code may follow it. Decoding removes common body indentation and normalizes
+physical line endings to LF.
 `raw-string` starts with adjacent `r`, zero or more `#`, and one or three
 quotes; its closing delimiter uses the same quote count followed by the same
 number of `#`. Its body has no escapes or interpolation. The one-quote form is
@@ -480,7 +483,7 @@ parameter is untyped `self`, `&self`, or `&&self`. This fixed spelling is
 contextual, not a globally reserved keyword. Without that receiver, a class
 function is an associated operation; no `static` keyword is needed. Other
 parameters require ordinary type annotations. Class fields and operations
-may be interleaved. Class forms, nested declarations, `const fn`, and C++ boundary
+may be interleaved. Class forms, nested declarations, and C++ boundary
 operations are not admitted within class bodies.
 Associated operations may use `async fn`; async operations with an instance
 receiver are rejected.
@@ -518,14 +521,13 @@ Function definitions are top-level items or class operations. `import(cpp)` uses
 head, an optional `= ::qualified::target` binding, and `;`;
 `export(cpp)` uses either function-body form.
 Both `const async fn` and `async const fn` apply the same two modifiers.
-The official source style uses `const async fn`, placing static-execution
-capability before execution kind.
-`async` must introduce a function rather than another declaration. Async
-execution and admission follow the [async source rules](async.md).
+`async` must introduce a function declaration.
 
 The optional `const` before `fn` declares that the function can execute in the
-static stage. Static execution can call only functions with this modifier, including through
-local callable bindings. A `const fn` may call only other `const fn` dependencies.
+static stage. In a `const fn` body, semantically reachable source calls must select
+known `const fn` targets, including through local callable bindings. Ordinary
+constant conditions do not remove this definition check; operations after an
+unconditional return need no executor capability.
 A `const` function parameter requires a static argument at each call. It takes
 no access marker and is never the `self` receiver. Lambda parameters use
 `parameter` without this modifier.
@@ -726,8 +728,8 @@ including one beginning with `_`, is named. `let`, `var`, and local `const`
 also accept recursive tuple targets such as `(a, _, (b, c))`. A trailing comma
 distinguishes a one-element tuple target `(a,)` from grouped target `(a)`.
 Targets preserve tuple positions and nesting; `_` discards its position,
-including a `void` slot. Parameters and range bindings accept only named or
-discard targets. `async let` continues to require one named target.
+including a `void` slot. Parameters and range bindings accept the same recursive
+targets. `async let` requires one named target.
 
 ### 5.5 Control Transfer
 
@@ -890,8 +892,7 @@ marker is parsed outside the await operand. Grouping starts a full expression,
 so `await (action()?)` instead propagates inside the operand. A call, member, or
 index operation on an awaited result requires grouping, such as
 `(await action()).member`; the postfix operations in `await action().member`
-belong to its operand. Async admission follows
-[Async functions and lexical children](async.md).
+belong to its operand.
 
 ### 7.3 Postfix Expressions
 

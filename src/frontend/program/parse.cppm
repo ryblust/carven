@@ -21,7 +21,8 @@ auto parse_program(
     const SourceManager& sources,
     SourceBatch batch,
     TimingOutput timings = {},
-    std::span<const ParsedSourceInput> parsed = {}
+    std::span<const ParsedSourceInput> parsed = {},
+    std::optional<CompilationProvenance> imported = std::nullopt
 ) noexcept -> std::expected<SyntaxProgram, Diagnostics>;
 
 // Resolve syntax against the importer's module domain. The returned path is

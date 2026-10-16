@@ -198,7 +198,10 @@ auto BodyExprSite::observe_field(
         // Field origins cover the declaration for diagnostics. Navigation points
         // to the source name, including fields of instantiated generic records.
         for (const auto& tree : draft().syntax_trees()) {
-            const auto syntax = tree.view();
+            if (!tree) {
+                continue;
+            }
+            const auto syntax = tree->view();
             if (syntax.source_id() != location.source_id) {
                 continue;
             }

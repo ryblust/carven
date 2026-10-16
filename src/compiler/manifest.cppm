@@ -15,5 +15,9 @@ struct CompilationManifestInput final {
 auto format_compilation_manifest(
     std::string_view workspace_root,
     std::span<const CompilationManifestInput> inputs,
-    const GeneratedArtifactSet& artifacts
+    const GeneratedArtifactSet& artifacts,
+    std::size_t runtime_test_count,
+    bool cacheable = true,
+    std::span<const std::string_view> owned_modules = {},
+    std::span<const std::string_view> standard_modules = {}
 ) noexcept -> std::string;

@@ -2,13 +2,12 @@ import("core.base.json")
 import("benchmarks.harness.runner", {alias = "benchmark", rootdir = os.projectdir()})
 import("benchmarks.harness.report", {rootdir = os.projectdir()})
 import("benchmarks.harness.calibration", {rootdir = os.projectdir()})
-import("benchmarks.simd.native_project", {alias = "native_project", rootdir = os.projectdir()})
-import("benchmarks.harness.native_build", {rootdir = os.projectdir()})
 import("benchmarks.harness.inputs", {alias = "input_snapshot", rootdir = os.projectdir()})
 import("benchmarks.simd.workloads", {rootdir = os.projectdir()})
 
-local function observe(executable, scenario, iterations, timed, expected)
-    local raw = benchmark.command(executable, {}, path.directory(executable), {capture_stdout = true,
+local function observe(target, scenario, iterations, timed, expected)
+    local raw = benchmark.command(target.executable, {}, path.directory(target.executable), {
+        target = target.name, capture_stdout = true,
         envs = {CARVEN_SIMD_BENCH_LENGTH = tostring(scenario.length),
             CARVEN_SIMD_BENCH_DISTRIBUTION = scenario.distribution,
             CARVEN_SIMD_BENCH_ITERATIONS = tostring(iterations)}})
@@ -33,9 +32,6 @@ end
 function main(options)
     local selected = benchmark.select(workloads.cases(), options)
     if not selected then return end
-    if options.cxx and (options.cxx:find("/", 1, true) or options.cxx:find("\\", 1, true)) then
-        options.cxx = path.absolute(options.cxx, os.projectdir())
-    end
     local session = benchmark.session("simd", options, {
         description = {"Generated SIMD scans versus ordinary optimized C++ byte loops; C++20, separate kernel translation units, no LTO.",
             "ns/scan includes the kernel call and checksum accumulation; excludes input allocation, validation and output.",
@@ -48,25 +44,25 @@ function main(options)
         benchmark.setup(session)
         session.results.metadata.calibration_target_ns = calibration.target_ns()
         session.results.metadata.backend_selection = options.portable and "forced portable" or "target default"
-        local inputs = input_snapshot.capture(session)
+        input_snapshot.capture(session)
         report.header(session)
+        local root = os.projectdir()
+        local setup = {id = "programs", steps = benchmark.array()}
+        table.insert(session.results.setup, setup)
+        local variant = options.portable and "portable" or "native"
+        local group = "benchmarks/simd/" .. variant .. "/" .. (options.case or "*")
+        benchmark.step(session, setup, "build kernels", os.programfile(), {"build", "-g", group}, root,
+            {capture_stdout = true, timeout = 180000})
+        local names = {}
+        for _, case in ipairs(selected) do
+            table.insert(names, case.id .. "-carven")
+            table.insert(names, case.id .. "-byte_loop")
+        end
+        local targets = import("benchmarks.harness.targets", {rootdir = root})
+            .main("benchmarks::simd::" .. variant, names)
+        setup.native_targets = targets
         for index, case in ipairs(selected) do
             report.begin_case(case, index, #selected)
-            local root = path.join(session.artifacts, case.id)
-            os.mkdir(root)
-            io.writefile(path.join(root, "workload.cv"), workloads.source(case))
-            io.writefile(path.join(root, "xmake.lua"), native_project.project_text(inputs, case, session))
-            local setup = {id = case.id, steps = benchmark.array()}
-            table.insert(session.results.setup, setup)
-            benchmark.step(session, setup, "configure", os.programfile(), {"f", "-y", "-m", "release"}, root,
-                {capture_stdout = true, timeout = 180000})
-            local identity = benchmark.step(session, setup, "native target identity", os.programfile(),
-                {"lua", "-c", native_build.describe_script()}, root, {capture_stdout = true})
-            local targets, error = json.decode(identity.stdout)
-            assert(targets, "invalid native target identity: %s", error)
-            setup.native_targets = targets
-            benchmark.step(session, setup, "build kernels", os.programfile(), {"build"}, root,
-                {capture_stdout = true, timeout = 180000})
             local records = {}
             for _, scenario in ipairs(workloads.scenarios(case)) do
                 local iterations = math.max(128, math.floor(options.iterations * 32 / scenario.length))
@@ -77,7 +73,8 @@ function main(options)
                         label = case.label .. " " .. implementation, size = tostring(scenario.length),
                         workload = case.id, implementation = implementation, scenario = scenario,
                         initial_iterations = iterations, workspace = root})
-                    record.validation = observe(targets[implementation].executable, scenario, 1, false, nil)
+                    local target = targets[case.id .. "-" .. implementation]
+                    record.validation = observe(target, scenario, 1, false, nil)
                     local raw = record.validation
                     benchmark.checkpoint(session)
                     assert(raw.exit_code == 0 and not raw.validation_error, "kernel validation failed: %s",
@@ -86,13 +83,13 @@ function main(options)
                     expected = raw.metrics.expected
                     record.expected = expected
                     record.iterations = calibration.run(session, record, function (count)
-                        return observe(targets[implementation].executable, scenario, count, false, record.expected)
+                        return observe(target, scenario, count, false, record.expected)
                     end, iterations, calibration.iteration_limit(record.expected))
                     table.insert(records, record)
                 end
             end
             benchmark.measure_rounds(session, records, function (record)
-                return observe(targets[record.implementation].executable, record.scenario,
+                return observe(targets[case.id .. "-" .. record.implementation], record.scenario,
                     record.iterations, true, record.expected)
             end)
         end

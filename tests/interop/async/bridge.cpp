@@ -4,12 +4,12 @@
 #include <carven/runtime/execution/child.hpp>
 
 #include <array>
+#include <string_view>
 #include <cerrno>
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
 #include <span>
-#include <string_view>
 #include <thread>
 #include <utility>
 
@@ -327,33 +327,9 @@ auto characters() noexcept -> void {
     check(cancelled_join.success_if() != nullptr, "char composition preserves cancellation");
 }
 
-auto terminated(int signal) noexcept -> void {
-    std::_Exit(signal == SIGABRT ? 73 : 74);
-}
-
 } // namespace
 
-auto run_bridge_cases(std::string_view operation) noexcept -> int {
-    if (operation != "bridge") {
-        std::signal(SIGABRT, terminated);
-        if (operation == "invalidchar") {
-            auto result = async::drive_root(api::source_character(0xd800, false));
-        } else if (operation == "invalidchar-discard") {
-            auto result = async::drive_root(api::source_discard_character(0xd800, false));
-        } else if (operation == "invalidchar-join") {
-            auto result = async::drive_root(api::source_join_characters(0xd800, false));
-        } else if (operation == "invalidchar-race") {
-            auto result = async::drive_root(api::source_race_characters(0xd800, false));
-        } else if (operation == "invalidchar-first") {
-            auto result = async::drive_root(api::source_first_character(0xd800, false));
-        } else if (operation == "invalidchar-join-later-failure") {
-            auto result = async::drive_root(api::source_join_character_then_failure(0xd800));
-        } else {
-            return EXIT_FAILURE;
-        }
-        std::fputs("invalid async success unexpectedly reached native host\n", stderr);
-        return EXIT_FAILURE;
-    }
+auto run_bridge_cases() noexcept -> void {
     for (const auto& test : {
              std::pair {"cold", cold},
              std::pair {"ready", ready},
@@ -367,5 +343,24 @@ auto run_bridge_cases(std::string_view operation) noexcept -> int {
         std::printf("%s: pass\n", test.first);
     }
     run_transfer_cases();
-    return EXIT_SUCCESS;
+}
+
+auto run_invalid_character(std::string_view name) noexcept -> int {
+    if (std::signal(SIGABRT, +[](int) { std::_Exit(EXIT_SUCCESS); }) == SIG_ERR) {
+        return EXIT_FAILURE;
+    }
+    if (name == "invalidchar") {
+        static_cast<void>(async::drive_root(api::source_character(0xd800, false)));
+    } else if (name == "invalidchar-discard") {
+        static_cast<void>(async::drive_root(api::source_discard_character(0xd800, false)));
+    } else if (name == "invalidchar-join") {
+        static_cast<void>(async::drive_root(api::source_join_characters(0xd800, false)));
+    } else if (name == "invalidchar-race") {
+        static_cast<void>(async::drive_root(api::source_race_characters(0xd800, false)));
+    } else if (name == "invalidchar-first") {
+        static_cast<void>(async::drive_root(api::source_first_character(0xd800, false)));
+    } else if (name == "invalidchar-join-later-failure") {
+        static_cast<void>(async::drive_root(api::source_join_character_then_failure(0xd800)));
+    }
+    return EXIT_FAILURE;
 }

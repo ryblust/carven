@@ -1,142 +1,118 @@
 # Design principles
 
-This document states the criteria for Carven's language and implementation
-choices. Language and toolchain references specify current behavior; compiler
-and backend documents describe implementation responsibilities.
+This document defines criteria for Carven's language and implementation choices.
 
 ## Intent over mechanism
 
-Source expresses access, ownership transfer, captures, and failure handling.
-The compiler selects construction, storage, and control flow that preserve
-those choices. Expose representation choices when they affect behavior or a
-caller's obligations.
+Source expresses access, ownership transfer, captures, and failure handling;
+the compiler selects construction, storage, and control flow that preserve them.
+Expose representation choices when they affect behavior or caller obligations.
 
-Prefer direct source forms for common operations. Let the compiler use known
-types and semantic facts to perform the required checking and implementation
-selection. Evaluate the resulting complexity across user code, language rules,
-compiler implementation, and generated C++.
+Prefer direct source forms for common operations, using known types and semantic
+facts for checking and implementation selection. Evaluate complexity across user
+code, language rules, compiler implementation, and generated C++.
 
-Inference has defined inputs, precedence, defaults, stopping conditions, and
-incompatible cases. Changes to ownership, mutable access, captures, failure
-handling, or retained lifetimes follow an explicit source form or a rule of
-the enclosing construct.
+Define inference inputs, precedence, defaults, stopping conditions, and incompatible
+cases. Changes to ownership, mutable access, captures, failure handling, or retained
+lifetimes follow an explicit source form or a rule of the enclosing construct.
 
 ## Static computation and specialization
 
-Established types, values, structure, access, lifetimes, and failure contracts
-inform native implementation selection. Specialization depends on the available
-facts, the work they remove, and the native operations that consume them.
+Use established types, values, structure, access, lifetimes, and failure contracts
+to select native implementations. Combine precomputation, preparation of known
+parts, and specialized runtime calls according to available facts, the work removed,
+and the native operations that consume those facts. Retain general runtime
+work where the facts or contract do not justify specialization. Dynamic values can
+still have known structure, conversions, or output sizes; access and lifetimes guide
+storage, snapshots, and argument passing.
 
-An operation can combine complete precomputation, preparation of known parts,
-and specialized runtime calls. Use general runtime work where available facts
-or the operation's contract do not justify specialization. Dynamic values can
-still have known structure, conversion choices, or output sizes.
+Do not treat a known result as proof that execution can be removed. Preserve
+required evaluation, storage observations, ownership, cleanup, and failures.
+Compiler-side computation must agree with the target operation's behavior.
 
-Semantic analysis publishes validated facts; lowering selects their realization;
-runtime performs the remaining work. Published facts remain available to their
-consumers without requiring source code to restate its structure. Access and
-lifetime facts inform storage, snapshots, and native argument passing.
+Complete explicit static execution before emission under its source contract and
+resource limits. Define admitted operations and results separately from optional
+precomputation. Allow ordinary control flow, mutable locals, and incremental
+construction, including effects and tests that retain no result value.
 
-Facts identify their subject and validity domain. Writes and calls invalidate
-assumptions they may change; a control-flow join retains facts established on
-every reachable incoming path. Publish facts with their semantic owner so later
-stages consume them directly.
+Give observable operations an execution-stage contract. `const` marks static
+execution capability: supported input, clock, wait, and print effects occur on the
+compiler host during explicit static execution. Ordinary calls retain their
+runtime stage; known arguments alone do not move observable work into compilation.
 
-Knowing a result and proving execution removable are separate facts. Preserve
-required evaluation, storage observations, ownership, cleanup, and failure
-behavior. Compiler-side computation must agree with the target operation's
-behavior.
-
-Static execution completes before emission under an explicit source
-contract and resource limits. Define admitted operations and results separately
-from optional precomputation. Allow ordinary control flow, mutable locals, and
-incremental construction within that contract. Explicit static execution
-can also produce output or validate tests without retaining a result value.
-Give observable operations an execution-stage contract; optional precomputation
-must preserve their required effects.
-
-`const` marks static execution capability. Supported effects, such as input,
-clock sampling, waiting, and printing, occur on the compiler host during explicit
-static execution. Ordinary calls retain their runtime stage; known arguments
-alone do not move observable work into compilation.
-
-Compiler-side implementations can use host code independently of C++ constant
-evaluation support in the runtime implementation. Define which completed types
-and backing storage can be retained after temporary construction state ends.
-Optional precomputation preserves owning construction; static results
-follow their defined freezing rules.
+Compiler-side implementations may use host code independently of runtime C++
+constant-evaluation support. Define which completed types and backing storage
+survive temporary construction state. Optional precomputation preserves owning
+construction and required effects; static results follow their freezing rules.
 
 Distinguish exact sizes, upper bounds, and minimum widths when planning storage.
-Size facts inform reservation; the runtime selects its growth policy within
-explicit destination, allocation, and space constraints. Select the combination
-of precomputation, specialization, and runtime work from the operation's contract
-and representative measurements.
+Use size facts for reservation and let runtime growth respect destination,
+allocation, and space constraints. Choose specialization from the operation's
+contract and representative measurements.
 
 ## Typed failure contracts
 
-Callable contracts describe successful results and possible failure types.
-Composition preserves failure types and payloads for propagation, recovery,
-or translation. Functions and callbacks use the same model.
+Use one model for successful results and possible failure types in functions and
+callbacks. Preserve failure types and payloads during composition for propagation,
+recovery, or translation.
 
-Use inference for private failure sets and checked bounds for shared interfaces.
-Make propagation and handling visible; handlers cover the failures they consume.
-Handling preserves evaluation order, ownership, and cleanup. Completed effects
-remain on failure. The application defines recovery and any rollback operation.
+Infer private failure sets and check bounds on shared interfaces. Make propagation
+and handling visible; handlers cover the failures they consume while preserving
+evaluation order, ownership, and cleanup. Completed effects remain on failure;
+applications define recovery and any rollback operation.
 
 ## Zero-overhead abstractions
 
-Use skilled handwritten C++ with the same evaluation, ownership, lifetime,
-and safety guarantees as the cost baseline. Select native implementations that
-meet or improve that baseline without adding runtime work solely to represent
-a language abstraction. Runtime storage, allocation, indirection, checks, and
-dispatch each serve a required behavior. Static facts need runtime representation
-only when execution uses them.
+Use skilled handwritten C++ with the same evaluation, ownership, lifetime, and
+safety guarantees as the cost baseline. Meet or improve it without adding runtime
+work solely to represent a language abstraction. Runtime storage, allocation,
+indirection, checks, and dispatch each serve required source behavior.
+Static facts need runtime representation only when execution uses them.
 
-Distinguish source-level transfer from incidental movement of an implementation
-carrier. Use known type contents, ownership, and lifetime facts to remove carrier
-storage and movement that have no observable effect. Preserve native construction,
-address observations, transfer effects, and cleanup at their established boundaries.
+Distinguish source transfer from incidental carrier movement. Use type contents,
+ownership, and lifetimes to remove unobservable carrier storage and movement while
+preserving native construction, address observations, transfer effects, and cleanup
+at their established boundaries.
 
-Carven compilation, generated C++ compilation, artifact size, and program execution
-have distinct costs. Evaluate the dimensions affected by a design and its
-performance claims, including storage lifetime, reuse, and input scale where
-relevant. Choose defaults from end-to-end workload costs, the size of gains or
-losses, and explicit resource constraints.
+Evaluate affected costs separately: Carven compilation, generated C++ compilation,
+artifact size, and program execution. Include storage lifetime, reuse, and input
+scale where relevant. Choose defaults from end-to-end workload costs, the size of
+gains or losses, and resource constraints.
 
-Performance claims identify the comparison implementation, workload, and
-measurement method. Evaluate generated readability and machine-code performance
-separately. Establish whole-operation gains through compiler selection and runtime
-execution together; scope kernel measurements to the kernel. Correctness holds
-with optional optimizer transformations disabled.
+State the comparison implementation, workload, and method for each performance claim.
+Evaluate generated readability separately from machine-code performance and measure
+compiler selection with runtime execution for whole-operation claims. Kernel
+measurements establish kernel costs. Preserve correctness with optional optimization
+disabled.
 
 ## Generate idiomatic C++
 
 Source `class` and `struct` declarations establish nominal identity, fields, and
-access rules. Their C++ carriers and physical layout are implementation choices.
-Select representations from established semantic facts while preserving values,
-evaluation order, addressability, ownership, lifetimes, and failures. Native
-interfaces constrain the representation and operations exposed at their boundary.
+access rules. Choose C++ carriers and layout from semantic facts, preserving source
+semantics and addressability. Native interfaces constrain exposed representations
+and operations.
 
 Express resolved types, construction, access, and control flow through ordinary
-C++ facilities. Additional storage and control preserve sequencing, failure
-handling, and lifetimes. Use shared runtime operations to keep generated uses
-small where appropriate. Evaluate generated clarity, runtime cost, and native
-compilation cost together.
+C++ facilities. Add storage and control where sequencing, failures, or lifetimes
+require them; use shared runtime operations where they keep generated uses small.
+Evaluate clarity, runtime cost, and native compilation cost together.
 
-Resolve source-level choices before emitting C++: compute known parts, select
-runtime policies, construct directly into the required destination, and retain
-only necessary execution and storage. The C++ compiler owns general range and
-loop optimization, interprocedural optimization, and machine-code selection.
+Before emission, compute known parts, select runtime policies, construct into the
+required destination, and retain only necessary execution and storage. The C++
+compiler owns general range, loop, and interprocedural optimization and machine-code
+selection.
 
 ## Optimization analysis boundary
 
-Optional analysis uses structured semantic operations for a concrete
-implementation choice. Each analysis defines its fact domain, invalidation
-rules, and stopping condition. Unknown facts retain the ordinary operation.
+Optional analysis uses structured semantic operations for a concrete implementation
+choice. Define its fact domain, invalidation rules, and stopping condition; facts
+identify their subject and validity domain. Writes and calls invalidate assumptions
+they may change, and joins retain facts established on every reachable incoming
+path. Unknown facts retain the ordinary operation.
 
 Ownership, nullability, types, and failures have their own correctness analyses
-and solvers. Their published facts can guide implementation selection. Required
-semantic checks and static execution follow their language contracts.
+whose published facts can guide implementation selection. Required semantic checks
+and static execution follow their language contracts.
 
 ## Build on the C++ ecosystem
 
@@ -147,170 +123,158 @@ where a language rule depends on them.
 
 ## Language mechanisms and library composition
 
-Organize standard APIs around the capability a caller needs. Choose names,
-defaults, and type-associated methods from ordinary use. Decide the public entry,
-declaration owner, implementation location, and execution capability separately.
+| Component | Responsibility |
+| --- | --- |
+| Standard Craft | Public declarations and reusable source implementations |
+| Builtins | Types and operations whose semantics the compiler owns |
+| Runtime Craft | Native representations and operations for generated programs |
 
-Keep related public types, errors, and operations together at the shortest module
-path that identifies their capability.
-A public submodule supplies an independently useful contract or vocabulary.
-Implementation decomposition follows its algorithms and dependencies; it does not
-require another public entry. Apply these criteria to source and builtin APIs alike.
+A capability can use all three: public API ownership, compiler knowledge, and native
+implementation are separate decisions.
 
-Standard Craft organizes public APIs and reusable source implementations.
-Builtins supply types and operations whose semantics the compiler owns.
-Runtime Craft supplies C++ representations and operations for generated programs.
-A standard capability can use all three.
+### Public APIs
 
-Default visibility is a separate API choice. Defaults serve pervasive language
-types and common entry operations; builtin ownership does not make a name
-default-visible. Resolving an operation's result or failure type does not add a
-binding to the caller's scope. Inference and propagation use that type without
-requiring its name in scope; explicit names follow ordinary lookup and import rules.
+Organize standard APIs around capabilities callers need. Choose names, defaults,
+and type-associated methods from ordinary use. Decide public entries, declaration
+owners, implementation locations, and execution capabilities separately.
+Keep related public types, errors, and operations at the shortest module path
+identifying their capability. Require an independently useful contract or vocabulary
+for each public submodule. Split implementations by algorithms and dependencies;
+implementation splits do not require additional public entries.
+Apply these criteria to source and builtin APIs alike.
 
-Choose builtin ownership by four questions:
+Defaults serve pervasive language types and common entry operations, independently
+of builtin ownership. Inference and propagation can use result and failure types
+without binding their names; explicit names follow ordinary lookup and import rules.
 
-- What type, access, lifetime, failure, or execution knowledge must the compiler own?
-- Can existing source operations naturally express the complete contract?
-- Does compiler knowledge simplify use or remove repeated analysis, checks,
-  conversions, storage, or calls?
-- How much library-specific policy and maintenance does it add to the compiler?
+### Ownership selection
+
+Choose builtin ownership with these checks:
+
+- Identify the type, access, lifetime, failure, and execution knowledge the compiler
+  must own.
+- Check whether existing source operations naturally express the complete contract.
+- Assess whether compiler knowledge simplifies use or removes repeated analysis,
+  checks, conversions, storage, or calls.
+- Assess the library-specific policy and maintenance added to the compiler.
 
 Method syntax, operand count, algorithm size, and source expressibility do not
-individually determine ownership. Builtins participate in the shared type, access,
-ownership, lifetime, and failure models. `Operation` is a builtin type; ordinary
-async functions and builtin composition produce values of that same type.
-
-`print` uses known argument types and order to offer heterogeneous printing.
-`when_all` derives result and failure types and checks ownership transfer. Their
-bounded builtin APIs provide these capabilities without requiring callers to use
-variadic templates or higher-order generic machinery. Scalar and SIMD floating
-methods share a bounded numeric contract even where comparisons and selection
-can express their bodies. SIMD block traversal and scanning compose builtin
-operations in source.
+individually determine ownership. Choose compiler ownership when benefits to API
+use, checking, or execution justify its added library policy and maintenance.
+Associated entries can select source bodies or builtins. Builtins share the
+language's type, access, ownership, lifetime, and failure models; ordinary async
+functions and builtin composition both produce the builtin `Operation` type.
 
 Choose ownership by the contract being implemented:
 
 - Prefer source declarations for ordinary public data contracts, including domain
-  errors, result enums, and interval values. Builtin operations can resolve and
-  use those declarations through their ordinary type rules. Duration literals,
-  numeric parsing, and timeout composition use standard-source declarations.
-- Prefer reusable source bodies when existing operations express the full
-  contract. JSON, text processing, framing, and SIMD scanning use ordinary
-  functions. Include effects, failure recovery, cancellation, and retained
-  resources when evaluating that contract. Associated entries can select source
-  functions or builtin operations.
-- Keep a host operation together when its state and completion rules need one
-  execution boundary. Algorithms and host operations can remain builtin when
-  that gives a simpler API and execution model. Library-specific native adapters
-  belong to their owning Craft.
+  errors, result enums, and interval values. Builtins can use these declarations
+  through ordinary type rules. Duration literals, numeric parsing, and timeout
+  composition use standard-source declarations.
+- Prefer reusable source bodies when existing operations naturally express the full
+  contract, including effects, recovery, cancellation, and retained resources.
+  JSON, text processing, and framing use ordinary source functions; SIMD traversal
+  and scanning compose builtin operations in source.
+- Keep host state and completion rules together when they need one execution
+  boundary. Algorithms and host operations can remain builtin for a simpler API
+  and execution model. Library-specific native adapters belong to their Craft.
 
-Select native implementations and optimizations separately from API ownership.
-Inspect generated C++ and optimized native code to distinguish required work from
-removable intermediate expressions.
+`print` uses known argument types and order for heterogeneous printing; `when_all`
+derives result and failure types and checks ownership transfer. Their bounded APIs
+provide these capabilities without general variadic or higher-order machinery.
+Scalar and SIMD floating methods share a bounded numeric contract even where source
+comparisons and selection can express their bodies. Evaluate compiler ownership by
+the complete contract and its costs in each case.
 
-Standard and user source share discovery, module resolution, declaration
-completion, analysis, execution, and publication. Resolve each import to one
-canonical module identity. Standard entries may also supply compiler-provided
-declarations. Resolve a builtin's standard-source dependencies through the same
-catalog and declaration-completion path.
+### Execution and native integration
 
-Static execution, interpretation, and native generation preserve the same values,
-evaluation order, effects, ownership, and failures within a capability's supported
-execution stages. Implementations can use different value representations and
-host adapters; verify agreement through observable behavior. Keep execution
+Select native implementations and optimizations independently of API ownership.
+Inspect generated C++ and native code for required work and removable intermediates.
+
+Apply ordinary source discovery and semantic rules to standard and user modules.
+Give each module one canonical identity, including its source and compiler-provided
+declarations.
+
+Verify that static execution, interpretation, and native generation preserve the
+same values, evaluation order, effects, ownership, and failures within supported
+stages. Check agreement across representations and host adapters; keep execution
 context, host resources, and result retention explicit.
 
-Collect a Craft as one source package, including its native adapters. Native
-source presence does not determine whether a Carven execution path is supported.
-Check execution capability at the operation that needs it. Define native
-initialization, cleanup, and external validity obligations in the interoperation
-contract; arbitrary C++ side effects are outside semantic execution.
-
-The compiler build is independent of Crafts headers and native libraries.
-Programs being compiled receive their standard-source dependencies through
-ordinary source discovery.
+Collect each Craft, including native adapters, as one source package. Check
+execution capability at the operation that needs it, independently of native source
+presence. Native initialization, cleanup, and validity belong to the interoperation
+contract; arbitrary C++ effects remain outside semantic execution. Keep compiler
+builds independent of Crafts headers and native libraries, and compiled programs'
+standard-source dependencies in ordinary source discovery.
 
 ## Semantic authority and native boundaries
 
-Carven defines evaluation order, access, ownership, lifetimes, and failures for
-an explicit source batch. Validate conditions that analysis can check before
-publishing the semantic program. Preserve those semantics and required runtime
-checks through lowering and execution.
+Carven defines values, evaluation order, access, ownership, lifetimes, and failures
+for an explicit source batch. Validate analyzable conditions before publication;
+preserve these semantics and required runtime checks through lowering and execution.
 
-External C++ function bodies remain outside Carven's analysis. Carven checks
-argument evaluation, access, and known lifetime relationships at native calls.
-C++ resolves delegated declarations, types, and operations. Providers and callers
-satisfy the external behavior and storage contracts; native results establish
-only the relationships supported by the boundary's semantic model.
+Give each semantic fact one authority. Analysis publishes validated facts with
+their owner; lowering selects their realization; runtime performs the remaining
+work. Consumers use these facts directly without requiring source to restate its
+structure. Generated names and text represent the output. Repeated local exceptions
+call for reviewing the owning contract and consolidating equivalent paths there.
 
-The driver combines explicit application inputs with installed Crafts. Package
-authors or users prepare Crafts for the selected platform and configuration before
-installation. Packaging tools can automate that preparation using the same source
-layout. The build system owns dependency acquisition, additional source selection,
-and native build configuration.
+External C++ bodies remain outside Carven analysis. Carven checks native-call
+arguments, access, and known lifetime relationships; C++ resolves delegated
+declarations, types, and operations. Providers and callers satisfy external behavior
+and storage contracts. Native results establish only relationships supported by
+the boundary's semantic model.
 
-Give each semantic fact one authority. Later stages consume published facts;
-generated names and text represent their output. Repeated local exceptions call
-for reviewing the owning contract and the information it publishes. Consolidate
-equivalent paths at that boundary. Distinguish implementation simplification
-from changes to observable behavior, admitted programs, or caller obligations.
+At native boundaries, assign responsibilities to Carven, providers, and callers:
+delegated checks, validity and lifetime assumptions, failures, and environment
+dependencies. Address retention, returned aliases, and reentry explicitly. Place
+native exception recovery before boundaries where escaping exceptions terminate
+execution. Use native traits for delegated type requirements.
 
-At each native boundary, define the responsibilities of Carven, the provider,
-and the caller. State delegated checks, object validity and lifetime assumptions,
-failure behavior, and environment dependencies. Address retention, returned
-aliases, and reentry explicitly. Place native exception recovery before boundaries
-where escaping exceptions terminate execution. Use native traits to establish
-delegated type requirements.
+Assign dependency acquisition, additional source selection, and native build
+configuration to build systems.
 
 ## Require only what an operation needs
 
-Generated steps require the construction, assignment, and invocation operations
-needed by the source contract. Read access should not require user-defined copying.
-Use direct destination initialization to avoid unnecessary default construction
-or assignment. Realize ownership transfer through the applicable constructor.
-Apply these requirements to temporaries, wrappers, and intermediate storage.
+Generated steps require only construction, assignment, and invocation operations
+needed by the source contract, including in temporaries, wrappers, and intermediate
+storage. Read access should not require user-defined copying. Initialize destinations
+directly to avoid unnecessary default construction or assignment, and realize
+ownership transfer through the applicable constructor.
 
 Record additional implementation requirements as limitations in the owning
 reference. Changes to admitted types belong in the language contract.
 
 ## Practical safety
 
-Carven's implementation is responsible for realizing its defined semantics and
-enforcing the associated checks. Specify each operation's valid uses, checked
-conditions, and caller obligations so its guarantees have a clear scope.
+Carven implements its semantics and associated checks. Specify each operation's
+valid uses, checked conditions, and caller obligations. Authors choose algorithms
+and operations that meet functional requirements; callers satisfy API preconditions
+and external validity obligations. Validate functional behavior through tests and
+operation-specific checks; applications define recovery policies.
 
-Program and library authors choose algorithms and operations that meet their
-functional requirements. Callers satisfy API preconditions and external validity
-obligations. Validate functional behavior through tests and operation-specific
-checks. Applications define recovery policies.
+Use static checks where sufficient facts exist and runtime checks where required.
+Weigh prevented errors against user complexity, runtime costs, and integration costs.
 
-Use static checks where sufficient facts exist and runtime checks where the
-operation requires them. Weigh prevented errors against complexity for users,
-runtime costs, and integration costs.
-
-State what each check proves and which assumptions it requires. Non-null checking
-establishes an address condition; the external owner establishes object liveness.
-Match safety claims to these checks and assumptions. Diagnose violations at the
-responsible boundary. Give termination and recoverable failure distinct
-contracts.
+State what each check proves and assumes: non-null checking establishes an address
+condition; the external owner establishes object liveness. Match safety claims to
+these boundaries, diagnose violations there, and distinguish termination from
+recoverable failure.
 
 ## Simplicity and feature admission
 
-Give each intent a direct, consistent expression through composable rules.
-Additional forms need a meaningful difference in behavior or contract. Use tokens
-and delimiters to keep syntactic structure consistent across scopes.
+Give each intent a direct expression through composable rules. Additional forms
+need a meaningful difference in behavior or contract. Keep tokens, delimiters, and
+syntactic structure consistent across scopes.
 
-Require a concrete use that existing forms cannot adequately express. Evaluate
-features against that use, including their rules, exceptions, interactions,
-compilation and runtime costs, and tooling burden. Settle meaning before syntax.
-Introduce general mechanisms such as higher-order interfaces, parameter packs,
-or generic composition when independent use cases justify their shared rules.
-The ability to reimplement a builtin alone does not establish that need.
-Add extension points when a consumer needs them, with admitted uses and
-diagnostics defined at the responsible boundary.
+Require a concrete use that existing forms cannot adequately express. Evaluate its
+rules, exceptions, interactions, compilation and runtime costs, and tooling burden.
+Settle meaning before syntax. General mechanisms such as higher-order interfaces,
+parameter packs, or generic composition need independent use cases to justify their
+shared rules; reimplementing a builtin alone is insufficient. Add extension points
+for actual consumers, defining admitted uses and diagnostics at the owning boundary.
 
-Judge simplification by clarity of responsibilities, fewer interacting rules
-and execution paths, and preserved contracts. Reduced code size is a useful
-consequence. Update names and owning boundaries to match the resulting
-responsibilities.
+Judge simplification by clearer responsibilities, fewer interacting rules and
+execution paths, and preserved contracts. Distinguish it from changes to behavior,
+admitted programs, or caller obligations. Reduced code size is a useful consequence;
+update names and owning boundaries to match the resulting responsibilities.

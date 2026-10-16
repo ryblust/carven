@@ -2,10 +2,6 @@
 
 #include <cstdint>
 
-inline auto discarded_invalid_scalar() noexcept -> char32_t {
-    return static_cast<char32_t>(0x110000);
-}
-
 namespace discarded_probe {
 
 inline auto calls = 0;

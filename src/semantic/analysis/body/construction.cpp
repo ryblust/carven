@@ -574,6 +574,10 @@ BodyBatchElaborator::BodyBatchElaborator(
     for (const auto& symbol : catalog_view.symbols()) {
         if (const auto* function = std::get_if<CatalogFunctionForm>(&symbol.form)) {
             functions[function->function.index()] = std::addressof(symbol);
+            if (draft->imported(symbol.module_id)) {
+                states[function->function.index()] = Complete {};
+                body_ids[function->function.index()] = draft->body_for_callable(function->callable);
+            }
         }
     }
 }

@@ -1,10 +1,6 @@
 # Entry points, tests, and diagnostics
 
-[Language](README.md) · [Standard capabilities](standard.md)
-
-This page defines program entry, tests, assertions, and selected diagnostics.
-[Input and output](io.md) defines printing and standard input; the
-[CLI](../toolchain/cli.md) defines compiler invocation and process reporting.
+This page defines program entry, test execution, assertions, and language diagnostics.
 
 - [Entry points](#entry-points)
 - [Tests](#tests)

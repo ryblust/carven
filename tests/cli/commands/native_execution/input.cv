@@ -1,4 +1,4 @@
-import carven::fixture using scalar;
+import std::time using nanoseconds;
 import demo::api using answer;
 
 const fn prepare() {
@@ -24,7 +24,7 @@ struct Failure {}
 
 fn main(args) throw Failure {
     println("running", prepared);
-    println(char::from_u32_unchecked(scalar()));
+    println(char::from_u32_unchecked(nanoseconds(65).nanoseconds as u32));
     println(answer());
     for argument in args {
         println(argument);

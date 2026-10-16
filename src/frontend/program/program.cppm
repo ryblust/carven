@@ -25,7 +25,7 @@ using ResolvedModuleImportGraph = std::vector<std::vector<ResolvedModuleImport>>
 struct SyntaxProgramParts final {
     SyntaxProgramParts(
         CompilationProvenance provenance,
-        std::vector<SyntaxTree> syntax_trees,
+        std::vector<std::optional<SyntaxTree>> syntax_trees,
         ResolvedModuleImportGraph resolved_imports
     ) noexcept;
 
@@ -36,7 +36,7 @@ struct SyntaxProgramParts final {
     auto operator=(SyntaxProgramParts&&) -> SyntaxProgramParts& = delete;
 
     CompilationProvenance provenance;
-    std::vector<SyntaxTree> syntax_by_module;
+    std::vector<std::optional<SyntaxTree>> syntax_by_module;
     ResolvedModuleImportGraph resolved_import_graph;
 };
 
@@ -47,8 +47,9 @@ public:
     ~SyntaxProgram() = default;
     auto operator=(const SyntaxProgram&) -> SyntaxProgram& = delete;
     auto operator=(SyntaxProgram&&) -> SyntaxProgram& = delete;
+    auto has_syntax(ProgramModuleID id) const noexcept -> bool;
     auto syntax_tree(ProgramModuleID id) const noexcept -> const SyntaxTree&;
-    auto syntax_trees() const noexcept -> std::span<const SyntaxTree>;
+    auto syntax_trees() const noexcept -> std::span<const std::optional<SyntaxTree>>;
 
     auto resolved_imports(ProgramModuleID id) const noexcept
         -> std::span<const ResolvedModuleImport>;

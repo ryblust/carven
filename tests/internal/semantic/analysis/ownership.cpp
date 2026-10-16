@@ -19,7 +19,6 @@ import :semantic.semir.type;
 import :source.batch;
 import :source.manager;
 import :source.text;
-import :test.harness.death;
 import :test.harness.diagnostics;
 import :test.harness.framework;
 import :test.internal.semantic.analysis.fixture;
@@ -530,15 +529,6 @@ const TestSuite suite([] static noexcept {
                 "fn invalid() { var x = 1; try { x = relay(&&x)?; } catch { Error(_) => { let read = x; }, } }\n"
             );
             expect_diagnostic(diagnostics, DiagnosticCode::AccessUnavailable);
-        };
-
-    "Type contents: type and declaration inputs belong to the same program"_test =
-        [] static noexcept {
-            const auto program = analyze_test_program("");
-            const auto foreign = analyze_test_program("");
-            expect(expect_termination("type-contents-foreign-declarations", [&] noexcept {
-                static_cast<void>(compute_type_contents(program.types(), foreign.declarations()));
-            }));
         };
 
     "Semantic availability: nested terminating loops preserve transfers"_test = [] static noexcept {

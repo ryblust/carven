@@ -68,12 +68,6 @@ inline auto context_value() noexcept -> ContextValue {
     return {};
 }
 
-struct Unformatted final {};
-
-inline auto unformatted() noexcept -> Unformatted {
-    return {};
-}
-
 } // namespace interpolation_probe
 
 template<>

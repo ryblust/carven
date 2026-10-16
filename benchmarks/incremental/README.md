@@ -1,34 +1,37 @@
-# Incremental workloads
+# Incremental builds
 
-The baseline is `library.cv -> facade.cv -> app.cv`, with an independent
-`unrelated.cv`. `workloads.lua` selects baseline states, edited source fixtures,
-and module artifact counts. `.cv.fixture` files supply replacement bytes.
+`xmake.lua` registers one ordinary main-project target for all edit scenarios.
+Its writable sources live under the configured build directory's
+`benchmarks/incremental/workload/`. Xmake chooses native output and generated-file
+paths. The target uses the main project's resolved Carven dependency. The source graph is
+`library -> facade -> app`, with an independent `unrelated` module.
+`workloads.lua` identifies baseline and replacement fixtures.
 
-The driver in `run.lua` writes each scenario to its own
-build workspace and runs the Carven package's existing Xmake rule. Baseline
-restoration, source edits and filesystem timestamp waits precede the measured
-build. Fixtures and the selected compiler's Crafts are captured through the shared
-input snapshot; the generated Xmake project builds against that captured Crafts
-tree. The native project uses debug mode and C++20.
+Run after building the compiler:
 
-Each sample observes generated `.cpp` and `.hpp` hashes and timestamps before
-and after the build. JSON records added, content-changed, removed, and
-unchanged-content files whose timestamps changed, separately from native object
-timestamp changes. These counts describe the build and do not enforce a fixed
-number of compiler invocations or native objects.
-
-With `--timings`, Carven invocation counts come from the compiler's existing
-timing reports. The initial fresh build must produce a report before later
-samples can interpret no report as zero invocations. Without `--timings`, the
-count is unobserved and displays `-`.
-
-After each successful measured build, the driver runs the executable reported by
-Xmake and validates its output: `42` normally, or `43` after the private function
-edit. Snapshot hashing and executable validation are outside the measured build
-time. An incorrect result fails the sample instead of reporting a fast stale
-build as successful.
-
-```sh
-./xmakew bench incremental --list
-./xmakew bench incremental --case=private_function_edit
+```shell
+./xmakew bench incremental
+./xmakew bench incremental --case=private_function_edit --samples=2 --warmups=0 --timings
 ```
+
+Each scenario resets the workload sources, builds its baseline, applies an
+operation and builds the same target. Later samples restore the baseline before
+another edit. No-change samples reuse the built target. Preparation, restoration,
+timestamp waits, observation snapshots and executable validation are outside the
+measured interval.
+
+The target uses C++20 with optimization disabled. Standard-library analysis and native
+producers are shared through the main build graph. Stage timings distinguish
+semantic analysis from C++ generation; `--timings` prints stage details for the
+sample nearest the wall-time median.
+
+Reports count generated artifact additions, byte changes and removals; unchanged
+bytes with changed timestamps; and new or timestamp-changed native objects.
+Deleted objects are excluded. The independent module has its own changed-object
+count, which must remain zero in every scenario. Each successful sample runs the
+resulting program and checks its value.
+No-change and identical-content rewrites require zero Carven invocations, zero
+object changes, and unchanged generated contents and timestamps.
+
+These cases measure source-edit locality. They do not establish large-project
+scaling or cross-target isolation by themselves.

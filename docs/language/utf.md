@@ -1,16 +1,20 @@
 # UTF-8 and text processing
 
-[Language](README.md) · [Standard capabilities](standard.md)
+This page defines UTF-8 encoding, decoding, validation, and text processing in
+`std::utf`.
 
-`std::utf` provides UTF-8 encoding, decoding, validation, and text processing.
-Import its types and functions from this module.
+## Encoding, decoding, and validation
+
+Import types and functions from `std::utf`.
 
 Use `char::from_u32(value)` to construct a Unicode scalar and
 `str::from_utf8(bytes)` to construct a borrowed text view. These associated
 entries select ordinary source functions from `std::utf`. Import `char_from_u32`
-or `from_utf8` from that module to call the same declaration directly. Both forms
-share the [checked construction contracts](text.md#checked-text-construction) for
-input checks, borrowing, and failures.
+or `from_utf8` from that module to call the same declaration directly.
+`char_from_u32` rejects surrogates and values above U+10FFFF with
+`UnicodeScalarError { value }`. `from_utf8` validates the complete byte slice,
+throws `UTF8Error` on invalid input, and otherwise borrows the unchanged storage.
+Empty input is valid; keep the backing alive while using the view.
 
 | Operation | Result |
 | --- | --- |
@@ -25,8 +29,8 @@ input checks, borrowing, and failures.
 | `state.check_complete() throw UTF8Error` | Check that no partial scalar remains; does not end the stream |
 
 Array arguments create byte views implicitly; text exposes them through `.bytes`.
-`to_string` validates and copies into independent storage. Use `str::from_utf8`
-when the caller controls the backing lifetime and a copy is unnecessary.
+Use `str::from_utf8` when the caller controls the backing lifetime and a copy is
+unnecessary.
 
 ```carven
 import std::utf using { to_string, UTF8Error };
