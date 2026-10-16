@@ -12,7 +12,6 @@ import :frontend.ast.storage;
 import :frontend.ast.tree;
 import :semantic.analysis.body.builder;
 import :semantic.analysis.body.context;
-import :semantic.analysis.body.expr_site;
 import :semantic.analysis.body.resolve;
 import :semantic.analysis.constant.freeze;
 import :semantic.analysis.constant.literal;
@@ -98,19 +97,7 @@ auto BodyElaborator::constant_initializer(
         failure_contexts.pop_back();
         co_return value;
     }
-    auto scope = BodyExprSite(*this);
-    auto result = co_await scope.build_static_expression(*source.initializer, declared);
-    if (result) {
-        co_return std::move(*result);
-    }
-    if (const auto* diagnostic = std::get_if<AnalysisFailure>(&result.error())) {
-        co_return std::unexpected(*diagnostic);
-    }
-    co_return std::unexpected(fail(
-        source.span,
-        DiagnosticCode::ConstInitializer,
-        "constant initializer requires admitted static operands"
-    ));
+    co_return co_await build_static_expression(*source.initializer, declared);
 }
 
 auto BodyElaborator::variable_statement(const ASTVariableDecl& source) noexcept
@@ -492,8 +479,8 @@ auto BodyElaborator::assignment_statement(const ASTAssignment& source) noexcept
                 : std::format(
                       "{}: '{}' and '{}'",
                       decision.error().message,
-                      type_display_name(draft(), target->expression.type.construction()),
-                      type_display_name(draft(), right_value->type.construction())
+                      type_display_name(draft(), target->expression.type.construction(), catalog()),
+                      type_display_name(draft(), right_value->type.construction(), catalog())
                   )
         ));
     }

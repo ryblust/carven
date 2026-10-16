@@ -326,10 +326,6 @@ auto ConstFunctionValidator::check_body(const StructuredBodyDraft& body) noexcep
                         || std::holds_alternative<SemConstBlock>(statement->value)) {
                         return;
                     }
-                    if (const auto reason = unsupported_execution_statement(*statement)) {
-                        reject(statement->origin, std::string(*reason));
-                        return;
-                    }
                     const auto first = nodes.size();
                     statement->value.visit([&](const auto& operation) noexcept {
                         visit_evaluation_children(operation, [&](const auto& child) noexcept {
@@ -360,11 +356,7 @@ auto ConstFunctionValidator::check_body(const StructuredBodyDraft& body) noexcep
                         return;
                     }
                     if (expression->operation_reachable) {
-                        const auto reason =
-                            std::holds_alternative<SemGenericCall>(expression->value)
-                            ? std::optional<std::string_view>()
-                            : unsupported_execution_expression(*expression);
-                        if (reason) {
+                        if (const auto reason = unsupported_execution_expression(*expression)) {
                             reject(expression->origin, std::string(*reason));
                             return;
                         }

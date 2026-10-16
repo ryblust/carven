@@ -113,7 +113,7 @@ const TestSuite suite([] static noexcept {
             {.name = "a fixed array type cannot depend on an unbound static parameter",
              .source =
                  "fn use(const count: i32) { const extent = count; let values: [i32; extent] = [1, 2]; }",
-             .code = DiagnosticCode::ConstArrayExtent,
+             .code = DiagnosticCode::ConstAdmission,
              .primary_text = "extent"},
             {.name = "a type in an unselected arm reports the failure of the root it reads",
              .source =
@@ -162,7 +162,7 @@ const TestSuite suite([] static noexcept {
                 .name = "const for over a runtime range",
                 .source = R"(fn use(count: i32) { const for index in 0..count {} })",
                 .code = DiagnosticCode::ConstAdmission,
-                .primary_text = "0..count",
+                .primary_text = "count",
             },
             {
                 .name = "const for over a runtime array",
@@ -181,6 +181,12 @@ const TestSuite suite([] static noexcept {
                 .source = R"(fn use() { const for &value in [1, 2] {} })",
                 .code = DiagnosticCode::ConstAdmission,
                 .primary_text = "const",
+            },
+            {
+                .name = "static iteration binding requires a retainable value",
+                .source = R"(fn use() { const for pointer in [c"x" as ptr<void>] {} })",
+                .code = DiagnosticCode::ConstAdmission,
+                .primary_text = R"([c"x" as ptr<void>])",
             },
             {
                 .name = "ordinary array traversal does not supply static elements",
@@ -246,8 +252,8 @@ const TestSuite suite([] static noexcept {
                 .source = R"(fn use(runtime: i32) {
                 if false { const required = runtime; }
             })",
-                .code = DiagnosticCode::ConstInitializer,
-                .primary_text = "const required = runtime",
+                .code = DiagnosticCode::ConstAdmission,
+                .primary_text = "runtime",
             },
             {
                 .name = "constant local after a selected return",
@@ -256,16 +262,16 @@ const TestSuite suite([] static noexcept {
                 const required = runtime;
             }
             fn caller() { use(3, true); })",
-                .code = DiagnosticCode::ConstInitializer,
-                .primary_text = "const required = runtime",
+                .code = DiagnosticCode::ConstAdmission,
+                .primary_text = "runtime",
             },
             {
                 .name = "constant local reads a runtime range index",
                 .source = R"(fn use(count: i32) {
                 for index in 0..count { if false { const required = index; } }
             })",
-                .code = DiagnosticCode::ConstInitializer,
-                .primary_text = "const required = index",
+                .code = DiagnosticCode::ConstAdmission,
+                .primary_text = "index",
             },
         });
         check_compiler_errors(cases);

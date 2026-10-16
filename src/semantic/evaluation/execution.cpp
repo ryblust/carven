@@ -63,7 +63,7 @@ auto SemanticExecutionContext::trace(const ExecutionTraceEvent&) noexcept -> voi
 auto SemanticExecutionContext::bind_call(
     CallableID callable,
     std::vector<ExecutionOperand>&,
-    ExecutionArgumentAccess&,
+    ExecutionOperandAccess&,
     ProgramOriginID
 ) noexcept -> ContinuationTask<std::expected<CallableID, ExecutionCallFailure>> {
     co_return callable;
@@ -73,6 +73,28 @@ auto SemanticExecutionContext::freeze(ExecutionValue) noexcept -> std::optional<
     invariant_violation("this execution context has no static stage");
 }
 
+namespace {
+
+auto child_lifetimes_in(const auto& source, const ExecutionBody& body) noexcept
+    -> std::vector<LifetimeRegionID> {
+    auto lifetimes = std::vector<LifetimeRegionID>();
+    visit_semantic_nodes(source, [&](const auto& node) noexcept {
+        if constexpr (std::same_as<std::remove_cvref_t<decltype(node)>, SemanticStatement>) {
+            if (node.reachable) {
+                if (const auto* child = std::get_if<SemAsyncLet>(&node.value)) {
+                    lifetimes.push_back(body.binding_lifetime(child->child));
+                }
+            }
+        }
+    });
+    std::ranges::sort(lifetimes);
+    const auto redundant = std::ranges::unique(lifetimes);
+    lifetimes.erase(redundant.begin(), redundant.end());
+    return lifetimes;
+}
+
+} // namespace
+
 ExecutionBody::ExecutionBody(const StructuredBodyDraft& body) noexcept
     : ExecutionBody(body, body.residual ? *body.residual : body.region) {}
 
@@ -81,15 +103,21 @@ ExecutionBody::ExecutionBody(const SemIRBody& body) noexcept
 
 ExecutionBody::ExecutionBody(const StructuredBodyDraft& body, const SemanticRegion& region) noexcept
     : body(&body),
-      selected_region(&region) {
-    index_children();
-}
+      selected_region(&region),
+      child_lifetimes(child_lifetimes_in(region, *this)) {}
 
 ExecutionBody::ExecutionBody(const SemIRBody& body, const SemanticRegion& region) noexcept
     : body(&body),
-      selected_region(&region) {
-    index_children();
-}
+      selected_region(&region),
+      child_lifetimes(child_lifetimes_in(region, *this)) {}
+
+ExecutionBody::ExecutionBody(
+    const StructuredBodyDraft& body,
+    const SemanticExpression& expression
+) noexcept
+    : body(&body),
+      selected_region(&body.region),
+      child_lifetimes(child_lifetimes_in(expression, *this)) {}
 
 auto ExecutionBody::kind() const noexcept -> BodyKind {
     if (const auto* draft = std::get_if<const StructuredBodyDraft*>(&body)) {
@@ -180,10 +208,26 @@ auto execute_static_root(
     const ExecutionValueAccess& values,
     SemanticExecutionContext& context,
     const SemanticExpression& expression,
-    ExecutionLimits limits
+    ExecutionLimits limits,
+    std::optional<ExecutionBody> body
 ) noexcept -> ExecutionTask<ExecutionValue> {
     auto executor = SemanticExecutor(values, context, limits);
-    co_return finish_execution(executor, (co_await executor.evaluate_root(expression)));
+    co_return finish_execution(executor, (co_await executor.evaluate_root(expression, body)));
+}
+
+auto execute_iteration_root(
+    const ExecutionValueAccess& values,
+    SemanticExecutionContext& context,
+    const SemanticExpression& expression,
+    const ExecutionIterationConsumer& consume,
+    ExecutionLimits limits,
+    std::optional<ExecutionBody> body
+) noexcept -> ExecutionTask<void> {
+    auto executor = SemanticExecutor(values, context, limits);
+    co_return finish_execution(
+        executor,
+        co_await executor.evaluate_iteration(expression, consume, body)
+    );
 }
 
 auto execute_body(
@@ -219,21 +263,6 @@ auto ExecutionBody::binding_lifetime(LocalBindingID binding) const noexcept -> L
             return source->binding(binding).lifetime;
         }
     });
-}
-
-auto ExecutionBody::index_children() noexcept -> void {
-    visit_semantic_nodes(*selected_region, [&](const auto& node) noexcept {
-        if constexpr (std::same_as<std::remove_cvref_t<decltype(node)>, SemanticStatement>) {
-            if (node.reachable) {
-                if (const auto* child = std::get_if<SemAsyncLet>(&node.value)) {
-                    child_lifetimes.push_back(binding_lifetime(child->child));
-                }
-            }
-        }
-    });
-    std::ranges::sort(child_lifetimes);
-    const auto redundant = std::ranges::unique(child_lifetimes);
-    child_lifetimes.erase(redundant.begin(), redundant.end());
 }
 
 auto ExecutionBody::has_children(LifetimeRegionID lifetime) const noexcept -> bool {

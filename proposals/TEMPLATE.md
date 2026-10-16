@@ -1,13 +1,14 @@
 # <Proposal title>
 
 - **Status:** Exploration | Draft | Accepted | Deferred | Superseded
-- **Implementation:** Not started | In progress | Partial | Complete | Not applicable
+- **Implementation:** <Not started | In progress | Partial | Complete; only for a selected delivery scope>
 - **Scope:** <design domain>
 - **Depends on:** <whole-proposal prerequisites; omit when there are none>
 
-Use the sections that contain useful information. Distinguish current behavior,
-accepted design, and candidates. Deferred status needs a reactivation condition;
-Superseded status names the replacement.
+Use only fields and sections that contain useful information. Status describes
+design maturity. Record implementation progress only against a selected contract
+and completion evidence; omit it for an exploration without a selected delivery.
+Deferred status needs a reactivation condition; Superseded names the replacement.
 Write concise, factual, neutral prose. Preserve useful alternatives,
 counterexamples, and rationale; omit rhetorical defenses and task history.
 
@@ -25,12 +26,12 @@ Keep only the current constraints needed to understand unfinished decisions.
 Remove completed design sections once permanent documentation covers them.
 An implemented prerequisite is context, not an unfinished implementation slice.
 Name the remaining extension precisely when a neighboring mechanism already
-exists, and link its permanent contract or owning source/test boundary.
+exists.
 
 ## Goals and non-goals
 
-List intended outcomes and adjacent concerns outside the scope. Omit rules
-already explained in the design and implementation tasks listed below.
+List intended outcomes and adjacent concerns outside the scope. Omit this
+section when the summary and design already establish these boundaries.
 
 ## Design
 
@@ -55,17 +56,14 @@ that consumes them and explain which contract they supply.
 
 ### OPEN-01 — <concrete question>
 
-- **Status:** Active | Blocked
-- **Depends on:** <relevant decisions or external prerequisites; omit if none>
-- **Activation condition:** <event that clears a block; omit for active work>
 - **Question:** <choice to make and its observable consequence>
 - **Constraints:** <rules the answer must preserve>
 - **Options:** <known alternatives and tradeoffs>
 - **Closure condition:** <decision or evidence needed>
 
-Omit a field when its information is already clear. If alternatives are unknown,
-state what example or evidence will identify them. Add a separate blocker only
-when the dependency and activation condition do not explain it.
+Omit fields whose information is already clear. If alternatives are unknown,
+state what example or evidence will identify them. For blocked work, name the
+dependency and the condition that makes the question actionable.
 
 ## Deferred work
 
@@ -79,10 +77,10 @@ Retain the technical questions and evidence needed to reconsider the direction.
 
 ## Implementation
 
-For accepted slices, describe necessary delivery dependencies and the source,
-compiler, runtime, and documentation work. An exploratory slice may instead state
-the bounded experiment and evidence needed to choose a design. Identify unresolved
-decisions that block that scope. Omit unrelated prerequisites and follow-up work.
+For a selected delivery, describe its contract, necessary dependencies, source,
+compiler, runtime, and documentation work. State its completion evidence and any
+unresolved decisions that block it. An exploration can instead describe the
+bounded experiment needed to choose a design. Omit unrelated follow-up work.
 
 ## Validation
 

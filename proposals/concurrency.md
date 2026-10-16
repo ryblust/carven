@@ -1,9 +1,7 @@
 # Cross-thread concurrency
 
 - **Status:** Exploration
-- **Implementation:** Not started
 - **Scope:** Cross-thread value admission, shared-state ordering, and thread/synchronization operations
-- **Depends on:** Concrete ownership or cross-thread APIs for the future model
 
 ## Summary
 
@@ -27,8 +25,7 @@ or cross-thread task-lifetime guarantee.
 `std::async` composition, timeout operations, and `std::time` timers already
 execute through the same-thread runtime. Their scheduling and cancellation
 contracts are implemented, but no task migration or cross-thread value admission
-is defined. Compiler-stage parallelism is a separate implementation experiment
-in [compiler optimization](compiler-optimization.md#bounded-stage-parallelism).
+is defined. Compiler-stage parallelism is a separate implementation experiment.
 
 Write access is non-owning and nonexclusive: a mutable owner can be passed to
 multiple Write parameters in one call. It therefore supplies no unique mutable
@@ -73,13 +70,10 @@ compiler facts, diagnostics, lowering, interoperation, tests, and documentation.
 
 ## Memory rules
 
-**Next discussion:** `OPEN-02`, when a concrete shared-state API enters design.
-
 ### OPEN-02 — Where do shared-state and data-race guarantees apply?
 
 - **Status:** Blocked
-- **Activation condition:** An owner/shared/nullable design or shared-state API
-  enters active design.
+- **Activation condition:** A concrete cross-thread consumer needs shared state.
 - **Question:** Define valid aliasing and synchronization in ordinary source and
   the handoff to C++ boundary responsibility.
 - **Constraints:** Write remains nonexclusive unless explicitly strengthened;
@@ -195,3 +189,5 @@ C++, and measure resources relevant to the selected operation.
 - [Ownership](../docs/language/ownership.md): nonexclusive Write and borrowing.
 - [C++ interoperation](../docs/language/interop.md): existing native concurrency obligations.
 - [Dynamic ownership](dynamic-ownership.md): proposed Unique/Shared owner contracts.
+- [Compiler optimization](compiler-optimization.md#bounded-stage-parallelism):
+  compiler-stage parallelism.

@@ -49,7 +49,7 @@ auto resolve_async_builtin(
     AsyncBuiltin builtin,
     ProgramModuleID requester,
     Span span
-) noexcept -> AnalysisTask<ResolvedStaticCallable> {
+) noexcept -> AnalysisTask<ResolvedAsyncBuiltin> {
     if (const auto* intrinsic = std::get_if<AsyncIntrinsic>(&builtin)) {
         co_return *intrinsic;
     }

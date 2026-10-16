@@ -60,8 +60,7 @@ including traversal through an integer type's maximum value.
 
 Elements have Read access and callbacks have no outward typed failures.
 Ordinary `for` consumes views, including within static execution; its body keeps
-existing mutation, control flow, and failure handling. `const for` keeps its
-current admitted source families.
+existing mutation, control flow, and failure handling.
 
 Custom iterable protocols, mutable or consuming views, fallible or asynchronous
 traversal, additional combinators, and ECS facilities are outside this version.
@@ -336,8 +335,9 @@ Native and interpreted runtime consumption support concrete named functions and
 concrete closures. Pure Carven sequence code has the same demand, capture,
 ownership, and cleanup contracts in both runtime modes. Native interactions
 without an executable provider retain the interpreter's existing admission
-boundary. Static closure or callable-view invocation remains outside this
-version.
+boundary. This version accepts neither callable-view callbacks nor static closure
+callbacks. Ordinary calls through executable named callable views retain their
+existing static-execution contract.
 
 At a semantically reachable consuming `for`, `collect`, or `fold` in a `const fn`,
 the existing definition-site validator checks the implicit adapter callbacks
@@ -357,9 +357,12 @@ before execution; executor rejection does not replace definition-site checking.
 Knowing arguments at runtime does not automatically change their stage.
 
 Static traversal uses the same demand and callback-count rules. It shares the
-normal execution budgets and result publication checks. A fully consumed result
-can be frozen as an admitted scalar or Vector constant. Retained constants do
-not admit unconsumed views, directly or by value inside a collection or product.
+normal execution budgets and result publication checks. `const for` uses that
+same traversal and retains the source until expansion ends. Each bound element
+must have a frozen representation; discarded elements need none. The source view
+itself need not be frozen. A fully consumed result can be frozen as an admitted
+scalar or Vector constant. Retained constants do not admit unconsumed views,
+directly or by value inside a collection or product.
 
 ## Examples
 
@@ -645,7 +648,7 @@ for the selected contract and corresponding reference documentation.
 | View element storage | Collect, insert, copy, select, remove, replace, and clear views, including views held in element products; track owned captures and borrowed sources, reject escapes of local backing, protect borrowed element storage, and release backing loans on cleanup |
 | Native and interpreted execution | Compare pure Carven sequence programs using named functions, ordinary closure calls, and closure callbacks; cover owned and Write captures, callable selection before arguments, view copies and Vector storage, repeated traversal, effects, and cleanup; reached native interactions without a provider retain interpreter diagnostics |
 | Static admission | Admit construction retaining a runtime function identity; reject unused const consumers invoking it through returned or forwarded views, including fold combiners; admit named const callbacks and reject static closure invocation under the first-version boundary |
-| Static execution | Use the same admitted named callbacks and inputs at runtime and in static roots; verify the `56` example, budgets, failure diagnostics, and rejected unconsumed view constants, including views inside collections or products |
+| Static execution | Use the same admitted named callbacks and inputs at runtime and in static roots; verify the `56` example, `const for` demand and bound-element freezing, discarded elements, budgets, failure diagnostics, and rejected unconsumed view constants, including views inside collections or products |
 | Module publication | Return, forward, copy, and consume views across Carven modules; include concrete closure captures and legal private dependencies; verify native definitions and headers use published facts after source-region release |
 | Realization | Verify demand, effects, cleanup, retained state, and absence of intermediate result collections independently of the chosen C++ form |
 | Effects | Preserve callback and construction work for known results, repeated traversals, aliased captures, and opaque native calls |

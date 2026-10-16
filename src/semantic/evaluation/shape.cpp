@@ -54,6 +54,9 @@ auto ExecutionTypeShapes::compute(ConstructionTypeRef type, std::size_t depth) c
             } else if constexpr (std::same_as<Shape, ArrayTypeValue>
                                  || std::same_as<Shape, ConstructionArrayTypeValue>
                                  || std::same_as<Shape, GenericArrayType>) {
+                if (shape.extent == 0u) {
+                    return ExecutionTypeShape {.exact = true, .depth = 1uz, .elements = 0uz};
+                }
                 const auto child = compute(shape.element, depth + 1uz);
                 if (!child) {
                     return std::nullopt;

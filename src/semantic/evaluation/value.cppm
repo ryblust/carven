@@ -15,7 +15,7 @@ using ConstantAtomValue = std::variant<
     F64Constant,
     BooleanConstant,
     CharacterConstant,
-    StringConstant,
+    TextConstant,
     CStringConstant,
     NullPointerConstant,
     NumericEnumConstant,
@@ -110,8 +110,12 @@ public:
     auto alive(const ExecutionMemory* memory) const noexcept -> bool;
     auto slice() const noexcept -> const ExecutionSlice*;
 
-    auto observe(const ConstantValueReader& values, const ExecutionMemory* memory) const noexcept
-        -> std::optional<ExecutionTextObservation>;
+    auto observe(
+        const ConstantValueReader& values,
+        const ExecutionMemory* memory,
+        std::size_t offset = 0uz,
+        std::size_t count = std::string_view::npos
+    ) const noexcept -> std::optional<ExecutionTextObservation>;
 
 private:
     explicit ExecutionText(std::shared_ptr<const ExecutionTextStorage> storage) noexcept;
@@ -126,6 +130,10 @@ private:
 
     friend class ExecutionOwnedText;
     friend class ExecutionMemory;
+};
+
+struct ExecutionChars final {
+    ExecutionText text;
 };
 
 // Host moves transport an owner; source Take and mutation explicitly end its old borrows.
@@ -179,6 +187,7 @@ struct ExecutionValue final : std::variant<
                                   ConstantID,
                                   ConstantAtom,
                                   ExecutionText,
+                                  ExecutionChars,
                                   ExecutionOwnedText,
                                   ExecutionVoid,
                                   ExecutionPointer,
@@ -236,6 +245,7 @@ struct ExecutionColdOperation final {
 
 auto execution_atom(const ConstantValueReader& values, const ExecutionValue& value) noexcept
     -> std::optional<ConstantAtom>;
+
 auto execution_text(
     const ConstantValueReader& values,
     const ExecutionValue& value,
@@ -283,4 +293,5 @@ auto execution_compound_view(
     const ExecutionValue& value,
     const ExecutionMemory* memory = nullptr
 ) noexcept -> std::optional<ExecutionCompoundView>;
+
 auto execution_elements(ExecutionValue& value) noexcept -> std::span<ExecutionValue>;

@@ -35,16 +35,6 @@ private:
         OtherDeclaration,
     };
 
-    enum class TargetContainerKind : std::uint8_t {
-        TopLevel,
-        Namespace,
-    };
-
-    struct SyntaxLayouts final {
-        LayoutNodeID inline_qualified;
-        LayoutNodeID wrapping;
-    };
-
     const TargetUnit& unit;
     std::string generated_origin;
     bool stable_interface;
@@ -55,7 +45,7 @@ private:
     std::unordered_map<const TargetExpr*, LayoutNodeID> expression_layouts;
     std::unordered_map<const TargetStmt*, LayoutNodeID> statement_layouts;
     std::unordered_map<const TargetItem*, LayoutNodeID> item_layouts;
-    std::vector<std::optional<std::array<SyntaxLayouts, 2>>> type_layouts;
+    std::vector<std::optional<std::array<LayoutNodeID, 2>>> type_layouts;
 
     struct LayoutConstruction final {
         TargetRenderer& renderer;
@@ -70,7 +60,7 @@ private:
     auto render_expression_node(const TargetExpr& expression) noexcept -> LayoutNodeID;
     auto render_statement_node(const TargetStmt& statement) noexcept -> LayoutNodeID;
     auto render_item_node(const TargetItem& item) noexcept -> LayoutNodeID;
-    auto render_type_node(TargetTypeID type, bool constant) noexcept -> SyntaxLayouts;
+    auto render_type_node(TargetTypeID type, bool constant) noexcept -> LayoutNodeID;
 
     auto text(std::string_view value) noexcept -> LayoutNodeID;
     auto raw(std::string_view bytes) noexcept -> LayoutNodeID;
@@ -106,11 +96,10 @@ private:
     auto render_identifier(TargetLocalID value) noexcept -> LayoutNodeID;
 
     auto qualified_sequence(
-        std::span<const SyntaxLayouts> components,
+        std::span<const LayoutNodeID> components,
         bool globally_qualified
-    ) noexcept -> SyntaxLayouts;
+    ) noexcept -> LayoutNodeID;
 
-    auto render_name_layouts(const TargetName& value) noexcept -> SyntaxLayouts;
     auto render_name(const TargetName& value) noexcept -> LayoutNodeID;
 
     auto render_member_function_name(const TargetMemberFunctionName& value) noexcept
@@ -121,16 +110,14 @@ private:
 
     auto render_function_declarator(
         std::string_view prefix,
-        SyntaxLayouts name,
+        LayoutNodeID name,
         std::span<const TargetParameter> parameters,
-        SyntaxLayouts result,
+        LayoutNodeID result,
         bool const_qualified = false
     ) noexcept -> LayoutNodeID;
 
-    auto render_trailing_return(SyntaxLayouts result, bool const_qualified) noexcept
-        -> LayoutNodeID;
+    auto render_trailing_return(LayoutNodeID result, bool const_qualified) noexcept -> LayoutNodeID;
 
-    auto render_type_layouts(TargetTypeID id, bool constant = false) noexcept -> SyntaxLayouts;
     auto render_type(TargetTypeID id, bool constant = false) noexcept -> LayoutNodeID;
 
     auto render_expression(
@@ -144,14 +131,10 @@ private:
     auto render_item(const TargetItem& item) noexcept -> LayoutNodeID;
     auto item_category(const TargetItem& item) const noexcept -> std::optional<TargetItemCategory>;
 
-    auto separation_between(
-        TargetItemCategory previous,
-        TargetItemCategory current,
-        TargetContainerKind container
-    ) const noexcept -> std::size_t;
+    auto separation_between(TargetItemCategory previous, TargetItemCategory current) const noexcept
+        -> std::size_t;
 
-    auto render_items(std::span<const TargetItem> items, TargetContainerKind container) noexcept
-        -> LayoutNodeID;
+    auto render_items(std::span<const TargetItem> items) noexcept -> LayoutNodeID;
 
     auto render_sections(const TargetUnitSections& sections) noexcept
         -> std::optional<LayoutNodeID>;

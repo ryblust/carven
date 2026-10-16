@@ -170,10 +170,23 @@ const fn generic_read<T>(&&value: T, ok: bool) -> T throw ReadError {
 const success = read(true)?;
 const generic_success = generic_read(&&42, true)?;
 const inferred_success = inferred(true)?;
-const recovered = recover(false);
+
+const recovered = try {
+    read(false)?
+} catch {
+    ReadError(error) => error.code,
+};
+
 const decoded = recover_decode(1);
 const text = recover_text();
-const values = [DecodeError::Empty, DecodeError::Invalid(12)];
+
+const values: [
+    DecodeError; try {
+        read(false)?
+    } catch {
+        ReadError(error) => error.code - 5
+    }
+] = [DecodeError::Empty, DecodeError::Invalid(12),];
 
 const test "typed failures execute with normal control and payload semantics" {
     check(success == 42 && inferred_success == 3);

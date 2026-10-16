@@ -129,16 +129,17 @@ auto BodyElaborator::use_local(std::string_view name) noexcept -> BodyLocalStora
 }
 
 auto BodyElaborator::static_stage() const noexcept -> bool {
-    return static_body || !const_block_frames.empty();
+    return static_body || !static_scope_frames.empty();
 }
 
-auto BodyElaborator::runtime_local_outside_block(std::string_view name) const noexcept -> bool {
-    if (static_body || const_block_frames.empty()) {
+auto BodyElaborator::runtime_local_outside_static_scope(std::string_view name) const noexcept
+    -> bool {
+    if (static_scope_frames.empty()) {
         return false;
     }
     for (auto index = frames.size(); index-- > 0uz;) {
         if (const auto found = frames[index].names.find(name); found != frames[index].names.end()) {
-            return index < const_block_frames.front() && !found->second.static_source;
+            return index < static_scope_frames.back() && !found->second.static_source;
         }
     }
     const auto inherited = inherited_locals.find(name);

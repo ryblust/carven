@@ -157,7 +157,7 @@ const TestSuite suite([] static noexcept {
                 == BuiltinType::Str
             );
             expect(
-                program.provenance().spelling(std::get<StringConstant>(text_fact.value).value)
+                program.provenance().spelling(std::get<TextConstant>(text_fact.value).value)
                 == std::string_view("\0😀", 5uz)
             );
             const auto boolean = elements(named_constant(program, "boolean"));

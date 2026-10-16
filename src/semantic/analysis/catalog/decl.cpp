@@ -287,14 +287,9 @@ auto AnalysisCatalogBuilder::collect_declarations() noexcept -> void {
                         };
                     },
                     [&](const ASTConstantDecl&) noexcept -> CatalogSymbolForm {
-                        const auto constant = draft.reserve_module_constant_declaration();
-                        if (constant.index() != result.module_constant_symbols.size()) {
-                            invariant_violation(
-                                "semantic module-constant reservation is not aligned"
-                            );
-                        }
-                        result.module_constant_symbols.push_back(symbol_id);
-                        return CatalogConstantForm {.constant = constant};
+                        return CatalogConstantForm {
+                            .constant = draft.reserve_module_constant_declaration(),
+                        };
                     },
                     [](const ASTConstBlock&) static noexcept -> CatalogSymbolForm {
                         invariant_violation("const block has no symbol form");

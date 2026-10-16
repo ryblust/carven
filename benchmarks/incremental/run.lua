@@ -1,5 +1,4 @@
 import("core.base.json")
-import("core.project.project")
 import("benchmarks.harness.runner", {alias = "benchmark", rootdir = os.projectdir()})
 import("benchmarks.harness.inputs", {alias = "input_snapshot", rootdir = os.projectdir()})
 import("benchmarks.harness.native_build", {rootdir = os.projectdir()})
@@ -119,34 +118,25 @@ function main(options)
             {key = "unrelated_objects", label = "Unrelated objects"},
         },
     })
-    local rules_prefix, snapshot_root
+    local snapshot_root
     local captured_cases = {}
     benchmark.run(session, selected, function (session, record, scenario, root)
         scenario = captured_cases[scenario.id]
         local inputs = workloads.inputs(snapshot_root)
-        local crafts = path.join(snapshot_root, "crafts")
         inputs["xmake.lua"] = string.format([[set_project("carven-benchmark")
 add_rules("mode.debug")
-package("carven")
-    set_kind("toolchain")
-    set_installdir(%q)
-    on_fetch(function () return {} end)
-package_end()
-add_requires("carven", {system = false})
+%s
 target("bench")
     set_kind("binary")
     set_languages("c++20")
     add_rules("@carven/carven", {linkage_domain = "benchmark:incremental", timings = %s})
-    set_values("carven.program", %q)
-    set_values("carven.craftsdir", %q)
     add_files("*.cv")
-]], rules_prefix, tostring(options.timings or false),
-                session.compiler, crafts)
+]], native_build.carven_rules(session, snapshot_root), tostring(options.timings or false))
         record.inputs = inputs
         record.baseline, record.edits = scenario.baseline or {}, scenario.edits or {}
         record.expected_stdout = scenario.stdout
         record.linkage_domain, record.native_mode, record.language = "benchmark:incremental", "debug", "c++20"
-        record.crafts_directory = crafts
+        record.crafts_directory = path.join(snapshot_root, "crafts")
         benchmark.checkpoint(session)
         write_files(root, inputs)
         write_files(root, scenario.baseline)
@@ -230,12 +220,8 @@ target("bench")
             return raw
         end
     end, function (session)
-        rules_prefix = assert(project.required_package("carven"):installdir(),
-            "configure and build the project before running incremental benchmarks")
         snapshot_root = input_snapshot.capture(session)
         for _, case in ipairs(workloads.cases(snapshot_root)) do captured_cases[case.id] = case end
-        local metadata = session.results.metadata
-        metadata.rules_directory = path.join(rules_prefix, "rules")
         benchmark.checkpoint(session)
     end)
 end

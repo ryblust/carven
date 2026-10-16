@@ -41,6 +41,117 @@ auto compile_constant_program(
 }
 
 const TestSuite suite([] static noexcept {
+    "Compiler: structured static roots evaluate selected work once"_test = [] static noexcept {
+        auto output = std::string();
+        auto errors = std::string();
+        const auto result = compile_constant_program(
+            R"(
+            const fn dimensions<T>() -> usize {
+                const first = if true { let size = 2usize; size } else { 0usize };
+                let a: [i32; first] = {};
+                const second = if true { let size = 3usize; size } else { 0usize };
+                let b: [i32; second] = {};
+                return a.length() + b.length();
+            }
+            const dimensions_value = dimensions<i32>();
+            const { assert(dimensions_value == 5usize); }
+            struct Rejected { value: i32 }
+            const fn observe(mark: str, value: i32) -> i32 { print(mark); return value; }
+            const fn reject() -> i32 throw Rejected { print("t"); throw Rejected { 3 }; }
+            const async fn child() -> i32 { print("a"); return 1; }
+            const joined = if true { async let pending = child(); (await pending) + 2 } else { 4 };
+            const first = if true { observe("i", 3) } else { observe("wrong", 4) };
+            const second = match observe("m", 2) {
+                value if value < 0 => observe("wrong", 0),
+                value => observe("b", value + 1),
+            };
+            const third = try { reject()? } catch { Rejected(value) => observe("c", value.value), };
+            fn local() {
+                const value = if true {
+                    var sum = 0;
+                    for value in [1, 2] { sum += value; }
+                    observe("l", sum)
+                } else { observe("wrong", 4) };
+                assert(value == 3);
+            }
+            fn extent(values: [i32; if true { observe("e", 3) } else { observe("wrong", 0) }]) {}
+            const { assert(first == 3 && second == 3 && third == 3); }
+        )",
+            output,
+            errors
+        );
+        if (!expect(result.has_value())) {
+            if (!result) {
+                for (const auto& diagnostic : result.error()) {
+                    expect(result.has_value()).note(diagnostic.finding.message);
+                }
+            }
+            return;
+        }
+        expect(output.find('m') < output.find('b'));
+        expect(output.find('t') < output.find('c'));
+        std::ranges::sort(output);
+        expect_equal(output, std::string("abceilmt"));
+        expect(errors.empty());
+    };
+
+    "Compiler: structured static roots check source contracts"_test = [] static noexcept {
+        struct Scenario final {
+            std::string_view name;
+            std::string_view source;
+            DiagnosticCode code;
+        };
+        constexpr auto scenarios = std::array {
+            Scenario {
+                "branch result",
+                "const n = if true { 1 } else { false };",
+                DiagnosticCode::TypeMismatch
+            },
+            Scenario {
+                "runtime capture",
+                "fn f(value: i32) { const n = if true { value } else { 0 }; }",
+                DiagnosticCode::ConstAdmission
+            },
+            Scenario {
+                "unselected pointer proof",
+                "const fn yes() -> bool => true; const n = if yes() { 1 } else { let p: ptr<i32> = nullptr; *p };",
+                DiagnosticCode::PointerNonNull
+            },
+            Scenario {
+                "outward return",
+                "fn f() -> i32 { const n = if true { return 1; } else { 2 }; return n; }",
+                DiagnosticCode::FlowTransferBoundary
+            },
+            Scenario {
+                "outer catch",
+                R"(
+                struct E {}
+                fn fail() -> i32 throw E { throw E {}; }
+                fn f() {
+                    try { fail()?; } catch { E(_) => { const n = if true { rethrow; } else { 1 }; }, }
+                }
+            )",
+                DiagnosticCode::EffectRethrowContext
+            },
+            Scenario {
+                "unmarked failure",
+                R"(
+                struct E {}
+                const fn fail() -> i32 throw E { throw E {}; }
+                const n = if true { 1 } else { fail() };
+            )",
+                DiagnosticCode::EffectUnmarked
+            },
+        };
+        each(scenarios, &Scenario::name, [](const auto& scenario) static noexcept {
+            with_compiled_source(scenario.source, [&](const auto&, const auto& result) noexcept {
+                if (expect(!result.has_value()).note(scenario.name)) {
+                    expect_diagnostic(result.error(), scenario.code);
+                }
+            });
+        });
+    };
+
     "Compiler: static blocks execute local values and controls in source order"_test =
         [] static noexcept {
             struct Scenario final {
@@ -84,6 +195,13 @@ const TestSuite suite([] static noexcept {
                         assert(lane(value) == index);
                         assert(lane(value) == index);
                     }
+                    var values: Vector<i32> = [1, 2];
+                    const for &value in values { value *= 2; }
+                    assert(values[0] == 2 && values[1] == 4);
+                    let text = String::from_str("é😀");
+                    var copied = String {};
+                    const for character in text.chars { copied.push(character); }
+                    assert(copied == "é😀");
                     print("z");
                 )" + std::string(scenario.suffix),
                     output,
@@ -877,7 +995,7 @@ const TestSuite suite([] static noexcept {
             Case {
                 "opaque pointer initializer",
                 "const equal = c\"x\" == c\"x\";",
-                DiagnosticCode::ConstInitializer
+                DiagnosticCode::ConstAdmission
             },
         };
         for (const auto input : cases) {
@@ -915,6 +1033,14 @@ const TestSuite suite([] static noexcept {
              let view = text.as_str();
              text.clear();
          } })",
+             .code = DiagnosticCode::AccessBorrowConflict,
+             .primary_text = "text.clear()"},
+            {.name = "character view retains its source loan",
+             .source = R"(const {
+             var text: String = "local";
+             let characters = text.chars;
+             text.clear();
+         })",
              .code = DiagnosticCode::AccessBorrowConflict,
              .primary_text = "text.clear()"},
             {.name = "const block cannot capture an enclosing execution-frame value",
@@ -1187,6 +1313,36 @@ const TestSuite suite([] static noexcept {
             fn caller() { use(7); }
         )",
              .output = ""},
+            {.name = "character source executes once before selected iteration roots",
+             .source = R"(
+            const fn source() -> String { print("source:"); return String::from_str("aé我😀"); }
+            fn use() {
+                const for character in source().chars {
+                    const if character == 'é' { continue; }
+                    const if character == '我' { break; }
+                    const { print(character); }
+                }
+            }
+        )",
+             .output = "source:a"},
+            {.name = "unselected character loop does not evaluate its source",
+             .source = R"(
+            const fn source() -> String { print("wrong"); return String::from_str("é"); }
+            fn use() { const if false { const for _ in source().chars { const { print("wrong"); } } } }
+        )",
+             .output = ""},
+            {.name = "empty character source executes without iteration roots",
+             .source = R"(
+            const fn source() -> String { print("source"); return String {}; }
+            fn use() { const for _ in source().chars { const { print("wrong"); } } }
+        )",
+             .output = "source"},
+            {.name = "discarded operation elements need no retained value or execution",
+             .source = R"(
+            const async fn pending() -> i32 { print("wrong"); return 7; }
+            fn use() { const for _ in [pending(), pending()] { const { print("iteration"); } } }
+        )",
+             .output = "iterationiteration"},
             {.name = "provider executes once for each expanded identity",
              .source = R"(
             fn use(const amount: i32) { const for index in 0..3 { const value = provider(amount); lane(index); } }

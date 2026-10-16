@@ -172,9 +172,9 @@ auto ConstantStoreBuilder::intern(ConstantFact fact) noexcept -> ConstantID {
     mix(fact.value.index());
     fact.value.visit([&](const auto& value) noexcept {
         using Value = std::remove_cvref_t<decltype(value)>;
-        if constexpr (std::same_as<Value, StringConstant> || std::same_as<Value, CStringConstant>) {
+        if constexpr (std::same_as<Value, TextConstant> || std::same_as<Value, CStringConstant>) {
             if (value.value.owner() != provenance_identity) {
-                invariant_violation("string constant used a foreign spelling");
+                invariant_violation("text constant used a foreign spelling");
             }
             mix(value.value.index());
         } else if constexpr (std::same_as<Value, VectorConstant>) {

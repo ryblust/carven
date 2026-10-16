@@ -3,11 +3,11 @@ module carven:semantic.analysis.expr.call;
 import :diagnostics.code;
 import :frontend.ast.expr;
 import :frontend.ast.storage;
+import :semantic.analysis.diagnostics;
 import :semantic.analysis.expr.aggregate;
 import :semantic.analysis.expr.interpolation;
 import :semantic.analysis.expr.member;
 import :semantic.analysis.expr.numeric;
-import :semantic.analysis.expr.result;
 import :semantic.analysis.expr.scope;
 import :semantic.analysis.expr.simd;
 import :semantic.analysis.expr.text;
@@ -25,7 +25,7 @@ auto interpret_call(
     const ASTCallExpr& source,
     Span span,
     std::optional<ConstructionTypeRef> expected
-) noexcept -> ExpressionTask<typename Site::Value> {
+) noexcept -> AnalysisTask<typename Site::Value> {
     auto callee_id = source.callee;
     while (const auto* group =
                std::get_if<ASTGroupExpr>(&site.syntax().expression(callee_id).value)) {
@@ -58,10 +58,8 @@ auto interpret_call(
                     site.syntax().expression(member->operand_id).span
                 );
             }
-            if constexpr (Site::mode == ExpressionMode::Body) {
-                if (site.external(**type)) {
-                    co_return co_await site.call(source, span);
-                }
+            if (site.external(**type)) {
+                co_return co_await site.call(source, span);
             }
             if (const auto shape = sequence_shape(site.draft(), **type);
                 shape && shape->kind == SequenceShapeKind::Vector) {

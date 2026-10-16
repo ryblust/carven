@@ -111,6 +111,7 @@ public:
         std::optional<ConstantID> = std::nullopt
     ) noexcept -> SemanticExpression;
 
+    auto snapshot(SemanticRegion region) const noexcept -> StructuredBodyDraft;
     auto finish(SemanticRegion) && noexcept -> StructuredBodyDraft;
 
 private:

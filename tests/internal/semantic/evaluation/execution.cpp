@@ -532,8 +532,8 @@ const TestSuite suite([] static noexcept {
             };
             constexpr auto scenarios = std::array {
                 Scenario {
-                    .name = "text Read borrows String storage",
-                    .source = R"(test { let text: String = "ab"; text.chars; })",
+                    .name = "native Read borrows String storage",
+                    .source = R"(test { let text: String = "ab"; ::native(text); })",
                     .text_work = 2uz,
                     .aggregate_work = 0uz,
                     .reason = ExecutionReason::Admission,
@@ -1330,15 +1330,19 @@ test { let owner = Payload { number: 1 }; ::native(owner); })",
                 let text = String::from_str("abc");
                 let view = text.as_str();
                 let bytes = view.bytes.slice(1usize, 3usize);
+                var count = 0;
+                for _ in view.chars { ++count; }
                 return view == "abc" && bytes.length() == 2usize && bytes[0] == 98u8
-                    && addressof(bytes[0]) == addressof(text.bytes[1]);
+                    && addressof(bytes[0]) == addressof(text.bytes[1]) && count == 3;
             }
             const fn retained() -> bool {
                 let text = "abc";
                 let bytes = text.bytes;
                 let copy = bytes;
+                var count = 0;
+                for _ in text.chars { ++count; }
                 return bytes.length() == 3usize && bytes[1] == 98u8
-                    && addressof(bytes[1]) == addressof(copy[1]);
+                    && addressof(bytes[1]) == addressof(copy[1]) && count == 3;
             }
             const fn frozen() -> [u8] => "ab".bytes;
         )",

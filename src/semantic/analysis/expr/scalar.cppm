@@ -6,8 +6,8 @@ import :frontend.ast.literal;
 import :frontend.ast.storage;
 import :frontend.literal;
 import :semantic.analysis.constant.literal;
+import :semantic.analysis.diagnostics;
 import :semantic.analysis.expr.conversion;
-import :semantic.analysis.expr.result;
 import :semantic.analysis.expr.scope;
 import :semantic.analysis.expr.simd;
 import :semantic.analysis.expr.text;
@@ -28,7 +28,7 @@ auto interpret_literal(
     Span span,
     std::optional<ConstructionTypeRef> expected,
     LiteralSign sign = LiteralSign::Positive
-) noexcept -> ExpressionTask<typename Site::Value> {
+) noexcept -> AnalysisTask<typename Site::Value> {
     if (const auto* integer = std::get_if<IntegerLiteralValue>(&source.value)) {
         if (const auto scale = duration_literal_scale(integer->suffix)) {
             const auto negative = sign == LiteralSign::Negative;
@@ -102,17 +102,9 @@ auto interpret_unary(
     const ASTPrefixExpr& source,
     Span span,
     std::optional<ConstructionTypeRef> expected
-) noexcept -> ExpressionTask<typename Site::Value> {
+) noexcept -> AnalysisTask<typename Site::Value> {
     if (source.op == ASTPrefixOperator::Await) {
-        if constexpr (requires { site.await_expression(source, span); }) {
-            co_return (co_await site.await_expression(source, span));
-        } else {
-            co_return std::unexpected(site.fail(
-                span,
-                DiagnosticCode::AsyncAdmission,
-                "await requires an async function body"
-            ));
-        }
+        co_return (co_await site.await_expression(source, span));
     }
     if (source.op == ASTPrefixOperator::Dereference) {
         co_return (co_await site.dereference(source, span));
@@ -153,7 +145,7 @@ auto interpret_unary(
             std::format(
                 "{}, found '{}'",
                 decision.error().message,
-                type_display_name(site.draft(), site.type(*operand))
+                type_display_name(site.draft(), site.type(*operand), site.catalog())
             )
         ));
     }
@@ -178,7 +170,7 @@ auto interpret_unary(
 
 template<typename Site>
 auto require_expression_boolean(Site& site, typename Site::Value& value, Span span) noexcept
-    -> ExpressionResult<void> {
+    -> AnalysisResult<void> {
     const auto boolean = ConstructionTypeRef {site.draft().builtin_type(BuiltinType::Bool)};
     if (site.external(site.type(value))) {
         auto converted = site.convert_argument(value, boolean, span);
@@ -192,7 +184,7 @@ auto require_expression_boolean(Site& site, typename Site::Value& value, Span sp
             DiagnosticCode::TypeConditionBool,
             std::format(
                 "condition must have type bool, found '{}'",
-                type_display_name(site.draft(), site.type(value))
+                type_display_name(site.draft(), site.type(value), site.catalog())
             )
         ));
     }
@@ -205,7 +197,7 @@ auto interpret_binary(
     const ASTBinaryExpr& source,
     Span span,
     std::optional<ConstructionTypeRef> expected
-) noexcept -> ExpressionTask<typename Site::Value> {
+) noexcept -> AnalysisTask<typename Site::Value> {
     if (source.op == ASTBinaryOperator::LogicalAnd || source.op == ASTBinaryOperator::LogicalOr) {
         const auto boolean = ConstructionTypeRef {site.draft().builtin_type(BuiltinType::Bool)};
         auto left = (co_await site.read(source.left, boolean));
@@ -242,7 +234,7 @@ auto interpret_binary(
             result = *source_left_truth == and_operation ? right_truth : source_left_truth;
         }
         auto known = std::optional<ConstantID>();
-        if (result.has_value() && !(Site::mode == ExpressionMode::StaticRoot)) {
+        if (result.has_value()) {
             known = site.draft().intern_constant(
                 {.type = std::get<TypeID>(boolean), .value = BooleanConstant {.value = *result}}
             );
@@ -353,8 +345,8 @@ auto interpret_binary(
             std::format(
                 "{}: '{}' and '{}'",
                 decision.error().message,
-                type_display_name(site.draft(), site.type(*left)),
-                type_display_name(site.draft(), site.type(*right))
+                type_display_name(site.draft(), site.type(*left), site.catalog()),
+                type_display_name(site.draft(), site.type(*right), site.catalog())
             )
         ));
     }
@@ -382,9 +374,8 @@ auto interpret_binary(
         ? ConstructionTypeRef {site.draft().builtin_type(*builtin)}
         : site.type(*left);
     if (layout && left_kind != layout->mask) {
-        const auto splat =
-            [&](typename Site::Value input,
-                BuiltinType kind) noexcept -> ExpressionResult<typename Site::Value> {
+        const auto splat = [&](typename Site::Value input,
+                               BuiltinType kind) noexcept -> AnalysisResult<typename Site::Value> {
             if (kind != layout->element) {
                 return input;
             }
@@ -426,7 +417,7 @@ auto interpret_binary(
 
 template<typename Site>
 auto interpret_cast(Site& site, const ASTCastExpr& source, Span span) noexcept
-    -> ExpressionTask<typename Site::Value> {
+    -> AnalysisTask<typename Site::Value> {
     auto literal_id = source.operand_id;
     while (const auto* group =
                std::get_if<ASTGroupExpr>(&site.syntax().expression(literal_id).value)) {
@@ -475,8 +466,8 @@ auto interpret_cast(Site& site, const ASTCastExpr& source, Span span) noexcept
             std::format(
                 "{} from '{}' to '{}'",
                 decision.error().message,
-                type_display_name(site.draft(), site.type(*operand)),
-                type_display_name(site.draft(), *target)
+                type_display_name(site.draft(), site.type(*operand), site.catalog()),
+                type_display_name(site.draft(), *target, site.catalog())
             )
         ));
     }
@@ -517,7 +508,7 @@ auto interpret_range(
     const ASTRangeExpr& source,
     Span span,
     std::optional<ConstructionTypeRef> expected
-) noexcept -> ExpressionTask<typename Site::Value> {
+) noexcept -> AnalysisTask<typename Site::Value> {
     auto element = std::optional<ConstructionTypeRef>();
     if (expected) {
         if (const auto* concrete = std::get_if<TypeID>(&*expected)) {

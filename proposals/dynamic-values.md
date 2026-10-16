@@ -1,10 +1,7 @@
 # Dynamic values and contracts
 
 - **Status:** Exploration
-- **Implementation:** Not started
 - **Scope:** Runtime values whose concrete type is hidden behind a checked contract
-- **Depends on:** Ordinary value and access rules; generic dynamic operations also
-  require checked polymorphic calls and finite generic instances
 
 ## Current boundary
 

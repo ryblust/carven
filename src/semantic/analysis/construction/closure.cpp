@@ -208,6 +208,14 @@ auto ConstructionRequests::close_generic_calls(SemanticRegion& region) noexcept
         if (!closed) {
             co_return std::unexpected(closed.error());
         }
+        auto prepared = co_await ensure_callable(
+            *closed,
+            owner.draft.source_module(location.source_id),
+            location.span
+        );
+        if (!prepared) {
+            co_return std::unexpected(prepared.error());
+        }
     }
     co_return !calls.empty();
 }

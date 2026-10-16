@@ -1,7 +1,6 @@
 module carven:semantic.evaluation.admission.impl;
 
 import :semantic.evaluation.admission;
-import :semantic.semir.simd;
 import std;
 
 auto supported_execution_type(const ExecutionValueAccess& values, ConstructionTypeRef type) noexcept
@@ -52,13 +51,7 @@ auto supported_execution_type(const ExecutionValueAccess& values, ConstructionTy
                 } else if constexpr (std::same_as<Shape, CppTypeValue>) {
                     return std::holds_alternative<CppConstCharPointerType>(shape.form);
                 } else if constexpr (std::same_as<Shape, BuiltinTypeValue>) {
-                    return builtin_is_numeric(shape.kind)
-                        || simd_layout(shape.kind)
-                        || shape.kind == BuiltinType::Bool
-                        || shape.kind == BuiltinType::Char
-                        || shape.kind == BuiltinType::Str
-                        || shape.kind == BuiltinType::String
-                        || shape.kind == BuiltinType::Void;
+                    return true;
                 } else {
                     // Views and operation descriptors do not contain target storage.
                     return std::same_as<Shape, PointerTypeValue>
@@ -84,36 +77,7 @@ auto supported_execution_type(const ExecutionValueAccess& values, ConstructionTy
 
 auto unsupported_execution_expression(const SemanticExpression& source) noexcept
     -> std::optional<std::string_view> {
-    return source.value.visit([](const auto& operation) static noexcept {
-        return unsupported_execution_operation(operation);
+    return source.value.visit([]<typename Operation>(const Operation&) static noexcept {
+        return unsupported_execution_operation<Operation>();
     });
-}
-
-auto unsupported_execution_statement(const SemanticStatement& source) noexcept
-    -> std::optional<std::string_view> {
-    return source.value.visit(
-        [](const auto& value) static noexcept -> std::optional<std::string_view> {
-            using Operation = std::remove_cvref_t<decltype(value)>;
-            if constexpr (std::same_as<Operation, SemReturn>
-                          || std::same_as<Operation, SemThrow>
-                          || std::same_as<Operation, SemRethrow>
-                          || std::same_as<Operation, SemBreak>
-                          || std::same_as<Operation, SemContinue>
-                          || std::same_as<Operation, SemExpressionStatement>
-                          || std::same_as<Operation, SemAsyncLet>
-                          || std::same_as<Operation, SemDecompose>
-                          || std::same_as<Operation, SemInitialize>
-                          || std::same_as<Operation, SemStaticBinding>
-                          || std::same_as<Operation, SemConstBlock>
-                          || std::same_as<Operation, SemAssign>
-                          || std::same_as<Operation, SemLoop>
-                          || std::same_as<Operation, SemRangeLoop>
-                          || std::same_as<Operation, SemExpandedLoop>
-                          || std::same_as<Operation, OwnedSemanticRegion>) {
-                return std::nullopt;
-            } else {
-                return "control operation is not supported in execution";
-            }
-        }
-    );
 }

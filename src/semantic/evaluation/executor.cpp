@@ -429,7 +429,7 @@ auto SemanticExecutor::copy_value(
         }
         if (const auto* constant = std::get_if<ConstantID>(&value)) {
             const auto& fact = values.constant(*constant);
-            if (const auto* text = std::get_if<StringConstant>(&fact.value); text
+            if (const auto* text = std::get_if<TextConstant>(&fact.value); text
                 && values.type_copy(fact.type).value
                     == CanonicalTypeValue {BuiltinTypeValue {BuiltinType::String}}) {
                 const auto bytes = values.spelling(text->value);
@@ -447,6 +447,12 @@ auto SemanticExecutor::copy_value(
             return ExecutionOwnedText(std::string(bytes));
         }
         if (const auto* text = std::get_if<ExecutionText>(&value); text && !text->alive(&memory)) {
+            return std::unexpected(
+                fail(origin, ExecutionReason::Evaluation, "text backing is no longer alive")
+            );
+        }
+        if (const auto* chars = std::get_if<ExecutionChars>(&value);
+            chars && !chars->text.alive(&memory)) {
             return std::unexpected(
                 fail(origin, ExecutionReason::Evaluation, "text backing is no longer alive")
             );
@@ -903,7 +909,9 @@ auto SemanticExecutor::detach_views(
             fail(origin, ExecutionReason::Limit, "aggregate exceeds its nesting limit")
         );
     }
-    if (const auto* text = std::get_if<ExecutionText>(&value); text && text->is_borrowed()) {
+    auto* chars = std::get_if<ExecutionChars>(&value);
+    if (auto* text = chars ? &chars->text : std::get_if<ExecutionText>(&value);
+        text && text->is_borrowed()) {
         const auto bytes = text->observe(values, &memory);
         if (!bytes) {
             return std::unexpected(
@@ -913,7 +921,8 @@ auto SemanticExecutor::detach_views(
         if (auto checked = account_text(bytes->size(), origin); !checked) {
             return std::unexpected(std::move(checked.error()));
         }
-        return ExecutionText(std::string(bytes->view()));
+        *text = ExecutionText(std::string(bytes->view()));
+        return value;
     }
     if (const auto* constant = std::get_if<ConstantID>(&value);
         constant && std::holds_alternative<SliceConstant>(values.constant(*constant).value)) {
@@ -1128,7 +1137,7 @@ auto SemanticExecutor::materialize(ExecutionOperand operand, ProgramOriginID ori
     return copy_value(**source, origin);
 }
 
-auto SemanticExecutor::detach_argument(ExecutionOperand operand, ProgramOriginID origin) noexcept
+auto SemanticExecutor::detach_operand(ExecutionOperand operand, ProgramOriginID origin) noexcept
     -> ExecutionResult<ExecutionValue> {
     auto value = materialize(std::move(operand), origin);
     if (!value) {
@@ -1185,7 +1194,7 @@ auto SemanticExecutor::call(
                 if (arguments.size() != 1uz) {
                     invariant_violation("number parser requires one argument");
                 }
-                auto input = detach_argument(std::move(arguments.front()), origin);
+                auto input = detach_operand(std::move(arguments.front()), origin);
                 if (!input) {
                     co_return std::unexpected(std::move(input.error()));
                 }
@@ -1292,11 +1301,13 @@ auto SemanticExecutor::call(
     co_return run;
 }
 
-auto SemanticExecutor::root_expression(const SemanticExpression& source) noexcept
-    -> ExecutionTask<ExecutionValue> {
+auto SemanticExecutor::root_expression(
+    const SemanticExpression& source,
+    std::optional<ExecutionBody> body
+) noexcept -> ExecutionTask<ExecutionValue> {
     auto frame = ExecutionFrame {
-        .body = std::nullopt,
-        .slots = {},
+        .body = body,
+        .slots = std::vector<ExecutionSlot>(body ? body->binding_count() : 0uz),
         .caught = {},
         .temporaries = {},
         .children = {},

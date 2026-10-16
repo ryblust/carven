@@ -197,8 +197,8 @@ const TestSuite suite([] static noexcept {
             {
                 .name = "nonconstant binding",
                 .source = "fn invalid(input: i32) { const value = input; }",
-                .code = DiagnosticCode::ConstInitializer,
-                .primary_text = "const value = input",
+                .code = DiagnosticCode::ConstAdmission,
+                .primary_text = "input",
             },
             {
                 .name = "nonexhaustive match",

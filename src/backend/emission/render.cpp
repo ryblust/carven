@@ -34,32 +34,24 @@ auto TargetRenderer::render_identifier(const TargetIdentifier& value) noexcept -
 }
 
 auto TargetRenderer::qualified_sequence(
-    std::span<const SyntaxLayouts> components,
+    std::span<const LayoutNodeID> components,
     bool globally_qualified
-) noexcept -> SyntaxLayouts {
+) noexcept -> LayoutNodeID {
     const auto prefix = text(globally_qualified ? "::" : "");
-    auto inline_qualified = concat({prefix, components.front().inline_qualified});
+    auto rendered = concat({prefix, components.front()});
     for (const auto component : components.subspan(1)) {
-        inline_qualified = concat({inline_qualified, text("::"), component.inline_qualified});
+        rendered = concat({rendered, text("::"), component});
     }
-    return {
-        .inline_qualified = inline_qualified,
-        .wrapping = inline_qualified,
-    };
-}
-
-auto TargetRenderer::render_name_layouts(const TargetName& value) noexcept -> SyntaxLayouts {
-    auto rendered = std::vector<SyntaxLayouts> {};
-    rendered.reserve(value.components().size());
-    for (const auto& component : value.components()) {
-        const auto layout = render_identifier(component);
-        rendered.push_back({.inline_qualified = layout, .wrapping = layout});
-    }
-    return qualified_sequence(rendered, value.is_globally_qualified());
+    return rendered;
 }
 
 auto TargetRenderer::render_name(const TargetName& value) noexcept -> LayoutNodeID {
-    return render_name_layouts(value).wrapping;
+    auto rendered = std::vector<LayoutNodeID> {};
+    rendered.reserve(value.components().size());
+    for (const auto& component : value.components()) {
+        rendered.push_back(render_identifier(component));
+    }
+    return qualified_sequence(rendered, value.is_globally_qualified());
 }
 
 auto TargetRenderer::concat(std::initializer_list<LayoutNodeID> children) noexcept -> LayoutNodeID {

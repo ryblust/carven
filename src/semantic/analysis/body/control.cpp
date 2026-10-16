@@ -268,7 +268,7 @@ auto BodyElaborator::build_if(
         }
         auto condition_tree = std::move(*check);
         if (!value_form) {
-            end_full_expression(condition_span);
+            end_full_expression();
         }
         const auto selected = remaining && condition->completes;
         push_frame(((ast.branch_block(branch.body))).span);
@@ -348,7 +348,10 @@ auto BodyElaborator::const_block_statement(const ASTConstBlock& source, Span spa
     -> AnalysisTask<void> {
     const auto outer_reachable = reachable;
     const auto body_span = ast.block(source.body).span;
-    const_block_frames.push_back(frames.size());
+    const auto independent = !static_stage();
+    if (independent) {
+        static_scope_frames.push_back(frames.size());
+    }
     push_frame(body_span);
     regions.push_back(empty_region(body_span));
     // A failure that leaves the block is reported when the block executes.
@@ -361,7 +364,9 @@ auto BodyElaborator::const_block_statement(const ASTConstBlock& source, Span spa
     auto region = std::move(regions.back());
     regions.pop_back();
     pop_frame();
-    const_block_frames.pop_back();
+    if (independent) {
+        static_scope_frames.pop_back();
+    }
     reachable = outer_reachable;
     if (!result) {
         co_return std::unexpected(result.error());
@@ -398,7 +403,7 @@ auto BodyElaborator::while_statement(const ASTWhileStmt& source, Span span) noex
             co_return std::unexpected(check.error());
         }
         condition_tree = std::move(*check);
-        end_full_expression(span);
+        end_full_expression();
     }
     auto initializer = empty_region(span);
     auto steps = empty_region(span);

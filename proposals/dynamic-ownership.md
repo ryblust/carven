@@ -1,7 +1,6 @@
 # Dynamic ownership and allocation
 
 - **Status:** Draft
-- **Implementation:** Not started
 - **Scope:** Dynamic and native resource owners, allocation policy, construction in owned storage, and operation-specific container capabilities
 
 ## Current boundary
@@ -11,6 +10,14 @@ accountable completion and cancellation owners. Those builtin contracts do not
 provide a general `Unique<T>` or `Shared<T>`, custom source-defined lifecycle
 operations, or allocator parameters. Source `ptr<T>` remains a nullable nonowning
 handle. The owner contracts below are still proposed.
+
+| Slice | Design status | Remaining decision |
+| --- | --- | --- |
+| Unique owner | Draft | Select a consumer and the source ownership and lifecycle surface |
+| Source-owned TCP (`NET-02`) | Draft | Define native resource capabilities, retained backing, and close access |
+| Shared owner | Exploration | Select a multi-owner consumer and its access contract |
+| Allocation policy | Exploration | Establish the allocator state and failure behavior required by a consumer |
+| Move-only Vector elements (`VEC-01`) | Deferred | Select a consumer for operation-specific capability and lifetime checking |
 
 ## Construction and lifetime
 
@@ -64,11 +71,10 @@ factories, containers, and native adapters. It must preserve source evaluation
 order, initialized-prefix cleanup, and failure propagation. The mechanism applies
 to all factories independently of their names.
 
-[Uninitialized storage](uninitialized-storage.md) defines the proposed
-empty/live/consumed destination states, partial initialization, and native object
-lifetime. An owner factory consumes
-those contracts to release storage after failed construction and destroy completed
-payloads on every applicable exit. Supporting immovable native payloads requires
+An owner factory needs empty/live/consumed destination states, partial
+initialization, and native object lifetime. It consumes those construction
+contracts to release storage after failure and destroy completed payloads on every
+applicable exit. Supporting immovable native payloads requires
 delivery directly to their final location, rather than assuming a temporary can
 always be moved after a factory returns.
 
@@ -94,6 +100,8 @@ matching or rethrow can still use it.
 
 ## NET-02 — Source-owned TCP resources
 
+- **Implementation:** Not started
+
 The selected consumer is an outbound TCP client connecting to a literal IPv4
 address and port, transferring bytes, and closing. The implemented
 [`std::net`](../docs/language/net.md) borrows host-owned,
@@ -113,7 +121,7 @@ inside an ordinary source struct does not establish that relationship.
 | Open → cold read/write | Creating an Operation retains the view's owner; dropping an unstarted operation releases its borrow without I/O | Ordinary Operation holder checks exist; the native pointer's pointee is currently a host obligation |
 | Open → active | One read and one write can coexist; another same-direction operation fails with Conflict | Implemented by the native adapter; a source owner must remain stable while providers can reach it |
 | Active → cancelling → open | Cancellation completes only after provider registration and buffer access end | Implemented by structured close and the adapter; releasing the owner early must be rejected in source |
-| Open → closed | Explicit close consumes exclusive access and is idempotent; pending operations must first be cancelled and drained | Native close reports Conflict while pending; a future source wrapper must make drain ordering explicit |
+| Open → closed | Explicit close is idempotent; pending operations must first be cancelled and drained | Native close reports Conflict while pending; source close access and the observation rules for surviving views remain open |
 | Closed → read/write | Return Closed without accessing a released socket | Implemented for host views |
 | Open/closed → destroyed | Exactly one socket release; no reachable provider survives destruction | Native RAII enforces the host contract; source destruction and borrow checks need the owner facts above |
 
@@ -124,9 +132,10 @@ passes Carven analysis; C++ rejects the deleted copy constructor. The shared
 the pointed-to socket's lifetime remains the host's responsibility.
 
 Implement owner capability facts and explicit backing relations before exposing
-source-owned connect. Select the finite native-resource declaration mechanism
-within this proposal; a general Unique API, user destructor hooks, and public
-concepts are not prerequisites. Validation must reject copies, transfers and
+source-owned connect. Select the finite native-resource declaration mechanism,
+the access required by close, and the behavior of any surviving views. A general
+Unique API, user destructor hooks, and public concepts are not prerequisites.
+Validation must reject copies, transfers and
 scope exits with outstanding cold/active borrows, and verify failed construction,
 unstarted drops, cancellation, repeated close, and exactly-once native release.
 

@@ -414,7 +414,7 @@ auto ProgramDraft::close_generic_calls() noexcept -> AnalysisResult<void> {
 auto ProgramDraft::instantiate_generic_call(
     SemanticExpression& expression,
     std::span<const CanonicalGenericArgument> environment
-) noexcept -> AnalysisResult<void> {
+) noexcept -> AnalysisResult<CallableID> {
     auto* call = std::get_if<SemGenericCall>(&expression.value);
     if (!call) {
         invariant_violation("generic call closure received a different expression");
@@ -448,5 +448,5 @@ auto ProgramDraft::instantiate_generic_call(
             BodyFailures(contract.failures)
         };
     }
-    return {};
+    return *target;
 }

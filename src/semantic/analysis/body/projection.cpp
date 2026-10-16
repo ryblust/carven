@@ -74,7 +74,7 @@ auto BodyElaborator::dereference_expression(const ASTPrefixExpr& source, Span sp
 }
 
 auto BodyExprSite::external_index(Value receiver, Value index, Span span) noexcept
-    -> ExpressionResult<Value> {
+    -> AnalysisResult<Value> {
     auto state = operand_state();
     auto subscript = consume_read(state, std::move(index), span);
     if (!subscript) {
@@ -89,7 +89,7 @@ auto BodyExprSite::external_index(Value receiver, Value index, Span span) noexce
 }
 
 auto BodyExprSite::external_member(const ASTMemberExpr& source, Value receiver, Span span) noexcept
-    -> ExpressionResult<Selection> {
+    -> AnalysisResult<Selection> {
     const auto name = spelling(source.name_span);
     if (!is_supported_cpp_identifier(name)) {
         return std::unexpected(fail(
@@ -111,7 +111,8 @@ auto BodyExprSite::finish_index(
     Value receiver,
     Value index,
     Span span
-) noexcept -> ExpressionResult<Value> {
+) noexcept -> AnalysisResult<Value> {
+    const auto receiver_takeable = receiver.takeable;
     const auto receiver_shape = sequence_shape(draft(), receiver.type());
     const auto takeable =
         receiver.takeable && receiver_shape && receiver_shape->kind == SequenceShapeKind::Array;
@@ -169,7 +170,7 @@ auto BodyExprSite::finish_index(
             .completes = state.completes
         };
     }
-    return finish_constructed(
+    auto projected = finish_constructed(
         type,
         SemIndex {
             UniqueIndirect(std::move(*value)),
@@ -181,6 +182,10 @@ auto BodyExprSite::finish_index(
         span,
         known
     );
+    if (projected) {
+        projected->takeable = receiver_takeable;
+    }
+    return projected;
 }
 
 auto BodyExprSite::observe_field(
@@ -221,7 +226,8 @@ auto BodyExprSite::finish_field(
     FieldProjection field,
     Value receiver,
     Span span
-) noexcept -> ExpressionResult<Value> {
+) noexcept -> AnalysisResult<Value> {
+    const auto takeable = receiver.takeable;
     const auto known = field_constant(draft(), receiver.constant(), field.field_index);
     if (auto* place = std::get_if<PlaceExpression>(&*receiver.storage)) {
         return Value {
@@ -242,13 +248,17 @@ auto BodyExprSite::finish_field(
     if (!value) {
         return std::unexpected(value.error());
     }
-    return finish_constructed(
+    auto projected = finish_constructed(
         type,
         SemField {UniqueIndirect(std::move(*value)), field},
         std::move(state),
         span,
         known
     );
+    if (projected) {
+        projected->takeable = takeable;
+    }
+    return projected;
 }
 
 auto BodyElaborator::propagation_expression(const ASTPropagationExpr& source, Span span) noexcept
@@ -272,7 +282,8 @@ auto BodyExprSite::finish_tuple_element(
     std::uint32_t index,
     Value receiver,
     Span span
-) noexcept -> ExpressionResult<Value> {
+) noexcept -> AnalysisResult<Value> {
+    const auto takeable = receiver.takeable;
     auto known = std::optional<ConstantID>();
     if (const auto constant = receiver.constant()) {
         const auto* tuple = std::get_if<TupleConstant>(&draft().constant(*constant).value);
@@ -292,7 +303,7 @@ auto BodyExprSite::finish_tuple_element(
         return Value {
             .storage = UniqueIndirect {BodyExpressionStorage {std::move(projected)}},
             .pending_failures = take_pending_failures(receiver),
-            .takeable = true,
+            .takeable = takeable,
             .completes = receiver.completes
         };
     }
@@ -301,11 +312,15 @@ auto BodyExprSite::finish_tuple_element(
     if (!value) {
         return std::unexpected(value.error());
     }
-    return finish_constructed(
+    auto projected = finish_constructed(
         type,
         SemTupleElement {UniqueIndirect(std::move(*value)), index},
         std::move(state),
         span,
         known
     );
+    if (projected) {
+        projected->takeable = takeable;
+    }
+    return projected;
 }

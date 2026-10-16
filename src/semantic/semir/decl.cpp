@@ -285,12 +285,6 @@ auto DeclarationConstructionView::callable_contract(CallableID id) const noexcep
     return declaration_builder->callable_contracts.get_defined(id);
 }
 
-auto DeclarationConstructionView::callable_signature(CallableID id) const noexcept
-    -> CallableSignatureID {
-    declaration_builder->require_concrete();
-    return declaration_builder->callable_signature_ids.copy_defined(id);
-}
-
 auto DeclarationConstructionView::callable_implementation(CallableID id) const noexcept
     -> CallableImplementation {
     return declaration_builder->callable_implementations.copy_defined(id);
@@ -304,38 +298,6 @@ auto DeclarationConstructionView::try_callable_implementation(CallableID id) con
     return callable_implementation(id);
 }
 
-auto DeclarationConstructionView::module_count() const noexcept -> std::size_t {
-    return declaration_builder->modules.size();
-}
-
-auto DeclarationConstructionView::function_count() const noexcept -> std::size_t {
-    return declaration_builder->functions.size();
-}
-
-auto DeclarationConstructionView::struct_count() const noexcept -> std::size_t {
-    return declaration_builder->structures.size();
-}
-
-auto DeclarationConstructionView::enum_count() const noexcept -> std::size_t {
-    return declaration_builder->enumerations.size();
-}
-
-auto DeclarationConstructionView::enum_case_count() const noexcept -> std::size_t {
-    return declaration_builder->enum_cases.size();
-}
-
-auto DeclarationConstructionView::module_constant_count() const noexcept -> std::size_t {
-    return declaration_builder->module_constants.size();
-}
-
-auto DeclarationConstructionView::callable_count() const noexcept -> std::size_t {
-    return declaration_builder->callable_contracts.size();
-}
-
-auto DeclarationConstructionView::module_ids() const noexcept -> std::vector<ModuleID> {
-    return declaration_builder->modules.ids();
-}
-
 auto DeclarationConstructionView::function_ids() const noexcept -> std::vector<FunctionID> {
     return declaration_builder->functions.ids();
 }
@@ -346,15 +308,6 @@ auto DeclarationConstructionView::struct_ids() const noexcept -> std::vector<Str
 
 auto DeclarationConstructionView::enum_ids() const noexcept -> std::vector<EnumID> {
     return declaration_builder->enumerations.ids();
-}
-
-auto DeclarationConstructionView::enum_case_ids() const noexcept -> std::vector<EnumCaseID> {
-    return declaration_builder->enum_cases.ids();
-}
-
-auto DeclarationConstructionView::module_constant_ids() const noexcept
-    -> std::vector<ModuleConstantID> {
-    return declaration_builder->module_constants.ids();
 }
 
 auto DeclarationConstructionView::callable_ids() const noexcept -> std::vector<CallableID> {

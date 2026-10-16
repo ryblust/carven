@@ -51,39 +51,36 @@ compilation checks the supplied batch and does not load missing source declarati
 ## Expression construction
 
 Within `analysis/constant`, `literal` normalizes source literals, `admission`
-checks const-function capability contracts, and `evaluation` connects static
-execution to construction requests and source diagnostics.
-`analysis.constant.root` constructs typed initializer and extent roots and owns
-their construction state, lifetimes, admission policy, and budgets. `analysis/expr`
-shares contextual typing and typed operation construction between static roots
-and ordinary bodies. Expression sites supply source scope, admission, value
-consumption, lifetime, and failure effects. Static root expressions retain
-their construction admission rule, while called function bodies use their
-ordinary semantic construction. `analysis.expr.interpret` dispatches syntax
-to `scalar`, `member`, and `call` handlers, which recurse through the expression site.
+checks const-function capability contracts, and `freeze` retains completed
+execution values. `analysis.constant.extent` checks array-extent results.
+`analysis/body` constructs both static roots and ordinary bodies with one
+expression site. The site supplies source scope, value consumption, lifetime,
+and failure effects to the contextual typing and operation construction in
+`analysis/expr`. `analysis.expr.interpret` dispatches syntax to `scalar`,
+`member`, and `call` handlers, which recurse through that site. Structured
+expressions use the body's existing control-region construction.
 
 `analysis.expr.async` constructs async queries, cold leaves, composition, and
-timeout for body and static-root expressions. Sites analyze and consume operands
-under their access and execution-context rules. Shared construction determines
+timeout for body and static-root expressions. The site analyzes and consumes
+operands under their access and execution-context rules. Construction determines
 arity, result types, and operation failure contracts.
 
 ### Expression construction results
 
-`analysis.expr.result` defines `ExpressionResult<T>`, which carries `T` on success.
-Failure carries either an existing `AnalysisFailure` token or
-`ExpressionNotAdmitted`, which has no diagnostic yet. Static initializer, enum,
-and extent consumers diagnose non-admission in their own source context. Ordinary
-body construction reports invalid source forms directly and passes only diagnosed
-failures back to body analysis. Constant-name lookup returns an optional constant
-identity; its type comes from the canonical constant fact.
+Expression construction uses `AnalysisResult<T>` and propagates diagnosed
+`AnalysisFailure` tokens. Constant execution separately returns an optional
+`ConstantID`: a completed result without a frozen representation has no ID.
+Initializer, enum, and extent consumers diagnose that outcome in their source
+context. Constant names use ordinary lookup and carry canonical type and value
+facts.
 
 `analysis.expr.operand` resolves a call argument's outer access marker and operand.
 An unmarked argument has Read access. Calls and C++ construction use this result;
 parameter access checks report mismatches in their own contexts.
 
-Index construction checks the index expression when its receiver is not admitted;
-a diagnosed receiver failure stops construction. Index type and bounds rules
-require both operands to succeed. Binary expressions and integer ranges share
+Index construction checks the receiver before the index; a diagnosed operand
+failure stops construction. Index type and bounds rules require both operands
+to succeed. Binary expressions and integer ranges share
 numeric operand context selection. It may require constructing the right operand
 first when the left is a direct unsuffixed literal. Typed operations retain
 source operand order for execution.
@@ -253,9 +250,9 @@ Static bindings are `const` parameters, local `const` bindings, and `const for`
 indices. Ordinary locals, parameters, and range indices do not acquire that
 admission through folding. Every source arm undergoes ordinary checking.
 
-`build_static_expression` in `analysis/constant/root` constructs local initializers,
-static call inputs, SIMD immediates, and static control inputs as typed static
-roots. Their expressions use the owning body's expression lifetime and an
+`BodyElaborator::build_static_expression` constructs local initializers,
+static call inputs, SIMD immediates, and static control inputs through ordinary
+expression construction. Their expressions use the owning body's lifetime and an
 independent failure context. Root failures are consumed by static execution and
 do not enter the enclosing runtime failure contract. Local initializers are
 stored in `SemStaticBinding`. Ordinary source control receives the same name,

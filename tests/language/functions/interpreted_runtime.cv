@@ -17,6 +17,17 @@ test "Runtime execution: arithmetic storage and recovery agree across executors"
     var text: String = "a";
     text.append("b");
     check(text == "ab");
+    const characters = String::from_str("a\0é我😀").chars;
+    var copied = String {};
+    for character in characters {
+        copied.push(character);
+    }
+    check(copied == "a\0é我😀");
+    let bytes = [65u8, 0xe6u8, 0x88u8, 0x91u8];
+    for character in str::from_utf8_unchecked(bytes).chars {
+        copied.push(character);
+    }
+    check(copied == "a\0é我😀A我");
     let recovered = try {
         interpreted_failure()?
     } catch {

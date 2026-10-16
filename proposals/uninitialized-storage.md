@@ -1,7 +1,6 @@
 # Uninitialized storage and construction
 
 - **Status:** Draft
-- **Implementation:** Not started
 - **Scope:** Construction destinations, partial initialization, cleanup, native object lifetime, and caller validity obligations
 
 ## Summary
@@ -124,8 +123,8 @@ Concrete native adapters can use the existing explicit C++ boundary. The selecte
 storage surface determines any generic prerequisites; parameterized class fields
 are implemented, while their operations remain unsupported. Runtime and constant
 execution need their respective operation admission and retained-result rules.
-Text output also needs UTF-8 validity and a
-failure policy beyond initialized byte extents.
+Text output also needs UTF-8 validity and a failure policy beyond initialized
+byte extents.
 
 ## Constant execution and library storage
 
@@ -168,8 +167,11 @@ container or native adapter, including partial failure and unsupported operation
 ### OPEN-03 — Express unchecked obligations
 
 - **Status:** Blocked by OPEN-02
-- **Question:** Explicitly named operations or a declaration/call-site marker?
+- **Question:** Which operations in the selected adapter assert completion or
+  validity, and how are those obligations expressed at their calls?
 - **Required decision:** Distinguish checked facts from provider and caller obligations while retaining existing access and lifetime checks.
+- **Options:** Explicitly named operations; a declaration or call-site marker
+  where the selected adapter establishes a distinct need for one.
 - **Evidence:** An adapter can expose an ordinary result without requiring callers to repeat its internal assertions.
 
 ## Deferred work

@@ -15,6 +15,7 @@ import :semantic.analysis.body.builder;
 import :semantic.analysis.body.resolve;
 import :semantic.analysis.construction.requests;
 import :semantic.analysis.coverage;
+import :semantic.analysis.diagnostics;
 import :semantic.analysis.expr.scope;
 import :semantic.analysis.operations;
 import :semantic.analysis.program;
@@ -272,6 +273,7 @@ public:
         std::optional<GenericTypeContext> generic_context = std::nullopt,
         bool observe_source = true
     ) noexcept;
+    ~BodyElaborator() noexcept;
 
     // Inside a const block, a const test or a module const block every local
     // is a static value and control is ordinary execution.
@@ -296,6 +298,11 @@ public:
         std::optional<ConstructionTypeRef> declared
     ) noexcept -> AnalysisTask<SemanticExpression>;
 
+    auto build_static_expression(
+        ASTExprID expression,
+        std::optional<ConstructionTypeRef> expected
+    ) noexcept -> AnalysisTask<SemanticExpression>;
+
     auto static_expression(
         ASTExprID expression,
         std::optional<ConstructionTypeRef> expected
@@ -318,6 +325,7 @@ public:
     auto run(const ASTCallableBody& source_body) noexcept -> AnalysisTask<StructuredBodyDraft>;
 
 private:
+    auto finish_body(SemanticRegion region) noexcept -> StructuredBodyDraft;
     auto draft() const noexcept -> ProgramDraft&;
     auto observe_expression(ASTExprID expression, ConstructionTypeRef type) noexcept -> void;
 
@@ -354,7 +362,10 @@ private:
         -> AnalysisTask<std::optional<ConstantID>>;
 
     // Replaces references to computable local constants with their values.
-    auto resolve_static_references(SemanticExpression& expression) noexcept -> AnalysisTask<bool>;
+    auto resolve_static_references(
+        SemanticExpression& expression,
+        const StructuredBodyDraft* scope = nullptr
+    ) noexcept -> AnalysisTask<bool>;
 
     // Reads a static or foreign local as a value. A local of another body is
     // available only as its frozen constant; no value means it has none.
@@ -371,12 +382,6 @@ private:
         bool static_source,
         bool owning
     ) noexcept -> AnalysisResult<std::vector<SemDecompositionBinding>>;
-
-    auto resolve_constant_name(std::string_view name, Span span) noexcept
-        -> AnalysisTask<std::optional<ConstantID>>;
-
-    auto resolve_static_callable(std::string_view name, Span span) noexcept
-        -> AnalysisTask<std::optional<ResolvedStaticCallable>>;
 
     auto construction_requests() noexcept -> ConstructionRequests&;
     auto resolve_duration_type(Span span) noexcept -> AnalysisTask<TypeID>;
@@ -413,7 +418,7 @@ private:
 
     auto active_builder() noexcept -> BodyBuilder&;
     auto begin_full_expression(Span span) noexcept -> void;
-    auto end_full_expression(Span span) noexcept -> void;
+    auto end_full_expression() noexcept -> void;
     auto ensure_reachable_diagnostics(Span span) noexcept -> void;
     auto empty_region(Span span) noexcept -> SemanticRegion;
     auto take_built(BuiltExpression& value, Span span) noexcept -> SemanticExpression;
@@ -471,7 +476,7 @@ private:
     auto use_local(std::string_view name) noexcept -> BodyLocalStorage*;
     // Whether the innermost const block was entered after `name` was bound
     // as a runtime local. The block executes before that storage exists.
-    auto runtime_local_outside_block(std::string_view name) const noexcept -> bool;
+    auto runtime_local_outside_static_scope(std::string_view name) const noexcept -> bool;
 
     auto find_global(std::string_view name, Span span) noexcept -> AnalysisTask<CatalogEntity>;
 
@@ -778,7 +783,7 @@ private:
     std::vector<TransferBoundary> transfer_boundaries;
     // The frame count at entry to each enclosing const block. A local of an
     // earlier frame is visible inside the block only when it is static.
-    std::vector<std::size_t> const_block_frames;
+    std::vector<std::size_t> static_scope_frames;
     bool async_body = false;
     std::set<LocalBindingID> async_child_bindings;
     // One lexical lambda declaration serves each evaluation of that source expression.
@@ -805,6 +810,14 @@ public:
     ) noexcept;
 
     auto run() noexcept -> AnalysisTask<void>;
+
+    auto evaluate_constant_expression(
+        ProgramModuleID module_id,
+        ASTExprID expression,
+        std::optional<ConstructionTypeRef> expected,
+        const GenericTypeContext* generic_context,
+        BodyElaborator* enclosing = nullptr
+    ) noexcept -> AnalysisTask<std::optional<ConstantID>>;
 
     auto ensure_generic_function(
         GenericDeclarationID definition,
@@ -852,6 +865,9 @@ private:
     std::vector<std::optional<BodyID>> body_ids;
     std::vector<FunctionID> active_path;
     std::vector<StaticBodyRoot> static_body_roots;
+    std::set<BodyID> static_expression_bodies;
+    // The producer unregisters before handing off its tables or being destroyed.
+    std::map<BodyIdentity, const BodyBuilder*> active_builders;
 
     // A local constant by binding identity. The value is set once a type or a
     // separate body has required it.

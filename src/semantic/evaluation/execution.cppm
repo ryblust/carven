@@ -98,15 +98,20 @@ using ExecutionTask = ContinuationTask<ExecutionResult<Value>>;
 
 using ExecutionOperand = std::variant<ExecutionValue, ExecutionPlace>;
 
-// Call adapters can consume an argument as an independent value without
-// accessing the executor's slots or retaining its borrowed storage.
-class ExecutionArgumentAccess {
+// Adapters can consume an operand as an independent value without accessing
+// the executor's slots or retaining its borrowed storage.
+class ExecutionOperandAccess {
 public:
-    virtual ~ExecutionArgumentAccess() = default;
+    virtual ~ExecutionOperandAccess() = default;
 
-    virtual auto detach_argument(ExecutionOperand operand, ProgramOriginID origin) noexcept
+    virtual auto detach_operand(ExecutionOperand operand, ProgramOriginID origin) noexcept
         -> ExecutionResult<ExecutionValue> = 0;
 };
+
+// The operand and access belong to the active traversal. False stops before
+// acquiring another element; a consumer detaches only values it needs to retain.
+using ExecutionIterationConsumer =
+    std::function<ExecutionTask<bool>(ExecutionOperand, ExecutionOperandAccess&)>;
 
 // Borrows the existing operation tree in either construction or published form.
 class ExecutionBody final {
@@ -115,6 +120,7 @@ public:
     explicit ExecutionBody(const SemIRBody& body) noexcept;
     ExecutionBody(const StructuredBodyDraft& body, const SemanticRegion& region) noexcept;
     ExecutionBody(const SemIRBody& body, const SemanticRegion& region) noexcept;
+    ExecutionBody(const StructuredBodyDraft& body, const SemanticExpression& expression) noexcept;
     auto kind() const noexcept -> BodyKind;
     auto region() const noexcept -> const SemanticRegion&;
     auto parameters() const noexcept -> std::span<const LocalBindingID>;
@@ -139,8 +145,6 @@ public:
     }
 
 private:
-    auto index_children() noexcept -> void;
-
     std::variant<const StructuredBodyDraft*, const SemIRBody*> body;
     const SemanticRegion* selected_region;
     std::vector<LifetimeRegionID> child_lifetimes;
@@ -186,7 +190,7 @@ public:
     virtual auto bind_call(
         CallableID callable,
         std::vector<ExecutionOperand>& arguments,
-        ExecutionArgumentAccess& access,
+        ExecutionOperandAccess& access,
         ProgramOriginID origin
     ) noexcept -> ContinuationTask<std::expected<CallableID, ExecutionCallFailure>>;
 
@@ -200,13 +204,25 @@ public:
     virtual auto report(const ExecutionEvent& event) noexcept -> void = 0;
 };
 
-// Executes an expression that reads no local binding.
+// Executes an expression with its local storage and pattern metadata when present.
 auto execute_static_root(
     const ExecutionValueAccess& values,
     SemanticExecutionContext& context,
     const SemanticExpression& expression,
-    ExecutionLimits limits = static_execution_limits()
+    ExecutionLimits limits = static_execution_limits(),
+    std::optional<ExecutionBody> body = std::nullopt
 ) noexcept -> ExecutionTask<ExecutionValue>;
+
+// Traverses a static source while keeping its temporary backing alive. The
+// consumer completes each iteration before the next element is acquired.
+auto execute_iteration_root(
+    const ExecutionValueAccess& values,
+    SemanticExecutionContext& context,
+    const SemanticExpression& expression,
+    const ExecutionIterationConsumer& consume,
+    ExecutionLimits limits = static_execution_limits(),
+    std::optional<ExecutionBody> body = std::nullopt
+) noexcept -> ExecutionTask<void>;
 
 auto execute_body(
     const ExecutionValueAccess& values,

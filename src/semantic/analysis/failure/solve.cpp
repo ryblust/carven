@@ -383,15 +383,6 @@ auto FailureSolution::support(ConstructionFailureRef source) const noexcept -> G
     return symbolic_graph->support(upper_bounds_by_term[term.index()]);
 }
 
-auto FailureSolution::may_contain(ConstructionFailureRef source, TypeID member) const noexcept
-    -> bool {
-    if (member.owner() != owner()) {
-        invariant_violation("failure membership query used a foreign nominal type");
-    }
-    const auto mask = support(source);
-    return std::ranges::binary_search(mask.members, member) != mask.complemented;
-}
-
 auto FailureSolution::known_members(ConstructionFailureRef source) const noexcept
     -> std::vector<TypeID> {
     source = normalize(source);

@@ -7,8 +7,7 @@ import :frontend.ast.storage;
 import :frontend.ast.tree;
 import :semantic.analysis.construction.requests;
 import :semantic.analysis.decl.context;
-import :semantic.analysis.expr.result;
-import :semantic.analysis.expr.scope;
+import :semantic.analysis.diagnostics;
 import :semantic.analysis.program;
 import :semantic.analysis.types;
 import :semantic.semir.constant;
@@ -34,6 +33,9 @@ public:
         -> AnalysisTask<void>;
 
     auto prepare_type(ConstructionTypeRef type, ProgramModuleID requester, Span span) noexcept
+        -> AnalysisTask<void>;
+
+    auto prepare_callable(CallableID callable, ProgramModuleID requester, Span span) noexcept
         -> AnalysisTask<void>;
 
 private:
@@ -62,9 +64,6 @@ private:
 
     auto resolve_fresh(const CatalogSymbol& symbol) noexcept -> AnalysisTask<void>;
 
-    auto select_entity(ProgramModuleID module_id, std::string_view name, Span origin) noexcept
-        -> AnalysisResult<CatalogEntity>;
-
     struct ConstantScope final {
         DeclResolver& resolver;
         ProgramModuleID module_id;
@@ -74,56 +73,9 @@ private:
         auto evaluate_constant_expression(
             ASTExprID expression,
             std::optional<ConstructionTypeRef> expected = std::nullopt
-        ) noexcept -> ExpressionTask<ConstantID>;
+        ) noexcept -> AnalysisTask<std::optional<ConstantID>>;
 
         auto evaluate_array_extent(ASTExprID expression) noexcept -> AnalysisTask<std::uint64_t>;
-        auto observe_expression(ASTExprID expression, ConstructionTypeRef type) noexcept -> void;
-        auto observe_function(FunctionID function, Span name) noexcept -> void;
-
-        auto observe_field(ProgramOriginID definition, Span name, ConstructionTypeRef type) noexcept
-            -> void;
-
-        auto resolve_name(std::string_view name, Span span) noexcept
-            -> AnalysisTask<std::optional<ConstantID>>;
-
-        auto resolve_class_operation(
-            StructID owner,
-            std::string_view name,
-            bool receiver,
-            Span span
-        ) noexcept -> AnalysisResult<FunctionID>;
-
-        auto representation_access(StructID owner, Span span) noexcept -> AnalysisResult<void>;
-
-        auto resolve_static_callable(std::string_view name, Span span) noexcept
-            -> AnalysisTask<std::optional<ResolvedStaticCallable>>;
-
-        auto construction_requests() noexcept -> ConstructionRequests&;
-        auto resolve_duration_type(Span span) noexcept -> AnalysisTask<TypeID>;
-        auto resolve_number_parser(BuiltinType number, Span span) noexcept
-            -> AnalysisTask<CallableID>;
-
-        auto resolve_type_qualifier(ASTExprID expression) noexcept
-            -> AnalysisTask<std::optional<ConstructionTypeRef>>;
-
-        auto resolve_enum_case(TypeID type, std::string_view name, Span span) noexcept
-            -> AnalysisTask<ResolvedEnumCase>;
-
-        auto resolve_type(ASTTypeID type) noexcept -> AnalysisTask<ConstructionTypeRef>;
-
-        auto resolve_failure_clause(const ASTThrowClause& clause) noexcept
-            -> AnalysisTask<ConstructionFailureRef>;
-
-        auto resolve_generic_arguments(
-            std::span<const ASTGenericArgument> arguments,
-            std::span<const GenericParameterKind> policies
-        ) noexcept -> AnalysisTask<GenericEnvironment>;
-
-        auto resolve_construction_type(const ASTConstructionType& type) noexcept
-            -> AnalysisTask<ConstructionTypeRef>;
-
-        auto supports_equality(ConstructionTypeRef type) noexcept -> bool;
-        auto is_numeric_enum(TypeID type) const noexcept -> bool;
     };
 
     auto resolve_type(ProgramModuleID module_id, ASTView syntax, ASTTypeID type) noexcept
@@ -176,27 +128,6 @@ private:
         Span item_span
     ) noexcept -> AnalysisTask<void>;
 
-    auto resolve_constant_name(
-        ProgramModuleID module_id,
-        std::string_view name,
-        Span origin
-    ) noexcept -> AnalysisTask<std::optional<ConstantID>>;
-
-    auto resolve_type_qualifier(
-        ProgramModuleID module_id,
-        ASTView syntax,
-        ASTExprID expression,
-        const GenericTypeContext* generic_context = nullptr
-    ) noexcept -> AnalysisTask<std::optional<ConstructionTypeRef>>;
-
-    auto resolve_constant_enum_case(
-        ProgramModuleID module_id,
-        TypeID type,
-        std::string_view name,
-        Span origin
-    ) noexcept -> AnalysisTask<ResolvedEnumCase>;
-
-    auto supports_equality(ConstructionTypeRef type) noexcept -> bool;
     auto validate_enum_codes(const CatalogSymbol& symbol) noexcept -> AnalysisResult<void>;
     auto publish_modules() noexcept -> void;
     auto finish_declarations() noexcept -> void;

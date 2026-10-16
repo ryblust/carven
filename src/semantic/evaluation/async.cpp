@@ -101,13 +101,27 @@ auto SemanticExecutor::invoke(
     co_return drive(call(callable, std::move(arguments), origin));
 }
 
-auto SemanticExecutor::evaluate_root(const SemanticExpression& source) noexcept
-    -> ExecutionTask<ExecutionValue> {
-    co_return drive(root_expression(source));
+auto SemanticExecutor::evaluate_root(
+    const SemanticExpression& source,
+    std::optional<ExecutionBody> body
+) noexcept -> ExecutionTask<ExecutionValue> {
+    co_return drive(root_expression(source, body));
 }
 
 auto SemanticExecutor::evaluate_body(ExecutionBody body) noexcept -> ExecutionTask<void> {
     auto result = drive(root_body(body));
+    if (!result) {
+        co_return std::unexpected(std::move(result.error()));
+    }
+    co_return {};
+}
+
+auto SemanticExecutor::evaluate_iteration(
+    const SemanticExpression& source,
+    const ExecutionIterationConsumer& consume,
+    std::optional<ExecutionBody> body
+) noexcept -> ExecutionTask<void> {
+    auto result = drive(root_iteration(source, consume, body));
     if (!result) {
         co_return std::unexpected(std::move(result.error()));
     }

@@ -117,7 +117,7 @@ const TestSuite suite([] static noexcept {
             const auto string_id = values.intern_constant(
                 ConstantFact {
                     .type = values.builtin_type(BuiltinType::Str),
-                    .value = StringConstant {.value = values.intern_spelling("abc")},
+                    .value = TextConstant {.value = values.intern_spelling("abc")},
                 }
             );
             const auto string = load_constant_fact(values, string_id);

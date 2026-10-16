@@ -158,11 +158,11 @@ auto BodyElaborator::lambda_expression(
             ));
         }
         const auto* local = use_local(name);
-        if (local != nullptr && runtime_local_outside_block(name)) {
+        if (local != nullptr && runtime_local_outside_static_scope(name)) {
             co_return std::unexpected(fail(
                 capture.name_span,
                 DiagnosticCode::ConstAdmission,
-                std::format("const block cannot use the runtime value '{}'", name)
+                std::format("static expression cannot use the runtime value '{}'", name)
             ));
         }
         if (local == nullptr || batch->static_roots.contains(local->storage.binding)) {
@@ -383,7 +383,7 @@ auto BodyExprSite::interpret_enum_case(
     std::span<const ASTExprID> arguments,
     Span span,
     bool called
-) noexcept -> ExpressionTask<Value> {
+) noexcept -> AnalysisTask<Value> {
     return ::interpret_enum_case(*this, type, name, name_span, arguments, span, called);
 }
 
@@ -396,7 +396,7 @@ auto BodyElaborator::select_expression(
     [[maybe_unused]] const auto path =
         BodyReferencePathGuard(reference_path_reachable, was_reachable);
     auto site = BodyExprSite(*this, allow_pointer_narrowing);
-    co_return require_body_expression((co_await interpret_expression(site, id, expected)));
+    co_return (co_await interpret_expression(site, id, expected));
 }
 
 auto BodyElaborator::expression(

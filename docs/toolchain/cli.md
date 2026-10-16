@@ -191,17 +191,11 @@ reports failures and a pass/fail summary to stderr. It returns 1 if any test fai
 Interpreter and compile-time diagnostics show up to eight call sites and report
 the number of additional sites omitted.
 
-The subset supports numeric, bool, char, str, and String locals; supported structs,
-enums, fixed arrays and slices; byte views and iteration; typed failures and
-recovery; direct Carven calls and
-calls through local bindings of named Carven functions; local mutation;
-conditional control, loops and matching; builtin printing and
-formatting, local pointers, and Write parameters. It uses the shared structured
-executor. Integer arithmetic uses the same language wrapping rules during
-compile-time execution and runtime interpretation. Retained C string values
-support text printing and default text formatting. Floating operations use the
-compiler host's native environment. Floating printing and formatting use the host
-standard library, including dynamic width and precision within execution budgets.
+Interpretation uses the shared structured executor for supported Carven calls,
+local storage, aggregates, text, control flow, and typed failures. Integer
+arithmetic follows the language's wrapping rules. Floating arithmetic and
+formatting use the compiler host's native environment and standard library,
+within execution budgets.
 
 The interpreter supports input configuration, reads, clock sampling, waits, and
 deadline composition. Explicit `const` execution performs the same supported host work

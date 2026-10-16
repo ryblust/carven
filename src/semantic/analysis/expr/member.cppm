@@ -3,9 +3,9 @@ module carven:semantic.analysis.expr.member;
 import :diagnostics.code;
 import :frontend.ast.expr;
 import :frontend.ast.storage;
+import :semantic.analysis.diagnostics;
 import :semantic.analysis.expr.aggregate;
 import :semantic.analysis.expr.projection;
-import :semantic.analysis.expr.result;
 import :semantic.analysis.expr.scalar;
 import :semantic.analysis.expr.scope;
 import :semantic.analysis.expr.text;
@@ -22,7 +22,7 @@ auto expected_expression_enum(
     Site& site,
     std::optional<ConstructionTypeRef> expected,
     Span span
-) noexcept -> ExpressionResult<TypeID> {
+) noexcept -> AnalysisResult<TypeID> {
     const auto* type = expected.has_value() ? std::get_if<TypeID>(&*expected) : nullptr;
     if (type == nullptr
         || !std::holds_alternative<EnumTypeValue>(site.draft().type_copy(*type).value)) {
@@ -44,7 +44,7 @@ auto interpret_enum_case(
     std::span<const ASTExprID> arguments,
     Span span,
     bool called
-) noexcept -> ExpressionTask<typename Site::Value> {
+) noexcept -> AnalysisTask<typename Site::Value> {
     auto selected = (co_await site.resolve_enum_case(type, name, name_span));
     if (!selected.has_value()) {
         co_return std::unexpected(selected.error());
@@ -53,7 +53,7 @@ auto interpret_enum_case(
         if (selected->payload_types.empty()) {
             co_return site.constant(*selected->constant, span);
         }
-        co_return site.enum_constructor(type, *selected, span);
+        co_return site.enum_constructor(*selected, span);
     }
     if (selected->payload_types.empty()) {
         co_return std::unexpected(site.fail(
@@ -87,7 +87,7 @@ auto interpret_enum_case(
         payload.push_back(std::move(*value));
     }
     auto known = std::optional<ConstantID>();
-    if (constants.size() == payload.size() && !(Site::mode == ExpressionMode::StaticRoot)) {
+    if (constants.size() == payload.size()) {
         known = site.draft().intern_constant(
             {.type = type,
              .value =
@@ -103,7 +103,7 @@ auto interpret_contextual_enum_case(
     const ASTContextualCaseExpr& source,
     Span span,
     std::optional<ConstructionTypeRef> expected
-) noexcept -> ExpressionTask<typename Site::Value> {
+) noexcept -> AnalysisTask<typename Site::Value> {
     auto type = expected_expression_enum(site, expected, source.name_span);
     if (!type.has_value()) {
         co_return std::unexpected(type.error());
@@ -118,7 +118,7 @@ auto interpret_text(
     TextIntrinsic intrinsic,
     typename Site::Value operand,
     Span span
-) noexcept -> ExpressionResult<typename Site::Value> {
+) noexcept -> AnalysisResult<typename Site::Value> {
     const auto type =
         resolve_text_intrinsic_type(site.draft(), text_intrinsic_contract(intrinsic).result);
     return construct_text_value(site, intrinsic, type, std::move(operand), std::nullopt, span);
@@ -126,7 +126,7 @@ auto interpret_text(
 
 template<typename Site>
 auto interpret_member(Site& site, const ASTMemberExpr& source, Span span) noexcept
-    -> ExpressionTask<typename Site::Selection> {
+    -> AnalysisTask<typename Site::Selection> {
     if (source.op == ASTMemberOperator::Scope) {
         auto type = (co_await site.resolve_type_qualifier(source.operand_id));
         if (!type.has_value()) {
@@ -135,10 +135,8 @@ auto interpret_member(Site& site, const ASTMemberExpr& source, Span span) noexce
         if (!type->has_value()) {
             co_return site.invalid_type_qualifier(site.syntax().expression(source.operand_id).span);
         }
-        if constexpr (Site::mode == ExpressionMode::Body) {
-            if (site.external(**type)) {
-                co_return site.native_associated_reference(**type, source.name_span, span);
-            }
+        if (site.external(**type)) {
+            co_return site.native_associated_reference(**type, source.name_span, span);
         }
         const auto concrete = site.draft().try_canonicalize_declared_type(**type);
         if (!concrete) {
@@ -153,15 +151,7 @@ auto interpret_member(Site& site, const ASTMemberExpr& source, Span span) noexce
             ));
         }
         if (const auto* record = std::get_if<StructTypeValue>(&canonical.value)) {
-            if constexpr (Site::mode == ExpressionMode::Body) {
-                co_return (co_await site.associated_reference(record->structure, source.name_span));
-            } else {
-                co_return std::unexpected(site.fail(
-                    span,
-                    DiagnosticCode::ConstAdmission,
-                    "class operations are not supported in compile-time execution"
-                ));
-            }
+            co_return (co_await site.associated_reference(record->structure, source.name_span));
         }
         co_return (co_await interpret_enum_case(
             site,

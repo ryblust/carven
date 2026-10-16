@@ -3,7 +3,7 @@ module carven:semantic.analysis.expr.simd;
 import :diagnostics.code;
 import :frontend.ast.expr;
 import :frontend.ast.storage;
-import :semantic.analysis.expr.result;
+import :semantic.analysis.diagnostics;
 import :semantic.analysis.operations;
 import :semantic.semir.constant;
 import :semantic.semir.simd;
@@ -16,7 +16,7 @@ auto construct_simd_splat(
     SIMDLayout layout,
     typename Site::Value input,
     Span span
-) noexcept -> ExpressionResult<typename Site::Value> {
+) noexcept -> AnalysisResult<typename Site::Value> {
     auto state = Site::operand_state();
     auto scalar = site.consume_read(state, std::move(input), span);
     if (!scalar) {
@@ -40,7 +40,7 @@ auto construct_simd_call(
     std::optional<typename Site::Value> receiver,
     std::span<const ASTExprID> arguments,
     Span span
-) noexcept -> ExpressionTask<typename Site::Value> {
+) noexcept -> AnalysisTask<typename Site::Value> {
     auto contract = simd_contract(intrinsic, owner);
     if (arguments.size() + (receiver ? 1uz : 0uz) != contract.inputs.size()) {
         co_return std::unexpected(site.fail(

@@ -7,14 +7,10 @@ import :frontend.ast.expr;
 import :frontend.ast.interop;
 import :frontend.ast.storage;
 import :frontend.ast.tree;
-import :semantic.analysis.async;
-import :semantic.analysis.constant.root;
+import :semantic.analysis.constant.extent;
 import :semantic.analysis.decl.context;
 import :semantic.analysis.decl.resolver;
-import :semantic.analysis.expr.scope;
 import :semantic.analysis.interop;
-import :semantic.analysis.names;
-import :semantic.analysis.nominal.containment;
 import :semantic.analysis.operations;
 import :semantic.analysis.program;
 import :semantic.analysis.source.builder;
@@ -26,15 +22,10 @@ import :semantic.semir.type;
 import :semantic.visibility;
 import :source.module_path;
 import :source.provenance.ids;
-import :source.standard;
 import :source.text;
 import :support.invariant;
 import :support.visit;
 import std;
-
-auto DeclResolver::supports_equality(ConstructionTypeRef type) noexcept -> bool {
-    return draft.equality_support(std::array {type}).front();
-}
 
 auto DeclResolver::publish_modules() noexcept -> void {
     for (const auto& module_record : catalog.modules()) {
@@ -357,241 +348,17 @@ auto DeclResolver::resolve_fresh(const CatalogSymbol& symbol) noexcept -> Analys
     ));
 }
 
-auto DeclResolver::select_entity(
-    ProgramModuleID module_id,
-    std::string_view name,
-    Span origin
-) noexcept -> AnalysisResult<CatalogEntity> {
-    auto* source = draft.source_analysis();
-    return select_catalog_entity(
-        draft,
-        catalog,
-        import_usage,
-        module_id,
-        name,
-        origin,
-        source ? &source->declarations() : nullptr
-    );
-}
-
 auto DeclResolver::ConstantScope::evaluate_constant_expression(
     ASTExprID expression,
     std::optional<ConstructionTypeRef> expected
-) noexcept -> ExpressionTask<ConstantID> {
-    return ::evaluate_constant_expression(
-        resolver.draft,
-        module_id,
-        syntax,
-        *this,
-        expression,
-        expected
-    );
+) noexcept -> AnalysisTask<std::optional<ConstantID>> {
+    return resolver.requests
+        .evaluate_constant_expression(module_id, expression, expected, generic_context);
 }
 
 auto DeclResolver::ConstantScope::evaluate_array_extent(ASTExprID expression) noexcept
     -> AnalysisTask<std::uint64_t> {
-    return ::evaluate_array_extent(resolver.draft, module_id, syntax, *this, expression);
-}
-
-auto DeclResolver::ConstantScope::resolve_name(std::string_view name, Span span) noexcept
-    -> AnalysisTask<std::optional<ConstantID>> {
-    co_return (co_await resolver.resolve_constant_name(module_id, name, span));
-}
-
-auto DeclResolver::ConstantScope::resolve_class_operation(
-    StructID owner,
-    std::string_view name,
-    bool receiver,
-    Span span
-) noexcept -> AnalysisResult<FunctionID> {
-    return lookup_class_operation(
-        resolver.draft,
-        resolver.catalog,
-        module_id,
-        owner,
-        std::nullopt,
-        name,
-        receiver,
-        span
-    );
-}
-
-auto DeclResolver::ConstantScope::representation_access(StructID owner, Span span) noexcept
-    -> AnalysisResult<void> {
-    return check_class_representation_access(resolver.draft, module_id, owner, std::nullopt, span);
-}
-
-auto DeclResolver::ConstantScope::resolve_static_callable(std::string_view name, Span span) noexcept
-    -> AnalysisTask<std::optional<ResolvedStaticCallable>> {
-    if (resolver.catalog.lookup(module_id, name).empty()) {
-        co_return std::optional<ResolvedStaticCallable>();
-    }
-    auto selected = resolver.select_entity(module_id, name, span);
-    if (!selected) {
-        co_return std::unexpected(selected.error());
-    }
-    const auto* selected_symbol = resolver.catalog.symbol(*selected);
-    if (const auto* provided = std::get_if<ProvidedExport>(&*selected)) {
-        if (const auto callable = resolver.draft.provided_callable(*provided)) {
-            co_return std::optional<ResolvedStaticCallable>(*callable);
-        }
-        if (const auto builtin = provided_async_builtin(*provided)) {
-            auto resolved =
-                co_await resolve_async_builtin(construction_requests(), *builtin, module_id, span);
-            if (!resolved) {
-                co_return std::unexpected(resolved.error());
-            }
-            co_return std::optional<ResolvedStaticCallable>(std::move(*resolved));
-        }
-        co_return std::optional<ResolvedStaticCallable>();
-    }
-    if (const auto* generic =
-            (selected_symbol ? std::get_if<CatalogGenericForm>(&selected_symbol->form) : nullptr)) {
-        auto completed =
-            co_await resolver.ensure_available(selected_symbol->symbol_id, module_id, span);
-        if (!completed) {
-            co_return std::unexpected(completed.error());
-        }
-        const auto definition = resolver.draft.generic_declaration_copy(generic->definition);
-        if (std::holds_alternative<GenericFunctionDefinition>(definition)) {
-            co_return std::optional<ResolvedStaticCallable>(generic->definition);
-        }
-        co_return std::optional<ResolvedStaticCallable>();
-    }
-    const auto* function =
-        (selected_symbol ? std::get_if<CatalogFunctionForm>(&selected_symbol->form) : nullptr);
-    if (function == nullptr) {
-        co_return std::optional<ResolvedStaticCallable>();
-    }
-    auto result = (co_await resolver.ensure_available(selected_symbol->symbol_id, module_id, span));
-    if (!result) {
-        co_return std::unexpected(result.error());
-    }
-
-    result =
-        (co_await resolver.requests.ensure_function_signature(function->function, module_id, span));
-    if (!result) {
-        co_return std::unexpected(result.error());
-    }
-
-    co_return std::optional<ResolvedStaticCallable>(function->function);
-}
-
-auto DeclResolver::ConstantScope::resolve_number_parser(BuiltinType number, Span span) noexcept
-    -> AnalysisTask<CallableID> {
-    co_return co_await construction_requests().number_parser(number, module_id, span);
-}
-
-auto DeclResolver::ConstantScope::resolve_duration_type(Span span) noexcept
-    -> AnalysisTask<TypeID> {
-    co_return co_await construction_requests()
-        .standard_type(StandardDeclaration::Duration, module_id, span);
-}
-
-auto DeclResolver::ConstantScope::construction_requests() noexcept -> ConstructionRequests& {
-    return resolver.requests;
-}
-
-auto DeclResolver::ConstantScope::resolve_type_qualifier(ASTExprID expression) noexcept
-    -> AnalysisTask<std::optional<ConstructionTypeRef>> {
-    co_return (
-        co_await resolver.resolve_type_qualifier(module_id, syntax, expression, generic_context)
-    );
-}
-
-auto DeclResolver::ConstantScope::resolve_enum_case(
-    TypeID type,
-    std::string_view name,
-    Span span
-) noexcept -> AnalysisTask<ResolvedEnumCase> {
-    co_return (co_await resolver.resolve_constant_enum_case(module_id, type, name, span));
-}
-
-auto DeclResolver::ConstantScope::resolve_construction_type(
-    const ASTConstructionType& type
-) noexcept -> AnalysisTask<ConstructionTypeRef> {
-    const auto extent = [&](ASTExprID expression) noexcept {
-        return evaluate_array_extent(expression);
-    };
-    auto result = (co_await resolve_source_construction_type(
-        resolver.draft,
-        resolver.catalog,
-        resolver.import_usage,
-        module_id,
-        syntax,
-        type,
-        extent,
-        &resolver.requests,
-        generic_context,
-        resolver.draft.source_analysis() ? &resolver.draft.source_analysis()->declarations()
-                                         : nullptr
-    ));
-    if (result) {
-        auto prepared = (co_await resolver.requests.ensure_type(*result, module_id, type.span));
-        if (!prepared) {
-            co_return std::unexpected(prepared.error());
-        }
-    }
-    co_return result;
-}
-
-auto DeclResolver::ConstantScope::resolve_type(ASTTypeID type) noexcept
-    -> AnalysisTask<ConstructionTypeRef> {
-    const auto extent = [&](ASTExprID expression) noexcept {
-        return evaluate_array_extent(expression);
-    };
-    co_return (co_await resolve_source_type(
-        resolver.draft,
-        resolver.catalog,
-        resolver.import_usage,
-        module_id,
-        syntax,
-        type,
-        extent,
-        &resolver.requests,
-        generic_context
-    ));
-}
-
-auto DeclResolver::ConstantScope::resolve_failure_clause(const ASTThrowClause& clause) noexcept
-    -> AnalysisTask<ConstructionFailureRef> {
-    return resolver.resolve_failures(module_id, syntax, clause, generic_context);
-}
-
-auto DeclResolver::ConstantScope::resolve_generic_arguments(
-    std::span<const ASTGenericArgument> arguments,
-    std::span<const GenericParameterKind> policies
-) noexcept -> AnalysisTask<GenericEnvironment> {
-    const auto extent = [&](ASTExprID expression) noexcept {
-        return evaluate_array_extent(expression);
-    };
-    co_return co_await resolve_generic_source_arguments(
-        resolver.draft,
-        resolver.catalog,
-        resolver.import_usage,
-        module_id,
-        syntax,
-        arguments,
-        policies,
-        extent,
-        &resolver.requests,
-        generic_context
-    );
-}
-
-auto DeclResolver::ConstantScope::supports_equality(ConstructionTypeRef type) noexcept -> bool {
-    return resolver.supports_equality(type);
-}
-
-auto DeclResolver::ConstantScope::is_numeric_enum(TypeID type) const noexcept -> bool {
-    const auto canonical = resolver.draft.type_copy(type);
-    const auto* nominal = std::get_if<EnumTypeValue>(&canonical.value);
-    return nominal != nullptr
-        && nominal->enumeration.index() < resolver.enumerations.size()
-        && resolver.enumerations[nominal->enumeration.index()].has_value()
-        && std::holds_alternative<NumericEnumRepresentation>(
-               resolver.enumerations[nominal->enumeration.index()]->representation
-        );
+    return ::evaluate_array_extent(resolver.draft, syntax, *this, expression);
 }
 
 auto DeclResolver::resolve_type(ProgramModuleID module_id, ASTView syntax, ASTTypeID type) noexcept
@@ -636,42 +403,4 @@ auto DeclResolver::resolve_failures(
         generic_context,
         draft.source_analysis() ? &draft.source_analysis()->declarations() : nullptr
     ));
-}
-
-auto DeclResolver::ConstantScope::observe_expression(
-    ASTExprID expression,
-    ConstructionTypeRef type
-) noexcept -> void {
-    if (auto* observations = resolver.draft.source_analysis()) {
-        observations->declarations().expression(resolver.draft, syntax, expression, type);
-    }
-}
-
-auto DeclResolver::ConstantScope::observe_field(
-    ProgramOriginID definition,
-    Span name,
-    ConstructionTypeRef type
-) noexcept -> void {
-    if (auto* observations = resolver.draft.source_analysis()) {
-        observations->declarations().record(
-            resolver.draft,
-            locate(syntax.source_id(), name),
-            resolver.draft.source_span(definition),
-            type
-        );
-    }
-}
-
-auto DeclResolver::ConstantScope::observe_function(FunctionID function, Span name) noexcept
-    -> void {
-    if (auto* observations = resolver.draft.source_analysis()) {
-        const auto callable = resolver.draft.function_declaration_copy(function).callable;
-        observations->declarations().record(
-            resolver.draft,
-            locate(syntax.source_id(), name),
-            resolver.catalog
-                .declaration_location(resolver.draft, resolver.catalog.function_symbol(function)),
-            resolver.draft.intern_type({.value = FunctionTypeValue {callable}})
-        );
-    }
 }

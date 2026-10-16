@@ -271,11 +271,9 @@ auto DeclResolver::resolve_enum_case(
             numeric->underlying_type
         ));
         if (!result) {
-            if (const auto* diagnostic = std::get_if<AnalysisFailure>(&result.error())) {
-                co_return std::unexpected(*diagnostic);
-            }
+            co_return std::unexpected(result.error());
         }
-        const auto fact = result ? std::optional(draft.constant(*result)) : std::nullopt;
+        const auto fact = *result ? std::optional(draft.constant(**result)) : std::nullopt;
         const auto* selected =
             fact.has_value() ? std::get_if<IntegerConstant>(&fact->value) : nullptr;
         if (selected == nullptr) {

@@ -90,8 +90,8 @@ auto BodyElaborator::bind_call_argument(
             *mismatch_code,
             std::format(
                 "argument of type '{}' does not match parameter type '{}'",
-                type_display_name(draft(), built.type()),
-                type_display_name(draft(), type)
+                type_display_name(draft(), built.type(), catalog()),
+                type_display_name(draft(), type, catalog())
             )
         ));
     }
@@ -176,9 +176,8 @@ auto BodyElaborator::enum_case_reference(
     Span case_span
 ) noexcept -> AnalysisTask<BuiltExpression> {
     auto site = BodyExprSite(*this);
-    co_return require_body_expression(
-        (co_await site.interpret_enum_case(enumeration_type, case_name, case_span, {}, span, false))
-    );
+    co_return co_await site
+        .interpret_enum_case(enumeration_type, case_name, case_span, {}, span, false);
 }
 
 auto BodyElaborator::call_expression(
@@ -241,14 +240,14 @@ auto BodyElaborator::call_expression(
                     }
                 );
                 auto site = BodyExprSite(*this);
-                co_return require_body_expression((co_await site.interpret_enum_case(
+                co_return (co_await site.interpret_enum_case(
                     type,
                     text,
                     name->name_span,
                     source.arguments,
                     span,
                     true
-                )));
+                ));
             }
         }
     }
@@ -263,15 +262,11 @@ auto BodyElaborator::call_expression(
     }
     if (const auto* composition = std::get_if<CompositionSelection>(&*selected_callee)) {
         auto site = BodyExprSite(*this);
-        co_return require_body_expression(
-            co_await construct_async_composition(site, source, composition->policy, span)
-        );
+        co_return co_await construct_async_composition(site, source, composition->policy, span);
     }
     if (const auto* timeout = std::get_if<TimeoutSelection>(&*selected_callee)) {
         auto site = BodyExprSite(*this);
-        co_return require_body_expression(
-            co_await construct_async_timeout(site, source, timeout->contract, span)
-        );
+        co_return co_await construct_async_timeout(site, source, timeout->contract, span);
     }
     if (const auto* intrinsic = std::get_if<AsyncIntrinsicSelection>(&*selected_callee)) {
         if (receiver) {
@@ -282,9 +277,7 @@ auto BodyElaborator::call_expression(
             ));
         }
         auto site = BodyExprSite(*this);
-        co_return require_body_expression(
-            construct_async_intrinsic(site, source, intrinsic->kind, span)
-        );
+        co_return construct_async_intrinsic(site, source, intrinsic->kind, span);
     }
 
     if (auto* builtin = std::get_if<BuiltinSelection>(&*selected_callee)) {
@@ -768,6 +761,10 @@ auto BodyElaborator::generic_call_expression(
         auto target = draft().instantiate_generic_function(definition, concrete, origin(span));
         if (!target) {
             co_return std::unexpected(target.error());
+        }
+        auto prepared = co_await batch->requests.ensure_callable(*target, source_module_id, span);
+        if (!prepared) {
+            co_return std::unexpected(prepared.error());
         }
         resolved_target = *target;
         contract = draft().construction_callable_contract_copy(*target);

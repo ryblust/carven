@@ -51,9 +51,10 @@ struct BooleanConstant final {
     constexpr auto operator==(const BooleanConstant&) const noexcept -> bool = default;
 };
 
-struct StringConstant final {
+// Retained UTF-8 backing; the fact's type determines its text or character-view use.
+struct TextConstant final {
     ProgramSpellingID value;
-    constexpr auto operator==(const StringConstant&) const noexcept -> bool = default;
+    constexpr auto operator==(const TextConstant&) const noexcept -> bool = default;
 };
 
 struct CStringConstant final {
@@ -136,7 +137,7 @@ using ConstantValue = std::variant<
     RangeConstant,
     BooleanConstant,
     NullPointerConstant,
-    StringConstant,
+    TextConstant,
     CStringConstant,
     F32Constant,
     F64Constant,
@@ -252,8 +253,10 @@ auto constant_matches_type(
                 && (value.scalar < 0xd800u || value.scalar > 0xdfffu);
         } else if constexpr (std::same_as<Value, NullPointerConstant>) {
             return std::holds_alternative<PointerTypeValue>(type);
-        } else if constexpr (std::same_as<Value, StringConstant>) {
-            return (builtin(BuiltinType::Str) || builtin(BuiltinType::String))
+        } else if constexpr (std::same_as<Value, TextConstant>) {
+            return (builtin(BuiltinType::Str)
+                    || builtin(BuiltinType::String)
+                    || builtin(BuiltinType::StrCharsView))
                 && spellings(value.value).has_value();
         } else if constexpr (std::same_as<Value, CStringConstant>) {
             const auto* native = std::get_if<CppTypeValue>(&type);

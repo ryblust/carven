@@ -1,0 +1,113 @@
+private const fn collect_characters(text: str) -> String {
+    var result = String {};
+    for character in text.chars {
+        result.push(character);
+    }
+    return &&result;
+}
+
+private const fn character_prefix(text: str) -> String {
+    var result = String {};
+    for character in text.chars {
+        if character == '\0' { continue; }
+        if character == '|' { break; }
+        result.push(character);
+    }
+    return &&result;
+}
+
+private const fn temporary_text(&calls: i32) -> String {
+    ++calls;
+    return String::from_str("aé我😀");
+}
+
+private const fn check_character_traversal() {
+    check(collect_characters("") == "");
+    check(collect_characters("a\0é我😀") == "a\0é我😀");
+    check(character_prefix("a\0é|我😀") == "aé");
+
+    let owner = String::from_str("é我");
+    let characters = owner.chars;
+    let copy = characters;
+    var nested = String {};
+    for first in characters {
+        for second in copy {
+            nested.push(first);
+            nested.push(second);
+        }
+    }
+    check(nested == "ééé我我é我我");
+
+    let bytes: [u8; 8] = [33, 65, 0, 0xe6, 0x88, 0x91, 66, 33];
+    let text = str::from_utf8_unchecked(bytes.slice(1, 7));
+    check(collect_characters(text) == "A\0我B");
+
+    var calls = 0;
+    var result = String {};
+    for character in temporary_text(&calls).chars {
+        result.push(character);
+    }
+    check(calls == 1);
+    check(result == "aé我😀");
+}
+
+private const literal_view = "a\0é我😀".chars;
+private const owned_view = String::from_str("é我").chars;
+private const empty_view = (String {}).chars;
+
+private const byte_view = str::from_utf8_unchecked(
+    ([33u8, 65u8, 0u8, 0xe6u8, 0x88u8, 0x91u8, 66u8, 33u8]).slice(1, 7)
+).chars;
+
+private const view_pair = (owned_view, byte_view);
+private const view_array = [literal_view, empty_view];
+
+private const fn retain<T>(const values: [T]) -> [T] => values;
+
+private const selected_view = retain([owned_view].slice())[0];
+
+private const fn local_character_view() {
+    const local = String::from_str("local 😀").chars;
+    return local;
+}
+
+private const fn check_retained_character_views() {
+    let local = local_character_view();
+    var result = String {};
+    for value in view_array {
+        for character in value {
+            result.push(character);
+        }
+    }
+    check(result == "a\0é我😀");
+    result.clear();
+    for character in view_pair.1 {
+        result.push(character);
+    }
+    check(result == "A\0我B");
+
+    let copy = selected_view;
+    result.clear();
+    for first in copy {
+        for second in view_pair.0 {
+            result.push(first);
+            result.push(second);
+        }
+    }
+    check(result == "ééé我我é我我");
+    result.clear();
+    for character in local {
+        result.push(character);
+    }
+    check(result == "local 😀");
+}
+
+const test "Character traversal: static execution preserves values and control flow" {
+    check_character_traversal();
+    check_retained_character_views();
+}
+
+test "Character traversal: runtime agrees with static execution" {
+    check_character_traversal();
+    check_retained_character_views();
+}

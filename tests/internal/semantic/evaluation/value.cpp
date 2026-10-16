@@ -22,7 +22,17 @@ const TestSuite suite([] static noexcept {
             auto fixture = ConstantEvaluationFixture();
             auto& values = fixture.compilation;
             const auto empty = values.builtin_type(BuiltinType::Void);
-            const auto opaque = values.builtin_type(BuiltinType::StrCharsView);
+            const auto opaque = values.intern_type(
+                {.value = CppTypeValue {
+                     .form = CppNamedType {
+                         .name =
+                             {.context_module = values.reserve_module_declaration(),
+                              .lookup = CppNameLookup::Global,
+                              .components = {"Opaque"}},
+                         .arguments = {}
+                     }
+                 }}
+            );
             const auto empty_array =
                 values.intern_type({.value = ArrayTypeValue {.element = empty, .extent = 1u}});
             const auto opaque_array =
@@ -129,7 +139,7 @@ const TestSuite suite([] static noexcept {
             const auto bytes = std::string("a\0我", 5uz);
             const auto fact = ConstantFact {
                 .type = values.builtin_type(BuiltinType::Str),
-                .value = StringConstant {.value = fixture.compilation.intern_spelling(bytes)}
+                .value = TextConstant {.value = fixture.compilation.intern_spelling(bytes)}
             };
             const auto retained = fixture.compilation.intern_constant(fact);
             const auto representations = std::array<ExecutionValue, 4> {

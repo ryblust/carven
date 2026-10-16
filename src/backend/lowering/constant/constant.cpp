@@ -327,13 +327,14 @@ auto constant_initializer(
             [](const BooleanConstant& value) static noexcept {
                 return bool_expression(value.value);
             },
-            [&](const StringConstant& value) noexcept {
+            [&](const TextConstant& value) noexcept {
                 auto text = string_expression(
                     std::string(context.semantic().provenance().spelling(value.value)),
                     TargetStringLiteralKind::StringView
                 );
-                if (context.semantic().types().type(fact.type).value
-                    == CanonicalTypeValue {BuiltinTypeValue {BuiltinType::String}}) {
+                const auto& type = context.semantic().types().type(fact.type);
+                const auto kind = std::get<BuiltinTypeValue>(type.value).kind;
+                if (kind == BuiltinType::String) {
                     return call_expression(
                         static_member_expression(
                             context.lower_type(fact.type),
@@ -343,6 +344,14 @@ auto constant_initializer(
                         ),
                         target_expressions(std::move(text))
                     );
+                }
+                if (kind == BuiltinType::StrCharsView) {
+                    return TargetExpr {
+                        .value = TargetConstructionExpr {
+                            .type = context.lower_type(fact.type),
+                            .initializer = target_expressions(std::move(text)),
+                        },
+                    };
                 }
                 return text;
             },

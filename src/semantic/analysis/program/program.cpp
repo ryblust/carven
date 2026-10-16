@@ -412,43 +412,6 @@ auto ProgramDraft::callable_signature_copy(CallableSignatureID id) const noexcep
     return storage.callable_signatures.copy(id);
 }
 
-auto ProgramDraft::construction_failure_term_copy(FailureTermID failures) const noexcept
-    -> FailureTerm {
-    return storage.failure_constraints.copy(failures);
-}
-
-auto ProgramDraft::module_declaration_count() const noexcept -> std::size_t {
-    return storage.declarations.construction_view().module_count();
-}
-
-auto ProgramDraft::function_declaration_count() const noexcept -> std::size_t {
-    return storage.declarations.construction_view().function_count();
-}
-
-auto ProgramDraft::struct_declaration_count() const noexcept -> std::size_t {
-    return storage.declarations.construction_view().struct_count();
-}
-
-auto ProgramDraft::enum_declaration_count() const noexcept -> std::size_t {
-    return storage.declarations.construction_view().enum_count();
-}
-
-auto ProgramDraft::enum_case_declaration_count() const noexcept -> std::size_t {
-    return storage.declarations.construction_view().enum_case_count();
-}
-
-auto ProgramDraft::module_constant_declaration_count() const noexcept -> std::size_t {
-    return storage.declarations.construction_view().module_constant_count();
-}
-
-auto ProgramDraft::callable_declaration_count() const noexcept -> std::size_t {
-    return storage.declarations.construction_view().callable_count();
-}
-
-auto ProgramDraft::module_declaration_ids() const noexcept -> std::vector<ModuleID> {
-    return storage.declarations.construction_view().module_ids();
-}
-
 auto ProgramDraft::function_declaration_ids() const noexcept -> std::vector<FunctionID> {
     return storage.declarations.construction_view().function_ids();
 }
@@ -459,19 +422,6 @@ auto ProgramDraft::struct_declaration_ids() const noexcept -> std::vector<Struct
 
 auto ProgramDraft::enum_declaration_ids() const noexcept -> std::vector<EnumID> {
     return storage.declarations.construction_view().enum_ids();
-}
-
-auto ProgramDraft::enum_case_declaration_ids() const noexcept -> std::vector<EnumCaseID> {
-    return storage.declarations.construction_view().enum_case_ids();
-}
-
-auto ProgramDraft::module_constant_declaration_ids() const noexcept
-    -> std::vector<ModuleConstantID> {
-    return storage.declarations.construction_view().module_constant_ids();
-}
-
-auto ProgramDraft::callable_declaration_ids() const noexcept -> std::vector<CallableID> {
-    return storage.declarations.construction_view().callable_ids();
 }
 
 auto ProgramDraft::add_empty_failure_term() noexcept -> FailureTermID {
@@ -590,10 +540,6 @@ auto ProgramDraft::spelling(ProgramSpellingID id) const noexcept -> std::string_
 
 auto ProgramDraft::spelling_copy(ProgramSpellingID id) const noexcept -> std::string {
     return provenance_appender.reader().spelling_copy(id);
-}
-
-auto ProgramDraft::origin_slice_copy(ProgramOriginID id) const noexcept -> std::string {
-    return provenance_appender.reader().slice_copy(id);
 }
 
 auto ProgramDraft::source_origin(ProgramOriginID id) const noexcept -> ProgramSourceOrigin {
@@ -968,17 +914,6 @@ ProgramDraft::ConstructionStorage::ConstructionStorage(
       declarations(identity, provenance),
       failure_constraints(identity, provenance),
       test_slots(identity) {}
-
-auto ProgramDraft::create_evaluation_root_identity() noexcept -> BodyIdentity {
-    if (next_evaluation_root == std::numeric_limits<std::uint32_t>::max()) {
-        resource_limit_exceeded("evaluation root identity space exhausted");
-    }
-    return BodyIdentity(
-        program_identity,
-        next_evaluation_root++,
-        BodyIdentityDomain::EvaluationRoot
-    );
-}
 
 auto ProgramDraft::write_output(ExecutionOutputStream stream, std::string_view bytes) const noexcept
     -> void {

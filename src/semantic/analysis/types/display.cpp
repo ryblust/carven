@@ -1,5 +1,6 @@
 module carven:semantic.analysis.types.display.impl;
 
+import :semantic.analysis.catalog;
 import :semantic.analysis.program;
 import :semantic.analysis.types.display;
 import :semantic.semir.decl;
@@ -100,16 +101,26 @@ auto nominal_name(const ProgramDraft& draft, ModuleID module, ProgramSpellingID 
     );
 }
 
-auto canonical_name(const ProgramDraft& draft, TypeID type) noexcept -> std::string {
+auto nominal_name(const ProgramDraft& draft, const CatalogSymbol& symbol) noexcept -> std::string {
+    return std::format("{}::{}", draft.module_path_copy(symbol.module_id).value(), symbol.name);
+}
+
+auto canonical_name(
+    const ProgramDraft& draft,
+    TypeID type,
+    std::optional<AnalysisCatalogView> catalog
+) noexcept -> std::string {
     const auto name = [&](TypeID nested) noexcept {
-        return canonical_name(draft, nested);
+        return canonical_name(draft, nested, catalog);
     };
     const auto contract = [&](CallableID callable) noexcept {
         const auto value = draft.construction_callable_contract_copy(callable);
         return callable_name(
             value.parameters,
-            type_display_name(draft, value.result),
-            [&](ConstructionTypeRef nested) noexcept { return type_display_name(draft, nested); }
+            type_display_name(draft, value.result, catalog),
+            [&](ConstructionTypeRef nested) noexcept {
+                return type_display_name(draft, nested, catalog);
+            }
         );
     };
     return draft.type_copy(type).value.visit(
@@ -118,11 +129,23 @@ auto canonical_name(const ProgramDraft& draft, TypeID type) noexcept -> std::str
                 return std::string(builtin_name(value.kind));
             },
             [&](const StructTypeValue& value) noexcept {
+                if (catalog && value.structure.index() < catalog->struct_count()) {
+                    return nominal_name(
+                        draft,
+                        *catalog->symbol(catalog->struct_symbol(value.structure))
+                    );
+                }
                 const auto declaration =
                     draft.construction_struct_declaration_copy(value.structure);
                 return nominal_name(draft, declaration.module_id, declaration.name);
             },
             [&](const EnumTypeValue& value) noexcept {
+                if (catalog && value.enumeration.index() < catalog->enum_count()) {
+                    return nominal_name(
+                        draft,
+                        *catalog->symbol(catalog->enum_symbol(value.enumeration))
+                    );
+                }
                 const auto declaration = draft.enum_declaration_copy(value.enumeration);
 
                 return nominal_name(draft, declaration.module_id, declaration.name);
@@ -176,13 +199,16 @@ auto canonical_name(const ProgramDraft& draft, TypeID type) noexcept -> std::str
 
 } // namespace
 
-auto type_display_name(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
-    -> std::string {
+auto type_display_name(
+    const ProgramDraft& draft,
+    ConstructionTypeRef type,
+    std::optional<AnalysisCatalogView> catalog
+) noexcept -> std::string {
     if (const auto* canonical = std::get_if<TypeID>(&type)) {
-        return canonical_name(draft, *canonical);
+        return canonical_name(draft, *canonical, catalog);
     }
     const auto name = [&](ConstructionTypeRef nested) noexcept {
-        return type_display_name(draft, nested);
+        return type_display_name(draft, nested, catalog);
     };
     if (const auto* generic = std::get_if<GenericTypeID>(&type)) {
         return draft.generic_type_copy(*generic).visit(

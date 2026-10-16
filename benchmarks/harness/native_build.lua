@@ -14,6 +14,13 @@ else
 end]], name)
 end
 
+function carven_rules(session, inputs)
+    local consumer = import("xmake.consumer", {rootdir = os.projectdir()})
+    local configuration, rules = consumer.configuration(session.compiler, path.join(inputs, "crafts"))
+    session.results.metadata.rules_directory = rules
+    return configuration
+end
+
 -- Query target outputs and actual native tool selection instead of reconstructing
 -- executable locations or compiler invocations in the driver.
 function describe_script()

@@ -1,7 +1,6 @@
 # Generic extensions and static capabilities
 
 - **Status:** Draft
-- **Implementation:** Not started for the extensions below
 - **Scope:** Static capabilities, associated types, generic class operations, and finite boundary extensions
 
 ## Extension boundary
@@ -367,7 +366,7 @@ value-dependent types remain deferred here.
   ownership, and dispatch costs.
 - **Depends on:** Implemented static capabilities and dynamic interfaces
 - **Reactivation condition:** Repeated APIs need the same contract in both
-worlds and can make conversion and cost explicit.
+  worlds and can make conversion and cost explicit.
 
 ### DEFER-12 — Generic product traversal
 

@@ -1,17 +1,16 @@
 # Finite dynamic async composition
 
 - **Status:** Deferred
-- **Implementation:** Not started
 - **Scope:** Same-thread composition of a runtime-sized, finite operation sequence
 
 ## ASYNC-01 — Dynamic when_all
 
+- **Implementation:** Not started
 - **Reason deferred:** Current applications use sequential awaits or fixed
   `when_all` batches without a demonstrated dynamic-composition cost.
 - **Reactivation condition:** A consumer needs a runtime-sized finite batch.
 - **Depends on:** Checked operation storage and retained borrowing, including
-  [Vector capabilities](dynamic-ownership.md#vec-01--move-only-vector-elements)
-  if Vector supplies that storage.
+  move-only element capabilities if Vector supplies that storage.
 
 Consume operations sharing result and failure types and deliver results in input
 order. A checked builtin may establish these types and failures without public
@@ -38,4 +37,5 @@ allocation, dispatch, and generated-code size independently.
 ## References
 
 - [Async](../docs/language/async.md): current ownership and provider contracts.
-- [Generic extensions](generic-extensions.md): user-defined capability interfaces.
+- [Dynamic ownership](dynamic-ownership.md#vec-01--move-only-vector-elements):
+  operation-specific Vector capabilities.

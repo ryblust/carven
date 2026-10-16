@@ -41,21 +41,24 @@ end
 
 function header(session)
     local options = session.options
+    local metadata = session.results.metadata
+    local sampling = metadata.sampling
+    local measurement = session.results.measurement
     local topic = session.results.topic:gsub("^%l", string.upper)
     print("\n%s benchmark", topic)
-    print("  Compiler: %s", session.compiler)
-    print("  Mode:     %s", options.compiler and "external (unknown)" or session.compiler_mode)
+    print("  Compiler: %s", metadata.compiler.path)
+    print("  Mode:     %s", metadata.compiler.build_mode)
     print("  Sampling: %d warmup%s, %d measured sample%s; %s",
-        session.warmups, session.warmups == 1 and "" or "s",
-        session.samples, session.samples == 1 and "" or "s",
-        session.primary and session.primary.unit or "process wall time in ms")
+        sampling.warmups, sampling.warmups == 1 and "" or "s",
+        sampling.samples, sampling.samples == 1 and "" or "s",
+        measurement.primary and measurement.primary.unit or "process wall time in ms")
     if options.timings then
         print("  Timings:  %s", options.verbose and "each sample and warmup"
             or "sample nearest the median wall time")
     end
-    if #session.description > 0 then
+    if #measurement.description > 0 then
         print("  Measurement:")
-        for _, line in ipairs(session.description) do print("    %s", line) end
+        for _, line in ipairs(measurement.description) do print("    %s", line) end
     end
     flush()
 end
@@ -66,16 +69,17 @@ function begin_case(record, index, total)
     flush()
 end
 
-function sample(session, record, run)
+function sample(session, run)
     local failed = failure(run)
     if not session.options.verbose and not failed then return end
-    local ordinal = run.warmup and run.ordinal or run.ordinal - session.warmups
-    local count = run.warmup and session.warmups or session.samples
+    local sampling = session.results.metadata.sampling
+    local ordinal = run.warmup and run.ordinal or run.ordinal - sampling.warmups
+    local count = run.warmup and sampling.warmups or sampling.samples
     local progress = ordinal .. "/" .. count
     local suffix = failed and "  " .. failed or ""
     if session.options.verbose then
         local values = {decimal(run.wall_ms) .. " ms"}
-        for _, column in ipairs(session.columns) do
+        for _, column in ipairs(session.results.measurement.columns) do
             local value = run.metrics and run.metrics[column.key]
             table.insert(values, column.label .. ": " .. (value ~= nil and tostring(value) or "-"))
         end
@@ -90,16 +94,19 @@ function sample(session, record, run)
 end
 
 local function primary_metric(session, summary)
-    if session.primary then return summary.metrics and summary.metrics[session.primary.key] or {} end
+    local primary = session.results.measurement.primary
+    if primary then return summary.metrics and summary.metrics[primary.key] or {} end
     return {median = summary.median_wall_ms, minimum = summary.minimum_wall_ms, maximum = summary.maximum_wall_ms}
 end
 
 function finish_case(record, session)
+    local sampling = session.results.metadata.sampling
+    local primary = session.results.measurement.primary
     local summary = record.summary or {}
     local measured = summary.measured_runs or 0
     local metric = primary_metric(session, summary)
     print("  %s: median %s %s; range %s-%s (%d measured sample%s)", record.id,
-        decimal(metric.median), session.primary and session.primary.unit or "ms",
+        decimal(metric.median), primary and primary.unit or "ms",
         decimal(metric.minimum), decimal(metric.maximum), measured, measured == 1 and "" or "s")
     if session.options.timings and not session.options.verbose and summary.median_wall_ms then
         local selected, distance
@@ -111,7 +118,7 @@ function finish_case(record, session)
         end
         if selected then
             print("  Sample %d/%d nearest median: %s ms wall",
-                selected.ordinal - session.warmups, session.samples, decimal(selected.wall_ms))
+                selected.ordinal - sampling.warmups, sampling.samples, decimal(selected.wall_ms))
             stage_timings(selected)
         end
     end
@@ -125,19 +132,21 @@ local function range(metric)
 end
 
 function summary(session)
-    local unit = session.primary and session.primary.unit or "ms"
+    local sampling = session.results.metadata.sampling
+    local measurement = session.results.measurement
+    local unit = measurement.primary and measurement.primary.unit or "ms"
     local columns = {"Case", "Samples", "Median (" .. unit .. ")", "Min (" .. unit .. ")", "Max (" .. unit .. ")"}
-    for _, column in ipairs(session.columns) do table.insert(columns, column.label) end
+    for _, column in ipairs(measurement.columns) do table.insert(columns, column.label) end
     local rows, notes = {columns}, {}
     for _, record in ipairs(session.results.cases) do
         local summary = record.summary or {}
         local measured = summary.measured_runs or 0
-        local incomplete = record.status ~= "complete" or measured ~= session.samples
+        local incomplete = record.status ~= "complete" or measured ~= sampling.samples
         local metric = primary_metric(session, summary)
         local row = {record.id,
-            incomplete and string.format("%d/%d", measured, session.samples) or tostring(measured),
+            incomplete and string.format("%d/%d", measured, sampling.samples) or tostring(measured),
             decimal(metric.median), decimal(metric.minimum), decimal(metric.maximum)}
-        for _, column in ipairs(session.columns) do
+        for _, column in ipairs(measurement.columns) do
             table.insert(row, column.statistic == "median"
                 and decimal(summary.metrics and summary.metrics[column.key]
                     and summary.metrics[column.key].median)
@@ -152,7 +161,7 @@ function summary(session)
             end
             local note = measured == 0 and reason .. "; no successful measured samples"
                 or string.format("%s; statistics from %d/%d successful measured samples",
-                    reason, measured, session.samples)
+                    reason, measured, sampling.samples)
             table.insert(notes, record.id .. ": " .. note)
         end
     end

@@ -1,41 +1,33 @@
 import("core.project.project")
+import("xmake.consumer", {rootdir = os.projectdir()})
 
 function main()
     local repository = os.projectdir()
     local temporary = os.tmpfile() .. "-toolchain"
     local fixture = path.join(repository, "tests", "interop", "toolchain")
-    local prefix = assert(project.required_package("carven"):installdir())
     local carven = path.absolute(project.target("carven"):targetfile())
     os.mkdir(temporary)
     os.cp(path.join(repository, "crafts"), path.join(temporary, "installed-crafts"))
     local original = io.readfile(path.join(fixture, "app.cv.fixture"))
     io.writefile(path.join(temporary, "app.cv"), original)
     os.cp(path.join(fixture, "provider.*"), temporary)
-    local function write_project()
-        io.writefile(path.join(temporary, "xmake.lua"), string.format([[
+    local configuration = consumer.configuration(carven, path.join(temporary, "installed-crafts"))
+    io.writefile(path.join(temporary, "xmake.lua"), string.format([[
 set_project("carven-toolchain-support")
 set_languages("c++20")
 add_rules("mode.debug")
-package("carven")
-    set_kind("toolchain")
-    set_installdir(%q)
-    on_fetch(function () return {} end)
-package_end()
-add_requires("carven", {system = false})
+%s
 target("consumer")
     set_kind("binary")
     add_rules("@carven/carven")
-    set_values("carven.program", %q)
-    set_values("carven.craftsdir", %q)
     add_includedirs(".")
     add_files("*.cv", "provider.cpp")
 target_end()
-]], prefix, carven, path.join(temporary, "installed-crafts")))
-    end
-    write_project()
+]], configuration))
     local serial = 0
     local function command(args, expected_failure)
         serial = serial + 1
+        args = table.join({args[1], "-P", temporary}, table.slice(args, 2))
         local output, errors = path.join(temporary, serial .. ".stdout"), path.join(temporary, serial .. ".stderr")
         local code = os.execv(os.programfile(), args, {curdir = temporary, try = true, timeout = 300000,
             stdout = output, stderr = errors})

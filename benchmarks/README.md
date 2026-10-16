@@ -17,17 +17,19 @@ execution, sampling and reporting.
 ## Running benchmarks
 
 Benchmark commands run from the repository root through `./xmakew`; Windows uses
-`.\xmakew.ps1` with the same arguments. Each invocation updates the configured
-compiler before measuring:
+`.\xmakew.ps1` with the same arguments. Build the compiler before measuring:
 
 ```shell
+./xmakew build
 ./xmakew bench compile
 ./xmakew bench incremental
 ```
 
 Benchmarks use the Carven executable selected by Xmake's current project
-configuration. `--compiler` selects an existing executable and skips the build;
-its build mode is reported as unknown. Reports default to a fresh JSON file in
+configuration and reuse its resolved Carven rules package. `--compiler` selects
+another built executable; its build mode is reported as unknown. Native benchmark
+workloads are built in their own retained projects before measurement.
+Reports default to a fresh JSON file in
 `build/benchmarks/<topic>/`. Each run retains source workspaces, generated C++, native
 objects and executables in `build/benchmarks/<topic>/<report-name>-artifacts/`,
 including on failure. `--output` selects the report path; code artifacts stay
@@ -100,11 +102,12 @@ architecture, backend selection, checksums, and individual samples.
 
 Native execution benchmarks snapshot the selected compiler's complete Carven
 craft, their topic directory and shared harness, plus optional external headers.
-Source templates and native builds consume that snapshot. Reports keep one input
-manifest with source paths and hashes; original files and snapshots are checked
-before a run is marked complete. Generated source identities are recorded
-separately. Compiler source discovery continues to use its installed or checkout
-craft directory, whose captured contents are checked by the same manifest.
+Source templates and native builds consume that snapshot. Carven targets use the
+configured `@carven/carven` rule with the selected compiler and captured Crafts;
+the rule owns generation, native source collection and platform dependencies.
+Reports keep one input manifest with source paths and hashes; original files and
+snapshots are checked before a run is marked complete. Generated source identities
+are recorded separately.
 
 ### JSON API validation
 
@@ -235,7 +238,7 @@ by its samples; the JSON records this order. Their workload and harness sources
 are captured and checked using the shared input snapshot. Incremental builds
 also consume captured Crafts. The compiler executable's hash is checked again
 before completion. Keep the selected rules package unchanged during a run;
-its repository revision and local changes are recorded separately.
+reports record its installed directory.
 
 `--timings` shows the valid sample closest to each case's median wall time,
 identified by sample number. Its Carven invocations appear separately, with stage

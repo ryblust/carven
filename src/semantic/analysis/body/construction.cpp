@@ -16,8 +16,8 @@ import :semantic.analysis.body.builder;
 import :semantic.analysis.body.context;
 import :semantic.analysis.body.expr_site;
 import :semantic.analysis.body.resolve;
+import :semantic.analysis.constant.extent;
 import :semantic.analysis.constant.freeze;
-import :semantic.analysis.constant.root;
 import :semantic.analysis.coverage;
 import :semantic.analysis.expr.scope;
 import :semantic.analysis.names;
@@ -25,8 +25,8 @@ import :semantic.analysis.operations;
 import :semantic.analysis.program;
 import :semantic.analysis.source.builder;
 import :semantic.analysis.stage.session;
-import :semantic.analysis.types;
 import :semantic.analysis.types.display;
+import :semantic.analysis.types;
 import :semantic.analysis.validation;
 import :semantic.evaluation.operation;
 import :semantic.semir.decl;
@@ -79,6 +79,16 @@ BodyElaborator::BodyElaborator(
     body_builder.set_lifetime(root_lifetime);
     regions.push_back(empty_region(ast.ast_module().span));
     failure_contexts.push_back({outward_failure_term_id, accepts_catch_residual});
+    batch->active_builders.emplace(body_builder.identity(), std::addressof(body_builder));
+}
+
+BodyElaborator::~BodyElaborator() noexcept {
+    batch->active_builders.erase(body_builder.identity());
+}
+
+auto BodyElaborator::finish_body(SemanticRegion region) noexcept -> StructuredBodyDraft {
+    batch->active_builders.erase(body_builder.identity());
+    return std::move(body_builder).finish(std::move(region));
 }
 
 auto BodyElaborator::observe_source(
@@ -132,14 +142,37 @@ auto BodyElaborator::warn(Span span, DiagnosticCode code, std::string message) n
 
 auto BodyElaborator::resolve_array_extent(ASTExprID id) noexcept -> AnalysisTask<std::uint64_t> {
     auto scope = BodyExprSite(*this);
-    co_return (co_await evaluate_array_extent(draft(), source_module_id, ast, scope, id));
+    co_return (co_await evaluate_array_extent(draft(), ast, scope, id));
 }
 
-auto BodyExprSite::build_static_expression(
-    ASTExprID expression,
+auto BodyElaborator::build_static_expression(
+    ASTExprID source,
     std::optional<ConstructionTypeRef> expected
-) noexcept -> ExpressionTask<SemanticExpression> {
-    return ::build_static_expression(draft(), module_id(), syntax(), *this, expression, expected);
+) noexcept -> AnalysisTask<SemanticExpression> {
+    const auto span = ast.expression(source).span;
+    const auto outer_reachable = reachable;
+    auto enclosing_catches = std::exchange(catches, {});
+    static_scope_frames.push_back(frames.size());
+    failure_contexts.push_back({draft().add_empty_failure_term(), false});
+    reachable = true;
+    auto built = co_await expression(source, expected);
+    failure_contexts.pop_back();
+    static_scope_frames.pop_back();
+    catches = std::move(enclosing_catches);
+    reachable = outer_reachable;
+    if (!built) {
+        co_return std::unexpected(built.error());
+    }
+    if (expected) {
+        if (auto checked = coerce_to(*built, *expected, span); !checked) {
+            co_return std::unexpected(checked.error());
+        }
+    } else {
+        if (auto inferred = infer_value_type(*built, span); !inferred) {
+            co_return std::unexpected(inferred.error());
+        }
+    }
+    co_return consume_value(*built, span, AccessMode::Read);
 }
 
 auto BodyElaborator::static_expression(
@@ -149,17 +182,9 @@ auto BodyElaborator::static_expression(
     if (static_stage()) {
         co_return co_await this->expression(expression, expected);
     }
-    auto scope = BodyExprSite(*this);
-    auto result = co_await scope.build_static_expression(expression, expected);
+    auto result = co_await build_static_expression(expression, expected);
     if (!result) {
-        if (const auto* diagnostic = std::get_if<AnalysisFailure>(&result.error())) {
-            co_return std::unexpected(*diagnostic);
-        }
-        co_return std::unexpected(fail(
-            ast.expression(expression).span,
-            DiagnosticCode::ConstAdmission,
-            "static input requires admitted static operands"
-        ));
+        co_return std::unexpected(result.error());
     }
     co_return BuiltExpression {
         .storage = UniqueIndirect {BodyExpressionStorage {std::move(*result)}},
@@ -204,8 +229,14 @@ auto BodyElaborator::read_local(const BodyLocalStorage& local, Span span) noexce
     co_return value;
 }
 
-auto BodyElaborator::resolve_static_references(SemanticExpression& source) noexcept
-    -> AnalysisTask<bool> {
+auto BodyElaborator::resolve_static_references(
+    SemanticExpression& source,
+    const StructuredBodyDraft* scope
+) noexcept -> AnalysisTask<bool> {
+    auto local_lifetimes = std::set<LifetimeRegionID>();
+    visit_semantic_nodes(source, [&](const SemanticRegion& region) noexcept {
+        local_lifetimes.insert(region.lifetime);
+    });
     auto bindings = std::vector<SemanticExpression*>();
     visit_semantic_nodes(source, [&](SemanticExpression& expression) noexcept {
         if (std::holds_alternative<SemBinding>(expression.value)) {
@@ -214,6 +245,12 @@ auto BodyElaborator::resolve_static_references(SemanticExpression& source) noexc
     });
     auto complete = true;
     for (auto* expression : bindings) {
+        const auto binding = std::get<SemBinding>(expression->value).binding;
+        const auto lifetime = scope ? scope->bindings.get(binding).lifetime
+                                    : body_builder.binding_copy(binding).lifetime;
+        if (local_lifetimes.contains(lifetime)) {
+            continue;
+        }
         auto value =
             co_await compute_static_binding(std::get<SemBinding>(expression->value).binding);
         if (!value) {
@@ -239,17 +276,39 @@ auto BodyElaborator::compute_static_binding(LocalBindingID binding) noexcept
         co_return found->second.value;
     }
     auto initializer = found->second.initializer;
-    auto complete = co_await resolve_static_references(initializer);
+    auto region = SemanticRegion {
+        .lifetime = initializer.lifetime,
+        .origin = initializer.origin,
+        .statements = {},
+        .result = std::nullopt,
+        .result_reachable = false,
+        .failures = initializer.failures,
+        .exits_test = initializer.exits_test,
+    };
+    const auto active = batch->active_builders.find(binding.owner());
+    if (active == batch->active_builders.end()) {
+        invariant_violation("local constant requires its active construction owner");
+    }
+    const auto scope = active->second->snapshot(region);
+    auto complete = co_await resolve_static_references(initializer, &scope);
     if (!complete) {
         co_return std::unexpected(complete.error());
     }
     if (!*complete) {
         co_return std::nullopt;
     }
+    region.result = initializer;
+    region.result_reachable = true;
+    auto ready = co_await construction_requests().close_generic_calls(region);
+    if (!ready) {
+        co_return std::unexpected(ready.error());
+    }
+    initializer = std::move(*region.result);
     const auto published_type = initializer.type.construction();
     auto result = co_await construction_requests().stage().evaluate(
         initializer,
-        StaticEvaluationPurpose::ResolveType
+        StaticEvaluationPurpose::ResolveType,
+        &scope
     );
     if (!result) {
         co_return std::unexpected(result.error());
@@ -266,75 +325,6 @@ auto BodyElaborator::compute_static_binding(LocalBindingID binding) noexcept
     co_return *frozen;
 }
 
-auto BodyElaborator::resolve_constant_name(std::string_view name, Span span) noexcept
-    -> AnalysisTask<std::optional<ConstantID>> {
-    if (const auto* local = use_local(name)) {
-        observe_binding(span, *local);
-        auto result = co_await compute_static_binding(local->storage.binding);
-        if (!result || !*result) {
-            co_return result;
-        }
-        for (const auto index : local->projection) {
-            const auto* tuple = std::get_if<TupleConstant>(&draft().constant(**result).value);
-            if (!tuple || index >= tuple->elements.size()) {
-                invariant_violation("static local projection exceeds its constant shape");
-            }
-            result = std::optional(tuple->elements[index]);
-        }
-        co_return result;
-    }
-    auto selected = (co_await find_global(name, span));
-    if (!selected.has_value()) {
-        co_return std::unexpected(selected.error());
-    }
-    const auto* selected_symbol = catalog().symbol(*selected);
-    if (!selected_symbol) {
-        co_return std::unexpected(fail(
-            span,
-            DiagnosticCode::TypeValueRequired,
-            std::format("'{}' does not name a constant value", name)
-        ));
-    }
-    co_return (co_await selected_symbol->form.visit(
-        Overloaded {
-            [&](const CatalogConstantForm& form) noexcept
-                -> AnalysisTask<std::optional<ConstantID>> {
-                const auto declaration = draft().module_constant_declaration_copy(form.constant);
-                co_return declaration.value;
-            },
-            [&](const CatalogEnumCaseForm& form) noexcept
-                -> AnalysisTask<std::optional<ConstantID>> {
-                const auto declaration =
-                    draft().construction_enum_case_declaration_copy(form.enum_case);
-                co_return declaration.constant;
-            },
-            [&](const CatalogFunctionForm& form) noexcept
-                -> AnalysisTask<std::optional<ConstantID>> {
-                auto completed =
-                    (co_await batch
-                         ->ensure_function_signature(form.function, source_module_id, span));
-                if (!completed.has_value()) {
-                    co_return std::unexpected(completed.error());
-                }
-                co_return std::nullopt;
-            },
-            [&]<typename Form>(const Form&) noexcept -> AnalysisTask<std::optional<ConstantID>> {
-                static_assert(
-                    std::same_as<Form, CatalogStructForm>
-                        || std::same_as<Form, CatalogEnumForm>
-                        || std::same_as<Form, CatalogGenericForm>,
-                    "unhandled non-constant catalog symbol"
-                );
-                co_return std::unexpected(fail(
-                    span,
-                    DiagnosticCode::TypeValueRequired,
-                    std::format("'{}' does not name a constant value", name)
-                ));
-            },
-        }
-    ));
-}
-
 auto BodyElaborator::construction_requests() noexcept -> ConstructionRequests& {
     return batch->requests;
 }
@@ -347,59 +337,6 @@ auto BodyElaborator::resolve_number_parser(BuiltinType number, Span span) noexce
 auto BodyElaborator::resolve_duration_type(Span span) noexcept -> AnalysisTask<TypeID> {
     co_return co_await construction_requests()
         .standard_type(StandardDeclaration::Duration, source_module_id, span);
-}
-
-auto BodyElaborator::resolve_static_callable(std::string_view name, Span span) noexcept
-    -> AnalysisTask<std::optional<ResolvedStaticCallable>> {
-    if (use_local(name) != nullptr) {
-        co_return std::optional<ResolvedStaticCallable>();
-    }
-    if (catalog().lookup(source_module_id, name).empty()) {
-        co_return std::optional<ResolvedStaticCallable>();
-    }
-    auto selected = (co_await find_global(name, span));
-    if (!selected) {
-        co_return std::unexpected(selected.error());
-    }
-    const auto* selected_symbol = catalog().symbol(*selected);
-    if (const auto* provided = std::get_if<ProvidedExport>(&*selected)) {
-        if (const auto callable = draft().provided_callable(*provided)) {
-            co_return std::optional<ResolvedStaticCallable>(*callable);
-        }
-        if (const auto builtin = provided_async_builtin(*provided)) {
-            auto resolved = co_await resolve_async_builtin(
-                construction_requests(),
-                *builtin,
-                source_module_id,
-                span
-            );
-            if (!resolved) {
-                co_return std::unexpected(resolved.error());
-            }
-            co_return std::optional<ResolvedStaticCallable>(std::move(*resolved));
-        }
-        co_return std::optional<ResolvedStaticCallable>();
-    }
-    if (const auto* generic =
-            (selected_symbol ? std::get_if<CatalogGenericForm>(&selected_symbol->form) : nullptr)) {
-        const auto definition = draft().generic_declaration_copy(generic->definition);
-        if (std::holds_alternative<GenericFunctionDefinition>(definition)) {
-            co_return std::optional<ResolvedStaticCallable>(generic->definition);
-        }
-        co_return std::optional<ResolvedStaticCallable>();
-    }
-    const auto* function =
-        (selected_symbol ? std::get_if<CatalogFunctionForm>(&selected_symbol->form) : nullptr);
-    if (function == nullptr) {
-        co_return std::optional<ResolvedStaticCallable>();
-    }
-
-    auto completed =
-        (co_await batch->ensure_function_signature(function->function, source_module_id, span));
-    if (!completed) {
-        co_return std::unexpected(completed.error());
-    }
-    co_return std::optional<ResolvedStaticCallable>(function->function);
 }
 
 auto BodyElaborator::resolve_type_qualifier(ASTExprID expression) noexcept
@@ -496,6 +433,10 @@ auto BodyElaborator::resolve_constant_enum_case(
             "scope qualifier does not name an enum or class type"
         ));
     }
+    auto prepared = co_await construction_requests().ensure_type(type, source_module_id, span);
+    if (!prepared) {
+        co_return std::unexpected(prepared.error());
+    }
     if (const auto case_id = find_enum_case(nominal->enumeration, name, span)) {
         const auto declaration = draft().construction_enum_case_declaration_copy(*case_id);
         const auto reference_type =
@@ -514,7 +455,7 @@ auto BodyElaborator::resolve_constant_enum_case(
         DiagnosticCode::TypeMemberUnresolved,
         std::format(
             "enum '{}' has no case named '{}'{}",
-            type_display_name(draft(), type),
+            type_display_name(draft(), type, catalog()),
             name,
             spelling_suggestion(name, draft().enum_case_names(nominal->enumeration))
         )
@@ -635,4 +576,75 @@ BodyBatchElaborator::BodyBatchElaborator(
             functions[function->function.index()] = std::addressof(symbol);
         }
     }
+}
+
+auto BodyExprSite::evaluate_constant_expression(ASTExprID expression) noexcept
+    -> AnalysisTask<std::optional<ConstantID>> {
+    return body.batch->evaluate_constant_expression(
+        module_id(),
+        expression,
+        std::nullopt,
+        body.generic_context ? &*body.generic_context : nullptr,
+        &body
+    );
+}
+
+auto BodyBatchElaborator::evaluate_constant_expression(
+    ProgramModuleID module_id,
+    ASTExprID expression,
+    std::optional<ConstructionTypeRef> expected,
+    const GenericTypeContext* generic_context,
+    BodyElaborator* enclosing
+) noexcept -> AnalysisTask<std::optional<ConstantID>> {
+    const auto* module = catalog_data.find_module(module_id);
+    auto elaborator = BodyElaborator(
+        *this,
+        module_id,
+        module->declaration,
+        draft->syntax_tree(module_id).view(),
+        draft->reserve_body(BodyKind::ConstBlock),
+        expected,
+        draft->add_empty_failure_term(),
+        false,
+        false,
+        generic_context ? std::optional(*generic_context) : std::nullopt
+    );
+    elaborator.static_body = true;
+    if (enclosing) {
+        elaborator.inherited_locals = enclosing->visible_locals();
+        elaborator.lexical_class = enclosing->lexical_class;
+    }
+    const auto span = elaborator.ast.expression(expression).span;
+    elaborator.begin_full_expression(span);
+    auto built = co_await elaborator.build_static_expression(expression, expected);
+    elaborator.end_full_expression();
+    if (!built) {
+        co_return std::unexpected(built.error());
+    }
+    auto& region = elaborator.regions.front();
+    elaborator.append_statement(
+        SemExpressionStatement {std::move(*built)},
+        elaborator.origin(span)
+    );
+    auto ready = co_await requests.close_generic_calls(region);
+    if (!ready) {
+        co_return std::unexpected(ready.error());
+    }
+    if (elaborator.observe_sources) {
+        draft->source_analysis()->add_body(std::move(elaborator.source_occurrences));
+    }
+    auto definition = elaborator.finish_body(std::move(region));
+    const auto id = definition.id;
+    static_expression_bodies.insert(id);
+    draft->add_body_draft(std::move(definition));
+    const auto& root = draft->body_draft(id);
+    auto result = co_await requests.stage().evaluate(
+        std::get<SemExpressionStatement>(root.region.statements.back().value).expression,
+        StaticEvaluationPurpose::Execute,
+        &root
+    );
+    if (!result) {
+        co_return std::unexpected(result.error());
+    }
+    co_return freeze_constant_value(*draft, std::move(*result));
 }

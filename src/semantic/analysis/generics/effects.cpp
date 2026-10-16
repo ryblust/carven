@@ -76,19 +76,6 @@ auto ProgramDraft::make_failure_instantiation(
     );
 }
 
-auto ProgramDraft::substitute_generic_failures(
-    ConstructionFailureRef failures,
-    GenericDeclarationID definition,
-    std::span<const GenericArgument> arguments,
-    FailureInstantiation* effects
-) noexcept -> ConstructionFailureRef {
-    if (effects) {
-        return effects->substitute(failures);
-    }
-    auto substitution = make_failure_instantiation(definition, arguments);
-    return substitution.substitute(failures);
-}
-
 auto ProgramDraft::failure_dependencies(ConstructionFailureRef source) const noexcept
     -> std::vector<ConstructionFailureRef> {
     return storage.failure_constraints.dependencies(source);

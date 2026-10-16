@@ -294,8 +294,8 @@ does not extend its lifetime.
 and borrows its storage. The returned text follows the same lifetime and mutation
 checks as slices.
 
-Constant initializers can instead create slices with program-lifetime backing; see
-[Frozen constant slices](constants.md#frozen-constant-slices).
+Constant initializers can retain completed array or Vector contents as slices
+with immutable program-lifetime backing.
 
 ## Floating methods
 

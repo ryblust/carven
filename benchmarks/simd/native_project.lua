@@ -1,7 +1,9 @@
 import("benchmarks.harness.native_build", {rootdir = os.projectdir()})
 
-function project_text(root, inputs, case, cxx, portable)
-    local lines = {native_build.project_header("carven-simd-benchmark"), "set_policy(\"build.optimization.lto\", false)"}
+function project_text(inputs, case, session)
+    local lines = {native_build.project_header("carven-simd-benchmark"),
+        native_build.carven_rules(session, inputs), "set_policy(\"build.optimization.lto\", false)"}
+    local cxx, portable = session.options.cxx, session.options.portable
     local function call(name, values)
         local quoted = {}
         for _, value in ipairs(values) do table.insert(quoted, string.format("%q", value)) end
@@ -17,10 +19,14 @@ function project_text(root, inputs, case, cxx, portable)
             "CARVEN_SIMD_BENCH_COUNT=" .. (case.operation == "count" and "1" or "0"),
             "CARVEN_SIMD_BENCH_FIND=" .. (case.operation == "find" and "1" or "0")})
         if portable then call("add_defines", {"CARVEN_SIMD_FORCE_PORTABLE=1"}) end
-        call("add_includedirs", {path.join(inputs, "crafts"), path.join(inputs, "benchmarks", "simd"), path.join(root, "generated")})
+        call("add_includedirs", {path.join(inputs, "crafts"), path.join(inputs, "benchmarks", "simd")})
         call("add_files", {path.join(inputs, "benchmarks", "simd", "main.cpp")})
-        call("add_files", {implementation == "carven" and path.join(root, "generated", "**.cpp")
-            or path.join(inputs, "benchmarks", "simd", "byte_loop.cpp")})
+        if implementation == "carven" then
+            table.insert(lines, string.format('    add_rules("@carven/carven", {linkage_domain = %q})', "benchmark:simd:" .. case.id))
+            call("add_files", {"workload.cv"})
+        else
+            call("add_files", {path.join(inputs, "benchmarks", "simd", "byte_loop.cpp")})
+        end
         table.insert(lines, "target_end()")
     end
     return table.concat(lines, "\n") .. "\n"

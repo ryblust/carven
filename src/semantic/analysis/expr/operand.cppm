@@ -3,7 +3,7 @@ module carven:semantic.analysis.expr.operand;
 import :diagnostics.code;
 import :frontend.ast.expr;
 import :frontend.ast.storage;
-import :semantic.analysis.expr.result;
+import :semantic.analysis.diagnostics;
 import :semantic.semir.type;
 import std;
 
@@ -19,7 +19,7 @@ auto read_value_argument(
     Site& site,
     ASTExprID expression,
     std::optional<ConstructionTypeRef> expected
-) noexcept -> ExpressionTask<typename Site::Value> {
+) noexcept -> AnalysisTask<typename Site::Value> {
     const auto span = site.syntax().expression(expression).span;
     const auto selected = call_argument_operand(site.syntax(), expression);
     if (selected.access != AccessMode::Read) {

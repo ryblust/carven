@@ -13,7 +13,7 @@ const TestSuite suite([] static noexcept {
             {.name = "swizzle lane bounds",
              .source = R"(fn run(value: f32x4) -> f32x4 => value.swizzle([0, 1, 2, 4]);)",
              .code = DiagnosticCode::ConstIndexBounds,
-             .primary_text = "[0, 1, 2, 4]"},
+             .primary_text = "value.swizzle([0, 1, 2, 4])"},
             {.name = "swizzle requires static indices",
              .source =
                  R"(fn run(value: f32x4, indices: [u8; 4]) -> f32x4 => value.swizzle(indices);)",

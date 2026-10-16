@@ -21,13 +21,11 @@ private:
     friend class ProgramDraft;
 };
 
-enum class BodyIdentityDomain { Body, EvaluationRoot, GenericDefinition };
+enum class BodyIdentityDomain { Body, GenericDefinition };
 
 class BodyIdentity final {
 public:
     constexpr auto program() const noexcept -> ProgramIdentity { return program_identity; }
-
-    constexpr auto body_index() const noexcept -> std::uint32_t { return body_index_value; }
 
     constexpr auto operator<=>(const BodyIdentity&) const noexcept = default;
 

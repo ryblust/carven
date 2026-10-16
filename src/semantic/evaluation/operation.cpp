@@ -193,7 +193,7 @@ auto validate_constant_value(const ConstantValueReader& values, const ConstantVa
     -> void {
     value.visit([&](const auto& item) noexcept {
         using Item = std::remove_cvref_t<decltype(item)>;
-        if constexpr (std::same_as<Item, StringConstant> || std::same_as<Item, CStringConstant>) {
+        if constexpr (std::same_as<Item, TextConstant> || std::same_as<Item, CStringConstant>) {
             if (!values.owns(item.value)) {
                 invariant_violation("evaluator received a foreign spelling");
             }
@@ -1001,7 +1001,7 @@ auto evaluate_text_intrinsic_constant_value(
     TypeID result
 ) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure> {
     validate_constant_fact(values, operand);
-    const auto* string = std::get_if<StringConstant>(&operand.value);
+    const auto* string = std::get_if<TextConstant>(&operand.value);
     if (string == nullptr || !is_builtin(values, operand.type, BuiltinType::Str)) {
         return std::unexpected(ConstantEvaluationFailure::UnsupportedOperation);
     }

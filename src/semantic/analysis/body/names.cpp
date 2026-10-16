@@ -34,11 +34,11 @@ auto BodyElaborator::select_name(const ASTNameExpr& name, Span span) noexcept
     const auto text = spelling(name.name_span);
     observe_source(name.name_span, std::nullopt, std::nullopt);
     if (const auto* local = use_local(text)) {
-        if (runtime_local_outside_block(text)) {
+        if (runtime_local_outside_static_scope(text)) {
             co_return std::unexpected(fail(
                 span,
                 DiagnosticCode::ConstAdmission,
-                std::format("const block cannot use the runtime value '{}'", text)
+                std::format("static expression cannot use the runtime value '{}'", text)
             ));
         }
         const auto binding = local->storage.binding;
@@ -134,16 +134,19 @@ auto BodyElaborator::select_name(const ASTNameExpr& name, Span span) noexcept
             if (!resolved) {
                 co_return std::unexpected(resolved.error());
             }
-            if (const auto* intrinsic = std::get_if<AsyncIntrinsic>(&*resolved)) {
-                co_return AsyncIntrinsicSelection {.kind = *intrinsic, .span = span};
-            }
-            if (const auto* policy = std::get_if<AsyncCompositionPolicy>(&*resolved)) {
-                co_return CompositionSelection {.policy = *policy, .span = span};
-            }
-            if (const auto* contract = std::get_if<TimeoutContract>(&*resolved)) {
-                co_return TimeoutSelection {.contract = *contract, .span = span};
-            }
-            invariant_violation("provided async operation resolved a source declaration");
+            co_return resolved->visit(
+                Overloaded {
+                    [&](AsyncIntrinsic intrinsic) noexcept -> SelectedExpression {
+                        return AsyncIntrinsicSelection {.kind = intrinsic, .span = span};
+                    },
+                    [&](AsyncCompositionPolicy policy) noexcept -> SelectedExpression {
+                        return CompositionSelection {.policy = policy, .span = span};
+                    },
+                    [&](const TimeoutContract& contract) noexcept -> SelectedExpression {
+                        return TimeoutSelection {.contract = contract, .span = span};
+                    },
+                }
+            );
         }
     }
     if (!selected_symbol) {

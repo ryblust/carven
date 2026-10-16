@@ -35,10 +35,12 @@ Both `str` and `String` provide:
 - `text.chars` is a copyable read-only range that decodes `char` values.
 
 `bytes` and `chars` are computed projections, not general properties.
-The `chars` view type cannot be spelled and supports only Read range iteration
-and inferred value bindings. Byte views support all slice operations. User structures may
-declare same-named fields because member resolution depends on the receiver type.
-
+The `chars` view type cannot be spelled; bindings and aggregate components infer
+it. Each Read traversal starts at the beginning of the selected text; copies
+keep the same view and have independent traversal cursors. Byte views support
+all slice operations.
+User structures may declare same-named fields because member resolution depends
+on the receiver type.
 
 ## String literals and multiline layout
 

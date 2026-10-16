@@ -392,13 +392,6 @@ auto SemanticExecutor::unsupported_expression(
             }
         } else if constexpr (std::same_as<Operation, SemCppCall>) {
             visit_cpp_operands(operation, native_input);
-        } else if constexpr (std::same_as<Operation, SemIntrinsic>) {
-            for (const auto& input : operation.operands) {
-                inputs.push_back({
-                    .expression = &input.expression,
-                    .use = argument_use(input.access),
-                });
-            }
         } else if constexpr (std::same_as<Operation, SemClosure>) {
             for (const auto& capture : operation.captures) {
                 inputs.push_back({
@@ -407,8 +400,6 @@ auto SemanticExecutor::unsupported_expression(
                         capture.mode == CaptureMode::Write ? OperandUse::Write : OperandUse::Value,
                 });
             }
-        } else if constexpr (std::same_as<Operation, SemArrayAdopt>) {
-            inputs.push_back({.expression = &*operation.source, .use = OperandUse::Borrow});
         } else {
             visit_semantic_children(operation, [&](const auto& child) noexcept {
                 using Child = std::remove_cvref_t<decltype(child)>;
@@ -1065,11 +1056,7 @@ auto SemanticExecutor::expression_value(
     } else if constexpr (std::same_as<Operation, SemFormat>) {
         co_return (co_await format(frame, operation, source.origin));
     } else {
-        co_return std::unexpected(fail(
-            source.origin,
-            ExecutionReason::Evaluation,
-            "operation is not supported in execution"
-        ));
+        static_assert(std::same_as<Operation, void>, "unhandled execution operation");
     }
 }
 
@@ -1140,17 +1127,19 @@ auto SemanticExecutor::expression_operation(
 ) noexcept -> ExecutionTask<Result> {
     if constexpr (std::same_as<Operation, SemUnreachable>) {
         invariant_violation("execution reached a semantic edge without an entry");
+    } else if constexpr (std::same_as<Operation, SemGenericCall>) {
+        invariant_violation("unsubstituted generic call reached execution");
     } else {
         if (auto checked = step(source.origin); !checked) {
             co_return std::unexpected(std::move(checked.error()));
         }
-        if (const auto reason = unsupported_execution_operation(operation)) {
+        constexpr auto reason = unsupported_execution_operation<Operation>();
+        if constexpr (reason.has_value()) {
             co_return control_result<Result>(
                 (co_await unsupported_expression(frame, source, *reason)),
                 source
             );
-        }
-        if constexpr (std::same_as<Operation, SemConstant>) {
+        } else if constexpr (std::same_as<Operation, SemConstant>) {
             co_return normal_result<Result>(ExecutionValue(operation.constant), source);
         } else if constexpr (std::same_as<Operation, SemBinding>) {
             auto local = slot_value(frame, operation.binding.index(), source.origin);

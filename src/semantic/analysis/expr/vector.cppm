@@ -3,12 +3,12 @@ module carven:semantic.analysis.expr.vector;
 import :diagnostics.code;
 import :frontend.ast.expr;
 import :frontend.ast.storage;
+import :semantic.analysis.diagnostics;
 import :semantic.analysis.expr.operand;
-import :semantic.analysis.expr.result;
 import :semantic.analysis.expr.scope;
 import :semantic.analysis.operations;
-import :semantic.semir.vector;
 import :semantic.semir.structured;
+import :semantic.semir.vector;
 import :support.invariant;
 import std;
 
@@ -19,7 +19,7 @@ auto construct_vector_call(
     typename Site::Value receiver,
     std::span<const ASTExprID> arguments,
     Span span
-) noexcept -> ExpressionTask<typename Site::Value> {
+) noexcept -> AnalysisTask<typename Site::Value> {
     const auto contract = vector_intrinsic_contract(intrinsic);
     const auto receiver_type = site.type(receiver);
     const auto shape = sequence_shape(site.draft(), receiver_type);
@@ -116,7 +116,7 @@ auto construct_vector_factory(
     std::string_view name,
     std::span<const ASTExprID> arguments,
     Span span
-) noexcept -> ExpressionTask<typename Site::Value> {
+) noexcept -> AnalysisTask<typename Site::Value> {
     const auto intrinsic =
         name == "from_slice" ? VectorIntrinsic::FromSlice : VectorIntrinsic::WithCapacity;
     if ((name != "from_slice" && name != "with_capacity") || arguments.size() != 1uz) {

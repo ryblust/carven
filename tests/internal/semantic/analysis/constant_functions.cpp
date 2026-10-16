@@ -79,7 +79,7 @@ auto require_text(
         return;
     }
     expect_equal(type->kind, expected_type);
-    const auto* text = std::get_if<StringConstant>(&fact.value);
+    const auto* text = std::get_if<TextConstant>(&fact.value);
     if (!expect(text != nullptr)) {
         return;
     }

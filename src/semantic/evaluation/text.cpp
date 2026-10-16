@@ -57,7 +57,8 @@ auto SemanticExecutor::text_handle(const ExecutionValue& value, ProgramOriginID 
     if (const auto* text = std::get_if<ExecutionOwnedText>(&value)) {
         return text->borrow();
     }
-    if (const auto* text = std::get_if<ExecutionText>(&value)) {
+    const auto* chars = std::get_if<ExecutionChars>(&value);
+    if (const auto* text = chars ? &chars->text : std::get_if<ExecutionText>(&value)) {
         if (!text->alive(&memory)) {
             return std::unexpected(
                 fail(origin, ExecutionReason::Evaluation, "text backing is no longer alive")
@@ -66,7 +67,7 @@ auto SemanticExecutor::text_handle(const ExecutionValue& value, ProgramOriginID 
         return *text;
     }
     const auto atom = execution_atom(values, value);
-    const auto* text = atom ? std::get_if<StringConstant>(&atom->value) : nullptr;
+    const auto* text = atom ? std::get_if<TextConstant>(&atom->value) : nullptr;
     if (!text) {
         return std::unexpected(fail(origin, ExecutionReason::Evaluation, "expected text"));
     }
@@ -225,7 +226,9 @@ auto SemanticExecutor::text_intrinsic(
     if (!operand) {
         co_return std::unexpected(std::move(operand.error()));
     }
-    if ((intrinsic == TextIntrinsic::AsStr || intrinsic == TextIntrinsic::Bytes)
+    if ((intrinsic == TextIntrinsic::AsStr
+         || intrinsic == TextIntrinsic::Bytes
+         || intrinsic == TextIntrinsic::Chars)
         && std::holds_alternative<ExecutionValue>(*operand)) {
         auto& temporary = std::get<ExecutionValue>(*operand);
         const auto* text = std::get_if<ExecutionText>(&temporary);
@@ -266,6 +269,7 @@ auto SemanticExecutor::text_intrinsic(
             co_return ExecutionOwnedText(std::string(bytes->view()));
         }
         case TextIntrinsic::AsStr: co_return handle->borrow();
+        case TextIntrinsic::Chars: co_return ExecutionChars {.text = handle->borrow()};
         case TextIntrinsic::Bytes: {
             if (const auto* source = handle->slice()) {
                 auto result = *source;
@@ -300,7 +304,6 @@ auto SemanticExecutor::text_intrinsic(
         case TextIntrinsic::Clear:
         case TextIntrinsic::Append:
         case TextIntrinsic::Push:
-        case TextIntrinsic::Chars:
             co_return std::unexpected(fail(
                 origin,
                 ExecutionReason::Evaluation,

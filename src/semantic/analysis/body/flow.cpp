@@ -43,7 +43,7 @@ auto BodyElaborator::begin_full_expression(Span span) noexcept -> void {
     );
 }
 
-auto BodyElaborator::end_full_expression(Span) noexcept -> void {
+auto BodyElaborator::end_full_expression() noexcept -> void {
     active_full_expression.reset();
 }
 

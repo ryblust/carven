@@ -46,23 +46,23 @@ auto TargetRenderer::render_parameter(const TargetParameter& value) noexcept -> 
     return result;
 }
 
-auto TargetRenderer::render_trailing_return(SyntaxLayouts result, bool const_qualified) noexcept
+auto TargetRenderer::render_trailing_return(LayoutNodeID result, bool const_qualified) noexcept
     -> LayoutNodeID {
     const auto qualifiers = text(const_qualified ? " const noexcept" : " noexcept");
     return choice(
-        {builder.flatten(concat({qualifiers, text(" -> "), result.inline_qualified})),
+        {builder.flatten(concat({qualifiers, text(" -> "), result})),
          concat(
              {qualifiers,
-              builder.indent(indent_width, concat({builder.line(), text("-> "), result.wrapping}))}
+              builder.indent(indent_width, concat({builder.line(), text("-> "), result}))}
          )}
     );
 }
 
 auto TargetRenderer::render_function_declarator(
     std::string_view prefix,
-    SyntaxLayouts name,
+    LayoutNodeID name,
     std::span<const TargetParameter> parameters,
-    SyntaxLayouts result,
+    LayoutNodeID result,
     bool const_qualified
 ) noexcept -> LayoutNodeID {
     auto rendered_parameters = std::vector<LayoutNodeID> {};
@@ -70,23 +70,19 @@ auto TargetRenderer::render_function_declarator(
     for (const auto& parameter : parameters) {
         rendered_parameters.push_back(render_parameter(parameter));
     }
-    const auto head = concat({text(prefix), text("auto "), name.inline_qualified});
-    const auto wrapping_head = concat({text(prefix), text("auto "), name.wrapping});
+    const auto head = concat({text(prefix), text("auto "), name});
     const auto parameter_list = delimited_list(rendered_parameters, "(", ")");
     const auto flat_parameters = builder.flatten(parameter_list);
     const auto qualifiers = text(const_qualified ? " const noexcept" : " noexcept");
     return choice(
-        {builder.flatten(
-             concat({head, flat_parameters, qualifiers, text(" -> "), result.inline_qualified})
-         ),
+        {builder.flatten(concat({head, flat_parameters, qualifiers, text(" -> "), result})),
          concat(
              {head,
               flat_parameters,
               qualifiers,
-              builder.indent(indent_width, concat({builder.line(), text("-> "), result.wrapping}))}
+              builder.indent(indent_width, concat({builder.line(), text("-> "), result}))}
          ),
-         concat({head, parameter_list, render_trailing_return(result, const_qualified)}),
-         concat({wrapping_head, parameter_list, render_trailing_return(result, const_qualified)})}
+         concat({head, parameter_list, render_trailing_return(result, const_qualified)})}
     );
 }
 
@@ -123,12 +119,10 @@ auto TargetRenderer::render_member_function(const TargetMemberFunctionDecl& func
     }
     const auto function_name = render_member_function_name(function.name);
     const auto reference = text(function.result_reference ? "&" : "");
-    auto result = render_type_layouts(function.result);
-    result.inline_qualified = concat({result.inline_qualified, reference});
-    result.wrapping = concat({result.wrapping, reference});
+    const auto result = concat({render_type(function.result), reference});
     const auto signature = render_function_declarator(
         prefix,
-        {.inline_qualified = function_name, .wrapping = function_name},
+        function_name,
         function.parameters,
         result,
         function.const_qualified
@@ -239,9 +233,9 @@ auto TargetRenderer::render_declaration(const TargetDecl& value) noexcept -> Lay
                 }
                 const auto signature = render_function_declarator(
                     prefix,
-                    render_name_layouts(function.name),
+                    render_name(function.name),
                     function.parameters,
-                    render_type_layouts(function.result)
+                    render_type(function.result)
                 );
                 return function.form.visit(
                     Overloaded {
@@ -257,15 +251,13 @@ auto TargetRenderer::render_declaration(const TargetDecl& value) noexcept -> Lay
                 );
             },
             [&](const TargetOutOfClassMemberDefinition& function) noexcept {
-                auto name = render_name_layouts(function.owner);
                 const auto member = render_member_function_name(function.name);
-                name.inline_qualified = concat({name.inline_qualified, text("::"), member});
-                name.wrapping = concat({name.wrapping, text("::"), member});
+                const auto name = concat({render_name(function.owner), text("::"), member});
                 const auto signature = render_function_declarator(
                     function.inline_specifier ? "inline " : "",
                     name,
                     function.parameters,
-                    render_type_layouts(function.result),
+                    render_type(function.result),
                     function.const_qualified
                 );
                 return concat({signature, text(" "), render_statement_block(function.body)});
@@ -362,7 +354,7 @@ auto TargetRenderer::render_item_node(const TargetItem& item) noexcept -> Layout
                     }
                     return concat({text("namespace {"), closing});
                 }
-                const auto nested = render_items(value.items, TargetContainerKind::Namespace);
+                const auto nested = render_items(value.items);
                 const auto opening_separator =
                     std::holds_alternative<TargetNamespace>(value.items.front().value)
                     ? builder.line()

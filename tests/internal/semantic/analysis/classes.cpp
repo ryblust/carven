@@ -120,7 +120,7 @@ const TestSuite suite([] static noexcept {
             std::pair {"const value = C::secret();", DiagnosticCode::AccessClassPrivate},
             std::pair {"const value = C::read();", DiagnosticCode::TypeMethodCall},
             std::pair {"const value = object.new();", DiagnosticCode::TypeMethodCall},
-            std::pair {"const value = object.update();", DiagnosticCode::AccessWriteArgument},
+            std::pair {"const value = object.update();", DiagnosticCode::AccessNotAssignable},
             std::pair {"const value = object.consume();", DiagnosticCode::AccessTakeOperand},
             std::pair {"const value = C { value: 1 };", DiagnosticCode::AccessClassPrivate},
             std::pair {"const value = object.value;", DiagnosticCode::AccessClassPrivate},
@@ -152,6 +152,10 @@ const TestSuite suite([] static noexcept {
         const taken = consume(&&V { number: 8 });
         const relayed = relay(&&V { number: 9 });
         const awaited = await consume_async(&&V { number: 10 });
+        const tuple_member = consume(&&(V { number: 11 },).0);
+        const array_member = consume(&&[V { number: 12 }][0]);
+        const field_member = consume(&&(Box { value: V { number: 13 } }).value);
+        const { assert(tuple_member == 11 && array_member == 12 && field_member == 13); }
     )"));
             constexpr auto cases = std::array {
                 "const result = consume(&&original);",
@@ -162,6 +166,7 @@ const TestSuite suite([] static noexcept {
                 "const result = relay(&&original);",
                 "const result = await consume_async(&&original);",
                 "fn local() { const result = consume(&&original); }",
+                "fn local() -> i32 => consume(&&tuple.0);",
             };
             each(cases, std::identity {}, [&](const auto& source) noexcept {
                 expect_diagnostic(
@@ -171,7 +176,7 @@ const TestSuite suite([] static noexcept {
             });
             expect_diagnostic(
                 analyze_test_errors(prelude + "const result = update(&original);"),
-                DiagnosticCode::AccessWriteArgument
+                DiagnosticCode::AccessNotAssignable
             );
         };
 

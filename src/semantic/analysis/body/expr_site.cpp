@@ -1,6 +1,5 @@
 module carven:semantic.analysis.body.expr_site.impl;
 
-import :semantic.analysis.async;
 import :semantic.analysis.body.context;
 import :semantic.analysis.body.expr_site;
 import :semantic.analysis.constant.fold;
@@ -30,31 +29,12 @@ auto BodyExprSite::draft() noexcept -> ProgramDraft& {
     return body.draft();
 }
 
+auto BodyExprSite::catalog() const noexcept -> AnalysisCatalogView {
+    return body.catalog();
+}
+
 auto BodyExprSite::construction_requests() noexcept -> ConstructionRequests& {
     return body.construction_requests();
-}
-
-auto BodyExprSite::resolve_class_operation(
-    StructID owner,
-    std::string_view name,
-    bool receiver,
-    Span span
-) noexcept -> AnalysisResult<FunctionID> {
-    return lookup_class_operation(
-        draft(),
-        body.catalog(),
-        body.source_module_id,
-        owner,
-        body.lexical_class,
-        name,
-        receiver,
-        span
-    );
-}
-
-auto BodyExprSite::resolve_static_callable(std::string_view name, Span span) noexcept
-    -> ExpressionTask<std::optional<ResolvedStaticCallable>> {
-    co_return (co_await body.resolve_static_callable(name, span));
 }
 
 auto BodyExprSite::syntax() const noexcept -> ASTView {
@@ -72,7 +52,7 @@ auto BodyExprSite::fail(Span span, DiagnosticCode code, std::string message) noe
 }
 
 auto BodyExprSite::read(ASTExprID id, std::optional<ConstructionTypeRef> expected) noexcept
-    -> ExpressionTask<Value> {
+    -> AnalysisTask<Value> {
     co_return (co_await body.expression(id, expected, allow_pointer_narrowing));
 }
 
@@ -89,7 +69,7 @@ auto BodyExprSite::external(ConstructionTypeRef type) const noexcept -> bool {
 }
 
 auto BodyExprSite::dereference(const ASTPrefixExpr& source, Span span) noexcept
-    -> ExpressionTask<Value> {
+    -> AnalysisTask<Value> {
     co_return (co_await body.dereference_expression(source, span));
 }
 
@@ -111,34 +91,15 @@ auto BodyExprSite::numeric_enum(ConstructionTypeRef type) noexcept -> bool {
 }
 
 auto BodyExprSite::resolve_construction_type(const ASTConstructionType& type) noexcept
-    -> ExpressionTask<ConstructionTypeRef> {
+    -> AnalysisTask<ConstructionTypeRef> {
     co_return (co_await body.resolve_construction_type(type));
 }
 
-auto BodyExprSite::resolve_type(ASTTypeID type) noexcept -> ExpressionTask<ConstructionTypeRef> {
+auto BodyExprSite::resolve_type(ASTTypeID type) noexcept -> AnalysisTask<ConstructionTypeRef> {
     co_return (co_await body.resolve_type(type));
 }
 
-auto BodyExprSite::resolve_failure_clause(const ASTThrowClause& clause) noexcept
-    -> AnalysisTask<ConstructionFailureRef> {
-    const auto extent = [&](ASTExprID expression) noexcept {
-        return body.resolve_array_extent(expression);
-    };
-    co_return co_await resolve_failure_types(
-        draft(),
-        body.catalog(),
-        body.import_usage(),
-        body.source_module_id,
-        body.ast,
-        clause,
-        extent,
-        &body.batch->requests,
-        body.generic_context ? &*body.generic_context : nullptr,
-        body.observe_sources ? &body.source_occurrences : nullptr
-    );
-}
-
-auto BodyExprSite::resolve_duration_type(Span span) noexcept -> ExpressionTask<TypeID> {
+auto BodyExprSite::resolve_duration_type(Span span) noexcept -> AnalysisTask<TypeID> {
     co_return (co_await body.resolve_duration_type(span));
 }
 
@@ -179,7 +140,7 @@ auto BodyExprSite::finish_short_circuit(
     Value right,
     std::optional<ConstantID> known,
     Span span
-) noexcept -> ExpressionResult<Value> {
+) noexcept -> AnalysisResult<Value> {
     auto pending = take_pending_failures(left);
     append_pending_failures(pending, take_pending_failures(right));
     const auto completes = left.completes;
@@ -206,7 +167,7 @@ auto BodyExprSite::finish_short_circuit(
 }
 
 auto BodyExprSite::external_unary(UnaryOperator operation, Value operand, Span span) noexcept
-    -> ExpressionResult<Value> {
+    -> AnalysisResult<Value> {
     return external_operation(
         CppUnaryOperation {.operation = operation},
         std::move(operand),
@@ -216,7 +177,7 @@ auto BodyExprSite::external_unary(UnaryOperator operation, Value operand, Span s
 }
 
 auto BodyExprSite::external_cast(ConstructionTypeRef type, Value operand, Span span) noexcept
-    -> ExpressionResult<Value> {
+    -> AnalysisResult<Value> {
     return external_operation(
         CppConvertOperation {.explicit_cast = true},
         std::move(operand),
@@ -230,7 +191,7 @@ auto BodyExprSite::external_binary(
     Value left,
     Value right,
     Span span
-) noexcept -> ExpressionResult<Value> {
+) noexcept -> AnalysisResult<Value> {
     auto pending = take_pending_failures(left);
     append_pending_failures(pending, take_pending_failures(right));
     auto first = body.consume_value(left, span, AccessMode::Read);
@@ -257,23 +218,23 @@ auto BodyExprSite::extension(
     const ASTInterpolationExpr& source,
     Span span,
     std::optional<ConstructionTypeRef>
-) noexcept -> ExpressionTask<Selection> {
+) noexcept -> AnalysisTask<Selection> {
     co_return (co_await construct_interpolation(*this, source, span));
 }
 
 auto BodyExprSite::extension(
     const ASTCppNameExpr& value,
     Span span,
-    [[maybe_unused]] std::optional<ConstructionTypeRef> expected
-) noexcept -> ExpressionTask<Selection> {
+    std::optional<ConstructionTypeRef>
+) noexcept -> AnalysisTask<Selection> {
     co_return this->body.select_cpp_name(value, span);
 }
 
 auto BodyExprSite::extension(
     const ASTNameExpr& value,
     Span span,
-    [[maybe_unused]] std::optional<ConstructionTypeRef> expected
-) noexcept -> ExpressionTask<Selection> {
+    std::optional<ConstructionTypeRef>
+) noexcept -> AnalysisTask<Selection> {
     co_return (co_await this->body.select_name(value, span));
 }
 
@@ -281,7 +242,7 @@ auto BodyExprSite::extension(
     const ASTTupleExpr& value,
     Span span,
     std::optional<ConstructionTypeRef> expected
-) noexcept -> ExpressionTask<Selection> {
+) noexcept -> AnalysisTask<Selection> {
     co_return (co_await construct_tuple_expression(*this, value, span, expected));
 }
 
@@ -289,7 +250,7 @@ auto BodyExprSite::extension(
     const ASTTupleElementExpr& value,
     Span span,
     std::optional<ConstructionTypeRef>
-) noexcept -> ExpressionTask<Selection> {
+) noexcept -> AnalysisTask<Selection> {
     co_return (co_await construct_tuple_element_expression(*this, value, span));
 }
 
@@ -297,7 +258,7 @@ auto BodyExprSite::extension(
     const ASTTypeApplicationExpr&,
     Span span,
     std::optional<ConstructionTypeRef>
-) noexcept -> ExpressionTask<Selection> {
+) noexcept -> AnalysisTask<Selection> {
     co_return std::unexpected(fail(
         span,
         DiagnosticCode::TypeGenericArguments,
@@ -308,8 +269,8 @@ auto BodyExprSite::extension(
 auto BodyExprSite::extension(
     const ASTArrayExpr& value,
     Span span,
-    [[maybe_unused]] std::optional<ConstructionTypeRef> expected
-) noexcept -> ExpressionTask<Selection> {
+    std::optional<ConstructionTypeRef> expected
+) noexcept -> AnalysisTask<Selection> {
     co_return (co_await construct_array_expression(*this, value, span, expected));
 }
 
@@ -317,47 +278,47 @@ auto BodyExprSite::extension(
     const ASTArrayRepeatExpr& value,
     Span span,
     std::optional<ConstructionTypeRef> expected
-) noexcept -> ExpressionTask<Selection> {
+) noexcept -> AnalysisTask<Selection> {
     co_return (co_await construct_array_expression(*this, value, span, expected));
 }
 
 auto BodyExprSite::extension(
     const ASTConstructionExpr& value,
     Span span,
-    [[maybe_unused]] std::optional<ConstructionTypeRef> expected
-) noexcept -> ExpressionTask<Selection> {
+    std::optional<ConstructionTypeRef> expected
+) noexcept -> AnalysisTask<Selection> {
     co_return (co_await construct_structure_expression(*this, value, span, expected));
 }
 
 auto BodyExprSite::extension(
     const ASTAccessExpr& value,
     Span span,
-    [[maybe_unused]] std::optional<ConstructionTypeRef> expected
-) noexcept -> ExpressionTask<Selection> {
+    std::optional<ConstructionTypeRef>
+) noexcept -> AnalysisTask<Selection> {
     co_return (co_await this->body.access_expression(value, span));
 }
 
 auto BodyExprSite::extension(
     const ASTIndexExpr& value,
     Span span,
-    [[maybe_unused]] std::optional<ConstructionTypeRef> expected
-) noexcept -> ExpressionTask<Selection> {
+    std::optional<ConstructionTypeRef>
+) noexcept -> AnalysisTask<Selection> {
     co_return (co_await construct_index_expression(*this, value, span));
 }
 
 auto BodyExprSite::extension(
     const ASTPropagationExpr& value,
     Span span,
-    [[maybe_unused]] std::optional<ConstructionTypeRef> expected
-) noexcept -> ExpressionTask<Selection> {
+    std::optional<ConstructionTypeRef>
+) noexcept -> AnalysisTask<Selection> {
     co_return (co_await this->body.propagation_expression(value, span));
 }
 
 auto BodyExprSite::extension(
     const ASTIfForm& value,
     Span span,
-    [[maybe_unused]] std::optional<ConstructionTypeRef> expected
-) noexcept -> ExpressionTask<Selection> {
+    std::optional<ConstructionTypeRef> expected
+) noexcept -> AnalysisTask<Selection> {
     co_return (
         co_await this->body.conditional_expression(value, span, expected, allow_pointer_narrowing)
     );
@@ -366,16 +327,16 @@ auto BodyExprSite::extension(
 auto BodyExprSite::extension(
     const ASTLambdaExpr& value,
     Span span,
-    [[maybe_unused]] std::optional<ConstructionTypeRef> expected
-) noexcept -> ExpressionTask<Selection> {
+    std::optional<ConstructionTypeRef> expected
+) noexcept -> AnalysisTask<Selection> {
     co_return (co_await this->body.lambda_expression(value, span, expected));
 }
 
 auto BodyExprSite::extension(
     const ASTMatchForm& value,
     Span span,
-    [[maybe_unused]] std::optional<ConstructionTypeRef> expected
-) noexcept -> ExpressionTask<Selection> {
+    std::optional<ConstructionTypeRef> expected
+) noexcept -> AnalysisTask<Selection> {
     co_return (
         co_await this->body.match_expression(value, span, expected, allow_pointer_narrowing)
     );
@@ -384,83 +345,40 @@ auto BodyExprSite::extension(
 auto BodyExprSite::extension(
     const ASTTryForm& value,
     Span span,
-    [[maybe_unused]] std::optional<ConstructionTypeRef> expected
-) noexcept -> ExpressionTask<Selection> {
+    std::optional<ConstructionTypeRef> expected
+) noexcept -> AnalysisTask<Selection> {
     co_return (co_await this->body.try_expression(value, span, expected, allow_pointer_narrowing));
 }
 
-auto BodyExprSite::static_expression_lifetime() const noexcept -> LifetimeRegionID {
-    return body.active_builder().lifetime();
-}
-
-auto BodyExprSite::resolve_static_references(SemanticExpression& expression) noexcept
-    -> AnalysisTask<bool> {
-    co_return co_await body.resolve_static_references(expression);
-}
-
-auto BodyExprSite::resolve_static_name(std::string_view name, Span span) noexcept
-    -> ExpressionTask<std::optional<SemanticExpression>> {
-    const auto* local = body.use_local(name);
-    if (!local) {
-        co_return std::nullopt;
-    }
-    if (!local->static_source) {
-        co_return std::unexpected(ExpressionNotAdmitted {});
-    }
-    auto value = co_await body.read_local(*local, span);
-    if (!value) {
-        co_return std::unexpected(value.error());
-    }
-    if (!*value) {
-        co_return std::unexpected(ExpressionNotAdmitted {});
-    }
-    body.observe_binding(span, *local);
-    co_return std::move(**value);
-}
-
-auto BodyExprSite::resolve_name(std::string_view name, Span span) noexcept
-    -> ExpressionTask<std::optional<ConstantID>> {
-    co_return (co_await body.resolve_constant_name(name, span));
-}
-
 auto BodyExprSite::resolve_type_qualifier(ASTExprID id) noexcept
-    -> ExpressionTask<std::optional<ConstructionTypeRef>> {
+    -> AnalysisTask<std::optional<ConstructionTypeRef>> {
     co_return (co_await body.resolve_type_qualifier(id));
 }
 
 auto BodyExprSite::resolve_enum_case(TypeID type, std::string_view name, Span span) noexcept
-    -> ExpressionTask<ResolvedEnumCase> {
+    -> AnalysisTask<ResolvedEnumCase> {
     co_return (co_await body.resolve_constant_enum_case(type, name, span));
-}
-
-auto BodyExprSite::is_numeric_enum(TypeID type) noexcept -> bool {
-    return numeric_enum(type);
-}
-
-auto BodyExprSite::admits(const ASTExpr&) const noexcept -> bool {
-    return true;
 }
 
 auto BodyExprSite::spelling(Span span) const noexcept -> std::string {
     return body.spelling(span);
 }
 
-auto BodyExprSite::invalid_type_qualifier(Span span) noexcept -> ExpressionResult<Value> {
+auto BodyExprSite::invalid_type_qualifier(Span span) noexcept -> AnalysisResult<Value> {
     return std::unexpected(
         fail(span, DiagnosticCode::TypeMismatch, "scope qualifier does not name a type")
     );
 }
 
 auto BodyExprSite::convert_argument(Value& value, ConstructionTypeRef type, Span span) noexcept
-    -> ExpressionResult<void> {
+    -> AnalysisResult<void> {
     const auto pending = take_pending_failures(value);
     auto converted = body.coerce_to(value, type, span);
     append_pending_failures(value.pending_failures, pending);
     return converted;
 }
 
-auto BodyExprSite::enum_constructor(TypeID, const ResolvedEnumCase& selected, Span span) noexcept
-    -> Value {
+auto BodyExprSite::enum_constructor(const ResolvedEnumCase& selected, Span span) noexcept -> Value {
     auto value = body.active_builder().make_expression(
         selected.reference_type,
         body.active_builder().lifetime(),
@@ -480,7 +398,7 @@ auto BodyExprSite::member_call(
     const ASTMemberExpr& member,
     Value operand,
     Span span
-) noexcept -> ExpressionTask<Value> {
+) noexcept -> AnalysisTask<Value> {
     const auto type = operand.type();
     if (const auto* concrete = std::get_if<TypeID>(&type)) {
         const auto canonical = draft().type_copy(*concrete);
@@ -512,7 +430,7 @@ auto BodyExprSite::member_call(
     co_return (co_await body.call_expression(source, span, std::move(*callee)));
 }
 
-auto BodyExprSite::call(const ASTCallExpr& source, Span span) noexcept -> ExpressionTask<Value> {
+auto BodyExprSite::call(const ASTCallExpr& source, Span span) noexcept -> AnalysisTask<Value> {
     co_return (co_await body.call_expression(source, span));
 }
 
@@ -523,7 +441,7 @@ auto BodyExprSite::finish(
     Span span,
     BodyPendingFailures pending,
     bool completes
-) noexcept -> ExpressionResult<Value> {
+) noexcept -> AnalysisResult<Value> {
     auto result = body.make_built(type, std::move(value), span, std::move(pending), known);
     result.completes = completes;
     if (!body.static_stage()) {
@@ -544,7 +462,7 @@ auto BodyExprSite::external_operation(
     Value operand,
     std::optional<ConstructionTypeRef> type,
     Span span
-) noexcept -> ExpressionResult<Value> {
+) noexcept -> AnalysisResult<Value> {
     auto pending = take_pending_failures(operand);
     auto expression = body.consume_value(operand, span, AccessMode::Read);
     if (!expression.has_value()) {
@@ -569,11 +487,11 @@ auto BodyExprSite::permits_pointer_narrowing() const noexcept -> bool {
 }
 
 auto BodyExprSite::infer_type(Value& value, Span span) noexcept
-    -> ExpressionResult<ConstructionTypeRef> {
+    -> AnalysisResult<ConstructionTypeRef> {
     return body.infer_value_type(value, span);
 }
 
-auto BodyExprSite::aggregate_cost(std::size_t count, Span span) noexcept -> ExpressionResult<void> {
+auto BodyExprSite::aggregate_cost(std::size_t count, Span span) noexcept -> AnalysisResult<void> {
     if (count > maximum_construction_work - body.aggregate_construction_work) {
         return std::unexpected(
             fail(span, DiagnosticCode::ConstLimit, "aggregate construction exceeds its work budget")
@@ -588,31 +506,22 @@ auto BodyExprSite::resolve_array_extent(ASTExprID expression) noexcept
     co_return (co_await body.resolve_array_extent(expression));
 }
 
-auto BodyExprSite::pending_checkpoint() const noexcept -> std::monostate {
-    return {};
-}
-
-auto BodyExprSite::consume_unexecuted_read(Value value, std::monostate, Span span) noexcept
-    -> ExpressionResult<SemanticExpression> {
+auto BodyExprSite::consume_unexecuted_read(Value value, Span span) noexcept
+    -> AnalysisResult<SemanticExpression> {
     return body.consume_value(value, span, AccessMode::Read);
-}
-
-auto BodyExprSite::aggregate_admitted(ConstructionTypeRef, Span) const noexcept
-    -> ExpressionResult<bool> {
-    return true;
 }
 
 auto BodyExprSite::read_argument(
     ASTExprID expression,
     std::optional<ConstructionTypeRef> expected
-) noexcept -> ExpressionTask<Value> {
+) noexcept -> AnalysisTask<Value> {
     co_return (co_await read_value_argument(*this, expression, expected));
 }
 
 auto BodyExprSite::read_static_argument(
     ASTExprID expression,
     std::optional<ConstructionTypeRef> expected
-) noexcept -> ExpressionTask<Value> {
+) noexcept -> AnalysisTask<Value> {
     const auto selected = call_argument_operand(syntax(), expression);
     const auto span = syntax().expression(expression).span;
     if (selected.access != AccessMode::Read) {
@@ -635,7 +544,7 @@ auto BodyExprSite::read_static_argument(
 }
 
 auto BodyExprSite::consume_read(OperandState& state, Value value, Span span) noexcept
-    -> ExpressionResult<SemanticExpression> {
+    -> AnalysisResult<SemanticExpression> {
     state.completes &= value.completes;
     append_pending_failures(state.pending, take_pending_failures(value));
     auto result = body.consume_value(value, span, AccessMode::Read);
@@ -643,7 +552,7 @@ auto BodyExprSite::consume_read(OperandState& state, Value value, Span span) noe
 }
 
 auto BodyExprSite::consume_take(OperandState& state, Value value, Span span) noexcept
-    -> ExpressionResult<SemanticExpression> {
+    -> AnalysisResult<SemanticExpression> {
     state.completes &= value.completes;
     append_pending_failures(state.pending, take_pending_failures(value));
     return body.consume_value(value, span, AccessMode::Take);
@@ -654,7 +563,7 @@ auto BodyExprSite::consume_cold_owner(
     Value value,
     AccessMode access,
     Span span
-) noexcept -> ExpressionResult<SemanticExpression> {
+) noexcept -> AnalysisResult<SemanticExpression> {
     const auto* binding = std::get_if<SemBinding>(&value.expression().value);
     if ((binding && body.async_child_bindings.contains(binding->binding))
         || access == AccessMode::Write
@@ -673,12 +582,12 @@ auto BodyExprSite::require_matching_type(
     ConstructionTypeRef source,
     ConstructionTypeRef target,
     Span span
-) noexcept -> ExpressionResult<void> {
+) noexcept -> AnalysisResult<void> {
     return body.require_invariant_type(source, target, span);
 }
 
 auto BodyExprSite::consume_read_argument(OperandState& state, Value value, Span span) noexcept
-    -> ExpressionResult<SemanticExpression> {
+    -> AnalysisResult<SemanticExpression> {
     auto argument = body.bind_call_argument(
         std::move(value),
         AccessMode::Read,
@@ -700,7 +609,7 @@ auto BodyExprSite::finish_constructed(
     OperandState state,
     Span span,
     std::optional<ConstantID> known
-) noexcept -> ExpressionResult<Value> {
+) noexcept -> AnalysisResult<Value> {
     return finish(type, std::move(value), known, span, std::move(state.pending), state.completes);
 }
 
@@ -708,12 +617,12 @@ auto BodyExprSite::cpp_construct(
     const ASTConstructionExpr& source,
     ConstructionTypeRef type,
     Span span
-) noexcept -> ExpressionTask<Value> {
+) noexcept -> AnalysisTask<Value> {
     co_return (co_await body.cpp_construct(source, type, span));
 }
 
 auto BodyExprSite::consume_write(OperandState& state, Value value, Span span) noexcept
-    -> ExpressionResult<SemanticExpression> {
+    -> AnalysisResult<SemanticExpression> {
     state.completes &= value.completes;
     append_pending_failures(state.pending, take_pending_failures(value));
     auto place = body.consume_place(value, span);
@@ -732,7 +641,7 @@ auto BodyExprSite::require_invariant_storage(
     ConstructionTypeRef source,
     ConstructionTypeRef target,
     Span span
-) noexcept -> ExpressionResult<void> {
+) noexcept -> AnalysisResult<void> {
     return body.require_invariant_type(source, target, span);
 }
 
@@ -740,7 +649,7 @@ auto BodyExprSite::read_aggregate_element(
     ASTExprID id,
     std::optional<ConstructionTypeRef> expected,
     bool explicit_context
-) noexcept -> ExpressionTask<Value> {
+) noexcept -> AnalysisTask<Value> {
     co_return (co_await body.expression(id, expected, explicit_context && allow_pointer_narrowing));
 }
 
@@ -764,12 +673,12 @@ auto BodyExprSite::associated_call(
     const ASTMemberExpr& member,
     StructID owner,
     Span span
-) noexcept -> ExpressionTask<Value> {
+) noexcept -> AnalysisTask<Value> {
     co_return (co_await body.class_call(source, member, owner, std::nullopt, span));
 }
 
 auto BodyExprSite::associated_reference(StructID owner, Span name_span) noexcept
-    -> ExpressionTask<Value> {
+    -> AnalysisTask<Value> {
     co_return (co_await body.class_operation(owner, spelling(name_span), false, name_span));
 }
 
@@ -777,7 +686,7 @@ auto BodyExprSite::standard_call(
     const ASTCallExpr& source,
     StandardDeclaration function,
     Span span
-) noexcept -> ExpressionTask<Value> {
+) noexcept -> AnalysisTask<Value> {
     auto function_id =
         co_await construction_requests().standard_function(function, module_id(), span);
     if (!function_id) {
@@ -809,7 +718,7 @@ auto BodyExprSite::number_parse_call(
     const ASTCallExpr& source,
     BuiltinType number,
     Span span
-) noexcept -> ExpressionTask<Value> {
+) noexcept -> AnalysisTask<Value> {
     auto target = co_await resolve_number_parser(number, span);
     if (!target) {
         co_return std::unexpected(target.error());
@@ -997,7 +906,7 @@ auto BodyElaborator::await_expression(const ASTPrefixExpr& source, Span span) no
 }
 
 auto BodyExprSite::await_expression(const ASTPrefixExpr& source, Span span) noexcept
-    -> ExpressionTask<Value> {
+    -> AnalysisTask<Value> {
     co_return co_await body.await_expression(source, span);
 }
 

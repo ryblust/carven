@@ -1,30 +1,20 @@
 module carven:semantic.analysis.decl.constant.impl;
 
-import :diagnostics.builder;
 import :diagnostics.code;
-import :diagnostics.suggestion;
 import :frontend.ast.decl;
 import :frontend.ast.expr;
-import :frontend.ast.interop;
 import :frontend.ast.storage;
-import :frontend.ast.tree;
 import :semantic.analysis.decl.context;
 import :semantic.analysis.decl.resolver;
-import :semantic.analysis.expr.scope;
-import :semantic.analysis.interop;
-import :semantic.analysis.nominal.containment;
 import :semantic.analysis.operations;
-import :semantic.analysis.types;
 import :semantic.semir.constant;
 import :semantic.semir.decl;
 import :semantic.semir.program;
 import :semantic.semir.type;
 import :semantic.visibility;
-import :source.module_path;
 import :source.provenance.ids;
 import :source.text;
 import :support.invariant;
-import :support.visit;
 import std;
 
 auto DeclResolver::resolve_module_constant(
@@ -55,9 +45,9 @@ auto DeclResolver::resolve_module_constant(
     auto result =
         (co_await scope.evaluate_constant_expression(declaration.initializer, declared_type));
     if (!result) {
-        if (const auto* diagnostic = std::get_if<AnalysisFailure>(&result.error())) {
-            co_return std::unexpected(*diagnostic);
-        }
+        co_return std::unexpected(result.error());
+    }
+    if (!*result) {
         co_return std::unexpected(declaration_failure(
             draft,
             symbol.module_id,
@@ -66,7 +56,7 @@ auto DeclResolver::resolve_module_constant(
             "constant initializer is not a supported compile-time value"
         ));
     }
-    const auto constant = *result;
+    const auto constant = **result;
     const auto& fact = draft.constant(constant);
     // Clang 23 can miscompile value_or with a fallback temporary in a coroutine,
     // retaining its resume-stack address across suspension. Keep this explicit
@@ -100,207 +90,4 @@ auto DeclResolver::resolve_module_constant(
         .value = constant,
     };
     co_return {};
-}
-
-auto DeclResolver::resolve_constant_name(
-    ProgramModuleID module_id,
-    std::string_view name,
-    Span origin
-) noexcept -> AnalysisTask<std::optional<ConstantID>> {
-    auto selected = select_entity(module_id, name, origin);
-    if (!selected.has_value()) {
-        co_return std::unexpected(selected.error());
-    }
-    const auto* selected_symbol = catalog.symbol(*selected);
-    if (const auto* form =
-            (selected_symbol ? std::get_if<CatalogConstantForm>(&selected_symbol->form)
-                             : nullptr)) {
-        auto result = (co_await resolve(selected_symbol->symbol_id, module_id, origin));
-        if (!result.has_value()) {
-            co_return std::unexpected(result.error());
-        }
-        const auto& declaration = module_constants[form->constant.index()];
-        if (!declaration.has_value()) {
-            invariant_violation("resolved module constant has no declaration fact");
-        }
-        co_return declaration->value;
-    }
-    co_return std::nullopt;
-}
-
-auto DeclResolver::resolve_type_qualifier(
-    ProgramModuleID module_id,
-    ASTView syntax,
-    ASTExprID expression,
-    const GenericTypeContext* generic_context
-) noexcept -> AnalysisTask<std::optional<ConstructionTypeRef>> {
-    auto current = expression;
-    while (const auto* group = std::get_if<ASTGroupExpr>(&syntax.expression(current).value)) {
-        current = group->expression;
-    }
-    if (const auto* application =
-            std::get_if<ASTTypeApplicationExpr>(&syntax.expression(current).value)) {
-        auto scope = ConstantScope {*this, module_id, syntax, generic_context};
-        const auto extent = [&](ASTExprID expression) noexcept {
-            return scope.evaluate_array_extent(expression);
-        };
-        auto type = (co_await resolve_source_type_application(
-            draft,
-            catalog,
-            import_usage,
-            module_id,
-            syntax,
-            *application,
-            extent,
-            &requests,
-            generic_context
-        ));
-        if (!type) {
-            co_return std::unexpected(type.error());
-        }
-        auto ready = (co_await prepare_type(*type, module_id, application->arguments_span));
-        if (!ready) {
-            co_return std::unexpected(ready.error());
-        }
-        co_return std::optional(*type);
-    }
-    const auto* name = std::get_if<ASTNameExpr>(&syntax.expression(current).value);
-    if (name == nullptr) {
-        co_return std::optional<TypeID>();
-    }
-    const auto spelling = draft.source_slice_copy(module_id, name->name_span);
-    if (generic_parameter_index(draft, generic_context, spelling)) {
-        co_return std::unexpected(declaration_failure(
-            draft,
-            module_id,
-            name->name_span,
-            DiagnosticCode::TypeGenericDefinition,
-            "static type qualifier requires a concrete type"
-        ));
-    }
-    auto selected = select_entity(module_id, spelling, name->name_span);
-    if (!selected.has_value()) {
-        co_return std::unexpected(selected.error());
-    }
-    const auto* selected_symbol = catalog.symbol(*selected);
-    if (const auto* provided = std::get_if<ProvidedExport>(&*selected)) {
-        if (const auto builtin = provided_builtin_type(*provided)) {
-            co_return std::optional(draft.builtin_type(*builtin));
-        }
-        co_return std::optional<TypeID>();
-    }
-    if (const auto* record =
-            (selected_symbol ? std::get_if<CatalogStructForm>(&selected_symbol->form) : nullptr)) {
-        co_return std::optional(
-            draft.intern_type({.value = StructTypeValue {.structure = record->structure}})
-        );
-    }
-    const auto* enumeration =
-        (selected_symbol ? std::get_if<CatalogEnumForm>(&selected_symbol->form) : nullptr);
-    if (enumeration == nullptr) {
-        co_return std::optional<TypeID>();
-    }
-    co_return std::optional(draft.intern_type(
-        CanonicalType {
-            .value = EnumTypeValue {.enumeration = enumeration->enumeration},
-        }
-    ));
-}
-
-auto DeclResolver::resolve_constant_enum_case(
-    ProgramModuleID module_id,
-    TypeID type,
-    std::string_view name,
-    Span origin
-) noexcept -> AnalysisTask<ResolvedEnumCase> {
-    const auto canonical = draft.type_copy(type);
-    const auto* nominal = std::get_if<EnumTypeValue>(&canonical.value);
-    if (nominal == nullptr) {
-        co_return std::unexpected(declaration_failure(
-            draft,
-            module_id,
-            origin,
-            DiagnosticCode::TypeEnumContext,
-            "scope qualifier does not name an enum or class type"
-        ));
-    }
-    if (nominal->enumeration.index() >= catalog.enum_count()) {
-        auto ready = (co_await prepare_type(type, module_id, origin));
-        if (!ready) {
-            co_return std::unexpected(ready.error());
-        }
-        if (const auto case_id = draft.enum_case_named(nominal->enumeration, name)) {
-            const auto declaration = draft.construction_enum_case_declaration_copy(*case_id);
-            co_return ResolvedEnumCase {
-                .id = *case_id,
-                .owner = declaration.owner,
-                .reference_type = enum_case_reference_type(draft, type, declaration.payload_types),
-                .payload_types = declaration.payload_types,
-                .constant = declaration.constant
-            };
-        }
-        co_return std::unexpected(declaration_failure(
-            draft,
-            module_id,
-            origin,
-            DiagnosticCode::TypeMemberUnresolved,
-            std::format(
-                "enum '{}' has no case named '{}'{}",
-                draft.spelling(draft.enum_declaration_copy(nominal->enumeration).name),
-                name,
-                spelling_suggestion(name, draft.enum_case_names(nominal->enumeration))
-            )
-        ));
-    }
-    const auto owner_symbol_id = catalog.enum_symbol(nominal->enumeration);
-    auto owner_result = (co_await resolve(owner_symbol_id, module_id, origin));
-    if (!owner_result.has_value()) {
-        co_return std::unexpected(owner_result.error());
-    }
-    const auto& owner_symbol = require_catalog_symbol(catalog, owner_symbol_id);
-    const auto& owner_form = std::get<CatalogEnumForm>(owner_symbol.form);
-    for (const auto case_id : owner_form.cases) {
-        const auto& candidate = require_catalog_symbol(catalog, catalog.enum_case_symbol(case_id));
-        if (candidate.name != name) {
-            continue;
-        }
-        auto result = (co_await resolve(candidate.symbol_id, module_id, origin));
-        if (!result.has_value()) {
-            co_return std::unexpected(result.error());
-        }
-        const auto& declaration = enum_cases[case_id.index()];
-        if (!declaration.has_value()) {
-            invariant_violation("resolved enum case has no declaration fact");
-        }
-        if (auto* observations = draft.source_analysis()) {
-            observations->declarations().record(
-                draft,
-                locate(declaration_source_id(draft, module_id), origin),
-                catalog.declaration_location(draft, candidate.symbol_id),
-                std::nullopt
-            );
-        }
-        co_return ResolvedEnumCase {
-            .id = case_id,
-            .owner = declaration->owner,
-            .reference_type = enum_case_reference_type(draft, type, declaration->payload_types),
-            .payload_types = declaration->payload_types,
-            .constant = declaration->constant,
-        };
-    }
-    co_return std::unexpected(declaration_failure(
-        draft,
-        module_id,
-        origin,
-        DiagnosticCode::TypeMemberUnresolved,
-        std::format(
-            "enum '{}' has no case named '{}'{}",
-            owner_symbol.name,
-            name,
-            spelling_suggestion(
-                name,
-                catalog.enum_case_names(std::get<CatalogEnumForm>(owner_symbol.form).enumeration)
-            )
-        )
-    ));
 }

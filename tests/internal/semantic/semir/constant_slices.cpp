@@ -160,7 +160,7 @@ const TestSuite suite([] static noexcept {
                 }),
                 draft.intern_constant({
                     .type = draft.builtin_type(BuiltinType::Str),
-                    .value = StringConstant {.value = draft.intern_spelling("hello")},
+                    .value = TextConstant {.value = draft.intern_spelling("hello")},
                 }),
                 nested,
             };

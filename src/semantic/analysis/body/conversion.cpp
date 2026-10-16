@@ -135,8 +135,8 @@ auto BodyElaborator::type_mismatch(
         DiagnosticCode::TypeMismatch,
         std::format(
             "expected type '{}', found '{}'",
-            type_display_name(draft(), expected),
-            type_display_name(draft(), actual)
+            type_display_name(draft(), expected, catalog()),
+            type_display_name(draft(), actual, catalog())
         )
     );
 }
@@ -229,8 +229,7 @@ auto BodyElaborator::coerce_to(
         }
     }
     auto site = BodyExprSite(*this);
-    const auto converted =
-        require_body_expression(convert_intrinsic_argument(site, built, target, span));
+    const auto converted = convert_intrinsic_argument(site, built, target, span);
     if (!converted) {
         return std::unexpected(converted.error());
     }
@@ -341,7 +340,7 @@ auto BodyElaborator::infer_value_type(BuiltExpression& expression, Span span) no
 auto BodyElaborator::require_bool(BuiltExpression& value, Span span) noexcept
     -> AnalysisResult<SemanticExpression> {
     auto site = BodyExprSite(*this);
-    auto checked = require_body_expression(require_expression_boolean(site, value, span));
+    auto checked = require_expression_boolean(site, value, span);
     if (!checked.has_value()) {
         return std::unexpected(checked.error());
     }

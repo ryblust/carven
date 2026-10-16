@@ -53,8 +53,7 @@ private:
         std::optional<ConstructionTypeRef> frozen_type = std::nullopt
     ) noexcept -> AnalysisTask<ConstantID>;
     auto select(SemIf& value) noexcept -> AnalysisTask<std::optional<SemanticRegion>>;
-    auto expand(SemRangeLoop& loop, ProgramOriginID origin) noexcept
-        -> AnalysisTask<SemExpandedLoop>;
+    auto expand(SemRangeLoop& loop) noexcept -> AnalysisTask<SemExpandedLoop>;
     auto completion_patterns() const noexcept -> CompletionPatterns;
 
     StaticStage& stage;
@@ -108,7 +107,8 @@ auto Specializer::evaluate(
     std::optional<ConstructionTypeRef> frozen_type
 ) noexcept -> AnalysisTask<ConstantID> {
     substitute(source);
-    auto value = co_await stage.evaluate(source);
+    auto value =
+        co_await stage.evaluate(source, StaticEvaluationPurpose::Execute, &draft.body_draft(body));
     if (!value) {
         co_return std::unexpected(value.error());
     }
@@ -597,52 +597,17 @@ auto Specializer::expression(SemanticExpression& source) noexcept -> AnalysisTas
     co_return {};
 }
 
-auto Specializer::expand(SemRangeLoop& loop, ProgramOriginID origin) noexcept
-    -> AnalysisTask<SemExpandedLoop> {
-    auto constant = co_await evaluate(loop.source);
-    if (!constant) {
-        co_return std::unexpected(constant.error());
-    }
-    const auto& fact = draft.constant(*constant);
-    const auto* range = std::get_if<RangeConstant>(&fact.value);
-    auto elements = std::span<const ConstantID>();
-    if (const auto* array = std::get_if<ArrayConstant>(&fact.value)) {
-        elements = array->elements;
-    } else if (const auto* slice = std::get_if<SliceConstant>(&fact.value)) {
-        elements = slice->elements;
-    } else if (!range) {
-        invariant_violation("static loop source is not a range, array, or slice");
-    }
-    const auto sequence_type = draft.type_copy(fact.type);
-    const auto element = sequence_type.value.visit([](const auto& value) static noexcept -> TypeID {
-        using Value = std::remove_cvref_t<decltype(value)>;
-        if constexpr (std::same_as<Value, RangeTypeValue>
-                      || std::same_as<Value, ArrayTypeValue>
-                      || std::same_as<Value, SliceTypeValue>) {
-            return value.element;
-        } else {
-            invariant_violation("static loop source has no element type");
-        }
-    });
-    auto cursor = range ? std::optional(IntegerRangeCursor(*range)) : std::nullopt;
-    auto index = 0uz;
-    const auto next = [&]() noexcept -> std::optional<ConstantID> {
-        if (cursor) {
-            const auto current = cursor->next();
-            return current
-                ? std::optional(draft.intern_constant({.type = element, .value = *current}))
-                : std::nullopt;
-        }
-        return index < elements.size() ? std::optional(elements[index++]) : std::nullopt;
-    };
+auto Specializer::expand(SemRangeLoop& loop) noexcept -> AnalysisTask<SemExpandedLoop> {
+    substitute(loop.source);
     const auto saved = environment;
     auto expanded = SemExpandedLoop {.iterations = {}};
-    while (const auto current = next()) {
-        if (auto charged = stage.charge(StageResource::Iterations, origin); !charged) {
-            co_return std::unexpected(charged.error());
-        }
+    const std::function<AnalysisTask<bool>(std::optional<ConstantID>)> consume =
+        [&](std::optional<ConstantID> current) noexcept -> AnalysisTask<bool> {
         environment = saved;
         if (loop.binding) {
+            if (!current) {
+                invariant_violation("static iteration did not retain its binding value");
+            }
             environment.insert_or_assign(*loop.binding, *current);
         }
         auto iteration = *loop.body;
@@ -654,11 +619,15 @@ auto Specializer::expand(SemRangeLoop& loop, ProgramOriginID origin) noexcept
         expanded.iterations.push_back(std::move(iteration));
         // Continue enters the next copy; a copy that neither completes nor
         // continues makes the later ones unreachable.
-        if (!leaves.contains(Exit::Normal) && !leaves.contains(Exit::Continue)) {
-            break;
-        }
-    }
+        co_return leaves.contains(Exit::Normal) || leaves.contains(Exit::Continue);
+    };
+    auto result =
+        co_await stage
+            .iterate(loop.source, loop.binding.has_value(), consume, &draft.body_draft(body));
     environment = saved;
+    if (!result) {
+        co_return std::unexpected(result.error());
+    }
     co_return expanded;
 }
 
@@ -688,7 +657,7 @@ auto Specializer::statement(SemanticStatement& source) noexcept -> AnalysisTask<
         } else if constexpr (std::same_as<Operation, SemRangeLoop>) {
             if (operation.is_static) {
                 rewritten = true;
-                auto expanded = co_await expand(operation, source.origin);
+                auto expanded = co_await expand(operation);
                 if (!expanded) {
                     co_return std::unexpected(expanded.error());
                 }

@@ -1,7 +1,6 @@
 # Compiler costs and C++ realization
 
 - **Status:** Exploration
-- **Implementation:** Not started for the candidates below
 - **Scope:** Reducing compiler, workspace-reuse, and generated-program costs while preserving existing source contracts
 
 ## Summary
@@ -25,12 +24,6 @@ program runtime and memory are measured separately.
 
 ## Current boundary
 
-Workspace already reuses unchanged parsing and bounded complete-selection
-analysis results. Shared `SourceLibrary` generation and Xmake library producers
-already reuse native implementation objects across compatible consumers. These
-are different mechanisms: every fresh compilation still analyzes its full source
-batch, and native object reuse does not provide semantic query reuse.
-
 Semantic analysis already folds admitted constant operations, and static
 specialization refreshes value facts and index bounds after substitution. Backend
 preparation consumes published facts to select constant print text, known lane
@@ -38,11 +31,6 @@ paths, and builtin formatting writers; realization consumes proven index bounds.
 Writers use checked minimum/maximum capacity
 bounds and direct `std::to_chars` conversion; proven UTF-8 formatting avoids a
 validation scan. Direct owning format returns can use a local String and NRVO.
-These completed mechanisms are documented in
-[semantic execution](../docs/compiler/analysis/evaluation.md),
-[preparation](../docs/compiler/backend/preparation.md), and
-[builtin realization](../docs/compiler/backend/builtins.md).
-The experiments below concern additional work beyond those contracts.
 
 ## Measurements
 
@@ -220,19 +208,20 @@ check observable behavior and target structure.
 ### Compact default arrays
 
 Frozen `ArrayConstant` lowering reconstructs elements individually. A candidate
-recognizes completed all-default fixed arrays and emits `std::array<T, N>{}` using
-typed construction. Eligibility comes from final contents, not source syntax.
-One bounded scope admits integer zero, false, zero char, and nested fixed arrays.
-Check leaf types even for empty arrays. Floating values, enums, text, slices,
-pointers, native types, structures, and slice backing remain outside this scope.
+emits `std::array<T, N>{}` when value-initialization of the selected C++
+representation produces the completed typed value with the same construction,
+ownership, backing, and observable behavior. Establish eligibility from the final
+value and target construction rules, including element types of empty arrays.
+Numerical equality alone is insufficient for signed floating zero or a type with
+native construction effects. When equivalence is unproven, retain explicit
+element reconstruction.
 
-Preserve canonical identity, evaluation budgets, ownership, and freezing. Fall
-back to element reconstruction for ineligible contents, avoiding repeated scans
-of nested fallback paths. Test widths, empty/nested arrays, non-default fallback,
-excluded types, indexing, and independent mutation after copying. At fixed depth,
-initializer-node count should not grow with all-default element count; scanning
-and extent spelling still have costs. Measure target nodes, bytes, generation,
-and native compilation separately.
+Preserve canonical identity, evaluation budgets, and freezing. Avoid repeated
+scans of nested fallback paths. Test empty and nested arrays, non-default values,
+representation-sensitive values, construction obligations, indexing, and
+independent mutation after copying. At fixed depth, initializer-node count should
+not grow with eligible element count; scanning and extent spelling still have
+costs. Measure target nodes, bytes, generation, and native compilation separately.
 
 ### Broader local value propagation
 
@@ -258,18 +247,16 @@ Complete analysis of a selected source batch remains the build correctness
 boundary. Source selection, computation granularity, and result lifetime are
 independent choices. The [frontend-analysis proposal](frontend-analysis.md) owns
 partial semantic facts, query dependencies, cancellation, effects, admission,
-and worker isolation. This section owns performance evidence and build integration;
-it introduces no second semantic query database. Editor recovery may change
-semantic representation independently of an incremental build cache.
+and worker isolation. This section owns performance evidence and build integration.
 
 ### Existing reuse and remaining costs
 
 The compiler owns shared source, parsing, complete analysis, and borrowed-generation
 contracts. Workspace supplies the session and revision layer; Xmake owns project
 targets, native compilation, and scheduling. Ordinary CLI commands discover
-Crafts; build integrations supply exact batches. Test generation is explicit,
-and artifact manifests project the actual generated artifact set. These current
-contracts belong in the compiler, workspace, and CLI references.
+Crafts; build integrations supply exact batches. Shared `SourceLibrary` generation
+and Xmake library producers reuse native implementation objects across compatible
+consumers. Native object reuse does not reuse semantic queries.
 
 Unchanged documents reuse parsing, but a content edit still requires a complete
 semantic transaction for an uncached selection. Cache hits require the same
@@ -394,6 +381,7 @@ require disproportionate complexity.
 
 - [Benchmarks](../benchmarks/README.md) and [testing](../docs/development/testing.md): measurement and validation commands.
 - [Realization](../docs/compiler/backend/realization.md) and [known results](../docs/compiler/analysis/semir.md#known-results-and-execution-requirements): current semantic boundaries.
+- [Semantic execution](../docs/compiler/analysis/evaluation.md), [preparation](../docs/compiler/backend/preparation.md), and [builtin realization](../docs/compiler/backend/builtins.md): existing value facts and output paths.
 - [Uninitialized storage](uninitialized-storage.md): construction-destination contracts for direct delivery.
 - [Workspace API](../tools/workspace/README.md),
   [compiler architecture](../docs/compiler/README.md), and

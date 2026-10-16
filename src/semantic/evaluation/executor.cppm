@@ -77,7 +77,7 @@ struct ExecutionFrame final {
     std::vector<ExecutionChildRegistration> children;
 };
 
-class SemanticExecutor final : private ExecutionArgumentAccess {
+class SemanticExecutor final : private ExecutionOperandAccess {
 public:
     SemanticExecutor(
         const ExecutionValueAccess& values,
@@ -91,7 +91,14 @@ public:
     auto operator=(SemanticExecutor&&) -> SemanticExecutor& = delete;
     ~SemanticExecutor() noexcept;
     auto evaluate_body(ExecutionBody body) noexcept -> ExecutionTask<void>;
-    auto evaluate_root(const SemanticExpression& source) noexcept -> ExecutionTask<ExecutionValue>;
+    auto evaluate_root(const SemanticExpression& source, std::optional<ExecutionBody> body) noexcept
+        -> ExecutionTask<ExecutionValue>;
+
+    auto evaluate_iteration(
+        const SemanticExpression& source,
+        const ExecutionIterationConsumer& consume,
+        std::optional<ExecutionBody> body
+    ) noexcept -> ExecutionTask<void>;
 
     auto detach_result(ExecutionValue value, ProgramOriginID origin) noexcept
         -> ExecutionResult<ExecutionValue>;
@@ -115,8 +122,39 @@ private:
         ProgramOriginID origin
     ) noexcept -> ExecutionTask<ExecutionValue>;
 
-    auto root_expression(const SemanticExpression& source) noexcept
-        -> ExecutionTask<ExecutionValue>;
+    auto root_expression(
+        const SemanticExpression& source,
+        std::optional<ExecutionBody> body
+    ) noexcept -> ExecutionTask<ExecutionValue>;
+
+    struct IntegerIteration final {
+        TypeID element;
+        IntegerRangeCursor cursor;
+    };
+
+    struct CharacterIteration final {
+        ExecutionText text;
+        std::size_t offset;
+    };
+
+    struct SequenceIteration final {
+        ExecutionSlice slice;
+        std::size_t index;
+    };
+
+    using IterationCursor = std::variant<IntegerIteration, CharacterIteration, SequenceIteration>;
+
+    auto open_iteration(ExecutionFrame& frame, const SemanticExpression& source) noexcept
+        -> ExecutionTask<IterationCursor>;
+
+    auto next_iteration(IterationCursor& cursor, ProgramOriginID origin) noexcept
+        -> ExecutionResult<std::optional<ExecutionOperand>>;
+
+    auto root_iteration(
+        const SemanticExpression& source,
+        const ExecutionIterationConsumer& consume,
+        std::optional<ExecutionBody> body
+    ) noexcept -> ExecutionTask<ExecutionValue>;
 
     auto root_body(ExecutionBody body) noexcept -> ExecutionTask<ExecutionValue>;
 
@@ -299,7 +337,7 @@ private:
     auto timeout(ExecutionColdOperation operation, ProgramOriginID origin) noexcept
         -> ExecutionTask<ExecutionValue>;
 
-    auto detach_argument(ExecutionOperand operand, ProgramOriginID origin) noexcept
+    auto detach_operand(ExecutionOperand operand, ProgramOriginID origin) noexcept
         -> ExecutionResult<ExecutionValue> override;
 
     auto provided_call(

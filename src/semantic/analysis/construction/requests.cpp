@@ -1,8 +1,8 @@
 module carven:semantic.analysis.construction.requests.impl;
 
 import :diagnostics.builder;
-import :semantic.analysis.construction;
 import :semantic.analysis.construction.requests;
+import :semantic.analysis.construction;
 import :source.standard;
 import std;
 
@@ -47,6 +47,14 @@ auto ConstructionRequests::ensure_type(
     Span span
 ) noexcept -> AnalysisTask<void> {
     return owner.declarations.prepare_type(type, requester, span);
+}
+
+auto ConstructionRequests::ensure_callable(
+    CallableID callable,
+    ProgramModuleID requester,
+    Span span
+) noexcept -> AnalysisTask<void> {
+    return owner.declarations.prepare_callable(callable, requester, span);
 }
 
 auto ConstructionRequests::stage() noexcept -> StaticStage& {
@@ -173,4 +181,14 @@ auto ConstructionRequests::number_parser(
             .primary(locate(owner.draft.syntax_tree(requester).view().source_id(), span))
             .build()
     ));
+}
+
+auto ConstructionRequests::evaluate_constant_expression(
+    ProgramModuleID module_id,
+    ASTExprID expression,
+    std::optional<ConstructionTypeRef> expected,
+    const GenericTypeContext* generic_context
+) noexcept -> AnalysisTask<std::optional<ConstantID>> {
+    return owner.bodies
+        .evaluate_constant_expression(module_id, expression, expected, generic_context);
 }

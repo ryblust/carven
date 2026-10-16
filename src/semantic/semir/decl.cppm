@@ -290,23 +290,12 @@ public:
     auto module_constant(ModuleConstantID id) const noexcept -> ModuleConstantDeclaration;
     // Borrowed until the next callable reservation.
     auto callable_contract(CallableID id) const noexcept -> const ConstructionCallableContract&;
-    auto callable_signature(CallableID id) const noexcept -> CallableSignatureID;
     auto callable_implementation(CallableID id) const noexcept -> CallableImplementation;
     auto try_callable_implementation(CallableID id) const noexcept
         -> std::optional<CallableImplementation>;
-    auto module_count() const noexcept -> std::size_t;
-    auto function_count() const noexcept -> std::size_t;
-    auto struct_count() const noexcept -> std::size_t;
-    auto enum_count() const noexcept -> std::size_t;
-    auto enum_case_count() const noexcept -> std::size_t;
-    auto module_constant_count() const noexcept -> std::size_t;
-    auto callable_count() const noexcept -> std::size_t;
-    auto module_ids() const noexcept -> std::vector<ModuleID>;
     auto function_ids() const noexcept -> std::vector<FunctionID>;
     auto struct_ids() const noexcept -> std::vector<StructID>;
     auto enum_ids() const noexcept -> std::vector<EnumID>;
-    auto enum_case_ids() const noexcept -> std::vector<EnumCaseID>;
-    auto module_constant_ids() const noexcept -> std::vector<ModuleConstantID>;
     auto callable_ids() const noexcept -> std::vector<CallableID>;
     auto callable_contract_defined(CallableID id) const noexcept -> bool;
     auto callable_contracts_complete() const noexcept -> bool;

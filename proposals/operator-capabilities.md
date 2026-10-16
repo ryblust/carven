@@ -1,7 +1,6 @@
 # Operator capabilities
 
 - **Status:** Exploration
-- **Implementation:** Not started
 - **Scope:** Closed user-defined semantic hooks for existing operator tokens
 - **Depends on:** [Generic extensions](generic-extensions.md), including canonical evidence and associated-type normalization
 
@@ -152,8 +151,6 @@ evaluation order, access, and failure behavior. It need not generate overloaded
 C++ operators. Operand representation does not initiate further semantic lookup.
 
 ## Open decisions
-
-**Next discussion:** `OPEN-02`
 
 ### OPEN-02 — What identity and visibility do compiler-known capabilities use?
 

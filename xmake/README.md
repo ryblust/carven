@@ -12,6 +12,7 @@ configuration.
 | --- | --- |
 | [`clang-module-pipeline/`](clang-module-pipeline/README.md) | Versioned Xmake patch and wrappers for Clang module compilation and incremental dependency checks |
 | [`format.lua`](format.lua) | C++ and Carven formatting and formatting checks |
+| [`consumer.lua`](consumer.lua) | Configure isolated consumers with the root project's resolved Carven rules package |
 | [`generated.clang-tidy`](generated.clang-tidy) | clang-tidy overrides for generated C++ |
 
 ## Formatting
@@ -46,6 +47,11 @@ The overlay prunes BMIs only for ordinary implementation leaves. Module source
 files retain their BMIs for downstream targets.
 
 ## Standard-library compilation
+
+The root project's `.xmake` package record identifies the installed rules.
+Isolated test and benchmark projects reuse that package through `consumer.lua`,
+with explicit compiler and Crafts paths. They do not select a repository or
+acquire another rules package. Build the root project before running them.
 
 Tests and examples use the packaged `@carven/carven` rule. It collects Crafts
 sources and manages generation and artifact publication. Targets with matching

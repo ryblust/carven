@@ -57,7 +57,7 @@ auto BodyElaborator::c_style_for_statement(
         if (!initialized.has_value()) {
             co_return std::unexpected(initialized.error());
         }
-        end_full_expression(header.initializer.span);
+        end_full_expression();
     }
     auto initializer = std::move(regions.back());
     regions.pop_back();
@@ -71,7 +71,7 @@ auto BodyElaborator::c_style_for_statement(
     if (!condition.has_value()) {
         co_return std::unexpected(condition.error());
     }
-    end_full_expression(condition_span);
+    end_full_expression();
     const auto condition_reachable = reachable;
     push_frame(((ast.block(source.body))).span);
     regions.push_back(empty_region(((ast.block(source.body))).span));
@@ -119,7 +119,7 @@ auto BodyElaborator::c_style_for_statement(
         if (!result.has_value()) {
             co_return std::unexpected(result.error());
         }
-        end_full_expression(step.span);
+        end_full_expression();
     }
     auto steps = std::move(regions.back());
     regions.pop_back();
@@ -144,6 +144,7 @@ auto BodyElaborator::range_for_statement(
 ) noexcept -> AnalysisTask<void> {
     push_frame(source.header.span);
     const auto loop_lifetime = frames.back().lifetime;
+    const auto expands = source.const_span.has_value() && !static_stage();
     auto declared = std::optional<ConstructionTypeRef>();
     if (header.type.has_value()) {
         auto resolved = (co_await resolve_type(*header.type));
@@ -177,22 +178,18 @@ auto BodyElaborator::range_for_statement(
             co_return std::unexpected(value.error());
         }
         auto read_only = false;
-        auto static_iterable = false;
         if (const auto* type = std::get_if<TypeID>(&value->type())) {
             const auto canonical = draft().type_copy(*type);
             if (const auto* array = std::get_if<ArrayTypeValue>(&canonical.value)) {
                 element_type = array->element;
-                static_iterable = true;
             } else if (const auto* sequence = std::get_if<VectorTypeValue>(&canonical.value)) {
                 element_type = sequence->element;
             } else if (const auto* range = std::get_if<RangeTypeValue>(&canonical.value)) {
                 element_type = range->element;
                 read_only = true;
-                static_iterable = true;
             } else if (const auto* slice = std::get_if<SliceTypeValue>(&canonical.value)) {
                 element_type = slice->element;
                 read_only = true;
-                static_iterable = true;
             } else if (const auto* builtin = std::get_if<BuiltinTypeValue>(&canonical.value);
                        builtin != nullptr && builtin->kind == BuiltinType::StrCharsView) {
                 read_only = true;
@@ -203,12 +200,10 @@ auto BodyElaborator::range_for_statement(
                 draft().construction_type_copy(std::get<TypeTermID>(value->type()));
             if (const auto* array = std::get_if<ConstructionArrayTypeValue>(&construction.value)) {
                 element_type = array->element;
-                static_iterable = true;
             } else if (const auto* slice =
                            std::get_if<ConstructionSliceTypeValue>(&construction.value)) {
                 element_type = slice->element;
                 read_only = true;
-                static_iterable = true;
             }
         }
         if (!element_type.has_value()) {
@@ -218,11 +213,11 @@ auto BodyElaborator::range_for_statement(
                 "range iterable must be an integer range, array, slice, Vector, or character view"
             ));
         }
-        if (source.const_span && (!static_iterable || header.write_marker.has_value())) {
+        if (expands && header.write_marker.has_value()) {
             co_return std::unexpected(fail(
                 *source.const_span,
                 DiagnosticCode::ConstAdmission,
-                "const for requires a Read integer range, array, or slice"
+                "static expansion requires Read iteration"
             ));
         }
         if (header.write_marker.has_value()) {
@@ -291,7 +286,7 @@ auto BodyElaborator::range_for_statement(
                 storage,
                 type,
                 header.write_marker ? BodyLocalRole::Local : BodyLocalRole::RangeRead,
-                source.const_span.has_value(),
+                expands,
                 false
             );
             if (!bound) {
@@ -305,7 +300,7 @@ auto BodyElaborator::range_for_statement(
                     .type = type,
                     .used = false,
                     .takeable = false,
-                    .static_source = source.const_span.has_value(),
+                    .static_source = expands,
                     .role = header.write_marker.has_value() ? BodyLocalRole::Local
                                                             : BodyLocalRole::RangeRead,
                     .unused_candidate = std::nullopt,
@@ -343,7 +338,7 @@ auto BodyElaborator::range_for_statement(
             binding,
             std::move(*iterable),
             UniqueIndirect(std::move(body)),
-            source.const_span.has_value() && !static_stage()
+            expands
         },
         origin(span)
     );
@@ -427,12 +422,8 @@ auto BodyElaborator::statement(ASTStmtID id) noexcept -> AnalysisTask<void> {
             },
         }
     ));
-    if (owns_full_expression && active_full_expression.has_value()) {
-        if (result.has_value()) {
-            end_full_expression(source.span);
-        } else {
-            active_full_expression.reset();
-        }
+    if (owns_full_expression) {
+        end_full_expression();
     }
     if (!was_reachable) {
         regions.back().failures = previous_failures;

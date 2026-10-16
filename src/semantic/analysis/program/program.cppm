@@ -105,7 +105,6 @@ public:
     auto source_span(ProgramOriginID id) const noexcept -> SourceSpan;
     auto spelling(ProgramSpellingID id) const noexcept -> std::string_view override;
     auto spelling_copy(ProgramSpellingID id) const noexcept -> std::string;
-    auto origin_slice_copy(ProgramOriginID id) const noexcept -> std::string;
     auto source_origin(ProgramOriginID id) const noexcept -> ProgramSourceOrigin;
     auto module_source(ProgramModuleID id) const noexcept -> ProgramSourceID;
     auto module_path_copy(ProgramModuleID id) const noexcept -> CanonicalModulePath;
@@ -263,13 +262,6 @@ public:
         std::span<const GenericArgument> arguments
     ) noexcept -> FailureInstantiation;
 
-    auto substitute_generic_failures(
-        ConstructionFailureRef failures,
-        GenericDeclarationID definition,
-        std::span<const GenericArgument> arguments,
-        FailureInstantiation* effects = nullptr
-    ) noexcept -> ConstructionFailureRef;
-
     auto normalize_generic_environment(
         std::span<const GenericArgument> arguments,
         ProgramOriginID origin,
@@ -293,7 +285,7 @@ public:
     auto instantiate_generic_call(
         SemanticExpression& expression,
         std::span<const CanonicalGenericArgument> environment
-    ) noexcept -> AnalysisResult<void>;
+    ) noexcept -> AnalysisResult<CallableID>;
 
     auto instantiate_generic_function(
         GenericDeclarationID definition,
@@ -378,21 +370,9 @@ public:
     auto callable_contract(ConstructionTypeRef type) const noexcept
         -> std::optional<ConstructionCallableContract>;
 
-    auto construction_failure_term_copy(FailureTermID failures) const noexcept -> FailureTerm;
-    auto module_declaration_count() const noexcept -> std::size_t;
-    auto function_declaration_count() const noexcept -> std::size_t;
-    auto struct_declaration_count() const noexcept -> std::size_t;
-    auto enum_declaration_count() const noexcept -> std::size_t;
-    auto enum_case_declaration_count() const noexcept -> std::size_t;
-    auto module_constant_declaration_count() const noexcept -> std::size_t;
-    auto callable_declaration_count() const noexcept -> std::size_t;
-    auto module_declaration_ids() const noexcept -> std::vector<ModuleID>;
     auto function_declaration_ids() const noexcept -> std::vector<FunctionID>;
     auto struct_declaration_ids() const noexcept -> std::vector<StructID>;
     auto enum_declaration_ids() const noexcept -> std::vector<EnumID>;
-    auto enum_case_declaration_ids() const noexcept -> std::vector<EnumCaseID>;
-    auto module_constant_declaration_ids() const noexcept -> std::vector<ModuleConstantID>;
-    auto callable_declaration_ids() const noexcept -> std::vector<CallableID>;
     auto add_empty_failure_term() noexcept -> FailureTermID;
 
     auto add_union_failure_term(std::vector<ConstructionFailureRef> inputs) noexcept
@@ -458,7 +438,6 @@ public:
     ) noexcept -> void;
 
     auto finish_declaration_heads() noexcept -> void;
-    auto create_evaluation_root_identity() noexcept -> BodyIdentity;
     auto reserve_body(BodyKind kind) noexcept -> BodyReservation;
     auto add_body_draft(StructuredBodyDraft body) noexcept -> void;
     // Stable across nested body completion; borrows end before the draft is consumed.
@@ -550,7 +529,6 @@ public:
 
 private:
     ProgramIdentity program_identity;
-    std::uint32_t next_evaluation_root = 0;
     CompilationProvenanceAppender provenance_appender;
     AnalysisDiagnostics analysis_diagnostics;
     ExecutionOutput output;

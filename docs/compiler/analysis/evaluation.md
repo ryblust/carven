@@ -74,16 +74,17 @@ diagnosed by its construction owner propagates without another report.
 
 ### Static roots and admission
 
-Initializer and extent construction use the same typed semantic operations as
-function execution. Standalone expression roots have an independent
-`BodyIdentityDomain::EvaluationRoot` identity in the current program and do not
-reserve or publish a function body. Local static roots belong to their
-source body's lifetime domain.
-The expression adapter owns source admission, contextual conversions, shape
-checks, and their diagnostics. Local static roots may retain pure constant
-facts; computing a fact does not execute a static root. Other admitted
-operations are evaluated by the executor when the root executes or a type
-reads its value.
+Initializer and extent roots use ordinary semantic construction with body-owned
+bindings and lifetimes. Standalone roots have scoped body drafts; local initializers use
+their enclosing body's storage and lifetime domain. Construction completes the
+declaration and callable dependencies needed by execution.
+
+The shared executor evaluates a completed root with its body context. Constant
+initializers freeze the result; array extents additionally require a nonnegative
+integer. Static roots do not introduce native callables. Pure constant facts
+may be retained during construction, but forming such a fact does not execute
+the root. Other admitted operations run when the root executes or a type reads
+its value.
 
 A construction dependency query uses the same executor with a restricted host
 capability. It suppresses output and rejects actual clock reads, input, and
@@ -164,6 +165,13 @@ Static selection is explicit. Body specialization resolves `const if` and
 `const for` before runtime execution. Inside a static block or test these
 constructs execute as ordinary controls in the shared executor. Ordinary
 control in a runtime body retains its runtime semantics and static roots.
+
+Range execution and static expansion share source acquisition and element
+traversal. The executor retains the source frame, including temporary owners,
+until traversal ends. Expansion freezes each bound element before specializing
+its body region; discarded elements need no retained value. The source need not
+freeze. Each iteration completes before another element is requested, so a static
+exit stops both traversal and subsequent body specialization.
 
 `analysis.stage.session` owns active roots, specialization budgets, in-progress
 bodies, and failed body realization results. `ProgramDraft` owns instance
@@ -339,6 +347,12 @@ while execution array elements are read into temporary bytes. This observation
 neither becomes text backing nor extends the source lifetime. Freezing materializes
 borrowed text before its execution storage is released.
 
+`ExecutionChars` borrows the same text backing. Each traversal owns its byte
+cursor and decodes one Unicode scalar per iteration through `UTF8Decoder`.
+Observations read at most four bytes, including from array-backed text; iteration
+charges the shared step budget. Copies preserve the backing and begin independent
+traversals.
+
 Execution places identify an object and an already evaluated path through
 fixed-array elements, struct fields, or text bytes. Assignment to a live owner
 preserves its object identity; Take and scope exit end it. Text backing has its
@@ -386,7 +400,8 @@ Vectors share execution aggregate storage and ordinary copying, transfer,
 indexing, and mutation. Their actual value trees are bounded during execution;
 recursive type declarations do not imply unbounded retained storage. Completed
 vectors freeze to typed `VectorConstant` children and logical capacity;
-String constants distinguish owning and borrowed text by their canonical type.
+`TextConstant` retains UTF-8 contents; its canonical type distinguishes String,
+str, and character views. Character views retain no cursor state.
 The same recursive publication checks apply inside products and enum payloads.
 Capacity intrinsics update logical capacity in both static and interpreted modes.
 

@@ -159,7 +159,6 @@ private:
     std::vector<CatalogSymbolID> generic_symbols;
     std::vector<CatalogSymbolID> enum_symbols;
     std::vector<CatalogSymbolID> enum_case_symbols;
-    std::vector<CatalogSymbolID> module_constant_symbols;
     std::vector<std::flat_map<std::string, std::vector<CatalogLookupCandidate>, std::less<>>>
         visible_candidates;
     std::vector<CatalogImportBinding> import_bindings;
@@ -199,7 +198,6 @@ public:
     auto generic_symbol(GenericDeclarationID id) const noexcept -> CatalogSymbolID;
     auto enum_symbol(EnumID id) const noexcept -> CatalogSymbolID;
     auto enum_case_symbol(EnumCaseID id) const noexcept -> CatalogSymbolID;
-    auto module_constant_symbol(ModuleConstantID id) const noexcept -> CatalogSymbolID;
     auto function_count() const noexcept -> std::size_t;
     auto struct_count() const noexcept -> std::size_t;
     auto enum_count() const noexcept -> std::size_t;

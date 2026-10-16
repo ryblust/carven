@@ -2,7 +2,7 @@ module carven:semantic.analysis.expr.text;
 
 import :frontend.ast.expr;
 import :frontend.ast.storage;
-import :semantic.analysis.expr.result;
+import :semantic.analysis.diagnostics;
 import :semantic.analysis.expr.scope;
 import :semantic.semir.structured;
 import :support.invariant;
@@ -16,7 +16,7 @@ auto construct_text_value(
     typename Site::Value value,
     std::optional<ConstantID> known,
     Span span
-) noexcept -> ExpressionResult<typename Site::Value> {
+) noexcept -> AnalysisResult<typename Site::Value> {
     auto state = Site::operand_state();
     auto operand = site.consume_read(state, std::move(value), span);
     if (!operand) {
@@ -40,27 +40,15 @@ auto construct_text_call(
     std::optional<typename Site::Value> receiver,
     std::span<const ASTExprID> arguments,
     Span span
-) noexcept -> ExpressionTask<typename Site::Value> {
-    if constexpr (Site::mode == ExpressionMode::StaticRoot) {
-        if (intrinsic != TextIntrinsic::FromStr
-            && intrinsic != TextIntrinsic::AsStr
-            && intrinsic != TextIntrinsic::FromU32Unchecked) {
-            co_return std::unexpected(ExpressionNotAdmitted {});
-        }
-    }
+) noexcept -> AnalysisTask<typename Site::Value> {
     const auto contract = text_intrinsic_contract(intrinsic);
     auto state = Site::operand_state();
     auto operands = std::vector<SemCallArgument>();
     if (receiver) {
         const auto access = contract.parameters.front().access;
-        auto value = [&]() noexcept -> ExpressionResult<SemanticExpression> {
-            if constexpr (Site::mode == ExpressionMode::Body) {
-                if (access == AccessMode::Write) {
-                    return site.consume_write(state, std::move(*receiver), span);
-                }
-            }
-            return site.consume_read(state, std::move(*receiver), span);
-        }();
+        auto value = access == AccessMode::Write
+            ? site.consume_write(state, std::move(*receiver), span)
+            : site.consume_read(state, std::move(*receiver), span);
         if (!value) {
             co_return std::unexpected(value.error());
         }

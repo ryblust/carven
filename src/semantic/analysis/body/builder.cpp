@@ -277,6 +277,29 @@ auto BodyBuilder::callable_expression(CallableID callable, ProgramOriginID origi
     return make_expression(type, lifetime(), origin, SemCallable {.callable = callable});
 }
 
+auto BodyBuilder::snapshot(SemanticRegion region) const noexcept -> StructuredBodyDraft {
+    const auto copy =
+        []<typename Value, typename ID>(const MutableBodyTable<Value, ID>& table) static noexcept {
+            auto result = MutableBodyTable<Value, ID>(table.owner());
+            for (const auto& entry : table.entries()) {
+                result.add(entry.value);
+            }
+            return std::move(result).seal();
+        };
+    return {
+        .id = body_id,
+        .kind = body_kind,
+        .provenance_identity = provenance_identity,
+        .inputs = body_inputs,
+        .lifetime_regions = LifetimeRegionTree(copy(lifetime_regions)),
+        .bindings = copy(bindings),
+        .patterns = copy(patterns),
+        .region = std::move(region),
+        .residual = std::nullopt,
+        .specialized = std::nullopt,
+    };
+}
+
 auto BodyBuilder::finish(SemanticRegion region) && noexcept -> StructuredBodyDraft {
     return {
         .id = body_id,

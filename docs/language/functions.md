@@ -226,10 +226,10 @@ specialization, without executing their declarations. A `const { ... }` block
 in the body executes with its local constants; see the
 [`const` block rules](constants.md#const-blocks).
 
-`const for` expands a Read integer range, array, or slice whose source is static.
-The source evaluates once during expansion. Each iteration's binding is a static
-value with the source element type, so it can supply static arguments and local
-constants:
+`const for` expands a Read integer range, array, slice, Vector, or character view
+whose source is static. The source evaluates once and remains alive during
+expansion. Each iteration's binding is a static value with the source element
+type, so it can supply static arguments and local constants:
 
 ```carven
 fn sum(value: i32, const count: i32) -> i32 {
@@ -245,10 +245,11 @@ In a runtime body, `const alias = index` preserves the static stage;
 `let alias = index` does not.
 Each iteration has its own scope while outer variables remain shared. `break`,
 `continue`, `return`, and failure propagation keep their ordinary meaning.
-Reversed integer ranges and empty sources have no iterations. Array and slice
-elements must freeze without changing their declared type. Expansion has
-cumulative iteration, instance, nesting, and construction limits. Exceeding a
-limit is a compiler diagnostic.
+Reversed integer ranges and empty sources have no iterations. Each bound element
+must freeze without changing its declared type; a discarded element needs no
+retained value. The source itself need only support execution and traversal.
+Expansion has cumulative iteration, instance, nesting, and construction limits.
+Exceeding a limit is a compiler diagnostic.
 
 A `const for` may also appear at module scope. It expands statements in the
 module's runtime entry body; ordinary calls in those statements run at runtime.

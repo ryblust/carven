@@ -52,8 +52,18 @@ public:
     // Executes an expression that reads no local binding.
     auto evaluate(
         const SemanticExpression& expression,
-        StaticEvaluationPurpose purpose = StaticEvaluationPurpose::Execute
+        StaticEvaluationPurpose purpose = StaticEvaluationPurpose::Execute,
+        const StructuredBodyDraft* body = nullptr
     ) noexcept -> AnalysisTask<ExecutionValue>;
+
+    // Traverses a source once and completes each expansion before advancing.
+    // Only named iteration bindings need retained element values.
+    auto iterate(
+        const SemanticExpression& expression,
+        bool retain_element,
+        const std::function<AnalysisTask<bool>(std::optional<ConstantID>)>& consume,
+        const StructuredBodyDraft* body = nullptr
+    ) noexcept -> AnalysisTask<void>;
 
     // Executes a body that belongs to the static stage as a whole: a const
     // test or a module const block.

@@ -37,6 +37,7 @@ function capture(session, options)
     directory(path.join(os.projectdir(), topic), topic)
     directory(path.join(os.projectdir(), "benchmarks/harness"), "benchmarks/harness")
     copy(path.join(os.projectdir(), "xmake.lua"), "xmake.lua")
+    copy(path.join(os.projectdir(), "xmake/consumer.lua"), "xmake/consumer.lua")
     if session.options.libcoro then
         directory(path.join(session.options.libcoro, "include"), "libcoro/include")
     end

@@ -214,9 +214,10 @@ without changing files.
 ### Benchmarks
 
 Workloads and measurement protocols live in [benchmarks/](benchmarks/README.md).
-Run them through the repository wrapper:
+Build first, then run them through the repository wrapper:
 
 ```shell
+./xmakew build
 ./xmakew bench compile
 ./xmakew bench incremental
 ./xmakew bench async

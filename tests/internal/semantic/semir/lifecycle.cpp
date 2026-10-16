@@ -78,14 +78,14 @@ auto build_program(std::string_view module_name) noexcept -> BuiltProgram {
     const auto constant = builder.intern_constant(
         ConstantFact {
             .type = text,
-            .value = StringConstant {.value = text_spelling},
+            .value = TextConstant {.value = text_spelling},
         }
     );
     expect(
         builder.intern_constant(
             ConstantFact {
                 .type = text,
-                .value = StringConstant {.value = text_spelling},
+                .value = TextConstant {.value = text_spelling},
             }
         )
         == constant
@@ -206,20 +206,6 @@ auto build_program(std::string_view module_name) noexcept -> BuiltProgram {
         std::format("compilation-builder-reserve-after-declarations-{}", module_name),
         [&] noexcept { static_cast<void>(active_builder.reserve_test()); }
     ));
-    expect_equal(active_builder.module_declaration_count(), 1uz);
-    expect_equal(active_builder.function_declaration_count(), 2uz);
-    expect_equal(active_builder.struct_declaration_count(), 2uz);
-    expect_equal(active_builder.callable_declaration_count(), 2uz);
-    expect(active_builder.module_declaration_ids() == std::vector {module_id});
-    expect(
-        active_builder.function_declaration_ids() == std::vector {first_function, second_function}
-    );
-    expect(
-        active_builder.struct_declaration_ids() == std::vector {holder, guarded_failure_structure}
-    );
-    expect(
-        active_builder.callable_declaration_ids() == std::vector {first_callable, second_callable}
-    );
     expect(((active_builder.module_declaration_copy(module_id).provenance_module)
             == (provenance_module)))
         .note(

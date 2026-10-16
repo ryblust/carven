@@ -1,7 +1,6 @@
 # Documentation Comments
 
 - **Status:** Exploration
-- **Implementation:** Not started
 - **Scope:** Source documentation attachment and documentation tooling input
 
 ## Summary
@@ -11,8 +10,9 @@ documentation for a module or declaration. This proposal will define the
 source attachment contract and the compiler facts needed by future
 documentation tools.
 
-Source spelling (`OPEN-01`), attachment and retention (`OPEN-02`), markup
-(`OPEN-03`), and the first output artifact (`OPEN-04`) remain open, in that order.
+The first consumer (`OPEN-04`) and source forms (`OPEN-01`) remain open. Their
+requirements determine attachment and retention (`OPEN-02`) and markup
+(`OPEN-03`).
 
 ## Context
 
@@ -26,34 +26,18 @@ Carven has no documentation artifact or generator.
 
 ### Problem
 
-Library authors need durable API explanations close to the declarations they
-describe. Ordinary comments cannot support reliable association, validation,
-or documentation generation because they disappear before parsing.
+Library authors need API explanations close to the declarations they describe.
+The compiler currently provides neither an attachment rule nor a documentation
+input for tools.
 
 ### Existing constraints
 
 - Ordinary comments remain semantically inert.
 - Documentation attachment is deterministic from source structure.
-- A missing documentation tool does not change program validity or generated
-  runtime behavior.
+- Documentation tools consume established source facts; their presence does
+  not change program validity or runtime behavior.
 - The source model is independent of an output tool's conventions.
 - Generated C++ is not automatically a stable public documentation interface.
-
-## Goals and non-goals
-
-### Goals
-
-- Attach retained documentation text to a module or declaration.
-- Preserve enough structure for future documentation tools.
-- Diagnose ambiguous or invalid attachment locally.
-- Give tools a stable Carven-level input without changing runtime behavior.
-
-### Non-goals
-
-- Selecting an HTML theme, hosting system, or documentation-site generator.
-- Turning documentation markup into runtime reflection metadata.
-- Requiring generated C++ comments to be the canonical documentation artifact.
-- Exposing the compiler's private storage container as a public tooling API.
 
 ## Design
 
@@ -76,16 +60,24 @@ orphaned or ambiguous forms at the owning source range. The compiler must
 retain the resulting content and attachment identity long enough for the
 selected artifact consumer.
 
-`OPEN-02` compares parser attachment with a source-indexed side table, including
-behavior, diagnostics, and tooling consequences.
+The selected consumer determines the facts that need a durable interface. Themes,
+hosting, runtime reflection, and private compiler containers are outside that
+source contract.
 
 ## Open decisions
 
-**Next discussion:** `OPEN-01`
+### OPEN-04 — Which artifact first consumes documentation?
+
+- **Question:** The first consumer determines the minimum durable compiler
+  facts and the end-to-end validation path.
+- **Options:** A — documentation-oriented metadata consumed by a separate tool;
+  B — compiler-integrated output; C — generated C++ comments with an explicitly
+  weaker Carven-level contract.
+- **Closure condition:** Define one end-to-end use case and compare artifact
+  stability, cross-module lookup, and downstream-tool requirements.
 
 ### OPEN-01 — Which source forms denote documentation?
 
-- **Status:** Active
 - **Question:** The spelling determines lexical compatibility,
   module-level documentation, and whether documentation is visually distinct
   from ordinary comments.
@@ -100,15 +92,13 @@ behavior, diagnostics, and tooling consequences.
 
 ### OPEN-02 — Where is attachment resolved and stored?
 
-- **Status:** Blocked
-- **Depends on:** `OPEN-01`
-- **Activation condition:** A source form has been selected.
+- **Depends on:** Source forms from `OPEN-01` and consumer requirements from
+  `OPEN-04`.
 - **Question:** The stage and representation determine how documentation
   survives parsing, where orphan/duplicate attachment is diagnosed, and which
   compiler facts future tools can consume.
-- **Constraints:** Attachment is deterministic from source structure rather
-  than later name/type lookup; diagnostics are local and stable; the selected
-  representation handles module docs, declarations, fields, and enum cases.
+- **Constraints:** The selected representation handles module documentation,
+  declarations, fields, and enum cases.
 - **Options:** A — retain distinct documentation tokens and attach them while
   constructing syntax nodes; B — retain source ranges in a side table and
   resolve attachment in a dedicated syntax pass.
@@ -119,13 +109,11 @@ behavior, diagnostics, and tooling consequences.
 
 ### OPEN-03 — What markup contract does Carven expose?
 
-- **Status:** Blocked
-- **Depends on:** `OPEN-01`, `OPEN-02`
-- **Activation condition:** Retained text and attachment boundaries are known.
+- **Depends on:** Retained text and attachment boundaries from `OPEN-02`, and
+  consumer requirements from `OPEN-04`.
 - **Question:** Markup controls portability between tools and determines
   whether the compiler must understand references inside documentation.
-- **Constraints:** Documentation text cannot change program semantics; tools
-  need one stable interpretation of links and code blocks.
+- **Constraints:** Tools need one stable interpretation of links and code blocks.
 - **Options:** A — preserve Markdown and leave rendering to tools; B — parse a
   fixed vocabulary of structured tags; C — preserve Markdown while extracting
   a small compiler-known set of references.
@@ -133,31 +121,12 @@ behavior, diagnostics, and tooling consequences.
   cross-references, and code snippets and identify which features require
   compiler knowledge.
 
-### OPEN-04 — Which artifact first consumes documentation?
+## Delivery scope
 
-- **Status:** Blocked
-- **Depends on:** `OPEN-01`, `OPEN-02`, `OPEN-03`
-- **Activation condition:** The retained content and markup contract are stable.
-- **Question:** The first consumer determines the minimum durable compiler
-  facts and the first end-to-end validation path.
-- **Constraints:** Generated C++ is not automatically a stable public
-  interface; documentation generation cannot affect ordinary execution.
-- **Options:** A — documentation-oriented metadata consumed by a separate tool;
-  B — compiler-integrated output; C — generated C++ comments with an explicitly
-  weaker Carven-level contract.
-- **Closure condition:** Define one end-to-end use case and compare artifact
-  stability, cross-module lookup, and downstream-tool requirements.
-
-## Implementation
-
-Implementation is not actionable until `OPEN-01` and `OPEN-02` close. The
-first vertical delivery should cover lexical retention, source attachment,
-source ranges, the selected retained representation, compiler inspection, and
-local diagnostics.
-
-Artifact delivery follows the markup and output decisions in `OPEN-03` and
-`OPEN-04`. The parser/inspection slice retains documentation without selecting
-those contracts.
+Select one consumer and the source contract it needs before retaining new
+compiler facts. The first delivery covers source recognition, attachment and
+ranges, local diagnostics, and consumption of the retained documentation.
+Choose the markup needed by that consumer as part of the same scope.
 
 ## Validation
 
@@ -166,11 +135,9 @@ declaration documentation, fields and enum cases, consecutive forms,
 attributes, ordinary comments, blank lines, malformed or orphaned forms, and
 end-of-file behavior.
 
-The delivered feature must additionally prove compiler preservation and the
-selected attachment representation. After `OPEN-03` and `OPEN-04`, artifact
-validation must prove the selected output separately. Ordinary comments must
-remain discarded and neither ordinary nor documentation comments may alter
-generated program behavior.
+Validate the selected consumer's output against source content and attachment,
+including cross-module use. Ordinary comments have no documentation meaning by
+default. Retaining either comment form must preserve generated program behavior.
 
 ## References
 

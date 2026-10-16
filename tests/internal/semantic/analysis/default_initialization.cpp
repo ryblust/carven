@@ -1,8 +1,6 @@
 module carven:test.internal.semantic.analysis.default_initialization;
 
 import :diagnostics.code;
-import :semantic.semir.structured;
-import :semantic.semir.traversal;
 import :test.harness.diagnostics;
 import :test.harness.framework;
 import :test.internal.semantic.analysis.fixture;
@@ -22,12 +20,25 @@ const TestSuite suite([] static noexcept {
             view: [T],
         }
         fn storage<T>() -> Storage<T> => Storage<T> {};
+        struct Link<T> { back: ptr<Node> }
+        const absent: ptr<Node> = nullptr;
+        struct Node {
+            link: Link<i32>,
+            values: [i32; if absent == nullptr { 1usize } else { 0usize }],
+        }
+        const node = Node {};
+        const { assert(node.link.back == nullptr && node.values.length() == 1usize); }
         enum FixedElement { Item(i32) }
         struct Holder<T> { values: Vector<T>, fixed: Vector<FixedElement> }
         const fn make<T>() -> Holder<T> => Holder<T> {};
+        const fn count_fixed<T>() -> usize => make<T>().fixed.length();
+        const nested_count = count_fixed<i32>();
         const fixed_count = make<i32>().fixed.length();
         const count = make<NoDefault>().values.length();
-        fn empty<T>() -> [T; 0] { return {}; }
+        const { assert(nested_count == 0usize && fixed_count == 0usize && count == 0usize); }
+        const fn empty<T>() -> [T; 0] { return {}; }
+        const no_elements = empty<NoDefault>();
+        const { assert(no_elements.length() == 0usize); }
     )"));
             constexpr auto cases = std::array {
                 "fn invalid<T>() -> T { return {}; }",
@@ -43,28 +54,6 @@ const TestSuite suite([] static noexcept {
                 );
             });
         };
-
-    "Semantic defaults: semantic size is independent of array extent"_test = [] static noexcept {
-        const auto program = analyze_test_program(R"(
-        struct Small { values: [i32; 1] }
-        struct Large { values: [i32; 100000000] }
-        fn small() -> Small { return {}; }
-        fn large() -> Large { return {}; }
-    )");
-        auto sizes = std::vector<std::size_t>();
-        for (const auto [id, body] : program.bodies().entries()) {
-            static_cast<void>(id);
-            auto count = 0uz;
-            visit_semantic_nodes(body.region(), [&](const SemanticExpression&) noexcept {
-                ++count;
-            });
-            sizes.push_back(count);
-        }
-        if (!expect(sizes.size() == 2uz)) {
-            return;
-        }
-        expect(sizes[0] == sizes[1]);
-    };
 });
 
 } // namespace

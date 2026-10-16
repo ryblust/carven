@@ -46,17 +46,6 @@ end
 
 function setup(session)
     local external = session.options.compiler
-    if not external then
-        print("Preparing compiler...")
-        local raw = command(os.programfile(), {"build", "carven"}, os.projectdir(),
-            {capture_stdout = true, timeout = 600000})
-        raw.operation = "compiler build"
-        table.insert(session.results.setup, raw)
-        checkpoint(session)
-        if session.options.verbose and raw.exit_code == 0 and raw.stdout ~= "" then io.write(raw.stdout) end
-        assert(raw.exit_code == 0, "compiler build failed (exit %d): %s", raw.exit_code,
-            failure_output(raw))
-    end
     config.load()
     session.compiler = path.absolute(external or project.target("carven"):targetfile(), os.projectdir())
     session.results.metadata.compiler = compiler_identity(session.compiler, external)
@@ -66,15 +55,12 @@ function setup(session)
         session.results.metadata.crafts_root = inputs.crafts_root(session.compiler)
     end
     session.results.metadata.compiler.sha256 = hash.sha256(session.compiler):lower()
-    session.compiler_mode = external and "external (unknown)" or config.mode() or "unknown"
 end
 
-function median(samples)
+local function sorted_median(samples)
     if #samples == 0 then return nil end
-    local sorted = table.copy(samples)
-    table.sort(sorted)
-    local middle = math.floor(#sorted / 2)
-    return #sorted % 2 == 1 and sorted[middle + 1] or (sorted[middle] + sorted[middle + 1]) / 2
+    local middle = math.floor(#samples / 2)
+    return #samples % 2 == 1 and samples[middle + 1] or (samples[middle] + samples[middle + 1]) / 2
 end
 
 function summary(runs)
@@ -94,10 +80,10 @@ function summary(runs)
         table.sort(metric.samples)
         metric.count = #metric.samples
         metric.minimum, metric.maximum = metric.samples[1], metric.samples[#metric.samples]
-        metric.median = median(metric.samples)
+        metric.median = sorted_median(metric.samples)
         metric.samples = nil
     end
-    return {measured_runs = #measured, median_wall_ms = median(measured),
+    return {measured_runs = #measured, median_wall_ms = sorted_median(measured),
         minimum_wall_ms = measured[1], maximum_wall_ms = measured[#measured], metrics = metrics}
 end
 
@@ -135,16 +121,14 @@ end
 function session(topic, options, specification)
     specification = specification or {}
     local output, artifacts = output_path(topic, options)
-    local result = {options = options, samples = options.samples, warmups = options.warmups,
-        description = specification.description or {}, columns = specification.columns or {}, primary = specification.primary,
-        output = output, artifacts = artifacts,
+    local result = {options = options, output = output, artifacts = artifacts,
         results = {schema_version = 3, topic = topic, status = "running", cases = array(),
             measurement = {description = array(table.copy(specification.description or {})),
                 columns = array(table.copy(specification.columns or {})), primary = specification.primary},
             setup = array()}}
     local external = options.compiler
     result.results.metadata = metadata(external and path.absolute(external, os.projectdir()) or nil, options)
-    result.results.metadata.sampling = {samples = result.samples, warmups = result.warmups}
+    result.results.metadata.sampling = {samples = options.samples, warmups = options.warmups}
     result.results.metadata.artifacts = artifacts
     checkpoint(result)
     return result
@@ -208,8 +192,9 @@ function step(session, case, label, program, argv, cwd, options)
 end
 
 function measure_rounds(session, records, action)
+    local sampling = session.results.metadata.sampling
     local random = session.results.metadata.order_seed
-    for ordinal = 1, session.warmups + session.samples do
+    for ordinal = 1, sampling.warmups + sampling.samples do
         local order = table.copy(records)
         for index = #order, 2, -1 do
             random = (random * 1664525 + 1013904223) % 4294967296
@@ -219,14 +204,14 @@ function measure_rounds(session, records, action)
         for position, case in ipairs(order) do
             local result = action(case, ordinal)
             result.ordinal, result.order = ordinal, position
-            result.warmup = ordinal <= session.warmups
+            result.warmup = ordinal <= sampling.warmups
             table.insert(case.runs, result)
             case.summary = summary(case.runs)
             if result.exit_code ~= 0 or result.validation_error then
                 case.status, session.results.status = "failed", "failed"
             end
             checkpoint(session)
-            report.sample(session, case, result)
+            report.sample(session, result)
             if result.validation_error then raise("%s: %s", case.id, result.validation_error) end
             assert(result.exit_code == 0, "%s: measured command failed (exit %d): %s", case.id,
                 result.exit_code, failure_output(result))
@@ -234,11 +219,6 @@ function measure_rounds(session, records, action)
     end
     for _, case in ipairs(records) do case.status = "complete" end
     checkpoint(session)
-end
-
-function measure_case(session, case, action)
-    measure_rounds(session, {case}, function (_, ordinal) return action(ordinal) end)
-    return case.summary
 end
 
 function perform(session, action)
@@ -287,7 +267,7 @@ function run(session, cases, prepare, configure)
             record.workspace = root
             local action = prepare(session, record, specification, root)
             checkpoint(session)
-            measure_case(session, record, action)
+            measure_rounds(session, {record}, function (_, ordinal) return action(ordinal) end)
             report.finish_case(record, session)
         end
     end)

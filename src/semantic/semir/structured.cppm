@@ -538,7 +538,7 @@ struct SemRangeLoop final {
     std::optional<LocalBindingID> binding;
     SemanticExpression source;
     OwnedSemanticRegion body;
-    // A const for expands a static integer range; its index is a static binding.
+    // Static expansion retains each element binding while deriving its body.
     bool is_static;
 };
 

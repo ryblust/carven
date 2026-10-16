@@ -93,7 +93,7 @@ includes("tools/workspace")
 task("bench")
     set_menu({
         usage = "xmake bench [options] <name> [options]",
-        description = "Build the compiler and run a Carven benchmark",
+        description = "Run a Carven benchmark with a built compiler",
         options = {
             function ()
                 return import("benchmarks.harness.options", {rootdir = os.projectdir()}).menu()

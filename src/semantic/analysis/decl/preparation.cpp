@@ -108,39 +108,46 @@ auto DeclResolver::ensure_available(
         co_return (co_await ensure_available(catalog.enum_symbol(item->owner), requester, origin));
     }
     if (const auto* function = std::get_if<CatalogFunctionForm>(&symbol.form)) {
-        const auto pending = draft.pending_function_contract_copy(function->callable);
-        const auto failures = pending
-            ? pending->failures
-            : draft.construction_callable_contract_copy(function->callable).failures;
-        const auto members = draft.construction_failure_known_members(failures);
-        for (const auto type : members) {
-            completed = (co_await prepare_type(type, requester, origin));
-            if (!completed) {
-                co_return completed;
-            }
-        }
-        if (pending) {
-            for (const auto& parameter : pending->parameters) {
-                completed = (co_await prepare_type(parameter.type, requester, origin));
-                if (!completed) {
-                    co_return completed;
-                }
-            }
-        } else {
-            const auto contract = draft.construction_callable_contract_copy(function->callable);
-            for (const auto& parameter : contract.parameters) {
-                completed = (co_await prepare_type(parameter.type, requester, origin));
-                if (!completed) {
-                    co_return completed;
-                }
-            }
-            completed = (co_await prepare_type(contract.result, requester, origin));
-            if (!completed) {
-                co_return completed;
-            }
+        completed = co_await prepare_callable(function->callable, requester, origin);
+        if (!completed) {
+            co_return completed;
         }
     }
     co_return publish_declaration(symbol);
+}
+
+auto DeclResolver::prepare_callable(
+    CallableID callable,
+    ProgramModuleID requester,
+    Span span
+) noexcept -> AnalysisTask<void> {
+    const auto pending = draft.pending_function_contract_copy(callable);
+    const auto failures =
+        pending ? pending->failures : draft.construction_callable_contract_copy(callable).failures;
+    for (const auto type : draft.construction_failure_known_members(failures)) {
+        auto completed = co_await prepare_type(type, requester, span);
+        if (!completed) {
+            co_return completed;
+        }
+    }
+    if (pending) {
+        for (const auto& parameter : pending->parameters) {
+            auto completed = co_await prepare_type(parameter.type, requester, span);
+            if (!completed) {
+                co_return completed;
+            }
+        }
+    } else {
+        const auto contract = draft.construction_callable_contract_copy(callable);
+        for (const auto& parameter : contract.parameters) {
+            auto completed = co_await prepare_type(parameter.type, requester, span);
+            if (!completed) {
+                co_return completed;
+            }
+        }
+        co_return co_await prepare_type(contract.result, requester, span);
+    }
+    co_return {};
 }
 
 auto DeclResolver::prepare_type(

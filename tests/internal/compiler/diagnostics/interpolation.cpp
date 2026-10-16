@@ -20,8 +20,8 @@ const TestSuite suite([] static noexcept {
              .primary_text = "&&x"},
             {.name = "known local is still runtime storage",
              .source = R"(fn bad() { let value = 42; const copy = value; })",
-             .code = DiagnosticCode::ConstInitializer,
-             .primary_text = "const copy = value"},
+             .code = DiagnosticCode::ConstAdmission,
+             .primary_text = "value"},
             {.name = "known local remains unavailable after Take",
              .source =
                  R"(fn take(&&value: i32) {} fn bad() { let value = 42; take(&&value); let text = f"{value}"; })",
@@ -101,8 +101,8 @@ const TestSuite suite([] static noexcept {
                  .primary_text = R"(f"{42:{-1}}")"},
                 {.name = "runtime binding is not a constant",
                  .source = R"(fn bad() { let x = 1; const text = f"{x}"; })",
-                 .code = DiagnosticCode::ConstInitializer,
-                 .primary_text = R"(const text = f"{x}")"},
+                 .code = DiagnosticCode::ConstAdmission,
+                 .primary_text = "x"},
                 {.name = "owning text remains typed in nested calls",
                  .source =
                      R"(const fn consume(value: i32) -> i32 => value; const result = consume(f"x");)",

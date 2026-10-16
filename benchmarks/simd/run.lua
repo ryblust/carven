@@ -53,15 +53,11 @@ function main(options)
         for index, case in ipairs(selected) do
             report.begin_case(case, index, #selected)
             local root = path.join(session.artifacts, case.id)
-            local generated = path.join(root, "generated")
-            os.mkdir(generated)
+            os.mkdir(root)
             io.writefile(path.join(root, "workload.cv"), workloads.source(case))
-            io.writefile(path.join(root, "xmake.lua"), native_project.project_text(root, inputs, case, options.cxx, options.portable))
+            io.writefile(path.join(root, "xmake.lua"), native_project.project_text(inputs, case, session))
             local setup = {id = case.id, steps = benchmark.array()}
             table.insert(session.results.setup, setup)
-            benchmark.step(session, setup, "generate", session.compiler,
-                {"compile", "workload.cv", "-o", generated, "--linkage-domain=benchmark:simd:" .. case.id}, root,
-                {capture_stdout = true, timeout = 180000})
             benchmark.step(session, setup, "configure", os.programfile(), {"f", "-y", "-m", "release"}, root,
                 {capture_stdout = true, timeout = 180000})
             local identity = benchmark.step(session, setup, "native target identity", os.programfile(),

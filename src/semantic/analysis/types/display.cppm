@@ -1,9 +1,15 @@
 module carven:semantic.analysis.types.display;
 
+import :semantic.analysis.catalog;
 import :semantic.analysis.program;
 import :semantic.semir.type;
 import std;
 
-// Spells a type as source would, for diagnostic text. Nominal names are
-// unqualified; an inferred callable or closure is described by its signature.
-auto type_display_name(const ProgramDraft& draft, ConstructionTypeRef type) noexcept -> std::string;
+// Spells types for diagnostics with module-qualified nominal names and callable
+// signatures. A construction catalog supplies source names before declarations
+// are complete; displaying a name does not request declaration completion.
+auto type_display_name(
+    const ProgramDraft& draft,
+    ConstructionTypeRef type,
+    std::optional<AnalysisCatalogView> catalog = std::nullopt
+) noexcept -> std::string;

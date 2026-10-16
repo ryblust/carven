@@ -2,8 +2,8 @@ module carven:semantic.analysis.expr.async;
 
 import :diagnostics.code;
 import :frontend.ast.expr;
+import :semantic.analysis.diagnostics;
 import :semantic.analysis.expr.operand;
-import :semantic.analysis.expr.result;
 import :semantic.analysis.expr.scope;
 import :semantic.analysis.operations;
 import :semantic.analysis.program;
@@ -18,7 +18,7 @@ auto construct_async_intrinsic(
     const ASTCallExpr& source,
     AsyncIntrinsic kind,
     Span span
-) noexcept -> ExpressionResult<typename Site::Value> {
+) noexcept -> AnalysisResult<typename Site::Value> {
     if (kind == AsyncIntrinsic::WaitReady || kind == AsyncIntrinsic::CloseChild) {
         return std::unexpected(site.fail(
             span,
@@ -62,7 +62,7 @@ auto construct_async_composition(
     const ASTCallExpr& source,
     AsyncCompositionPolicy policy,
     Span span
-) noexcept -> ExpressionTask<typename Site::Value> {
+) noexcept -> AnalysisTask<typename Site::Value> {
     if (policy != AsyncCompositionPolicy::WhenAll && source.arguments.empty()) {
         co_return std::unexpected(site.fail(
             span,
@@ -131,7 +131,7 @@ auto construct_async_timeout(
     const ASTCallExpr& source,
     const TimeoutContract& contract,
     Span span
-) noexcept -> ExpressionTask<typename Site::Value> {
+) noexcept -> AnalysisTask<typename Site::Value> {
     if (source.arguments.size() != 2uz) {
         co_return std::unexpected(site.fail(
             span,
@@ -167,7 +167,7 @@ auto construct_async_timeout(
     const auto duration_span = site.syntax().expression(source.arguments[1]).span;
     const auto owner =
         std::get<StructTypeValue>(draft.type_copy(contract.duration).value).structure;
-    auto ticks = ExpressionResult<typename Site::Value>(site.finish_field(
+    auto ticks = AnalysisResult<typename Site::Value>(site.finish_field(
         draft.builtin_type(BuiltinType::I64),
         {owner, 0},
         std::move(*duration),

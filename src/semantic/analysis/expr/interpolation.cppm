@@ -2,7 +2,7 @@ module carven:semantic.analysis.expr.interpolation;
 
 import :frontend.ast.expr;
 import :frontend.ast.ids;
-import :semantic.analysis.expr.result;
+import :semantic.analysis.diagnostics;
 import :semantic.analysis.expr.scope;
 import :semantic.semir.format;
 import :semantic.semir.structured;
@@ -23,19 +23,15 @@ auto construct_interpolation(
     const ASTInterpolationExpr& source,
     Span span,
     std::optional<typename Site::Value> receiver = std::nullopt
-) noexcept -> ExpressionTask<typename Site::Value> {
+) noexcept -> AnalysisTask<typename Site::Value> {
     auto state = Site::operand_state();
     auto destination = std::optional<OwnedSemanticExpression>();
     if (receiver) {
-        if constexpr (Site::mode == ExpressionMode::StaticRoot) {
-            co_return std::unexpected(ExpressionNotAdmitted {});
-        } else {
-            auto place = site.consume_write(state, std::move(*receiver), span);
-            if (!place) {
-                co_return std::unexpected(place.error());
-            }
-            destination = OwnedSemanticExpression(std::move(*place));
+        auto place = site.consume_write(state, std::move(*receiver), span);
+        if (!place) {
+            co_return std::unexpected(place.error());
         }
+        destination = OwnedSemanticExpression(std::move(*place));
     }
     auto normalized = normalize_interpolation(source);
     auto operands = std::vector<SemCallArgument>();

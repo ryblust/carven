@@ -1,11 +1,11 @@
 module carven:semantic.evaluation.control.impl;
 
-import :semantic.evaluation.admission;
 import :semantic.evaluation.display;
 import :semantic.evaluation.executor;
 import :semantic.evaluation.operation;
 import :semantic.semir.stage;
 import :support.invariant;
+import :support.utf8;
 import std;
 
 auto SemanticExecutor::region(
@@ -49,11 +49,6 @@ auto SemanticExecutor::statement(ExecutionFrame& frame, const SemanticStatement&
     );
     if (auto checked = step(source.origin); !checked) {
         co_return std::unexpected(std::move(checked.error()));
-    }
-    if (const auto reason = unsupported_execution_statement(source)) {
-        co_return std::unexpected(
-            fail(source.origin, ExecutionReason::Admission, std::string(*reason))
-        );
     }
     const auto temporaries = frame.temporaries.size();
     auto result = (co_await source.value.visit(
@@ -310,11 +305,7 @@ auto SemanticExecutor::statement(ExecutionFrame& frame, const SemanticStatement&
             } else if constexpr (std::same_as<Operation, OwnedSemanticRegion>) {
                 co_return (co_await region(frame, *operation));
             } else {
-                co_return std::unexpected(fail(
-                    source.origin,
-                    ExecutionReason::Evaluation,
-                    "statement is not supported in execution"
-                ));
+                static_assert(std::same_as<Operation, void>, "statement execution is missing");
             }
         }
     ));
@@ -370,75 +361,146 @@ auto SemanticExecutor::loop(
     }
 }
 
+auto SemanticExecutor::open_iteration(
+    ExecutionFrame& frame,
+    const SemanticExpression& source
+) noexcept -> ExecutionTask<IterationCursor> {
+    const auto reference = execution_type_reference(values, source.type.construction());
+    const auto* concrete = std::get_if<TypeID>(&reference);
+    const auto canonical = concrete ? std::optional(values.type_copy(*concrete)) : std::nullopt;
+    if (const auto* range = canonical ? std::get_if<RangeTypeValue>(&canonical->value) : nullptr) {
+        auto evaluated = co_await value(frame, source);
+        if (!evaluated) {
+            co_return std::unexpected(std::move(evaluated.error()));
+        }
+        auto fact = read_fact(*evaluated, source.origin);
+        if (!fact) {
+            co_return std::unexpected(std::move(fact.error()));
+        }
+        co_return IterationCursor(
+            IntegerIteration {
+                .element = range->element,
+                .cursor = IntegerRangeCursor(std::get<RangeConstant>(fact->value)),
+            }
+        );
+    }
+    if (canonical
+        && canonical->value == CanonicalTypeValue {BuiltinTypeValue {BuiltinType::StrCharsView}}) {
+        auto evaluated = co_await value(frame, source);
+        if (!evaluated) {
+            co_return std::unexpected(std::move(evaluated.error()));
+        }
+        auto text = text_handle(*evaluated, source.origin);
+        if (!text) {
+            co_return std::unexpected(std::move(text.error()));
+        }
+        co_return IterationCursor(CharacterIteration {.text = std::move(*text), .offset = 0uz});
+    }
+    auto sequence = co_await sequence_view(frame, source, source.origin);
+    if (!sequence) {
+        co_return std::unexpected(std::move(sequence.error()));
+    }
+    co_return IterationCursor(SequenceIteration {.slice = std::move(*sequence), .index = 0uz});
+}
+
+auto SemanticExecutor::next_iteration(IterationCursor& cursor, ProgramOriginID origin) noexcept
+    -> ExecutionResult<std::optional<ExecutionOperand>> {
+    return cursor.visit(
+        [&](auto& current) noexcept -> ExecutionResult<std::optional<ExecutionOperand>> {
+            using Cursor = std::remove_cvref_t<decltype(current)>;
+            if constexpr (std::same_as<Cursor, IntegerIteration>) {
+                const auto next = current.cursor.next();
+                if (!next) {
+                    return std::nullopt;
+                }
+                if (auto checked = step(origin); !checked) {
+                    return std::unexpected(std::move(checked.error()));
+                }
+                return std::optional(
+                    ExecutionOperand {ExecutionValue(
+                        ConstantAtom {
+                            .type = current.element,
+                            .value = *next,
+                        }
+                    )}
+                );
+            } else if constexpr (std::same_as<Cursor, CharacterIteration>) {
+                const auto bytes = current.text.observe(values, &memory, current.offset, 4uz);
+                if (!bytes) {
+                    return std::unexpected(
+                        fail(origin, ExecutionReason::Evaluation, "text backing is no longer alive")
+                    );
+                }
+                if (bytes->size() == 0uz) {
+                    return std::nullopt;
+                }
+                if (auto checked = step(origin); !checked) {
+                    return std::unexpected(std::move(checked.error()));
+                }
+                const auto decoded = UTF8Decoder::decode(bytes->view(), 0uz);
+                if (!decoded.valid) {
+                    return std::unexpected(fail(
+                        origin,
+                        ExecutionReason::Evaluation,
+                        "character iteration requires valid UTF-8"
+                    ));
+                }
+                current.offset += decoded.width;
+                return std::optional(
+                    ExecutionOperand {ExecutionValue(
+                        ConstantAtom {
+                            .type = values.builtin_type(BuiltinType::Char),
+                            .value = CharacterConstant {.scalar = decoded.scalar},
+                        }
+                    )}
+                );
+            } else {
+                if (current.index == current.slice.extent) {
+                    return std::nullopt;
+                }
+                if (auto checked = step(origin); !checked) {
+                    return std::unexpected(std::move(checked.error()));
+                }
+                auto selected = slice_element(current.slice, current.index++, origin);
+                if (!selected) {
+                    return std::unexpected(std::move(selected.error()));
+                }
+                return std::optional(ExecutionOperand {std::move(*selected)});
+            }
+        }
+    );
+}
+
 auto SemanticExecutor::range_loop(
     ExecutionFrame& frame,
     const SemRangeLoop& source,
     ProgramOriginID origin
 ) noexcept -> ExecutionTask<ExecutionCompletion> {
-    const auto reference = source.source.type.construction();
-    const auto* concrete = std::get_if<TypeID>(&reference);
-    const auto canonical = concrete ? std::optional(values.type_copy(*concrete)) : std::nullopt;
-    if (const auto* range_type =
-            canonical ? std::get_if<RangeTypeValue>(&canonical->value) : nullptr) {
-        auto evaluated = (co_await this->value(frame, source.source));
-        if (!evaluated) {
-            co_return std::unexpected(std::move(evaluated.error()));
-        }
-        auto fact = read_fact(*evaluated, origin);
-        if (!fact) {
-            co_return std::unexpected(std::move(fact.error()));
-        }
-        auto cursor = IntegerRangeCursor(std::get<RangeConstant>(fact->value));
-        while (const auto current = cursor.next()) {
-            if (auto checked = step(origin); !checked) {
-                co_return std::unexpected(std::move(checked.error()));
-            }
-            if (source.binding) {
-                bind(
-                    frame,
-                    source.binding->index(),
-                    ConstantAtom {.type = range_type->element, .value = *current}
-                );
-            }
-            auto body = co_await region(frame, *source.body);
-            if (!body || body->flow == ExecutionFlow::Return) {
-                co_return body;
-            }
-            if (body->flow == ExecutionFlow::Break) {
-                break;
-            }
-        }
-        co_return ExecutionCompletion {.flow = ExecutionFlow::Normal, .value = ExecutionVoid {}};
+    auto cursor = co_await open_iteration(frame, source.source);
+    if (!cursor) {
+        co_return std::unexpected(std::move(cursor.error()));
+    }
+    auto borrow_element = source.access == AccessMode::Write;
+    if (source.binding) {
+        borrow_element |= read_borrows_storage(frame.body->binding_type(*source.binding));
     }
     const auto execute = [&]() noexcept -> ExecutionTask<ExecutionCompletion> {
-        auto sequence = (co_await sequence_view(frame, source.source, origin));
-        if (!sequence) {
-            co_return std::unexpected(std::move(sequence.error()));
-        }
-        const auto extent = sequence->extent;
-        auto borrow_element = source.access == AccessMode::Write;
-        if (source.binding) {
-            borrow_element |= read_borrows_storage(frame.body->binding_type(*source.binding));
-        }
-        for (auto index = 0uz; index < extent; ++index) {
-            if (auto checked = step(origin); !checked) {
-                co_return std::unexpected(std::move(checked.error()));
+        while (true) {
+            auto next = next_iteration(*cursor, origin);
+            if (!next) {
+                co_return std::unexpected(std::move(next.error()));
+            }
+            if (!*next) {
+                break;
             }
             if (source.binding) {
-                auto selected = slice_element(*sequence, index, origin);
-                if (!selected) {
-                    co_return std::unexpected(std::move(selected.error()));
-                }
-                auto element = std::move(*selected);
-                release(frame, source.binding->index());
-                if (borrow_element) {
-                    frame.slots[source.binding->index()] = std::move(element);
+                auto element = std::move(**next);
+                if (borrow_element && std::holds_alternative<ExecutionPlace>(element)) {
+                    release(frame, source.binding->index());
+                    frame.slots[source.binding->index()] =
+                        std::get<ExecutionPlace>(std::move(element));
                 } else {
-                    auto selected = located(element, origin);
-                    if (!selected) {
-                        co_return std::unexpected(std::move(selected.error()));
-                    }
-                    auto copied = copy_value(**selected, origin);
+                    auto copied = materialize(std::move(element), origin);
                     if (!copied) {
                         co_return std::unexpected(std::move(copied.error()));
                     }
@@ -455,10 +517,50 @@ auto SemanticExecutor::range_loop(
         }
         co_return ExecutionCompletion {.flow = ExecutionFlow::Normal, .value = ExecutionVoid {}};
     };
-    auto result = (co_await execute());
+    auto result = co_await execute();
     if (source.binding) {
         release(frame, source.binding->index());
     }
+    co_return result;
+}
+
+auto SemanticExecutor::root_iteration(
+    const SemanticExpression& source,
+    const ExecutionIterationConsumer& consume,
+    std::optional<ExecutionBody> body
+) noexcept -> ExecutionTask<ExecutionValue> {
+    auto frame = ExecutionFrame {
+        .body = body,
+        .slots = std::vector<ExecutionSlot>(body ? body->binding_count() : 0uz),
+        .caught = {},
+        .temporaries = {},
+        .children = {},
+    };
+    const auto execute = [&]() noexcept -> ExecutionTask<ExecutionValue> {
+        auto cursor = co_await open_iteration(frame, source);
+        if (!cursor) {
+            co_return std::unexpected(std::move(cursor.error()));
+        }
+        while (true) {
+            auto next = next_iteration(*cursor, source.origin);
+            if (!next) {
+                co_return std::unexpected(std::move(next.error()));
+            }
+            if (!*next) {
+                break;
+            }
+            auto continued = co_await consume(std::move(**next), *this);
+            if (!continued) {
+                co_return std::unexpected(std::move(continued.error()));
+            }
+            if (!*continued) {
+                break;
+            }
+        }
+        co_return ExecutionVoid {};
+    };
+    auto result = co_await execute();
+    release_frame(frame);
     co_return result;
 }
 

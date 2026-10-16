@@ -14,7 +14,7 @@ stage. A constant is a completed, frozen value produced by static execution.
 - [Constant expressions](#constant-expressions)
 - [`const` blocks](#const-blocks)
 - [Static execution of functions](#static-execution-of-functions)
-- [Frozen constant slices](#frozen-constant-slices)
+- [Frozen views](#frozen-views)
 
 ## Module constants
 
@@ -37,40 +37,36 @@ Module-constant initialization is elaborated from resolved declaration
 dependencies rather than source order. Every successful use selects the same
 normalized value; a dependency cycle produces `CV-CONST-CYCLE`. A module
 constant has Read access only and introduces no runtime binding, source address,
-or linkage. A frozen slice's contents have program-lifetime backing storage; that storage
+or linkage. A frozen view's contents have program-lifetime backing storage; that storage
 does not give the source declaration an identity.
 
 ## Constant expressions
 
-Carven evaluates `const` initializers during semantic analysis. Constant
-facts include scalar and string literals, numeric enum cases, resolved local and
-module constants, grouping, supported casts, supported pure unary and binary
-operations, constant `str.byte_length()` and `str.is_empty()`, and payload-case
-construction whose payloads are all constant. Direct interpolation within the
-supported builtin subset, pure String construction and text queries, and direct
-calls to explicitly declared `const fn` functions with constant arguments can
-also produce a constant when the executed operations are supported.
-Fallible calls require explicit `?`; an actual failure escaping the static
-root produces a diagnostic, while successful results may form constants.
-Owning text and vectors can pass between these expressions. Completed constants
-preserve their result types, including `String` and `Vector<T>`. Fixed-array literals, struct
-construction, tuple construction, indexing, and field or tuple-element access
-also produce constants for the aggregate types admitted during static execution.
-Arrays and tuples support equality when their component types support it.
-Arrays retain `[T; N]`, tuples retain their arity and ordered component types,
-and structs retain their nominal type. The unit value `()` freezes as `void`;
-a successful `const fn` call with a `void` result can initialize a constant.
-Array `length()` and `is_empty()` queries also produce constants.
-An explicit `[T]` constant annotation or `slice()` in a constant initializer
-retains eligible completed array or Vector backing as a frozen slice. Its
-`length`, `is_empty`, indexing, and `slice` queries can also produce constants.
-Calls to ordinary `fn` and direct control-flow expressions are not Carven constant
-expressions. Local and module
-constant declarations exist only in the static stage; their later uses denote the
-selected normalized value without creating a runtime binding or lambda capture.
-Retained owners and their projections have immutable program-lifetime backing,
-including constants declared inside functions. A view of that backing can outlive
-the declaration's source scope. Ordinary mutable copies have their own lifetime.
+Carven evaluates `const` initializers and array extents during semantic analysis.
+They use ordinary expression typing, scopes, access rules, and control flow.
+`if`, `match`, and `try` may directly produce their values:
+
+```carven
+const compact = true;
+const width = if compact { 4usize } else { 8usize };
+const values: [i32; if compact { 2usize } else { 4usize }] = [0, 0];
+```
+
+Each branch receives ordinary name, type, access, and failure checks. Result
+branches must be compatible; selecting a branch does not select a different
+result type. Execution evaluates only the selected path. Branch-local bindings
+and loops have their ordinary scope and lifetime. `try` can recover a source
+failure before the root completes. An array extent must complete with a
+nonnegative integer; a constant initializer must complete with a value that can
+be frozen.
+
+Freezing preserves the completed result's type, including owning `String` and
+`Vector<T>` values and aggregate components. Unit results freeze as `void`.
+Local and module constant declarations exist only in the static stage; their
+later uses denote the normalized value without creating a runtime binding or
+lambda capture. Retained owners and their projections have immutable
+program-lifetime backing, including constants declared inside functions.
+Ordinary mutable copies have their own lifetime.
 
 A body-local `const` executes where it stands in the static stage: once for
 each selected instance or expanded occurrence, and not at all in an unselected
@@ -170,8 +166,9 @@ locals of the enclosing body do not exist while the block executes and cannot
 be read, written, or captured. Declarations and object lifetimes end within the
 block. All locals inside the block are static values and execute in source
 order. A local `const` is an immutable local at this stage; `const if` and
-`const for` follow the same execution order as `if` and `for`. Nested blocks
-can read enclosing static locals and retain their own diagnostic labels.
+`const for` execute as `if` and `for`, including ordinary Read and Write iteration
+over local values. Nested blocks can read enclosing static locals and retain
+their own diagnostic labels.
 These rules also apply inside `const test`; they do not change `const fn`
 body specialization.
 
@@ -275,7 +272,7 @@ recursive direct-call graph without proving termination.
 
 Text operations include `String {}`, `String::from_str`, the owning
 `str as String` conversion, `as_str`, `byte_length`, `is_empty`, `append`, `append_format`,
-`push`, `clear`, byte views and iteration, and interpolation. Constant formatting
+`push`, `clear`, byte and character views and iteration, and interpolation. Constant formatting
 accepts default integer, bool, char, unit (`()`) and text formatting, including known C string contents,
 plus integer `b`, `B`, `o`, `d`, `x` and `X` presentations with decimal width and optional zero
 padding. Floating formatting and printing use native standard-library conversion
@@ -359,15 +356,9 @@ same-type callable-view copies. Widening an existing view requires a target
 borrow and is unsupported for live elements. Empty arrays require no element
 adaptation. An unresolved adaptation identity produces an execution diagnostic.
 
-Native operations, calls through callable values without an executable Carven
-body, and text character iteration remain
-outside the static execution subset. Ordinary type, access, ownership and lifetime
-validation applies throughout execution.
-
-Integer operations during static execution use the same wrapping arithmetic
-as runtime calls. Division by zero and invalid shifts produce diagnostics when
-executed during compilation. Short-circuiting and control flow select what
-executes, while all source remains subject to ordinary semantic validation.
+Native operations and calls through callable values without an executable Carven
+body remain outside the static execution subset. Ordinary type, access, ownership
+and lifetime validation applies throughout execution.
 
 Each evaluated call tree has a budget of 100,000 execution steps and 128 nested
 calls. Text construction is limited to 1 MiB per value and 8 MiB of accumulated
@@ -390,7 +381,19 @@ bodies. The executed operand must be a Unicode scalar value; surrogates and
 values above U+10FFFF produce `CV-CONST-EVALUATION`. Successful construction
 produces an ordinary `char` constant with the same publication rules as a literal.
 
-## Frozen constant slices
+## Frozen views
+
+A constant initializer can retain a borrowed `str` or character view while its
+backing remains alive. The completed view keeps its type and selected UTF-8
+contents in immutable program-lifetime storage:
+
+```carven
+const letters = String::from_str("aé我").chars;
+```
+
+Ordinary borrowed views follow their source lifetime; a view into a function's
+ordinary local owner cannot escape that function. Freezing requires live backing
+when the initializer completes.
 
 A constant initializer can retain a completed array or Vector as `[T]`,
 using an explicit annotation or `slice()`:

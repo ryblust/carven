@@ -375,7 +375,7 @@ auto ContentWriter::constant(ConstantID id) noexcept -> ContentTask {
         number(fact.value.index());
         fact.value.visit([&](const auto& value) noexcept {
             using Value = std::remove_cvref_t<decltype(value)>;
-            if constexpr (std::same_as<Value, StringConstant>
+            if constexpr (std::same_as<Value, TextConstant>
                           || std::same_as<Value, CStringConstant>) {
                 token(provenance.spelling(value.value));
             } else if constexpr (std::same_as<Value, VectorConstant>) {

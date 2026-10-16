@@ -49,15 +49,11 @@ function main(options)
         session.results.metadata.backend_selection = options.portable and "forced portable" or "target default"
         local inputs = input_snapshot.capture(session)
         local root = path.join(session.artifacts, "validation")
-        local generated = path.join(root, "generated")
-        os.mkdir(generated)
+        os.mkdir(root)
         io.writefile(path.join(root, "workload.cv"), workloads.source(path.join(inputs, "benchmarks/json")))
-        io.writefile(path.join(root, "xmake.lua"), native_project.project_text(root, inputs, options))
+        io.writefile(path.join(root, "xmake.lua"), native_project.project_text(inputs, session))
         local setup = {id = "validation", steps = benchmark.array()}
         table.insert(session.results.setup, setup)
-        benchmark.step(session, setup, "generate", session.compiler,
-            {"compile", "workload.cv", "-o", generated, "--linkage-domain=benchmark:json"}, root,
-            {capture_stdout = true, timeout = 180000})
         benchmark.step(session, setup, "configure", os.programfile(), {"f", "-y", "-m", "release"}, root,
             {capture_stdout = true, timeout = 180000})
         local identity = benchmark.step(session, setup, "native target identity", os.programfile(),

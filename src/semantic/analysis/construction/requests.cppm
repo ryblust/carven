@@ -1,5 +1,6 @@
 module carven:semantic.analysis.construction.requests;
 
+import :frontend.ast.ids;
 import :semantic.analysis.catalog;
 import :semantic.analysis.diagnostics;
 import :semantic.semir.generic;
@@ -10,6 +11,7 @@ import :source.provenance.ids;
 import :source.standard;
 import :source.text;
 
+struct GenericTypeContext;
 class ProgramConstruction;
 class StaticStage;
 
@@ -32,6 +34,13 @@ public:
     auto ensure_declaration(CatalogSymbolID id, ProgramModuleID requester, Span span) noexcept
         -> AnalysisTask<void>;
 
+    auto evaluate_constant_expression(
+        ProgramModuleID module_id,
+        ASTExprID expression,
+        std::optional<ConstructionTypeRef> expected,
+        const GenericTypeContext* generic_context
+    ) noexcept -> AnalysisTask<std::optional<ConstantID>>;
+
     auto ensure_generic_function(
         GenericDeclarationID id,
         ProgramModuleID requester,
@@ -45,6 +54,9 @@ public:
         -> AnalysisTask<BodyID>;
 
     auto ensure_type(ConstructionTypeRef type, ProgramModuleID requester, Span span) noexcept
+        -> AnalysisTask<void>;
+
+    auto ensure_callable(CallableID callable, ProgramModuleID requester, Span span) noexcept
         -> AnalysisTask<void>;
 
     auto close_generic_environment(

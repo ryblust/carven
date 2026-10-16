@@ -89,12 +89,58 @@ private fn runtime_body(input: i32) -> i32 {
     return result;
 }
 
-const test "Static iteration: frozen arrays and slices preserve values and exits" {
+private const fn character(const value: char) -> char => value;
+
+private const fn character_prefix(stop: char) -> String {
+    var result = String {};
+    const for value in String::from_str("a\0é|我😀").chars {
+        const if value == '\0' { continue; }
+        if value == stop { break; }
+        result.push(character(value));
+    }
+    return &&result;
+}
+
+private const fn first_matching_character(selected: char) -> char {
+    const for value in "é我😀".chars {
+        if value == selected { return character(value); }
+    }
+    return '\0';
+}
+
+private const fn entries() -> Vector<(String, i32)> => [("a", 1), ("é", 2)];
+
+private const fn nested_vector() -> String {
+    var result = String {};
+    const for (text, amount) in entries() {
+        const for value in text.chars {
+            result.push(character(value));
+        }
+        result.append_format(f"{digit(0, amount)}");
+    }
+    const for _ in Vector<i32>::new() {
+        result.append("wrong");
+    }
+    return &&result;
+}
+
+const test "Static iteration: sequence values and exits agree during static execution" {
     check(trace_array(2, 5) == 134);
     check(return_array(3) == 123);
     check(nested_sequences() == 1234);
     check(value_types() == 10usize);
     check(slice_sequences() == 123);
+    check(character_prefix('|') == "aé");
+    check(character_prefix('!') == "aé|我😀");
+    check(first_matching_character('😀') == '😀');
+    check(first_matching_character('!') == '\0');
+    check(nested_vector() == "a1é2");
+
+    var values: Vector<i32> = [1, 2, 3];
+    const for &value in values {
+        value *= 2;
+    }
+    check(values[0] == 2 && values[1] == 4 && values[2] == 6);
 }
 
 test "Static iteration: residual scopes and runtime exits match static execution" {
@@ -108,4 +154,9 @@ test "Static iteration: residual scopes and runtime exits match static execution
     check(nested_sequences() == 1234);
     check(value_types() == 10usize);
     check(slice_sequences() == 123);
+    var selected = '|';
+    check(character_prefix(selected) == "aé");
+    selected = '😀';
+    check(first_matching_character(selected) == '😀');
+    check(nested_vector() == "a1é2");
 }

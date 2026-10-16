@@ -191,7 +191,7 @@ auto normalize_literal(
                 const auto type = draft.builtin_type(BuiltinType::Str);
                 return ConstantFact {
                     .type = type,
-                    .value = StringConstant {.value = spelling},
+                    .value = TextConstant {.value = spelling},
                 };
             } else {
                 static_assert(std::same_as<Value, void>, "new literal form requires normalization");

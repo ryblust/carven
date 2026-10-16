@@ -429,7 +429,6 @@ public:
     auto term_copy(FailureTermID term) const noexcept -> FailureTerm;
     auto conditional_non_empty() const noexcept -> std::span<const RequiresNonEmptyFailure>;
     auto support(ConstructionFailureRef source) const noexcept -> GenericFailureMask;
-    auto may_contain(ConstructionFailureRef source, TypeID member) const noexcept -> bool;
     auto known_members(ConstructionFailureRef source) const noexcept -> std::vector<TypeID>;
 
 private:

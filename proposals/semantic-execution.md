@@ -1,16 +1,13 @@
 # Semantic execution extensions
 
 - **Status:** Exploration
-- **Implementation:** Not started
-- **Scope:** Direct structured constant initializer and extent expressions, scalar text traversal, address observation, literal identity, retained reference graphs, and deferred host scripting and build-stage execution
+- **Scope:** Additional address and literal identity guarantees, retained reference graphs, and deferred host scripting and build-stage execution
 
 ## Summary
 
-This proposal explores inline structured expressions in static initializers and
-array extents, and source-visible observations of execution addresses. These are
-independent design slices. Structured roots can reduce one-use `const fn` helpers;
-address observations and retained reference graphs need explicit identity and
-stability guarantees.
+This proposal explores additional guarantees for execution addresses, literal
+identity, and retained reference graphs. Each needs defined identity and
+stability rules.
 
 Host scripting and an explicit build-stage entry are deferred extensions of the
 shared execution model. Their remaining questions concern host capabilities,
@@ -20,12 +17,11 @@ C++ execution.
 
 ## Execution boundary
 
-Structured control already executes in `const fn`, `const` blocks, and static
-tests. Static parameters, `const if`, and `const for` already produce residual
-runtime bodies. Arrays, tuples, structures, payload enums, String, Vector, and
-slices have admitted execution and retained-value paths. These implemented
-contracts belong to the [execution reference](../docs/compiler/analysis/evaluation.md);
-they are not pending extensions here.
+Structured control executes in constant initializers, array extents, `const fn`,
+`const` blocks, and static tests. Static parameters, `const if`, and `const for`
+produce residual runtime bodies. Arrays, tuples, structures, payload enums,
+String, Vector, and slices have admitted execution and retained-value paths. Byte
+and character traversal share text backing and borrowing rules.
 
 Interpretation and explicit static execution share semantic operations and the
 executor. Supported input, clocks, waits, and timeout composition already execute
@@ -36,33 +32,17 @@ Native C++ inputs may be present, but semantic execution does not load their
 code or run their global initialization. These boundaries already support a
 useful language subset independently of complete native interoperation.
 
-The remaining structured-root slice is direct `if`, `match`, or `try` in a
-constant initializer or array extent. `StaticRootSite` rejects those forms even
-though the shared executor supports them inside admitted bodies. Extending root
-construction and declaration-time scope is therefore still necessary.
-
 Execution places use domain and object identities with projection paths.
+Static erased-pointer formatting produces fixed null/non-null text; interpreted
+formatting produces execution-local object and projection labels. Pointer
+comparison and restoration use established address relations, including
+standard-layout first-field relations. Known C strings select execution backing
+by canonical contents. Numeric addresses, target layout, and cross-environment
+identity guarantees remain outside these contracts.
+
 Address-observation and graph-retention designs must preserve invalidation by
 Take and scope exit; reinitialization cannot revive old pointers. Source
 admission, executed-path support, and result publication remain separate checks.
-
-## Structured expressions in static roots
-
-An initializer that chooses between values could express its selection directly
-instead of declaring a one-use `const fn`. Direct `if`, `match`, and `try` are
-separate candidates.
-
-Reuse ordinary expression construction for typing, branch results, scopes, and
-lifetimes. The root entry continues to own constant-name visibility, operation
-admission, dependency requests, execution budgets, and completion. Declaration
-types and array extents may require values before global body construction and
-solving are complete. Forward requests, dependency cycles, and root-local bindings
-therefore need a construction and execution protocol available at declaration time.
-
-Reuse branch analysis and execution. Initializer freezing and the nonnegative-integer
-check for an extent remain distinct completion paths. Define legality of both
-branches and the unselected path explicitly, including names, failures, and
-unsupported operations; executing one branch does not validate the other.
 
 ## Address observation
 
@@ -105,7 +85,8 @@ the original literal occurrences.
 
 ## Required and interpreted observation policies
 
-Required execution has three candidate boundaries:
+Stronger address observations have three candidate boundaries in required
+execution:
 
 - Keep address observation unsupported.
 - Permit diagnostic or debug output through an output boundary that does not
@@ -122,14 +103,6 @@ observations from influencing retained results: an observation can first become
 text or an integer, choose a branch, or determine an array extent. A policy that
 prohibits that influence must restrict the observation itself or define complete
 dependency rules.
-
-## Text traversal admission
-
-Static scalar traversal through `.chars` remains unsupported; this is a computed
-range projection, not a method call. Byte traversal through `.bytes` is already
-admitted. A text-processing consumer can select scalar traversal. Reuse the text
-backing and Unicode scalar contracts, and define cursor lifetime, mutation
-invalidation, iteration work accounting, and rejection of escaping views.
 
 ## Retained reference graphs
 
@@ -249,12 +222,6 @@ dedicated proposal while keeping host execution owned here.
 
 ## Open decisions
 
-### OPEN-01 — Define one structured static-root form
-
-Choose `if`, `match`, or `try` and define its source legality, root-local scope,
-dependency protocol, and completion paths. Close the decision with initialization
-and extent examples, including forward dependencies and rejected cycles.
-
 ### OPEN-02 — Choose literal identity and its domain
 
 Choose a literal policy and the backing guarantees needed to implement it.
@@ -269,11 +236,6 @@ stability interval, and choose its required and interpreted admission. Apply
 the observation and how retained-result restrictions are enforced.
 
 ## Validation
-
-Structured-root cases cover both-branch legality, exactly-once evaluation,
-unselected-path contracts, forward dependencies and cycles, source failures,
-dangling borrows, budgets, and freezing rejection. Check initializer and extent
-completion independently.
 
 Address cases cover equal-valued independent objects, copied-pointer aliases,
 assignment visibility, Take followed by reinitialization, exactly-once target
@@ -293,8 +255,7 @@ stops while implementing the selected observation.
 ## References
 
 - [Semantic execution](../docs/compiler/analysis/evaluation.md): current roots, storage, and freezing.
-- [Static-root construction](../src/semantic/analysis/constant/root.cppm): source admission for initializer and extent expressions.
-- [Constant admission tests](../tests/internal/semantic/analysis/const_admission.cpp): structured body support and rejected scalar traversal.
+- [Constant admission tests](../tests/internal/semantic/analysis/const_admission.cpp): structured body support and callable capability checks.
 - [Text](../docs/language/text.md): `.bytes` and `.chars` source contracts.
 - [CLI interpretation](../docs/toolchain/cli.md#interpretation): current invocation, execution subset, and native boundary.
 - [Static execution](../docs/language/constants.md#static-execution-of-functions): callable capability, host effects, and result retention.

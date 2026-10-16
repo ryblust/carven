@@ -24,6 +24,7 @@ import :semantic.analysis.validation;
 import :semantic.evaluation.operation;
 import :semantic.semir.decl;
 import :semantic.semir.structured;
+import :semantic.semir.traversal;
 import :semantic.semir.type;
 import :source.text;
 import :support.invariant;
@@ -114,7 +115,7 @@ auto BodyElaborator::run(const ASTCallableBody& source_body) noexcept
             expression_body.arrow_span,
             true
         ));
-        end_full_expression(span);
+        end_full_expression();
     }
     if (!built.has_value()) {
         co_return std::unexpected(built.error());
@@ -128,7 +129,7 @@ auto BodyElaborator::run(const ASTCallableBody& source_body) noexcept
                 DiagnosticCode::FlowMissingReturn,
                 std::format(
                     "reachable path of callable returning '{}' has no return",
-                    type_display_name(draft(), *result_type)
+                    type_display_name(draft(), *result_type, catalog())
                 )
             );
             diagnostic.primary(locate(ast.source_id(), span));
@@ -159,7 +160,7 @@ auto BodyElaborator::run(const ASTCallableBody& source_body) noexcept
     }
     collect_unused_locals(frames.front());
     regions.front().failures = BodyFailures(outward_failure_term_id);
-    co_return std::move(body_builder).finish(std::move(regions.front()));
+    co_return finish_body(std::move(regions.front()));
 }
 
 auto BodyBatchElaborator::run() noexcept -> AnalysisTask<void> {
@@ -258,7 +259,7 @@ auto BodyBatchElaborator::run() noexcept -> AnalysisTask<void> {
         co_return std::unexpected(contracts.error());
     }
     auto& stage = requests.stage();
-    auto static_bodies = std::set<BodyID>();
+    auto static_bodies = static_expression_bodies;
     for (auto index = 0uz; index < static_body_roots.size(); ++index) {
         const auto root = static_body_roots[index];
         static_bodies.insert(root.body);
@@ -335,43 +336,77 @@ auto BodyBatchElaborator::ensure_function_body(
     ProgramModuleID requester,
     Span span
 ) noexcept -> AnalysisTask<BodyID> {
+    auto body = std::optional<BodyID>();
     if (id.index() >= functions.size()) {
         const auto declaration = draft->function_declaration_copy(id);
-        if (const auto body = draft->body_for_callable(declaration.callable)) {
-            co_return *body;
+        auto prepared = co_await requests.ensure_callable(declaration.callable, requester, span);
+        if (!prepared) {
+            co_return std::unexpected(prepared.error());
         }
-        invariant_violation("generic function instance has no completed body");
+        body = draft->body_for_callable(declaration.callable);
+        if (!body) {
+            invariant_violation("generic function instance has no completed body");
+        }
+    } else {
+        auto completed = co_await ensure_function_signature(id, requester, span);
+        if (!completed) {
+            co_return std::unexpected(completed.error());
+        }
+        if (std::holds_alternative<Analyzing>(states.at(id.index()))) {
+            co_return std::unexpected(draft->diagnostics().error(
+                DiagnosticBuilder(
+                    DiagnosticCode::ConstEvaluation,
+                    "compile-time execution depends on an unfinished function body"
+                )
+                    .primary(locate(draft->syntax_tree(requester).view().source_id(), span))
+                    .build()
+            ));
+        }
+        completed = co_await complete_function(id);
+        if (!completed) {
+            co_return std::unexpected(completed.error());
+        }
+        body = body_ids.at(id.index());
+        if (!body) {
+            co_return std::unexpected(draft->diagnostics().error(
+                DiagnosticBuilder(
+                    DiagnosticCode::ConstAdmission,
+                    "compile-time execution requires a Carven function body"
+                )
+                    .primary(locate(draft->syntax_tree(requester).view().source_id(), span))
+                    .build()
+            ));
+        }
     }
-
-    auto completed = (co_await ensure_function_signature(id, requester, span));
-    if (!completed) {
-        co_return std::unexpected(completed.error());
+    // Substitution may introduce concrete value types beyond the callable signature.
+    // Prepare their declarations before the body can query value properties.
+    auto types = std::map<ConstructionTypeRef, ProgramOriginID>();
+    const auto& definition = draft->body_draft(*body);
+    for (const auto binding : definition.bindings.entries()) {
+        types.try_emplace(binding.value.type, binding.value.origin);
     }
-    if (std::holds_alternative<Analyzing>(states.at(id.index()))) {
-        co_return std::unexpected(draft->diagnostics().error(
-            DiagnosticBuilder(
-                DiagnosticCode::ConstEvaluation,
-                "compile-time execution depends on an unfinished function body"
-            )
-                .primary(locate(draft->syntax_tree(requester).view().source_id(), span))
-                .build()
-        ));
+    for (const auto pattern : definition.patterns.entries()) {
+        types.try_emplace(pattern.value.type, pattern.value.origin);
     }
-    completed = (co_await complete_function(id));
-    if (!completed) {
-        co_return std::unexpected(completed.error());
+    const auto collect = [&](const SemanticExpression& expression) noexcept {
+        types.try_emplace(expression.type.construction(), expression.origin);
+    };
+    visit_semantic_nodes(definition.region, collect);
+    if (definition.residual) {
+        visit_semantic_nodes(*definition.residual, collect);
     }
-    if (!body_ids.at(id.index())) {
-        co_return std::unexpected(draft->diagnostics().error(
-            DiagnosticBuilder(
-                DiagnosticCode::ConstAdmission,
-                "compile-time execution requires a Carven function body"
-            )
-                .primary(locate(draft->syntax_tree(requester).view().source_id(), span))
-                .build()
-        ));
+    for (const auto& [type, origin] : types) {
+        const auto location = draft->source_origin(origin);
+        auto prepared = co_await requests.ensure_type(
+            type,
+            draft->source_module(location.source_id),
+            location.span
+        );
+        if (!prepared) {
+            co_return std::unexpected(prepared.error());
+        }
     }
-    co_return *body_ids.at(id.index());
+    co_return *body;
 }
 
 auto BodyBatchElaborator::complete_function(FunctionID id) noexcept -> AnalysisTask<void> {

@@ -146,19 +146,6 @@ auto AnalysisCatalogView::enum_case_symbol(EnumCaseID id) const noexcept -> Cata
     return symbol;
 }
 
-auto AnalysisCatalogView::module_constant_symbol(ModuleConstantID id) const noexcept
-    -> CatalogSymbolID {
-    if (id.index() >= catalog->module_constant_symbols.size()) {
-        invariant_violation("catalog module-constant lookup used an invalid identity");
-    }
-    const auto symbol = catalog->module_constant_symbols[id.index()];
-    const auto* form = std::get_if<CatalogConstantForm>(&catalog->symbols[symbol.index()].form);
-    if (form == nullptr || form->constant != id) {
-        invariant_violation("catalog module-constant lookup crossed semantic program owners");
-    }
-    return symbol;
-}
-
 auto AnalysisCatalogView::function_count() const noexcept -> std::size_t {
     return catalog->function_symbols.size();
 }

@@ -358,7 +358,8 @@ auto builtin_format_value(const ConstantValueReader& values, const ConstantFact&
     if (const auto* number = std::get_if<F64Constant>(&fact.value)) {
         return *number;
     }
-    if (const auto* text = std::get_if<StringConstant>(&fact.value)) {
+    if (const auto* text = std::get_if<TextConstant>(&fact.value);
+        text && (builtin->kind == BuiltinType::Str || builtin->kind == BuiltinType::String)) {
         return values.spelling(text->value);
     }
     if (const auto* boolean = std::get_if<BooleanConstant>(&fact.value)) {

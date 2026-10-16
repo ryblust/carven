@@ -133,10 +133,10 @@ const TestSuite suite([] static noexcept {
                  .source = "fn f(value: ::native::union) {}",
                  .code = DiagnosticCode::CppIdentifier,
                  .primary_text = "union"},
-                {.name = "external result is not a Carven constant",
+                {.name = "native call cannot execute during static initialization",
                  .source = "import <native> using value; fn f() { const x = value(); }",
-                 .code = DiagnosticCode::ConstInitializer,
-                 .primary_text = "const x = value()"},
+                 .code = DiagnosticCode::ConstAdmission,
+                 .primary_text = "value()"},
                 {.name = "external value cannot create a callable borrow",
                  .source =
                      "import <native> using value; fn f() { let callback: fn() -> i32 = value(); }",

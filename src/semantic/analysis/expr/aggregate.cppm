@@ -4,7 +4,7 @@ import :diagnostics.code;
 import :frontend.ast.expr;
 import :frontend.ast.storage;
 import :semantic.analysis.construction.requests;
-import :semantic.analysis.expr.result;
+import :semantic.analysis.diagnostics;
 import :semantic.analysis.expr.scope;
 import :semantic.analysis.operations;
 import :semantic.analysis.program;
@@ -16,20 +16,13 @@ import std;
 
 template<typename Site>
 auto construct_default_expression(Site& site, ConstructionTypeRef type, Span span) noexcept
-    -> ExpressionResult<typename Site::Value> {
+    -> AnalysisResult<typename Site::Value> {
     if (default_initialization(site.draft(), type) == DefaultInitialization::Unavailable) {
         return std::unexpected(site.fail(
             span,
             DiagnosticCode::TypeDefaultInitialization,
             "type has no default value; provide an explicit initializer"
         ));
-    }
-    const auto admitted = site.aggregate_admitted(type, span);
-    if (!admitted) {
-        return std::unexpected(admitted.error());
-    }
-    if (!*admitted) {
-        return std::unexpected(ExpressionNotAdmitted {});
     }
     return site.finish_constructed(type, SemDefault {}, Site::operand_state(), span);
 }
@@ -40,7 +33,7 @@ auto construct_array_expression(
     const Source& source,
     Span span,
     std::optional<ConstructionTypeRef> expected
-) noexcept -> ExpressionTask<typename Site::Value> {
+) noexcept -> AnalysisTask<typename Site::Value> {
     constexpr auto repeated = std::same_as<Source, ASTArrayRepeatExpr>;
     std::uint64_t count = 0u;
     if constexpr (repeated) {
@@ -87,7 +80,6 @@ auto construct_array_expression(
         }();
         const auto executed = index < extent;
         const auto execution = site.enter_operand_execution(executed && state.completes);
-        const auto pending = site.pending_checkpoint();
         const auto element_span = site.syntax().expression(id).span;
         auto element =
             (co_await site.read_aggregate_element(id, element_type, expected_element.has_value()));
@@ -114,9 +106,8 @@ auto construct_array_expression(
                 co_return std::unexpected(checked.error());
             }
         }
-        auto operand = executed
-            ? site.consume_read(state, std::move(*element), element_span)
-            : site.consume_unexecuted_read(std::move(*element), pending, element_span);
+        auto operand = executed ? site.consume_read(state, std::move(*element), element_span)
+                                : site.consume_unexecuted_read(std::move(*element), element_span);
         if (!operand) {
             co_return std::unexpected(operand.error());
         }
@@ -133,13 +124,6 @@ auto construct_array_expression(
         }
         return make_array_type(site.draft(), *element_type, elements.size());
     }();
-    const auto admitted = site.aggregate_admitted(type, span);
-    if (!admitted) {
-        co_return std::unexpected(admitted.error());
-    }
-    if (!*admitted) {
-        co_return std::unexpected(ExpressionNotAdmitted {});
-    }
     co_return site.finish_constructed(
         type,
         SemArray {.elements = std::move(elements)},
@@ -154,7 +138,7 @@ auto construct_tuple_expression(
     const ASTTupleExpr& source,
     Span span,
     std::optional<ConstructionTypeRef> expected
-) noexcept -> ExpressionTask<typename Site::Value> {
+) noexcept -> AnalysisTask<typename Site::Value> {
     auto expected_elements = expected ? tuple_elements(site.draft(), *expected) : std::nullopt;
     if (expected_elements && expected_elements->size() != source.elements.size()) {
         co_return std::unexpected(site.fail(
@@ -179,7 +163,7 @@ auto construct_tuple_expression(
         if (!value) {
             co_return std::unexpected(value.error());
         }
-        auto inferred = context ? ExpressionResult<ConstructionTypeRef>(*context)
+        auto inferred = context ? AnalysisResult<ConstructionTypeRef>(*context)
                                 : site.infer_type(*value, element_span);
         if (!inferred) {
             co_return std::unexpected(inferred.error());
@@ -197,13 +181,6 @@ auto construct_tuple_expression(
         elements.push_back(std::move(*operand));
     }
     const auto type = make_tuple_type(site.draft(), std::move(types));
-    const auto admitted = site.aggregate_admitted(type, span);
-    if (!admitted) {
-        co_return std::unexpected(admitted.error());
-    }
-    if (!*admitted) {
-        co_return std::unexpected(ExpressionNotAdmitted {});
-    }
     co_return site.finish_constructed(type, SemTuple {std::move(elements)}, std::move(state), span);
 }
 
@@ -213,7 +190,7 @@ auto construct_structure_expression(
     const ASTConstructionExpr& source,
     Span span,
     std::optional<ConstructionTypeRef> expected
-) noexcept -> ExpressionTask<typename Site::Value> {
+) noexcept -> AnalysisTask<typename Site::Value> {
     if (!source.type && !expected) {
         co_return std::unexpected(site.fail(
             span,
@@ -309,13 +286,6 @@ auto construct_structure_expression(
             {.declaration_index = initializer.declaration_index, .value = std::move(*operand)}
         );
     }
-    const auto admitted = site.aggregate_admitted(*resolved, span);
-    if (!admitted) {
-        co_return std::unexpected(admitted.error());
-    }
-    if (!*admitted) {
-        co_return std::unexpected(ExpressionNotAdmitted {});
-    }
     co_return site.finish_constructed(
         *resolved,
         SemStruct {.structure = structure->owner, .fields = std::move(fields)},
@@ -332,7 +302,7 @@ auto construct_enum_value(
     std::vector<typename Site::Value> arguments,
     std::optional<ConstantID> known,
     Span span
-) noexcept -> ExpressionResult<typename Site::Value> {
+) noexcept -> AnalysisResult<typename Site::Value> {
     auto state = Site::operand_state();
     auto payload = std::vector<SemanticExpression>();
     for (auto& argument : arguments) {
@@ -361,7 +331,7 @@ auto construct_slice_value(
     typename Site::OperandState state,
     Span span,
     std::optional<ConstructionTypeRef> expected = std::nullopt
-) noexcept -> ExpressionResult<typename Site::Value> {
+) noexcept -> AnalysisResult<typename Site::Value> {
     const auto contract = slice_intrinsic_contract(intrinsic);
     const auto shape = sequence_shape(site.draft(), receiver_type);
     if (!shape
@@ -386,7 +356,7 @@ auto construct_slice_value(
     auto known = std::optional<ConstantID>();
     if (intrinsic == SliceIntrinsic::View) {
         result_extent = extent;
-    } else if constexpr (Site::mode == ExpressionMode::Body) {
+    } else {
         if (intrinsic == SliceIntrinsic::Slice) {
             const auto bound = [&](std::size_t index) noexcept -> std::optional<std::uint64_t> {
                 const auto constant = operands[index].expression.constant;
@@ -441,7 +411,7 @@ auto construct_slice_call(
     typename Site::Value receiver,
     std::span<const ASTExprID> arguments,
     Span span
-) noexcept -> ExpressionTask<typename Site::Value> {
+) noexcept -> AnalysisTask<typename Site::Value> {
     if (intrinsic == SliceIntrinsic::Slice && !slice_element(site.draft(), site.type(receiver))) {
         auto borrowed = co_await construct_slice_call(
             site,

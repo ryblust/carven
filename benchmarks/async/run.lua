@@ -50,15 +50,12 @@ end
 
 local function prepare(session, case, implementations, inputs)
     local root = path.join(session.artifacts, case.id)
-    local generated = path.join(root, "generated")
-    os.mkdir(generated)
+    os.mkdir(root)
     io.writefile(path.join(root, "workload.cv"), workloads.source(case, path.join(inputs, "benchmarks", "async")))
     local setup = {id = case.id, label = case.label, steps = benchmark.array()}
     table.insert(session.results.setup, setup)
-    benchmark.step(session, setup, "generate", session.compiler,
-        {"compile", "workload.cv", "-o", generated, "--linkage-domain=benchmark:async:" .. case.id}, root,
-        {capture_stdout = true, timeout = 180000})
-    io.writefile(path.join(root, "xmake.lua"), native_project.project_text(workloads.defines(case), implementations, root, inputs, session.options.cxx))
+    io.writefile(path.join(root, "xmake.lua"), native_project.project_text(workloads.defines(case), implementations,
+        inputs, session, "benchmark:async:" .. case.id))
     local arguments = {"f", "-y", "-m", "release"}
     benchmark.step(session, setup, "native configure", os.programfile(), arguments, root,
         {capture_stdout = true, timeout = 180000})

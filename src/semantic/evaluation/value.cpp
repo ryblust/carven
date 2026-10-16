@@ -56,6 +56,9 @@ auto execution_value_type(const ConstantValueReader& values, const ExecutionValu
     if (std::holds_alternative<ExecutionText>(value)) {
         return values.builtin_type(BuiltinType::Str);
     }
+    if (std::holds_alternative<ExecutionChars>(value)) {
+        return values.builtin_type(BuiltinType::StrCharsView);
+    }
     if (const auto* enumeration = std::get_if<ExecutionEnumValue>(&value)) {
         return enumeration->type;
     }
@@ -181,17 +184,25 @@ auto ExecutionText::slice() const noexcept -> const ExecutionSlice* {
 
 auto ExecutionText::observe(
     const ConstantValueReader& values,
-    const ExecutionMemory* memory
+    const ExecutionMemory* memory,
+    std::size_t offset,
+    std::size_t count
 ) const noexcept -> std::optional<ExecutionTextObservation> {
+    const auto extent = size(memory);
+    if (!extent || offset > *extent) {
+        return std::nullopt;
+    }
+    count = std::min(count, *extent - offset);
     if (const auto* borrowed = slice()) {
         const auto elements = memory ? memory->view(*borrowed) : std::nullopt;
         if (!elements) {
             return std::nullopt;
         }
         if (const auto* text = std::get_if<ExecutionByteView>(&*elements)) {
-            return ExecutionTextObservation(text->bytes);
+            return ExecutionTextObservation(text->bytes.substr(offset, count));
         }
-        const auto slots = std::get<std::span<const ExecutionValue>>(*elements);
+        const auto slots =
+            std::get<std::span<const ExecutionValue>>(*elements).subspan(offset, count);
         auto bytes = std::string();
         bytes.reserve(slots.size());
         for (const auto& slot : slots) {
@@ -205,7 +216,9 @@ auto ExecutionText::observe(
         return ExecutionTextObservation(std::move(bytes));
     }
     const auto selected = lock();
-    return selected ? std::optional(ExecutionTextObservation(selected->view())) : std::nullopt;
+    return selected
+        ? std::optional(ExecutionTextObservation(selected->view().substr(offset, count)))
+        : std::nullopt;
 }
 
 ExecutionOwnedText::ExecutionOwnedText(std::string bytes) noexcept
@@ -250,7 +263,9 @@ auto execution_text(
         return ExecutionTextObservation(text->bytes());
     }
     if (const auto atom = execution_atom(values, value)) {
-        if (const auto* text = std::get_if<StringConstant>(&atom->value)) {
+        if (const auto* text = std::get_if<TextConstant>(&atom->value); text
+            && (atom->type == values.builtin_type(BuiltinType::Str)
+                || atom->type == values.builtin_type(BuiltinType::String))) {
             return ExecutionTextObservation(values.spelling(text->value));
         }
     }

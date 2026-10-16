@@ -1,7 +1,7 @@
 # Recoverable frontend analysis and compilation control
 
 - **Status:** Draft
-- **Implementation:** Not started for the replacement analysis model below
+- **Implementation:** Not started
 - **Scope:** Diagnostic production, recovering syntax, partial semantic queries, compilation admission, cancellation, and analysis fault isolation
 
 ## Summary
@@ -18,12 +18,10 @@ decides which work to request and whether its results authorize an artifact.
 Diagnostic severity alone cannot determine whether an operation has a valid
 operand, type, body, or execution result.
 
-The design replaces existing private interfaces without compatibility adapters.
-It retains strict executable SemIR, source provenance, immutable snapshots,
+The design retains strict executable SemIR, source provenance, immutable snapshots,
 explicit failure propagation, and the shared semantic executor. It introduces
 an independently owned partial analysis model and a process boundary for a
-future long-lived language server. The changes below are proposed contracts,
-not descriptions of implemented behavior.
+long-lived language server.
 
 ```text
 Immutable source inputs
@@ -69,11 +67,9 @@ and bounded complete-selection caches retain results across version-only edits.
 Navigation records local import aliases and follows provided-contract and duration
 prerequisites as well as explicit imports.
 
-These are existing foundations rather than delivery tasks for this proposal.
-They do not supply lossless damaged syntax, types owned independently of program
-publication, per-query semantic invalidation, request cancellation, or worker
-isolation. The remaining work is the replacement model and its coordination
-contracts below. Further reuse measurements belong to
+The remaining work is lossless damaged syntax, types owned independently of
+program publication, per-query semantic invalidation, request cancellation, and
+worker isolation. Further reuse measurements belong to
 [compiler optimization](compiler-optimization.md#workspace-reuse).
 
 ## Research basis
@@ -164,11 +160,11 @@ absent syntax from well-formed children. Normal semantic nodes are not used to
 encode damaged syntax. Avoid retaining a second full AST with duplicate text
 and topology; compact per-item analysis structures are derived as needed.
 
-Keep a handwritten parser initially. Introduce a transactional event/tree
-builder so speculative alternatives can roll back nodes and diagnostics without
-publishing guessed errors. Replace whole-file delimiter rejection with local
-missing/unexpected delimiter recovery. Keep nesting and work limits as explicit
-request outcomes, with the source snapshot available to the caller.
+Keep a handwritten parser initially. Extend speculative checkpoints to a
+transactional event/tree builder so alternatives can roll back nodes and
+diagnostics without publishing guessed errors. Replace whole-file delimiter
+rejection with local missing/unexpected delimiter recovery. Keep nesting and work
+limits as explicit request outcomes, with the source snapshot available to the caller.
 
 Define recovery boundaries for imports, parameter lists, type arguments,
 expressions, statements, members, and top-level items. Prefer bounded insertion
@@ -184,9 +180,9 @@ authoritative module item. A recovery decision is metadata, not an automatic
 source edit; quick fixes require their own applicability check.
 
 The first implementation may reparse a whole file. Losslessness, recovery, and
-immutable ownership are required before subtree reuse. Retire the strict versus
-recovering parser split: compilation validity belongs to admission, not a
-second parsing mode. Formatting must preserve or decline damaged regions;
+immutable ownership are required before subtree reuse. Compiler and editor
+consumers use the same recovering parse result; compilation admission requires
+valid syntax. Formatting must preserve or decline damaged regions;
 it must never print recovery insertions as user-authored text implicitly.
 
 ### Partial semantic analysis
@@ -399,10 +395,6 @@ not by itself a security sandbox or protection against system-wide exhaustion.
 
 ## Delivery sequence
 
-Every slice changes its callers directly; temporary compatibility APIs are not
-part of the design. Current contract documentation changes with implementation,
-while this proposal retains work not yet completed.
-
 | Slice | Changes and owners | Completion evidence |
 | --- | --- | --- |
 | 1. Result contracts | `diagnostics`, compiler request outcomes, causal issue identity, budgets, and cancellation; stop using diagnostic presence as universal control state | Source failure, interruption, and internal faults have distinct tests; warning policy cannot authorize invalid source |
@@ -456,11 +448,6 @@ setting latency budgets. Measure syntax and hover p50/p95, cancellation latency,
 full-check throughput, cache hit rates, peak RSS, retained-snapshot memory, and
 worker startup/IPC cost separately. A faster partial result must not be compared
 with a complete check without identifying their different coverage.
-
-Build with `./xmakew build` before implementation tests. Use internal, language,
-workspace, CLI, and format groups for the affected slices; broaden to the full
-suite when replacing the shared compilation/publication path. This proposal
-does not claim that those changes or validations have already been performed.
 
 ## Open decisions
 

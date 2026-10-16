@@ -4,12 +4,12 @@ import :diagnostics.code;
 import :diagnostics.suggestion;
 import :frontend.ast.expr;
 import :frontend.ast.storage;
-import :semantic.analysis.expr.result;
+import :semantic.analysis.diagnostics;
 import :semantic.analysis.expr.scope;
 import :semantic.analysis.operations;
 import :semantic.analysis.program;
-import :semantic.analysis.types;
 import :semantic.analysis.types.display;
+import :semantic.analysis.types;
 import :semantic.semir.structured;
 import std;
 
@@ -18,7 +18,7 @@ auto construct_tuple_element_expression(
     Site& site,
     const ASTTupleElementExpr& source,
     Span span
-) noexcept -> ExpressionTask<typename Site::Value> {
+) noexcept -> AnalysisTask<typename Site::Value> {
     auto receiver = co_await site.read(source.operand_id, std::nullopt);
     if (!receiver) {
         co_return std::unexpected(receiver.error());
@@ -44,21 +44,14 @@ auto construct_tuple_element_expression(
 
 template<typename Site>
 auto construct_index_expression(Site& site, const ASTIndexExpr& source, Span span) noexcept
-    -> ExpressionTask<typename Site::Value> {
-    auto receiver = ExpressionResult<typename Site::Value>(
-        (co_await site.read(source.operand_id, std::nullopt))
-    );
-    if (!receiver && std::holds_alternative<AnalysisFailure>(receiver.error())) {
+    -> AnalysisTask<typename Site::Value> {
+    auto receiver = co_await site.read(source.operand_id, std::nullopt);
+    if (!receiver) {
         co_return std::unexpected(receiver.error());
     }
-    // The index is independently checked even when its receiver is not admitted.
-    // Type and bounds rules below require both operands to have been constructed.
     auto index = (co_await site.read(source.index, std::nullopt));
     if (!index) {
         co_return std::unexpected(index.error());
-    }
-    if (!receiver) {
-        co_return std::unexpected(receiver.error());
     }
     if (site.external(site.type(*receiver))) {
         co_return site.external_index(std::move(*receiver), std::move(*index), span);
@@ -84,22 +77,20 @@ auto construct_index_expression(Site& site, const ASTIndexExpr& source, Span spa
         ));
     }
     auto bounds = IndexBoundsPolicy {RuntimeCheckedBounds {}};
-    if constexpr (Site::mode == ExpressionMode::Body) {
-        if (const auto in_bounds = constant_index_in_bounds(
-                site.draft(),
-                site.known_sequence_extent(*receiver),
-                site.known(*index)
-            )) {
-            if (!*in_bounds && shape->kind == SequenceShapeKind::Array) {
-                co_return std::unexpected(site.fail(
-                    site.syntax().expression(source.index).span,
-                    DiagnosticCode::ConstIndexBounds,
-                    "constant array index is out of bounds"
-                ));
-            }
-            if (*in_bounds) {
-                bounds = ProvenInBounds {};
-            }
+    if (const auto in_bounds = constant_index_in_bounds(
+            site.draft(),
+            site.known_sequence_extent(*receiver),
+            site.known(*index)
+        )) {
+        if (!*in_bounds && shape->kind == SequenceShapeKind::Array) {
+            co_return std::unexpected(site.fail(
+                site.syntax().expression(source.index).span,
+                DiagnosticCode::ConstIndexBounds,
+                "constant array index is out of bounds"
+            ));
+        }
+        if (*in_bounds) {
+            bounds = ProvenInBounds {};
         }
     }
     co_return site.finish_index(
@@ -118,7 +109,7 @@ auto construct_member_expression(
     const ASTMemberExpr& source,
     typename Site::Value receiver,
     Span span
-) noexcept -> ExpressionResult<typename Site::Selection> {
+) noexcept -> AnalysisResult<typename Site::Selection> {
     const auto name = site.spelling(source.name_span);
     if (site.external(site.type(receiver))) {
         return site.external_member(source, std::move(receiver), span);
@@ -162,7 +153,7 @@ auto construct_member_expression(
         DiagnosticCode::TypeMemberUnresolved,
         std::format(
             "type '{}' has no member named '{}'",
-            type_display_name(site.draft(), type),
+            type_display_name(site.draft(), type, site.catalog()),
             name
         )
     ));

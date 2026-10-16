@@ -175,10 +175,10 @@ const TestSuite suite([] static noexcept {
             if (!expect(string.has_value())) {
                 return;
             }
-            const auto spelling = std::get<StringConstant>(string->value).value;
+            const auto spelling = std::get<TextConstant>(string->value).value;
             expect_equal(compilation.spelling_copy(spelling), std::string_view("hello"));
-            expect(((std::get<StringConstant>(string->value).value) == (spelling)))
-                .note("std::get<StringConstant>(string->value).value == spelling");
+            expect(((std::get<TextConstant>(string->value).value) == (spelling)))
+                .note("std::get<TextConstant>(string->value).value == spelling");
         };
 
     "Semantic literals: floating conversion uses the selected precision and range"_test =

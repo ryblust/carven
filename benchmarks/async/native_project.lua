@@ -1,7 +1,9 @@
 import("benchmarks.harness.native_build", {rootdir = os.projectdir()})
 
-function project_text(defines, implementations, root, include_root, cxx)
-    local lines = {native_build.project_header("carven-async-benchmark"), "add_cxxflags(\"-fno-rtti\")"}
+function project_text(defines, implementations, inputs, session, linkage_domain)
+    local lines = {native_build.project_header("carven-async-benchmark"),
+        native_build.carven_rules(session, inputs), "add_cxxflags(\"-fno-rtti\")"}
+    local cxx = session.options.cxx
     local function call(name, arguments)
         local values = {}
         for _, value in ipairs(arguments) do table.insert(values, string.format("%q", value)) end
@@ -21,14 +23,13 @@ function project_text(defines, implementations, root, include_root, cxx)
         call("add_defines", {"CARVEN_ASYNC_BENCH_ALLOCATIONS=" .. (profile == "allocations" and "1" or "0")})
         call("add_defines", {"CARVEN_ASYNC_BENCH_STACK=" .. (profile == "stack" and "1" or "0")})
         call("add_defines", defines)
-        call("add_includedirs", {path.join(include_root, "benchmarks", "async"),
-            path.join(include_root, "crafts"), path.join(root, "generated")})
+        call("add_includedirs", {path.join(inputs, "benchmarks", "async"), path.join(inputs, "crafts")})
     end
     for _, profile in ipairs(profiles) do
         table.insert(lines, string.format("target(%q)", "measurement-" .. profile))
         table.insert(lines, "    set_kind(\"object\")")
         configure_profile(profile)
-        call("add_files", {path.join(include_root, "benchmarks", "async", "measurement.cpp")})
+        call("add_files", {path.join(inputs, "benchmarks", "async", "measurement.cpp")})
         table.insert(lines, "target_end()")
     end
     for _, implementation in ipairs(implementations) do
@@ -39,13 +40,14 @@ function project_text(defines, implementations, root, include_root, cxx)
                 configure_profile(profile)
                 call("add_deps", {"measurement-" .. profile})
                 if implementation == "carven" then
-                    call("add_files", {path.join(root, "generated", "**.cpp")})
+                    table.insert(lines, string.format('    add_rules("@carven/carven", {linkage_domain = %q})', linkage_domain))
+                    call("add_files", {"workload.cv"})
                 else
                     local source = implementation == "carven_runtime" and "runtime_workload.cpp" or "workload.cpp"
-                    call("add_files", {path.join(include_root, "benchmarks", "async", source)})
+                    call("add_files", {path.join(inputs, "benchmarks", "async", source)})
                     call("add_defines", {"CARVEN_ASYNC_BENCH_LIBCORO=" .. (implementation == "libcoro" and "1" or "0")})
                     if implementation == "libcoro" then
-                        call("add_includedirs", {path.join(include_root, "libcoro", "include")})
+                        call("add_includedirs", {path.join(inputs, "libcoro", "include")})
                     end
                 end
                 table.insert(lines, "target_end()")

@@ -3,8 +3,8 @@
 This directory holds unfinished designs and accepted work awaiting implementation.
 Current contracts belong in `docs/`.
 
-The remaining source contract determines each proposal's scope. Implemented
-foundations are listed separately.
+Each proposal owns a distinct unfinished contract or design question. Current
+mechanisms appear only where they explain that remaining scope.
 
 ## Contents
 
@@ -21,7 +21,7 @@ foundations are listed separately.
 | [Operator capabilities](operator-capabilities.md) | Mapping existing tokens to checked operations; consumes generic evidence |
 | [Dynamic values](dynamic-values.md) | Erased holding forms, nominal conformance, and dispatch |
 | [Dynamic ownership](dynamic-ownership.md) | Unique/shared and native resource owners, allocator policy, construction in owned storage, and move-only Vector capabilities |
-| [Semantic execution](semantic-execution.md) | Direct structured initializer/extent roots, scalar text traversal, address observations, retained reference graphs, and deferred host scripting/build-stage execution |
+| [Semantic execution](semantic-execution.md) | Address observations, retained reference graphs, and deferred host scripting/build-stage execution |
 | [Compiler optimization](compiler-optimization.md) | Compiler and workspace-reuse costs, C++ realization, and formatting/output experiments preserving source contracts |
 | [Frontend analysis](frontend-analysis.md) | Recovering syntax, partial semantics, diagnostic ownership, query coordination, publication, and analysis fault isolation |
 | [Data representation](data-representation.md) | Record, tuple, and enum representations, native-layout boundaries, compact handles, and collection layouts |
@@ -29,29 +29,6 @@ foundations are listed separately.
 | [Concurrency](concurrency.md) | Cross-thread values, memory ordering, threads, and synchronization |
 | [Structured async](structured-async.md) | Finite runtime-sized operation composition and cleanup |
 | [Documentation comments](doc-comments.md) | Source attachment, retained content, and its artifact consumer |
-
-## Implemented boundaries and remaining work
-
-No standalone proposal is fully implemented. Workspace reuse experiments share
-the compiler-optimization owner; frontend analysis owns their semantic query and
-worker prerequisites. The other domains retain distinct source contracts or
-developed representation and validation criteria.
-
-| Domain | Implemented boundary | Remaining scope |
-| --- | --- | --- |
-| Generic extensions | [Type/failure-set parameters](../docs/language/types.md#nominal-type-parameters), checked named generic functions, static inputs, finite first-order formation, and parameterized native type applications | Capability evidence, associated types, parameterized class operations, and generic `import(cpp)` / `export(cpp)` declarations |
-| Sequence views and pipeline calls | Integer ranges, Read slices, concrete closures, fixed iterable families, and inferred function results | Pipeline syntax, five sequence builtins, lazy views including Vector elements, traversal checking, and execution |
-| Operator capabilities | Builtin operators and compiler-selected equality | User-defined token hooks and their identity/signature/evidence rules |
-| Dynamic values | [Closures and callable views](../docs/language/functions.md), fixed-signature indirect calls, operation values | Nominal erased holding, conformance, existential packaging, and dispatch |
-| Dynamic ownership | [String](../docs/language/text.md), [Vector](../docs/language/aggregates.md#owning-vectors), async owners, and [host-owned TCP views](../docs/language/net.md) | General Unique/Shared and source-owned native resources, allocation policy, factory construction, and move-only Vector admission |
-| Structured async | [Fixed when_all](../docs/language/async.md) and structured cancellation/close | Finite runtime-sized composition and stable result delivery |
-| Semantic execution | [Structured executor](../docs/compiler/analysis/evaluation.md), interpretation, supported host input/time operations, specialization, compound constants, and byte traversal | Direct structured initializer/extent roots, scalar traversal, address/literal policy, reference graphs, and deferred host scripting/build-stage contracts |
-| Compiler optimization | [Prepared formatting and output](../docs/compiler/backend/builtins.md), [stable-owner Read traversal](../docs/compiler/backend/preparation.md#body-summaries-and-storage-observations), known-value paths, [workspace caches](../tools/workspace/README.md), shared native library producers | Further measured reuse, parallelism, storage/delivery, constant output, and formatting experiments |
-| Frontend analysis | Top-level recovery, owned complete analysis, retained snapshots, limited observations after semantic errors, strict publication | Lossless damaged syntax, independent partial types, semantic queries, request control, and worker isolation |
-| Data representation | Declaration-order records, recursive tuples, variant-based enums/failures | Target layout facts, native forms, field ordering, compact carriers, and collection representations |
-| Uninitialized storage | [Native direct/delayed construction](../docs/compiler/backend/realization.md) | Source destinations, completion evidence, partial initialization, and library cleanup ownership |
-| Concurrency | [Same-thread async](../docs/language/async.md) and explicit native boundary obligations | Cross-thread admission, memory ordering, threads, and synchronization |
-| Documentation comments | Retained source bytes and ordinary comments | Documentation recognition, attachment, markup, and an artifact consumer |
 
 ## Status
 
@@ -65,15 +42,15 @@ Design maturity and implementation progress are recorded separately.
 | Deferred | Work is paused with a reason and reactivation condition. |
 | Superseded | A named proposal replaces the design. |
 
-Implementation uses `Not started`, `In progress`, `Partial`, `Complete`, or
-`Not applicable`. Record whole-proposal status at the top and slice-specific
-status with the slice. Scope implementation status to the remaining design;
-identify implemented foundations separately. Accepted decisions do not establish
-implementation, and an implemented neighboring mechanism does not complete a
-proposal's different source or tooling contract.
+Record `Implementation` only for a selected delivery scope with a defined
+contract and completion evidence. Use `Not started`, `In progress`, `Partial`,
+or `Complete`, at the scope they describe. `Partial` means part of that same
+retained delivery is implemented; an implemented prerequisite or neighboring
+mechanism is context, not progress on a different contract.
 
-Exploration records questions, alternatives, and counterexamples. Implementation
-scope is selected separately, with a defined contract and validation criteria.
+An exploration without a selected delivery omits implementation status. Design
+acceptance does not establish implementation. Remove completed scope after its
+current contract is covered by permanent documentation.
 
 ## Maintenance
 

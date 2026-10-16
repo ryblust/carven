@@ -16,12 +16,14 @@ using AsyncBuiltin = std::variant<AsyncIntrinsic, AsyncCompositionPolicy, Timeou
 
 auto provided_async_builtin(ProvidedExport identity) noexcept -> std::optional<AsyncBuiltin>;
 
+using ResolvedAsyncBuiltin = std::variant<AsyncIntrinsic, AsyncCompositionPolicy, TimeoutContract>;
+
 auto resolve_async_builtin(
     ConstructionRequests& requests,
     AsyncBuiltin builtin,
     ProgramModuleID requester,
     Span span
-) noexcept -> AnalysisTask<ResolvedStaticCallable>;
+) noexcept -> AnalysisTask<ResolvedAsyncBuiltin>;
 
 auto analyze_async_contracts(
     const AnalysisModelView& model,

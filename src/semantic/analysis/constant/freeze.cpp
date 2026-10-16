@@ -33,12 +33,12 @@ auto freeze_value(
     if (const auto atom = execution_atom(draft, value)) {
         return draft.intern_constant(constant_fact(*atom));
     }
-    if (const auto text = execution_text(draft, value)) {
+    const auto* chars = std::get_if<ExecutionChars>(&value);
+    if (const auto text =
+            chars ? chars->text.observe(draft, nullptr) : execution_text(draft, value)) {
         return draft.intern_constant({
-            .type = std::holds_alternative<ExecutionOwnedText>(value)
-                ? draft.builtin_type(BuiltinType::String)
-                : draft.builtin_type(BuiltinType::Str),
-            .value = StringConstant {.value = draft.intern_spelling(text->view())},
+            .type = std::get<TypeID>(execution_value_type(draft, value)),
+            .value = TextConstant {.value = draft.intern_spelling(text->view())},
         });
     }
     const auto* aggregate = std::get_if<ExecutionAggregateValue>(&value);

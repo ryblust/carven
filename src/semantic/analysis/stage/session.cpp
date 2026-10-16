@@ -60,7 +60,7 @@ public:
     auto bind_call(
         CallableID callable,
         std::vector<ExecutionOperand>& arguments,
-        ExecutionArgumentAccess& access,
+        ExecutionOperandAccess& access,
         ProgramOriginID origin
     ) noexcept -> ContinuationTask<std::expected<CallableID, ExecutionCallFailure>> override;
     auto freeze(ExecutionValue value) noexcept -> std::optional<ConstantID> override;
@@ -121,7 +121,7 @@ auto StaticExecutionContext::freeze(ExecutionValue value) noexcept -> std::optio
 auto StaticExecutionContext::bind_call(
     CallableID callable,
     std::vector<ExecutionOperand>& arguments,
-    ExecutionArgumentAccess& access,
+    ExecutionOperandAccess& access,
     ProgramOriginID origin
 ) noexcept -> ContinuationTask<std::expected<CallableID, ExecutionCallFailure>> {
     const auto function = draft.function_for_callable(callable);
@@ -139,7 +139,7 @@ auto StaticExecutionContext::bind_call(
             runtime.push_back(std::move(arguments[index]));
             continue;
         }
-        auto value = access.detach_argument(std::move(arguments[index]), origin);
+        auto value = access.detach_operand(std::move(arguments[index]), origin);
         if (!value) {
             co_return std::unexpected(std::move(value.error()));
         }
@@ -569,14 +569,77 @@ auto StaticStage::instance(
 
 auto StaticStage::evaluate(
     const SemanticExpression& expression,
-    StaticEvaluationPurpose purpose
+    StaticEvaluationPurpose purpose,
+    const StructuredBodyDraft* body
 ) noexcept -> AnalysisTask<ExecutionValue> {
     auto context = StaticExecutionContext(*this, std::nullopt, purpose);
     co_return delivered(
         program,
         context,
-        co_await execute_static_root(program, context, expression)
+        co_await execute_static_root(
+            program,
+            context,
+            expression,
+            static_execution_limits(),
+            body ? std::optional(ExecutionBody(*body, expression)) : std::nullopt
+        )
     );
+}
+
+auto StaticStage::iterate(
+    const SemanticExpression& expression,
+    bool retain_element,
+    const std::function<AnalysisTask<bool>(std::optional<ConstantID>)>& consume,
+    const StructuredBodyDraft* body
+) noexcept -> AnalysisTask<void> {
+    auto context = StaticExecutionContext(*this);
+    auto consumer_failure = std::optional<AnalysisFailure>();
+    const ExecutionIterationConsumer visit =
+        [&](ExecutionOperand operand,
+            ExecutionOperandAccess& access) noexcept -> ExecutionTask<bool> {
+        const auto failed = [&](AnalysisFailure failure) noexcept -> ExecutionResult<bool> {
+            consumer_failure = failure;
+            return std::unexpected(ExecutionFailure {ExecutionDependencyFailure {}});
+        };
+        if (auto charged = charge(StageResource::Iterations, expression.origin); !charged) {
+            co_return failed(charged.error());
+        }
+        auto constant = std::optional<ConstantID>();
+        if (retain_element) {
+            auto value = access.detach_operand(std::move(operand), expression.origin);
+            if (!value) {
+                co_return std::unexpected(std::move(value.error()));
+            }
+            constant = context.freeze(std::move(*value));
+            if (!constant) {
+                co_return failed(program.diagnostics().error(
+                    DiagnosticBuilder(
+                        DiagnosticCode::ConstAdmission,
+                        "static iteration binding has no frozen representation"
+                    )
+                        .primary(program.source_span(expression.origin))
+                        .build()
+                ));
+            }
+        }
+        auto continued = co_await consume(constant);
+        if (!continued) {
+            co_return failed(continued.error());
+        }
+        co_return *continued;
+    };
+    auto result = co_await execute_iteration_root(
+        program,
+        context,
+        expression,
+        visit,
+        static_execution_limits(),
+        body ? std::optional(ExecutionBody(*body, expression)) : std::nullopt
+    );
+    if (consumer_failure) {
+        co_return std::unexpected(*consumer_failure);
+    }
+    co_return delivered(program, context, std::move(result));
 }
 
 auto StaticStage::run_body(BodyID body, BlockSource source) noexcept -> AnalysisTask<void> {

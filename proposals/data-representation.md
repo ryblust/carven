@@ -1,7 +1,6 @@
 # Data representation and layout
 
 - **Status:** Exploration
-- **Implementation:** Not started
 - **Scope:** Record, tuple, and enum representation, native-layout boundaries, compact handles, and collection layouts
 
 ## Summary
@@ -48,6 +47,11 @@ immovable elements, and positional access. Flat-product selection remains a
 measurement candidate. Existing enum case records and failure carriers supply no
 niche or pointer-tag plan, and no source `struct(c)` or `struct(cpp)` layout form
 is implemented.
+
+Vector already encodes retained storage in its length field. Compound constants
+already retain typed logical contents and reconstruct immutable native backing.
+These specific representations provide no general layout plan or compact
+collection reader API.
 
 The evaluator already works with logical values and object identities rather than
 native record bytes. Keep that separation. Generated programs use C++20; a
@@ -352,16 +356,11 @@ widths, padding policy, and input validation; optimized internal layout is not a
 serialization promise.
 
 For compile-time construction, begin with acyclic scalar/text records and an
-explicit immutable reader. Execute logical construction, failures, and cleanup;
-retain completed reachable values and backing before assigning physical offsets.
-A conversion to a different reader type remains explicit. Pending operations,
-scheduler state, native register bytes, and external resources are not logical
-collection contents.
-
-Offsets derive from final target storage, not host addresses or execution
-coordinates. Native realization must produce legal C++20 static data with the
-same reader contract as runtime construction. An encoding cannot silently add
-dynamic initialization or change the ABI of a constant instance.
+explicit immutable reader. Retain completed reachable values and backing before
+assigning physical offsets. A conversion to a different reader type remains
+explicit. Pending operations, scheduler state, native register bytes, and external
+resources are not logical collection contents. Runtime and static construction
+must provide the same reader contract.
 
 Compare static and runtime builders with the same reader and expected values.
 Cover empty data, construction failure, escaping backing, offset overflow, and
@@ -460,13 +459,15 @@ suspension, cancellation, failure, and cleanup retain their existing semantics.
 - **Status:** Active
 - **Question:** Which target facts are provided to planning, and which nested
   types are admitted by the provisional `struct(c)` and `struct(cpp)` forms?
-- **Closure condition:** One specified C ABI and C++ toolchain configuration,
-  cross-compilation behavior, native consumer examples, and mismatch diagnostics.
-  Source syntax and the field whitelist must be decided before implementation.
+- **Closure condition:** Target facts identify the C++ toolchain and ABI,
+  cross-compilation behavior, and mismatch checks. A native form additionally
+  requires source syntax, admitted fields, and native consumer examples. The
+  target-fact contract can be selected independently of either source form.
 
 ### OPEN-02 — Record ordering and observability
 
-- **Status:** Active; selection consumes the target facts from OPEN-01.
+- **Status:** Active
+- **Depends on:** The target facts from OPEN-01; native layout syntax is independent.
 - **Question:** Which record families preserve source construction, address,
   cleanup, and Read policy under a deterministic reorder?
 - **Closure condition:** Identity/reordered plans for scalar records and nested

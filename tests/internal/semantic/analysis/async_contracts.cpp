@@ -606,7 +606,7 @@ async fn run() {
                 .name = "constant root preserves explicit native selection",
                 .source =
                     "import <native> using vendor::cancel_requested; const result = cancel_requested();",
-                .rejection = DiagnosticCode::ConstInitializer
+                .rejection = DiagnosticCode::ConstAdmission
             },
             ContractCase {
                 .name = "constant builtin precedes opened native fallback",

@@ -362,7 +362,6 @@ const TestSuite suite([] static noexcept {
             "import(cpp) fn native(); fn ordinary() { native(); } const fn guaranteed() { ordinary(); }",
             "const fn guaranteed(action: fn() -> i32) -> i32 => action();",
             "const fn guaranteed() -> i32 { let action = []() => 1; return action(); }",
-            "const fn guaranteed(value: str) { for character in value.chars {} }",
         });
         each(rejected, std::identity {}, [&](const auto& source) noexcept {
             const auto diagnostics = analyze_test_errors(std::string(source));

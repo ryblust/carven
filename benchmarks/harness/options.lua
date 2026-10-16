@@ -11,7 +11,7 @@ local topic_settings = {
 local specifications = {
     {name = "samples", kind = "kv", description = "Number of measured runs", minimum = 1},
     {name = "warmups", kind = "kv", description = "Number of warmup runs", default = 1, minimum = 0},
-    {name = "compiler", kind = "kv", description = "Use another Carven executable without building"},
+    {name = "compiler", kind = "kv", description = "Use another built Carven executable"},
     {name = "list", kind = "k", description = "List cases without building or measuring"},
     {name = "case", kind = "kv", description = "Run one case by its exact identifier"},
     {name = "output", kind = "kv", description = "Save metadata and raw samples to a JSON file"},

@@ -1,7 +1,7 @@
 module carven:semantic.analysis.expr.conversion;
 
+import :semantic.analysis.diagnostics;
 import :semantic.analysis.expr.aggregate;
-import :semantic.analysis.expr.result;
 import :semantic.analysis.expr.scope;
 import :semantic.analysis.expr.text;
 import :semantic.analysis.operations;
@@ -16,7 +16,7 @@ auto construct_cast(
     typename Site::Value value,
     std::optional<ConstantID> known,
     Span span
-) noexcept -> ExpressionResult<typename Site::Value> {
+) noexcept -> AnalysisResult<typename Site::Value> {
     auto state = Site::operand_state();
     auto operand = site.consume_read(state, std::move(value), span);
     if (!operand) {
@@ -39,7 +39,7 @@ auto convert_intrinsic_argument(
     typename Site::Value& value,
     ConstructionTypeRef target,
     Span span
-) noexcept -> ExpressionResult<bool> {
+) noexcept -> AnalysisResult<bool> {
     const auto source = site.type(value);
     if (source == target) {
         return true;
@@ -102,15 +102,13 @@ auto convert_intrinsic_argument(
             return std::unexpected(checked.error());
         }
         auto known = std::optional<ConstantID>();
-        if constexpr (Site::mode == ExpressionMode::Body) {
-            const auto normalized_target = unwrap_type_alias(site.draft(), target);
-            if (site.known(value) && std::holds_alternative<TypeID>(normalized_target)) {
-                known = site.draft().intern_constant(
-                    {.type = std::get<TypeID>(normalized_target), .value = NullPointerConstant {}}
-                );
-            }
+        const auto normalized_target = unwrap_type_alias(site.draft(), target);
+        if (site.known(value) && std::holds_alternative<TypeID>(normalized_target)) {
+            known = site.draft().intern_constant(
+                {.type = std::get<TypeID>(normalized_target), .value = NullPointerConstant {}}
+            );
         }
-        auto converted = ExpressionResult<typename Site::Value>(
+        auto converted = AnalysisResult<typename Site::Value>(
             construct_cast(site, CastKind::PointerRead, target, std::move(value), known, span)
         );
         if (!converted) {

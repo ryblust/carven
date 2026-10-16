@@ -468,9 +468,3 @@ auto SemIRProgram::find_static_instance(
     );
     return found == static_instance_index.end() ? std::nullopt : std::optional(found->second);
 }
-
-auto SemIRProgram::is_staged(FunctionID function) const noexcept -> bool {
-    const auto& declaration = declaration_store.function(function);
-    const auto& callable = declaration_store.callable(declaration.callable);
-    return callable_signature_store.signature(callable.signature).has_static_parameters();
-}

@@ -6,23 +6,22 @@ import :support.visit;
 import std;
 
 auto TargetRenderer::render_type(TargetTypeID id, bool constant) noexcept -> LayoutNodeID {
-    return render_type_layouts(id, constant).wrapping;
+    return type_layouts.at(id.index()).value()[constant ? 1 : 0];
 }
 
-auto TargetRenderer::render_type_node(TargetTypeID id, bool constant) noexcept -> SyntaxLayouts {
+auto TargetRenderer::render_type_node(TargetTypeID id, bool constant) noexcept -> LayoutNodeID {
     const auto& value = unit.type(id);
     auto rendered = value.value.visit(
         Overloaded {
-            [&](const TargetDecltypeType& deduced) noexcept -> SyntaxLayouts {
-                const auto result = concat(
+            [&](const TargetDecltypeType& deduced) noexcept {
+                return concat(
                     {text("decltype(("), render_expression(deduced.expression()), text("))")}
                 );
-                return {.inline_qualified = result, .wrapping = result};
             },
-            [&](const TargetNamedType& named) noexcept -> SyntaxLayouts {
+            [&](const TargetNamedType& named) noexcept {
                 const auto segment =
-                    [&](SyntaxLayouts segment_name,
-                        std::span<const TargetTypeID> type_argument_ids) noexcept -> SyntaxLayouts {
+                    [&](LayoutNodeID segment_name,
+                        std::span<const TargetTypeID> type_argument_ids) noexcept -> LayoutNodeID {
                     if (type_argument_ids.empty()) {
                         return segment_name;
                     }
@@ -32,26 +31,20 @@ auto TargetRenderer::render_type_node(TargetTypeID id, bool constant) noexcept -
                         argument_layout_ids.push_back(render_type(argument_type_id));
                     }
                     const auto arguments_layout = delimited_list(argument_layout_ids, "<", ">");
-                    return {
-                        .inline_qualified =
-                            concat({segment_name.inline_qualified, arguments_layout}),
-                        .wrapping = concat({segment_name.wrapping, arguments_layout}),
-                    };
+                    return concat({segment_name, arguments_layout});
                 };
-                const auto base_name = render_name_layouts(named.name);
-                auto parts = std::vector<SyntaxLayouts> {
+                const auto base_name = render_name(named.name);
+                auto parts = std::vector<LayoutNodeID> {
                     segment(base_name, named.type_argument_ids),
                 };
                 for (const auto& nested : named.nested) {
-                    const auto name = render_identifier(nested.name);
-                    parts.push_back(segment(
-                        {.inline_qualified = name, .wrapping = name},
-                        nested.type_argument_ids
-                    ));
+                    parts.push_back(
+                        segment(render_identifier(nested.name), nested.type_argument_ids)
+                    );
                 }
                 return qualified_sequence(parts, false);
             },
-            [&](const TargetIntrinsicType& intrinsic) noexcept -> SyntaxLayouts {
+            [&](const TargetIntrinsicType& intrinsic) noexcept {
                 auto result = text(target_symbol_info(intrinsic.native_symbol()).spelling);
                 if (!intrinsic.type_argument_ids.empty()) {
                     auto argument_layout_ids = std::vector<LayoutNodeID> {};
@@ -61,20 +54,19 @@ auto TargetRenderer::render_type_node(TargetTypeID id, bool constant) noexcept -
                     }
                     result = concat({result, delimited_list(argument_layout_ids, "<", ">")});
                 }
-                return {.inline_qualified = result, .wrapping = result};
+                return result;
             },
-            [&](const TargetArrayType& array) noexcept -> SyntaxLayouts {
+            [&](const TargetArrayType& array) noexcept {
                 const auto arguments = std::array {
                     render_type(array.element_type_id),
                     text(std::to_string(array.extent.magnitude))
                 };
-                const auto result = concat(
+                return concat(
                     {text(target_symbol_info(array.native_symbol()).spelling),
                      delimited_list(arguments, "<", ">")}
                 );
-                return {.inline_qualified = result, .wrapping = result};
             },
-            [&](const TargetFunctionRefType& function_ref) noexcept -> SyntaxLayouts {
+            [&](const TargetFunctionRefType& function_ref) noexcept {
                 const auto result = render_type(function_ref.result);
                 auto parameters = std::vector<LayoutNodeID> {};
                 for (const auto parameter : function_ref.parameters) {
@@ -83,43 +75,27 @@ auto TargetRenderer::render_type_node(TargetTypeID id, bool constant) noexcept -
                 const auto signature =
                     concat({result, delimited_list(parameters, "(", ")"), text(" noexcept")});
                 const auto arguments = std::array {signature};
-                const auto representation = concat(
+                return concat(
                     {text(target_symbol_info(function_ref.native_symbol()).spelling),
                      delimited_list(arguments, "<", ">")}
                 );
-                return {.inline_qualified = representation, .wrapping = representation};
             },
-            [&](const TargetPointerType& pointer) noexcept -> SyntaxLayouts {
-                const auto pointee = render_type_layouts(pointer.pointee);
-                return {
-                    .inline_qualified = concat({pointee.inline_qualified, text("*")}),
-                    .wrapping = concat({pointee.wrapping, text("*")}),
-                };
+            [&](const TargetPointerType& pointer) noexcept {
+                return concat({render_type(pointer.pointee), text("*")});
             },
-            [&](const TargetReferenceType& reference) noexcept -> SyntaxLayouts {
-                const auto referent =
-                    render_type_layouts(reference.referent, reference.const_qualified);
+            [&](const TargetReferenceType& reference) noexcept {
+                const auto referent = render_type(reference.referent, reference.const_qualified);
                 const auto suffix = text(reference.rvalue ? "&&" : "&");
-                return {
-                    .inline_qualified = concat({referent.inline_qualified, suffix}),
-                    .wrapping = concat({referent.wrapping, suffix}),
-                };
+                return concat({referent, suffix});
             },
         }
     );
     if (value.const_qualified || constant) {
         if (std::holds_alternative<TargetPointerType>(value.value)) {
-            rendered.inline_qualified = concat({rendered.inline_qualified, text(" const")});
-            rendered.wrapping = concat({rendered.wrapping, text(" const")});
+            rendered = concat({rendered, text(" const")});
         } else {
-            rendered.inline_qualified = concat({text("const "), rendered.inline_qualified});
-            rendered.wrapping = concat({text("const "), rendered.wrapping});
+            rendered = concat({text("const "), rendered});
         }
     }
     return rendered;
-}
-
-auto TargetRenderer::render_type_layouts(TargetTypeID type, bool constant) noexcept
-    -> SyntaxLayouts {
-    return type_layouts.at(type.index()).value()[constant ? 1 : 0];
 }

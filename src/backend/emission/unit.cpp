@@ -49,20 +49,15 @@ auto TargetRenderer::item_category(const TargetItem& item) const noexcept
 
 auto TargetRenderer::separation_between(
     TargetItemCategory previous,
-    TargetItemCategory current,
-    TargetContainerKind container
+    TargetItemCategory current
 ) const noexcept -> std::size_t {
-    static_cast<void>(container);
     return previous == TargetItemCategory::ForwardOrFunctionDeclaration
             && current == TargetItemCategory::ForwardOrFunctionDeclaration
         ? 0uz
         : 1uz;
 }
 
-auto TargetRenderer::render_items(
-    std::span<const TargetItem> items,
-    TargetContainerKind container
-) noexcept -> LayoutNodeID {
+auto TargetRenderer::render_items(std::span<const TargetItem> items) noexcept -> LayoutNodeID {
     if (items.empty()) {
         return builder.empty();
     }
@@ -71,7 +66,7 @@ auto TargetRenderer::render_items(
     for (const auto& item : items.subspan(1)) {
         const auto current = item_category(item);
         const auto blank_lines = previous.has_value() && current.has_value()
-            ? separation_between(*previous, *current, container)
+            ? separation_between(*previous, *current)
             : 0uz;
         auto separator = builder.line();
         if (blank_lines != 0) {
@@ -87,13 +82,13 @@ auto TargetRenderer::render_sections(const TargetUnitSections& sections) noexcep
     -> std::optional<LayoutNodeID> {
     auto rendered = std::vector<LayoutNodeID>();
     if (!sections.preamble.empty()) {
-        rendered.push_back(render_items(sections.preamble, TargetContainerKind::TopLevel));
+        rendered.push_back(render_items(sections.preamble));
     }
     if (!sections.body.empty()) {
-        rendered.push_back(render_items(sections.body, TargetContainerKind::TopLevel));
+        rendered.push_back(render_items(sections.body));
     }
     if (!sections.epilogue.empty()) {
-        rendered.push_back(render_items(sections.epilogue, TargetContainerKind::TopLevel));
+        rendered.push_back(render_items(sections.epilogue));
     }
     if (rendered.empty()) {
         return std::nullopt;

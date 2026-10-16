@@ -100,7 +100,6 @@ public:
     auto bodies() const noexcept -> const BodyStore&;
     auto tests() const noexcept -> const TestStore&;
     // A staged function has static parameters and executes only through instances.
-    auto is_staged(FunctionID function) const noexcept -> bool;
 
     auto generic_declaration_contracts() const noexcept
         -> IDTableEntries<GenericDeclarationID, GenericDeclarationContract, ProgramIdentity>;

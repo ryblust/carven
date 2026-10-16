@@ -3,9 +3,9 @@ module carven:semantic.analysis.expr.interpret;
 import :frontend.ast.expr;
 import :frontend.ast.literal;
 import :frontend.ast.storage;
+import :semantic.analysis.diagnostics;
 import :semantic.analysis.expr.call;
 import :semantic.analysis.expr.member;
-import :semantic.analysis.expr.result;
 import :semantic.analysis.expr.scalar;
 import :semantic.semir.type;
 import std;
@@ -15,16 +15,13 @@ auto interpret_expression(
     Site& site,
     ASTExprID expression,
     std::optional<ConstructionTypeRef> expected = std::nullopt
-) noexcept -> ExpressionTask<typename Site::Selection> {
+) noexcept -> AnalysisTask<typename Site::Selection> {
     const auto& source = site.syntax().expression(expression);
-    if (!site.admits(source)) {
-        co_return std::unexpected(ExpressionNotAdmitted {});
-    }
     if (const auto* form = std::get_if<ASTLiteral>(&source.value)) {
         co_return (co_await interpret_literal(site, *form, source.span, expected));
     }
-    using ValueTask = ExpressionTask<typename Site::Value>;
-    using SelectionTask = ExpressionTask<typename Site::Selection>;
+    using ValueTask = AnalysisTask<typename Site::Value>;
+    using SelectionTask = AnalysisTask<typename Site::Selection>;
     using DispatchedTask = std::variant<ValueTask, SelectionTask>;
     constexpr auto value_task = [](ValueTask task) static noexcept {
         return DispatchedTask(std::in_place_index<0>, std::move(task));
