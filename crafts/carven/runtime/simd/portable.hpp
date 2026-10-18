@@ -40,7 +40,7 @@ struct CompilerVector<float> final {
 template<typename Element, std::size_t Bytes, typename Operation>
 CARVEN_SIMD_INLINE auto map(Storage<Bytes> a, Storage<Bytes> b, Operation operation) noexcept
     -> Storage<Bytes> {
-    auto result = Storage<Bytes> {};
+    auto result = Storage<Bytes> {.bytes = {}};
 #if defined(__clang__) || defined(__GNUC__)
     using Vector = typename CompilerVector<Element>::Type;
     static_assert(Bytes % sizeof(Vector) == 0);
@@ -77,14 +77,14 @@ using Value = Storage<Bytes>;
 template<std::size_t Bytes>
 CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL splat_bytes(std::uint8_t element) noexcept
     -> Value<Bytes> {
-    auto result = Value<Bytes> {};
+    auto result = Value<Bytes> {.bytes = {}};
     result.bytes.fill(element);
     return result;
 }
 
 template<std::size_t Bytes>
 CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL splat_floats(float element) noexcept -> Value<Bytes> {
-    auto result = Value<Bytes> {};
+    auto result = Value<Bytes> {.bytes = {}};
     for (auto i = std::size_t {0}; i < Bytes / sizeof(float); ++i) {
         std::memcpy(result.bytes.data() + i * sizeof(float), &element, sizeof(float));
     }
@@ -93,7 +93,7 @@ CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL splat_floats(float element) noexcept ->
 
 template<std::size_t Bytes>
 CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL load(const void* data) noexcept -> Value<Bytes> {
-    auto result = Value<Bytes> {};
+    auto result = Value<Bytes> {.bytes = {}};
     std::memcpy(result.bytes.data(), data, Bytes);
     return result;
 }
@@ -213,7 +213,7 @@ select(Value<Bytes> mask, Value<Bytes> yes, Value<Bytes> no) noexcept -> Value<B
 template<std::size_t TableBytes, std::size_t IndexBytes>
 CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL
 lookup(Value<TableBytes> table, Value<IndexBytes> indices) noexcept -> Value<IndexBytes> {
-    auto result = Value<IndexBytes> {};
+    auto result = Value<IndexBytes> {.bytes = {}};
     const auto& lanes = table.bytes;
     for (auto i = std::size_t {0}; i < IndexBytes; ++i) {
         const auto index = std::size_t {indices.bytes[i]};
@@ -294,7 +294,7 @@ CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL sum(Value<Bytes> a) noexcept -> std::si
 template<std::size_t Bytes, std::size_t Offset>
 CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL extract(Value<Bytes> a, Value<Bytes> b) noexcept
     -> Value<Bytes> {
-    auto result = Value<Bytes> {};
+    auto result = Value<Bytes> {.bytes = {}};
     for (auto i = std::size_t {0}; i < Bytes; ++i) {
         const auto source = i + Offset;
         result.bytes[i] = source < Bytes ? a.bytes[source] : b.bytes[source - Bytes];

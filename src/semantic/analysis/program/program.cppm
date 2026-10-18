@@ -39,7 +39,7 @@ private:
         BodyID id,
         BodyKind kind,
         ProvenanceIdentity provenance,
-        BodyIdentityDomain domain = BodyIdentityDomain::Body
+        BodyIdentityDomain domain
     ) noexcept;
 
     BodyID body_id;
@@ -79,10 +79,10 @@ public:
     static auto begin(
         SyntaxProgram&& syntax,
         DiagnosticSink& sink,
+        HostEffects host_effects,
         ExecutionOutput output = {},
         SourceAnalysisBuilder* source_analysis = nullptr,
         TimingOutput timings = {},
-        HostEffects host_effects = HostEffects::Deny,
         CheckedDefinitions* seed = nullptr
     ) noexcept -> ProgramDraft;
 
@@ -428,7 +428,7 @@ public:
     auto require_non_empty_failures(
         ConstructionFailureRef source,
         ProgramOriginID origin,
-        bool allow_dependent = false
+        bool allow_dependent
     ) noexcept -> void;
 
     auto require_failure_subset(

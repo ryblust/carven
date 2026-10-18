@@ -49,7 +49,7 @@ auto fixture(SourceManager& sources, DiagnosticSink& diagnostics, std::size_t wi
     };
     auto syntax = parse_program(sources, SourceBatch {.modules = inputs});
     require(syntax.has_value());
-    auto compilation = ProgramDraft::begin(std::move(*syntax), diagnostics);
+    auto compilation = ProgramDraft::begin(std::move(*syntax), diagnostics, HostEffects::Deny);
     const auto provenance_module = compilation.provenance_module_at(0uz);
     const auto source_id = compilation.module_source(provenance_module);
     const auto origin = compilation.append_source_origin(source_id, Span::at(0u));

@@ -57,7 +57,7 @@ auto BodyRealizer::declare_binding(
                     : TargetVariableBinding::ConstValue,
                 .maybe_unused = true,
                 .local = binding_locals.at(id),
-                .type = context.lower_type(binding.type),
+                .type = context.lower_type(binding.type, TypeNameScope::Module),
                 .initializer = std::move(initializer),
             },
             false
@@ -71,8 +71,8 @@ auto BodyRealizer::declare_binding(
                                     context.semantic().types().type(binding.type).value
         );
     const auto type = std::holds_alternative<TargetArrayExpr>(initializer.value) || deduced_native
-        ? context.intrinsic_type(TargetSymbol::Auto)
-        : context.lower_type(binding.type);
+        ? context.intrinsic_type(TargetSymbol::Auto, false)
+        : context.lower_type(binding.type, TypeNameScope::Module);
     destination.declare(
         TargetVariableStmt {
             .binding = snapshot && cleanup ? TargetVariableBinding::ConstSnapshot

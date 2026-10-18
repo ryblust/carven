@@ -16,13 +16,13 @@ OwnershipRegionIndex::OwnershipRegionIndex(
         auto current = edge.carrier.object;
         for (const auto [index, label] : std::views::enumerate(word)) {
             if (index + 1uz == word.size()) {
-                transitions[current].push_back({label, edge.element});
+                transitions[current].push_back({.label = label, .target = edge.element});
             } else {
                 const auto [found, inserted] =
                     prefixes.try_emplace({current, label}, transitions.size());
                 if (inserted) {
                     transitions.emplace_back();
-                    transitions[current].push_back({label, found->second});
+                    transitions[current].push_back({.label = label, .target = found->second});
                 }
                 current = found->second;
             }
@@ -163,7 +163,7 @@ auto OwnershipRegionIndex::query(
                     visit(edge);
                 }
             } else if (const auto position = state - size; position < place.path.size()) {
-                visit(Transition {place.path[position], state + 1uz});
+                visit(Transition {.label = place.path[position], .target = state + 1uz});
             }
         };
     for (auto cursor = 0uz; cursor < pending.size(); ++cursor) {

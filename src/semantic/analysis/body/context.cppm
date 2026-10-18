@@ -461,11 +461,11 @@ private:
         Span span,
         std::optional<ConstructionTypeRef> expected,
         bool value_form,
-        bool allow_pointer_narrowing = true
+        bool allow_pointer_narrowing
     ) noexcept -> AnalysisTask<BuiltExpression>;
 
     auto push_frame(Span span) noexcept -> void;
-    auto pop_frame(bool diagnose = true) noexcept -> void;
+    auto pop_frame(bool diagnose) noexcept -> void;
     auto collect_unused_locals(const BodyLocalFrame& frame) noexcept -> void;
     auto visible_locals() const noexcept -> BodyLocalNames;
 
@@ -516,14 +516,14 @@ private:
 
     auto expression(
         ASTExprID id,
-        std::optional<ConstructionTypeRef> expected = std::nullopt,
-        bool allow_pointer_narrowing = true
+        bool allow_pointer_narrowing,
+        std::optional<ConstructionTypeRef> expected = std::nullopt
     ) noexcept -> AnalysisTask<BuiltExpression>;
 
     auto select_expression(
         ASTExprID id,
-        std::optional<ConstructionTypeRef> expected = std::nullopt,
-        bool allow_pointer_narrowing = true
+        bool allow_pointer_narrowing,
+        std::optional<ConstructionTypeRef> expected = std::nullopt
     ) noexcept -> AnalysisTask<SelectedExpression>;
 
     auto materialize_selection(
@@ -625,14 +625,14 @@ private:
         const ASTIfForm& source,
         Span span,
         std::optional<ConstructionTypeRef> expected,
-        bool allow_pointer_narrowing = true
+        bool allow_pointer_narrowing
     ) noexcept -> AnalysisTask<BuiltExpression>;
 
     auto match_expression(
         const ASTMatchForm& source,
         Span span,
         std::optional<ConstructionTypeRef> expected,
-        bool allow_pointer_narrowing = true
+        bool allow_pointer_narrowing
     ) noexcept -> AnalysisTask<BuiltExpression>;
 
     auto match_statement(const ASTMatchForm& source, Span span) noexcept -> AnalysisTask<void>;
@@ -641,7 +641,7 @@ private:
         const ASTTryForm& source,
         Span span,
         std::optional<ConstructionTypeRef> expected,
-        bool allow_pointer_narrowing = true
+        bool allow_pointer_narrowing
     ) noexcept -> AnalysisTask<BuiltExpression>;
 
     auto try_statement(const ASTTryForm& source, Span span) noexcept -> AnalysisTask<void>;
@@ -651,7 +651,7 @@ private:
         Span span,
         std::optional<ConstructionTypeRef> expected,
         bool value_form,
-        bool allow_pointer_narrowing = true
+        bool allow_pointer_narrowing
     ) noexcept -> AnalysisTask<std::optional<BuiltExpression>>;
 
     auto build_pattern(
@@ -673,7 +673,7 @@ private:
         Span span,
         std::optional<ConstructionTypeRef> expected,
         bool value_form,
-        bool allow_pointer_narrowing = true
+        bool allow_pointer_narrowing
     ) noexcept -> AnalysisTask<std::optional<BuiltExpression>>;
 
     auto lambda_expression(
@@ -721,8 +721,8 @@ private:
     auto branch_block(
         ASTBranchBlockID id,
         bool consume_result,
-        std::optional<ConstructionTypeRef> expected = std::nullopt,
-        bool allow_pointer_narrowing = true
+        bool allow_pointer_narrowing,
+        std::optional<ConstructionTypeRef> expected = std::nullopt
     ) noexcept -> AnalysisTask<std::optional<BuiltExpression>>;
 
     auto class_operation(StructID owner, std::string_view name, bool receiver, Span span) noexcept
@@ -743,8 +743,8 @@ private:
         ASTExprID source,
         AccessMode access,
         std::optional<ConstructionTypeRef> expected,
-        std::optional<DiagnosticCode> mismatch_code = std::nullopt,
-        ParameterStage stage = ParameterStage::Runtime
+        ParameterStage stage,
+        std::optional<DiagnosticCode> mismatch_code = std::nullopt
     ) noexcept -> AnalysisTask<BuiltCallArgument>;
 
     auto bind_call_argument(

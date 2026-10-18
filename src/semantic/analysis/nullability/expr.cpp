@@ -58,9 +58,9 @@ auto NullabilityBodyAnalyzer::condition(const SemanticExpression& source, NullSt
         };
         auto place = std::optional<NullPlace>();
         if (is_null(*comparison->right)) {
-            place = location(*comparison->left);
+            place = location(*comparison->left, false);
         } else if (is_null(*comparison->left)) {
-            place = location(*comparison->right);
+            place = location(*comparison->right, false);
         }
         if (place) {
             const auto equal = comparison->operation == BinaryOperator::Equal;
@@ -270,7 +270,7 @@ auto NullabilityBodyAnalyzer::expression(const SemanticExpression& source, NullS
                 if (!flow.normal) {
                     co_return {};
                 }
-                if (const auto place = location(source)) {
+                if (const auto place = location(source, false)) {
                     set_value(value_at(flow.normal->state, *place));
                 } else {
                     set_value(project_null_value(flow.normal->value, value.field.field_index));
@@ -280,7 +280,7 @@ auto NullabilityBodyAnalyzer::expression(const SemanticExpression& source, NullS
             [&](const SemTupleElement& value) noexcept -> ContinuationTask<std::monostate> {
                 (co_await evaluate(*value.source));
                 if (flow.normal) {
-                    if (const auto place = location(source)) {
+                    if (const auto place = location(source, false)) {
                         set_value(value_at(flow.normal->state, *place));
                     } else {
                         set_value(project_null_value(flow.normal->value, value.index));
@@ -295,7 +295,7 @@ auto NullabilityBodyAnalyzer::expression(const SemanticExpression& source, NullS
                 if (!flow.normal) {
                     co_return {};
                 }
-                if (const auto place = location(source)) {
+                if (const auto place = location(source, false)) {
                     set_value(value_at(flow.normal->state, *place));
                 } else if (value.index->constant
                            && value.source->category == SemanticValueCategory::Value) {

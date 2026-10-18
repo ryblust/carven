@@ -215,7 +215,7 @@ const TestSuite suite([] static noexcept {
             };
             auto parsed = parse_program(sources, SourceBatch {.modules = inputs});
             require(parsed.has_value());
-            auto result = analyze(std::move(*parsed));
+            auto result = analyze(std::move(*parsed), HostEffects::Deny);
             if (rejected) {
                 require(!result.has_value());
                 expect_diagnostic(result.error(), DiagnosticCode::AsyncAdmission);
@@ -894,9 +894,20 @@ const TestSuite suite([] static noexcept {
         fn leaf() {}
         fn caller() { apply(leaf); }
     )");
-        const auto components =
-            prepare_ownership_analysis(AnalysisModelView(program, GenericAnalysisSnapshot {}))
-                .recursion_components;
+        const auto components = prepare_ownership_analysis(AnalysisModelView(
+                                                               program,
+                                                               GenericAnalysisSnapshot {
+                                                                   .owner = std::nullopt,
+                                                                   .definitions = {},
+                                                                   .types = {},
+                                                                   .bodies = {},
+                                                                   .records = {},
+                                                                   .enum_payloads = {},
+                                                                   .test_stops = {},
+                                                                   .failures = {},
+                                                               }
+                                                           ))
+                                    .recursion_components;
         const auto callables = test_function_callables(program);
         if (!expect_equal(callables.size(), 4uz)) {
             return;
@@ -919,9 +930,20 @@ const TestSuite suite([] static noexcept {
         fn leaf() {}
         fn caller() { []() { apply(leaf); }(); }
     )");
-            const auto components =
-                prepare_ownership_analysis(AnalysisModelView(program, GenericAnalysisSnapshot {}))
-                    .recursion_components;
+            const auto components = prepare_ownership_analysis(AnalysisModelView(
+                                                                   program,
+                                                                   GenericAnalysisSnapshot {
+                                                                       .owner = std::nullopt,
+                                                                       .definitions = {},
+                                                                       .types = {},
+                                                                       .bodies = {},
+                                                                       .records = {},
+                                                                       .enum_payloads = {},
+                                                                       .test_stops = {},
+                                                                       .failures = {},
+                                                                   }
+                                                               ))
+                                        .recursion_components;
             auto distinct = std::flat_set<std::uint32_t>();
             for (const auto& [body, component] : components) {
                 static_cast<void>(body);
@@ -1105,7 +1127,7 @@ fn escaping() {
                 };
                 auto parsed = parse_program(sources, SourceBatch {.modules = std::span(&input, 1)});
                 require(parsed.has_value());
-                const auto result = analyze(std::move(*parsed));
+                const auto result = analyze(std::move(*parsed), HostEffects::Deny);
                 if (!expect(!result.has_value())) {
                     return;
                 }
@@ -1176,7 +1198,7 @@ fn invalid(flag: bool) {
                 };
                 auto parsed = parse_program(sources, SourceBatch {.modules = std::span(&input, 1)});
                 require(parsed.has_value());
-                const auto result = analyze(std::move(*parsed));
+                const auto result = analyze(std::move(*parsed), HostEffects::Deny);
                 if (!expect(!result.has_value())) {
                     return;
                 }
@@ -1229,7 +1251,7 @@ fn invoke() {
             };
             auto parsed = parse_program(sources, SourceBatch {.modules = std::span(&input, 1)});
             require(parsed.has_value());
-            const auto result = analyze(std::move(*parsed));
+            const auto result = analyze(std::move(*parsed), HostEffects::Deny);
             if (!expect(result.has_value())) {
                 return;
             }
@@ -1419,7 +1441,7 @@ fn invalid() {
             };
             auto parsed = parse_program(sources, SourceBatch {.modules = std::span(&input, 1)});
             require(parsed.has_value());
-            const auto result = analyze(std::move(*parsed));
+            const auto result = analyze(std::move(*parsed), HostEffects::Deny);
             if (!expect(!result.has_value())) {
                 return;
             }

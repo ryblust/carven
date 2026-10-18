@@ -170,7 +170,7 @@ enum class QuotedLiteralKind {
 auto walk_quoted_literal(
     std::string_view spelling,
     QuotedLiteralKind kind,
-    bool reject_nul = false
+    bool reject_nul
 ) noexcept -> QuotedWalk {
     auto result = QuotedWalk {
         .bytes = {},
@@ -570,7 +570,8 @@ auto scan_string_literal(std::string_view text, StringLiteralKind kind) noexcept
 auto scan_character_literal(std::string_view text) noexcept
     -> std::expected<CharacterLiteralScan, QuotedLiteralScanError> {
     const auto extent = quoted_extent(text, '\'');
-    const auto decoded = walk_quoted_literal(text.substr(0, extent), QuotedLiteralKind::Character);
+    const auto decoded =
+        walk_quoted_literal(text.substr(0, extent), QuotedLiteralKind::Character, false);
     const auto valid = decoded.valid && decoded.consumed == extent;
     if (!valid) {
         return std::unexpected(

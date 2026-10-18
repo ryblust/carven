@@ -230,14 +230,14 @@ auto raw = R"tag({ // not Carven })tag";
     };
 
     "Lexer: string scanner exposes typed values and error facts"_test = [] static noexcept {
-        const auto string = scan_string_literal("\"a\\n\" rest");
+        const auto string = scan_string_literal("\"a\\n\" rest", StringLiteralKind::Text);
         if (!expect(string.has_value())) {
             return;
         }
         expect_equal(string->consumed, 5uz);
         expect_equal(string->value.bytes, std::string_view("a\n"));
 
-        const auto invalid_string = scan_string_literal("\"\\q\"");
+        const auto invalid_string = scan_string_literal("\"\\q\"", StringLiteralKind::Text);
         if (!expect(!invalid_string.has_value())) {
             return;
         }
@@ -424,7 +424,7 @@ auto raw = R"tag({ // not Carven })tag";
             {"r\"\"", ""},
         });
         each(cases, &Case::source, [](const Case& item) static noexcept {
-            const auto result = scan_string_literal(item.source);
+            const auto result = scan_string_literal(item.source, StringLiteralKind::Text);
             if (!(expect(result.has_value()).note("item.source = ", item.source))) {
                 return;
             }
@@ -437,7 +437,7 @@ auto raw = R"tag({ // not Carven })tag";
             TokenCase {R"("x")", TokenKind::StringLiteral},
         };
         check_token_sequence(R"(r "x")", separated);
-        const auto boundary = scan_string_literal(R"CV(r#"text"##)CV");
+        const auto boundary = scan_string_literal(R"CV(r#"text"##)CV", StringLiteralKind::Text);
         if (!expect(boundary.has_value())) {
             return;
         }
@@ -485,7 +485,7 @@ auto raw = R"tag({ // not Carven })tag";
                 {"\"\"\"\n  \\\"\"\"\n\"\"\"", "\"\"\""},
             });
             each(cases, &Case::source, [](const Case& item) static noexcept {
-                const auto result = scan_string_literal(item.source);
+                const auto result = scan_string_literal(item.source, StringLiteralKind::Text);
                 if (!(expect(result.has_value()).note("item.source = ", item.source))) {
                     return;
                 }

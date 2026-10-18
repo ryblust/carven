@@ -43,8 +43,8 @@ public:
         const SemanticExpression& source,
         ConstantLiteralContext literal,
         ResultDemand demand,
-        PreparedUse final_use = PreparedUse::Consume,
-        bool shared = false
+        PreparedUse final_use,
+        bool shared
     ) noexcept -> ContinuationTask<Lowered<LoweringResult>>;
     auto initialize_expression(
         LocalBindingID binding,
@@ -63,7 +63,7 @@ private:
         bool retain_backing;
         std::size_t expression_depth;
         // Only an immediate await consumes an embedded producer's ordinary result.
-        std::optional<PreparedAwaitProducer> await_fusion = std::nullopt;
+        std::optional<PreparedAwaitProducer> await_fusion;
     };
 
     struct Saved final {
@@ -104,7 +104,7 @@ private:
 
     class StorageScope final {
     public:
-        explicit StorageScope(ExpressionBuilder& frame, bool nested = true) noexcept;
+        explicit StorageScope(ExpressionBuilder& frame, bool nested) noexcept;
         ~StorageScope() noexcept;
 
     private:
@@ -121,7 +121,7 @@ private:
 
     auto finish_fragment(Fragment value) noexcept -> Fragment;
     auto adopt(Fragment& value) noexcept -> void;
-    auto take_statements(bool shared = false) noexcept -> LoweringStmtBuilder;
+    auto take_statements(bool shared) noexcept -> LoweringStmtBuilder;
     auto owns_cleanup_scope(std::optional<LifetimeRegionID> delivered_region) const noexcept
         -> bool;
 
@@ -156,17 +156,11 @@ private:
     auto sequenced_suffix_begin(const PreparedOperation& value) const noexcept -> std::size_t;
     auto first_unsequenced(const PreparedOperation& value) const noexcept -> std::size_t;
     auto retain_input(Fragment& value, PreparedUse use) noexcept -> void;
-    auto raw(
-        Fragment& value,
-        ConstantLiteralContext literal = ConstantLiteralContext::Exact,
-        PreparedUse use = PreparedUse::ReadBorrow
-    ) noexcept -> TargetExpr;
-    auto emit(
-        Fragment& value,
-        PreparedUse use,
-        ConstantLiteralContext literal = ConstantLiteralContext::Exact
-    ) noexcept -> TargetExpr;
-    auto anchor(Fragment& value, PreparedUse use, bool force = false) noexcept -> void;
+    auto raw(Fragment& value, ConstantLiteralContext literal, PreparedUse use) noexcept
+        -> TargetExpr;
+    auto emit(Fragment& value, PreparedUse use, ConstantLiteralContext literal) noexcept
+        -> TargetExpr;
+    auto anchor(Fragment& value, PreparedUse use, bool force) noexcept -> void;
     static auto native_await_intrinsic(const SemAwait& source) noexcept -> const SemAsyncIntrinsic*;
     auto complete_await(
         Fragment& value,

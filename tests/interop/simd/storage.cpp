@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <utility>
 
 #if defined(__unix__) || defined(__APPLE__)
 #include <sys/mman.h>
@@ -23,7 +24,7 @@ constexpr auto site = rt::SourceSite::native();
 template<typename Vector>
 auto preserves_float_storage() noexcept -> bool {
     constexpr auto patterns = std::array {0x00000000u, 0x80000000u, 0x7fc12345u, 0xffc12345u};
-    auto input = decltype(Vector {}.to_array()) {};
+    auto input = decltype(std::declval<Vector>().to_array()) {};
     for (auto i = std::size_t {0}; i < input.size(); ++i) {
         input[i] = std::bit_cast<float>(patterns[i % patterns.size()]);
     }

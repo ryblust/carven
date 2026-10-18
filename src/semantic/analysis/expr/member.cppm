@@ -171,9 +171,9 @@ auto interpret_member(Site& site, const ASTMemberExpr& source, Span span) noexce
     const auto* concrete = std::get_if<TypeID>(&operand_type);
     if (concrete != nullptr
         && (site.draft().type_copy(*concrete).value
-                == CanonicalTypeValue {BuiltinTypeValue {BuiltinType::Str}}
+                == CanonicalTypeValue {BuiltinTypeValue {.kind = BuiltinType::Str}}
             || site.draft().type_copy(*concrete).value
-                == CanonicalTypeValue {BuiltinTypeValue {BuiltinType::String}})) {
+                == CanonicalTypeValue {BuiltinTypeValue {.kind = BuiltinType::String}})) {
         auto decision = decide_text_property(site.spelling(source.name_span));
         if (!decision.has_value()) {
             co_return std::unexpected(site.fail(

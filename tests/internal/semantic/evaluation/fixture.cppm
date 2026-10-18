@@ -29,7 +29,7 @@ auto begin_constant_test_compilation(SourceManager& sources, DiagnosticSink& dia
     };
     auto syntax = parse_program(sources, SourceBatch {.modules = inputs});
     require(syntax.has_value());
-    return ProgramDraft::begin(std::move(*syntax), diagnostics);
+    return ProgramDraft::begin(std::move(*syntax), diagnostics, HostEffects::Deny);
 }
 
 struct ConstantEvaluationFixture final {

@@ -173,7 +173,8 @@ auto BodyElaborator::find_global(std::string_view name, Span span) noexcept
         source_module_id,
         name,
         span,
-        observe_sources ? &source_occurrences : nullptr
+        observe_sources ? &source_occurrences : nullptr,
+        DiagnosticCode::NameUnresolved
     );
     if (!selected) {
         co_return std::unexpected(selected.error());
@@ -226,7 +227,11 @@ auto BodyElaborator::add_parameter(
         }
         if (owning) {
             append_statement(
-                SemDecompose {storage.binding, std::nullopt, std::move(*bindings)},
+                SemDecompose {
+                    .owner = storage.binding,
+                    .initializer = std::nullopt,
+                    .bindings = std::move(*bindings)
+                },
                 origin(target_span)
             );
         }
@@ -264,7 +269,10 @@ auto BodyElaborator::local_place(const BodyLocalStorage& local, Span span) noexc
             result.root,
             result.access,
             (*elements)[index],
-            SemTupleElement {UniqueIndirect(std::move(result.expression)), index},
+            SemTupleElement {
+                .source = UniqueIndirect(std::move(result.expression)),
+                .index = index
+            },
             origin(span)
         );
     }

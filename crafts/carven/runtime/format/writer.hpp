@@ -106,17 +106,17 @@ public:
         write_floating<std::chars_format::general, 0, false>(value);
     }
 
-    template<int Precision = 6, typename Float>
+    template<int Precision, typename Float>
     auto fixed(Float value) noexcept -> void {
         write_floating<std::chars_format::fixed, Precision, true>(value);
     }
 
-    template<int Precision = 6, typename Float>
+    template<int Precision, typename Float>
     auto scientific(Float value) noexcept -> void {
         write_floating<std::chars_format::scientific, Precision, true>(value);
     }
 
-    template<int Precision = 6, typename Float>
+    template<int Precision, typename Float>
     auto general(Float value) noexcept -> void {
         write_floating<std::chars_format::general, Precision, true>(value);
     }

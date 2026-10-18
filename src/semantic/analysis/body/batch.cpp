@@ -149,7 +149,7 @@ auto BodyElaborator::run(const ASTCallableBody& source_body) noexcept
             }
             co_return std::unexpected(draft().diagnostics().error(diagnostic.build()));
         }
-        append_statement(SemReturn {std::nullopt}, origin(span));
+        append_statement(SemReturn {.value = std::nullopt}, origin(span));
     }
     if (is_test) {
         draft().require_empty_failures(
@@ -589,9 +589,9 @@ auto BodyBatchElaborator::ensure_generic_function(
         function.signature.policy != FailureContractPolicy::UndeclaredExplicit,
         false,
         GenericTypeContext {
-            definition,
-            function.contract.parameters,
-            function.contract.parameter_kinds
+            .definition = definition,
+            .parameters = function.contract.parameters,
+            .parameter_kinds = function.contract.parameter_kinds
         }
     );
     elaborator.async_body = source.async_span.has_value();
@@ -599,13 +599,13 @@ auto BodyBatchElaborator::ensure_generic_function(
         auto parameter =
             elaborator.add_parameter(source.parameters[i], function.signature.parameters[i]);
         if (!parameter) {
-            state = Failed {parameter.error()};
+            state = Failed {.failure = parameter.error()};
             co_return std::unexpected(parameter.error());
         }
     }
     auto body = co_await elaborator.run(std::get<ASTFunctionBody>(source.implementation).body);
     if (!body) {
-        state = Failed {body.error()};
+        state = Failed {.failure = body.error()};
         co_return std::unexpected(body.error());
     }
     if (function.infer_result) {

@@ -51,7 +51,7 @@ struct ExecutionEvent final {
     std::variant<ExecutionIssue, ReportKind> cause;
     std::vector<ExecutionReportField> fields;
     std::vector<ProgramOriginID> calls;
-    std::vector<BlockSource> blocks = {};
+    std::vector<BlockSource> blocks;
     auto reason() const noexcept -> ExecutionReason;
     auto message() const noexcept -> std::string_view;
     auto report_kind() const noexcept -> std::optional<ReportKind>;
@@ -74,7 +74,7 @@ struct ExecutionSourceFailure final {
     std::shared_ptr<const ExecutionValue> payload;
     ProgramOriginID origin;
     std::vector<ProgramOriginID> calls;
-    std::vector<BlockSource> blocks = {};
+    std::vector<BlockSource> blocks;
 };
 
 struct ExecutionCancelled final {
@@ -209,7 +209,7 @@ auto execute_static_root(
     const ExecutionValueAccess& values,
     SemanticExecutionContext& context,
     const SemanticExpression& expression,
-    ExecutionLimits limits = static_execution_limits(),
+    ExecutionLimits limits,
     std::optional<ExecutionBody> body = std::nullopt
 ) noexcept -> ExecutionTask<ExecutionValue>;
 
@@ -220,7 +220,7 @@ auto execute_iteration_root(
     SemanticExecutionContext& context,
     const SemanticExpression& expression,
     const ExecutionIterationConsumer& consume,
-    ExecutionLimits limits = static_execution_limits(),
+    ExecutionLimits limits,
     std::optional<ExecutionBody> body = std::nullopt
 ) noexcept -> ExecutionTask<void>;
 
@@ -228,7 +228,7 @@ auto execute_body(
     const ExecutionValueAccess& values,
     SemanticExecutionContext& context,
     ExecutionBody body,
-    ExecutionLimits limits = static_execution_limits()
+    ExecutionLimits limits
 ) noexcept -> ExecutionTask<void>;
 
 // Starts a typed entry function with no language arguments. Calls inside its
@@ -238,5 +238,5 @@ auto execute_function(
     SemanticExecutionContext& context,
     CallableID callable,
     ProgramOriginID origin,
-    ExecutionLimits limits = static_execution_limits()
+    ExecutionLimits limits
 ) noexcept -> ExecutionTask<ExecutionValue>;

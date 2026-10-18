@@ -201,6 +201,10 @@ The formatter preserves the written order.
   responsibility groups; separate access sections and data members as needed.
 - Use trailing return types for named functions except constructors, destructors,
   and conversion functions.
+- Require explicit arguments for behavior policies, including execution budgets,
+  effects, retention, and operation modes. Default arguments may express absent
+  optional inputs, including observation recipients and reusable inputs, or capture
+  the caller's source location.
 - Mark single-argument constructors `explicit`, except copy and move constructors.
   Use `typename` for template type parameters.
 - Mark project-defined classes and structs `final` unless a C++ protocol requires
@@ -222,6 +226,9 @@ The formatter preserves the written order.
   Initialize every field explicitly, including booleans, empty containers, and
   empty optionals. Use empty braces for fieldless values and braces for container
   literals.
+- Generic reconstruction may initialize an aggregate positionally when field names
+  are unavailable. Supply every field in declaration order; do not omit fields or
+  rely on default member initializers.
 - Transparent record fields have no default member initializers unless a consumed
   C++ protocol cannot be satisfied by explicit construction; document that requirement
   at the declaration. Classes may initialize private execution state in members.
@@ -268,6 +275,8 @@ The formatter preserves the written order.
   branch transfers control and falling through the switch is impossible.
 - Call `std::get` only immediately after checking the active alternative;
   otherwise use `std::get_if`.
+- Pass checked concrete alternatives across helper boundaries instead of extracting
+  them again from the variant.
 - Preserve evaluation order when simplifying expressions.
 - Use member `visit` for one variant and `std::visit` for multiple variants.
 

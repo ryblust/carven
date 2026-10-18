@@ -27,11 +27,8 @@ namespace {
 
 #if !defined(_WIN32)
 
-auto run_program(
-    std::string_view text,
-    ExecutionOutput output,
-    InterpreterOptions options = {.limits = static_execution_limits(), .trace = {}, .report = {}}
-) noexcept -> bool {
+auto run_program(std::string_view text, ExecutionOutput output, InterpreterOptions options) noexcept
+    -> bool {
     auto sources = SourceManager();
     const auto source = sources.append_virtual("host.cv", std::string(text));
     const auto path = CanonicalModulePath::from_value("host");
@@ -52,7 +49,7 @@ auto run_program(
     if (!parsed) {
         return false;
     }
-    auto analyzed = analyze(std::move(*parsed), output, {}, {}, HostEffects::Allow);
+    auto analyzed = analyze(std::move(*parsed), HostEffects::Allow, output);
     if (!analyzed) {
         for (const auto& diagnostic : analyzed.error()) {
             std::println(
@@ -227,7 +224,12 @@ const captured = await capture()?;
 const { assert(captured == "partial"); println("static", captured); }
 async fn main() throw IOError { println("runtime", await one()?); }
 )",
-                    output
+                    output,
+                    InterpreterOptions {
+                        .limits = static_execution_limits(),
+                        .trace = {},
+                        .report = {}
+                    }
                 );
                 writer.request_stop();
                 writer.join();
@@ -268,7 +270,12 @@ const rejected = await probe();
 const { assert(rejected); println("static system"); }
 async fn main() { assert(await probe()); println("runtime system"); }
 )",
-                    output
+                    output,
+                    InterpreterOptions {
+                        .limits = static_execution_limits(),
+                        .trace = {},
+                        .report = {}
+                    }
                 );
                 return ran && observed == "static system\nruntime system\n" ? 0 : 1;
             });

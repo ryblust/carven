@@ -294,7 +294,7 @@ auto run_compilation_command(
             const auto generation = TargetPlanningRequest {
                 .test_mode = request->test_mode,
                 .linkage_domain = std::move(*linkage_domain),
-                .library = standard_source_library(*sources),
+                .library = standard_source_library(*sources, false),
             };
             return generate_artifacts(*semantic, generation, selection, timings.output());
         }

@@ -30,7 +30,7 @@ auto cancellation_program(std::string_view text) noexcept -> SemIRProgram {
     };
     auto syntax = parse_program(sources, SourceBatch {.modules = inputs});
     require(syntax.has_value()).note("source = ", source_view.text);
-    auto analyzed = analyze(std::move(*syntax));
+    auto analyzed = analyze(std::move(*syntax), HostEffects::Deny);
     require(analyzed.has_value()).note("source = ", source_view.text);
     return std::move(analyzed->value);
 }

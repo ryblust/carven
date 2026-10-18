@@ -145,36 +145,45 @@ auto Connection::shutdown_send() const noexcept -> Error {
 
 auto Connection::read(std::span<std::byte> buffer) const noexcept -> Network::Awaiter {
     assert(!buffer.empty());
-    return Network::Awaiter(*this, buffer, false);
+    return Network::Awaiter(*this, buffer, false, false);
 }
 
 auto Connection::write(std::span<const std::byte> buffer) const noexcept -> Network::Awaiter {
-    return Network::Awaiter(*this, buffer, true);
+    return Network::Awaiter(*this, buffer, true, false);
+}
+
+auto Connection::write_all(std::span<const std::byte> buffer) const noexcept -> Network::Awaiter {
+    return Network::Awaiter(*this, buffer, true, true);
 }
 
 Network::Awaiter::Awaiter(
     const Connection& connection,
     std::span<const std::byte> buffer,
-    bool writing
+    bool writing,
+    bool all
 ) noexcept
     : connection(connection),
       buffer(buffer),
-      writing(writing) {}
+      writing(writing),
+      all(all) {}
 
 Network::Awaiter::~Awaiter() noexcept {
     assert(!continuation.bound() || completion.has_value());
+    assert(!acquired);
 }
 
 auto Network::Awaiter::await_ready() const noexcept -> bool {
     return false;
 }
 
-auto Network::Awaiter::attempt() const noexcept -> std::optional<Completion> {
+auto Network::Awaiter::attempt() noexcept -> std::optional<Completion> {
     if (buffer.empty()) {
         return Completion::success(0);
     }
-    const auto size = static_cast<int>(std::min(buffer.size(), static_cast<std::size_t>(INT_MAX)));
     for (;;) {
+        const auto remaining = buffer.subspan(transferred);
+        const auto size =
+            static_cast<int>(std::min(remaining.size(), static_cast<std::size_t>(INT_MAX)));
 #if defined(MSG_NOSIGNAL)
         constexpr auto send_flags = MSG_NOSIGNAL;
 #else
@@ -183,18 +192,28 @@ auto Network::Awaiter::attempt() const noexcept -> std::optional<Completion> {
         const auto count = writing
             ? ::send(
                   connection.socket,
-                  reinterpret_cast<const char*>(buffer.data()),
+                  reinterpret_cast<const char*>(remaining.data()),
                   size,
                   send_flags
               )
             : ::recv(
                   connection.socket,
-                  reinterpret_cast<char*>(const_cast<std::byte*>(buffer.data())),
+                  reinterpret_cast<char*>(const_cast<std::byte*>(remaining.data())),
                   size,
                   0
               );
         if (count >= 0) {
-            return Completion::success(static_cast<std::size_t>(count));
+            if (!all) {
+                return Completion::success(static_cast<std::size_t>(count));
+            }
+            if (count == 0) {
+                return Completion::failure(Error {.kind = ErrorKind::NoProgress, .code = 0});
+            }
+            transferred += static_cast<std::size_t>(count);
+            if (transferred == buffer.size()) {
+                return Completion::success(transferred);
+            }
+            continue;
         }
         const auto code = socket_error();
         if (interrupted(code)) {
@@ -208,7 +227,6 @@ auto Network::Awaiter::attempt() const noexcept -> std::optional<Completion> {
 }
 
 auto Network::Awaiter::finish(Completion result) noexcept -> void {
-    (writing ? connection.writing : connection.reading) = false;
     completion.emplace(std::move(result));
 }
 
@@ -227,6 +245,7 @@ auto Network::Awaiter::suspend() noexcept -> bool {
         return false;
     }
     busy = true;
+    acquired = true;
     auto ready = attempt();
     if (ready) {
         finish(std::move(*ready));
@@ -239,6 +258,12 @@ auto Network::Awaiter::suspend() noexcept -> bool {
 
 auto Network::Awaiter::await_resume() noexcept -> Completion {
     assert(completion.has_value());
+    // A committed result may still be queued. Retain the resource until its
+    // owning operation resumes, including cancellation and socket failures.
+    if (acquired) {
+        (writing ? connection.writing : connection.reading) = false;
+        acquired = false;
+    }
     return std::move(*completion);
 }
 
@@ -349,17 +374,23 @@ auto read(const View& view, std::size_t limit) noexcept -> async::AsyncOperation
     });
 }
 
-auto write(const View& view, runtime::Vector<std::uint8_t> bytes, std::size_t offset) noexcept
-    -> async::AsyncOperation<WriteResult> {
+namespace {
+
+auto write_buffer(
+    const View& view,
+    runtime::Vector<std::uint8_t> bytes,
+    std::size_t offset,
+    bool all
+) noexcept -> async::AsyncOperation<WriteResult> {
     using Completion = async::Completion<WriteResult>;
     if (view.connection == nullptr) {
         co_return Completion::success_from([&]() noexcept {
             return WriteResult {.bytes = std::move(bytes), .count = 0, .error = 2, .code = 0};
         });
     }
-    auto result = co_await view.connection->write(
-        std::as_bytes(std::span(bytes.begin(), bytes.size()).subspan(offset))
-    );
+    const auto buffer = std::as_bytes(std::span(bytes.begin(), bytes.size()).subspan(offset));
+    auto result =
+        all ? co_await view.connection->write_all(buffer) : co_await view.connection->write(buffer);
     if (result.is_cancelled()) {
         co_return Completion::cancelled();
     }
@@ -381,6 +412,18 @@ auto write(const View& view, runtime::Vector<std::uint8_t> bytes, std::size_t of
             .code = 0
         };
     });
+}
+
+} // namespace
+
+auto write(const View& view, runtime::Vector<std::uint8_t> bytes, std::size_t offset) noexcept
+    -> async::AsyncOperation<WriteResult> {
+    return write_buffer(view, std::move(bytes), offset, false);
+}
+
+auto write_all(const View& view, runtime::Vector<std::uint8_t> bytes) noexcept
+    -> async::AsyncOperation<WriteResult> {
+    return write_buffer(view, std::move(bytes), 0, true);
 }
 
 } // namespace carven::standard::net

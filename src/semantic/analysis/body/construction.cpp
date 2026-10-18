@@ -141,7 +141,7 @@ auto BodyElaborator::warn(Span span, DiagnosticCode code, std::string message) n
 }
 
 auto BodyElaborator::resolve_array_extent(ASTExprID id) noexcept -> AnalysisTask<std::uint64_t> {
-    auto scope = BodyExprSite(*this);
+    auto scope = BodyExprSite(*this, true);
     co_return (co_await evaluate_array_extent(draft(), ast, scope, id));
 }
 
@@ -155,7 +155,7 @@ auto BodyElaborator::build_static_expression(
     static_scope_frames.push_back(frames.size());
     failure_contexts.push_back({draft().add_empty_failure_term(), false});
     reachable = true;
-    auto built = co_await expression(source, expected);
+    auto built = co_await expression(source, true, expected);
     failure_contexts.pop_back();
     static_scope_frames.pop_back();
     catches = std::move(enclosing_catches);
@@ -180,7 +180,7 @@ auto BodyElaborator::static_expression(
     std::optional<ConstructionTypeRef> expected
 ) noexcept -> AnalysisTask<BuiltExpression> {
     if (static_stage()) {
-        co_return co_await this->expression(expression, expected);
+        co_return co_await this->expression(expression, true, expected);
     }
     auto result = co_await build_static_expression(expression, expected);
     if (!result) {
@@ -217,7 +217,7 @@ auto BodyElaborator::read_local(const BodyLocalStorage& local, Span span) noexce
                 (*elements)[index],
                 active_builder().lifetime(),
                 origin(span),
-                SemTupleElement {UniqueIndirect(std::move(value)), index}
+                SemTupleElement {.source = UniqueIndirect(std::move(value)), .index = index}
             );
         }
         co_return value;
@@ -627,7 +627,7 @@ auto BodyBatchElaborator::evaluate_constant_expression(
     }
     auto& region = elaborator.regions.front();
     elaborator.append_statement(
-        SemExpressionStatement {std::move(*built)},
+        SemExpressionStatement {.expression = std::move(*built)},
         elaborator.origin(span)
     );
     auto ready = co_await requests.close_generic_calls(region);

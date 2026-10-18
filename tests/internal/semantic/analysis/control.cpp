@@ -585,7 +585,7 @@ const TestSuite suite([] static noexcept {
                 if (!expect(parsed.has_value())) {
                     return;
                 }
-                auto result = analyze(std::move(*parsed));
+                auto result = analyze(std::move(*parsed), HostEffects::Deny);
                 if (!expect(result.has_value())) {
                     return;
                 }

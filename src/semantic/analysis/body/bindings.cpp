@@ -25,7 +25,8 @@ auto BodyBuilder::add_parameter(
     if (body_kind == BodyKind::Test) {
         invariant_violation("test body cannot receive callable parameters");
     }
-    const auto result = add_binding(name, type, lifetime, ParameterBindingStorage {access}, origin);
+    const auto result =
+        add_binding(name, type, lifetime, ParameterBindingStorage {.access = access}, origin);
     body_inputs.parameters.push_back(result.binding);
     return result;
 }
@@ -40,7 +41,8 @@ auto BodyBuilder::add_capture(
     if (body_kind != BodyKind::Closure) {
         invariant_violation("only closure bodies can receive capture bindings");
     }
-    const auto result = add_binding(name, type, lifetime, CaptureBindingStorage {mode}, origin);
+    const auto result =
+        add_binding(name, type, lifetime, CaptureBindingStorage {.mode = mode}, origin);
     body_inputs.captures.push_back(result.binding);
     return result;
 }
@@ -52,7 +54,7 @@ auto BodyBuilder::add_owner_binding(
     bool writable,
     ProgramOriginID origin
 ) noexcept -> BoundStorage {
-    return add_binding(name, type, lifetime, OwnerBindingStorage {writable}, origin);
+    return add_binding(name, type, lifetime, OwnerBindingStorage {.writable = writable}, origin);
 }
 
 auto BodyBuilder::add_pattern(ElaboratedPattern pattern) noexcept -> PatternID {

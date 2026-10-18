@@ -47,7 +47,7 @@ const TestSuite suite([] static noexcept {
                 "enum Choice<T> { Item(T), Empty } fn invalid<T>() -> Choice<T> { return {}; }",
                 "class C { value: i32 } struct Holder<T> { value: C } fn invalid<T>() -> Holder<T> { return {}; }",
             };
-            each(cases, std::identity {}, [](const auto& source) noexcept {
+            each(cases, std::identity {}, [](const auto& source) static noexcept {
                 expect_diagnostic(
                     analyze_test_errors(source),
                     DiagnosticCode::TypeDefaultInitialization

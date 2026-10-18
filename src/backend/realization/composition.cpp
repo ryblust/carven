@@ -177,10 +177,12 @@ auto LoweringStmtBuilder::resume(TargetIdentifier label, LoweringExitTarget targ
     emit(
         TargetStmt {
             .value = TargetLabelStmt {.label = std::move(label)},
-            .attribution = TargetGeneratedExpansionAttribution {
-                .reason = TargetExpansionReason::LoweringSupport
-            }
-        }
+            .attribution =
+                TargetGeneratedExpansionAttribution {
+                    .reason = TargetExpansionReason::LoweringSupport
+                }
+        },
+        true
     );
 }
 

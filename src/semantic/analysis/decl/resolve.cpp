@@ -380,7 +380,12 @@ auto DeclResolver::ConstantScope::evaluate_array_extent(ASTExprID expression) no
 
 auto DeclResolver::resolve_type(ProgramModuleID module_id, ASTView syntax, ASTTypeID type) noexcept
     -> AnalysisTask<ConstructionTypeRef> {
-    auto scope = ConstantScope {*this, module_id, syntax};
+    auto scope = ConstantScope {
+        .resolver = *this,
+        .module_id = module_id,
+        .syntax = syntax,
+        .generic_context = nullptr
+    };
     const auto extent = [&](ASTExprID expression) noexcept {
         return scope.evaluate_array_extent(expression);
     };
@@ -404,7 +409,12 @@ auto DeclResolver::resolve_failures(
     const ASTThrowClause& clause,
     const GenericTypeContext* generic_context
 ) noexcept -> AnalysisTask<ConstructionFailureRef> {
-    auto scope = ConstantScope {*this, module_id, syntax, generic_context};
+    auto scope = ConstantScope {
+        .resolver = *this,
+        .module_id = module_id,
+        .syntax = syntax,
+        .generic_context = generic_context
+    };
     const auto extent = [&](ASTExprID expression) noexcept {
         return scope.evaluate_array_extent(expression);
     };

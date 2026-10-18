@@ -107,7 +107,11 @@ const TestSuite suite([] static noexcept {
             elements.push_back(number);
             elements.push_back(ExecutionVoid {});
             const auto local = ExecutionValue(
-                ExecutionAggregateValue {.type = tuple, .elements = std::move(elements)}
+                ExecutionAggregateValue {
+                    .type = tuple,
+                    .elements = std::move(elements),
+                    .capacity = 0uz
+                }
             );
             const auto atom = execution_atom(values, ExecutionVoid {});
             if (!expect(atom.has_value())) {
@@ -118,8 +122,8 @@ const TestSuite suite([] static noexcept {
             auto steps = 0uz;
             expect(execution_equal(values, local, retained, steps, 3uz) == true);
             expect(steps == 3uz);
-            expect_equal(display_execution_value(values, ExecutionVoid {}), "()");
-            const auto display = display_execution_value(values, local);
+            expect_equal(display_execution_value(values, ExecutionVoid {}, false), "()");
+            const auto display = display_execution_value(values, local, false);
             if (expect(display.has_value())) {
                 expect(display->starts_with("("));
                 expect(display->ends_with(")"));

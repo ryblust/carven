@@ -77,7 +77,12 @@ auto DeclResolver::resolve_generic_declaration(
         .parameters = parameters,
         .parameter_kinds = policies
     };
-    auto scope = ConstantScope {*this, symbol.module_id, syntax, &context};
+    auto scope = ConstantScope {
+        .resolver = *this,
+        .module_id = symbol.module_id,
+        .syntax = syntax,
+        .generic_context = &context
+    };
     const auto extent = [&](ASTExprID expression) noexcept {
         return scope.evaluate_array_extent(expression);
     };
@@ -89,6 +94,8 @@ auto DeclResolver::resolve_generic_declaration(
         .parameters = {},
         .audience_dependencies = {},
         .parameter_kinds = std::move(policies),
+        .implementation_dependencies =
+            GenericImplementationDependencies {.types = {}, .callables = {}, .definitions = {}}
     };
     auto member_names = std::map<std::string, Span, std::less<>>();
     auto visited_surface_types = std::flat_set<ConstructionTypeRef>();

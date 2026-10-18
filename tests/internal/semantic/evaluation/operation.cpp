@@ -324,7 +324,8 @@ const TestSuite suite([] static noexcept {
                             item.operation,
                             left,
                             right,
-                            type
+                            type,
+                            IntegerArithmetic::Wrapping
                         );
                         if (!expect(result.has_value())) {
                             return;
@@ -341,8 +342,13 @@ const TestSuite suite([] static noexcept {
                     }
                 );
                 const auto zero = ConstantFact {.type = type, .value = Floating {.value = 0.0}};
-                const auto negative =
-                    evaluate_unary_constant_value(values, UnaryOperator::Negate, zero, type);
+                const auto negative = evaluate_unary_constant_value(
+                    values,
+                    UnaryOperator::Negate,
+                    zero,
+                    type,
+                    IntegerArithmetic::Wrapping
+                );
                 if (!expect(negative.has_value())) {
                     return;
                 }
@@ -359,7 +365,8 @@ const TestSuite suite([] static noexcept {
                     BinaryOperator::Divide,
                     left,
                     zero,
-                    type
+                    type,
+                    IntegerArithmetic::Wrapping
                 );
                 if (!expect(infinity.has_value())) {
                     return;
@@ -370,7 +377,8 @@ const TestSuite suite([] static noexcept {
                     BinaryOperator::Divide,
                     zero,
                     zero,
-                    type
+                    type,
+                    IntegerArithmetic::Wrapping
                 );
                 if (!expect(nan.has_value())) {
                     return;
@@ -384,8 +392,14 @@ const TestSuite suite([] static noexcept {
                     BinaryOperator::GreaterEqual
                 };
                 for (const auto operation : comparisons) {
-                    const auto result =
-                        evaluate_binary_constant_value(values, operation, *nan, right, boolean);
+                    const auto result = evaluate_binary_constant_value(
+                        values,
+                        operation,
+                        *nan,
+                        right,
+                        boolean,
+                        IntegerArithmetic::Wrapping
+                    );
                     if (!expect(result.has_value())) {
                         return;
                     }
@@ -396,7 +410,8 @@ const TestSuite suite([] static noexcept {
                     BinaryOperator::NotEqual,
                     *nan,
                     *nan,
-                    boolean
+                    boolean,
+                    IntegerArithmetic::Wrapping
                 );
                 if (!expect(unequal.has_value())) {
                     return;

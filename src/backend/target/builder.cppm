@@ -22,7 +22,7 @@ public:
     auto add_local(TargetIdentifier name) noexcept -> TargetLocalID;
     auto intern_type(TargetType type) noexcept -> TargetTypeID;
 
-    auto finish(TargetUnitSections sections, TargetDirectiveInputs directives = {}) && noexcept
+    auto finish(TargetUnitSections sections, TargetDirectiveInputs directives) && noexcept
         -> TargetUnit;
 
 private:

@@ -148,11 +148,14 @@ auto ASTDumper::render_generic_argument(
     std::string_view prefix,
     bool is_last
 ) noexcept -> void {
-    if (const auto* type = std::get_if<ASTTypeID>(&argument.value)) {
-        render_type(*type, prefix, is_last);
-    } else {
-        render_throw_clause(std::get<ASTThrowClause>(argument.value), prefix, is_last);
-    }
+    argument.value.visit(
+        Overloaded {
+            [&](ASTTypeID type) noexcept { render_type(type, prefix, is_last); },
+            [&](const ASTThrowClause& clause) noexcept {
+                render_throw_clause(clause, prefix, is_last);
+            },
+        }
+    );
 }
 
 auto ASTDumper::render_named_type_children(

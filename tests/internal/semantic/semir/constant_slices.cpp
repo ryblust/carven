@@ -28,7 +28,7 @@ auto begin_compilation(SourceManager& sources, DiagnosticSink& diagnostics) noex
     }};
     auto syntax = parse_program(sources, SourceBatch {.modules = inputs});
     require(syntax.has_value());
-    auto draft = ProgramDraft::begin(std::move(*syntax), diagnostics);
+    auto draft = ProgramDraft::begin(std::move(*syntax), diagnostics, HostEffects::Deny);
     const auto provenance_module = draft.provenance_module_at(0uz);
     const auto origin =
         draft.append_source_origin(draft.module_source(provenance_module), Span::at(0u));

@@ -4,6 +4,7 @@ import :backend.realization.composition;
 import :backend.target.builder;
 import :backend.target.expr;
 import :backend.target.name;
+import :backend.target.origin;
 import :backend.target.stmt;
 import :backend.target.symbol;
 import :backend.target.type;
@@ -63,9 +64,14 @@ const TestSuite suite([] static noexcept {
             expect(!sequence.needs_cleanup());
 
             auto opaque = LoweringStmtBuilder {};
-            opaque.emit(target_lowering_statement(variable("unclassified")));
+            opaque.emit(target_lowering_statement(variable("unclassified")), true);
             expect(opaque.needs_cleanup());
-            sequence.scope(std::move(opaque));
+            sequence.scope(
+                std::move(opaque),
+                TargetGeneratedExpansionAttribution {
+                    .reason = TargetExpansionReason::LoweringSupport
+                }
+            );
             expect(!sequence.needs_cleanup());
 
             auto owned = LoweringStmtBuilder {};
@@ -73,7 +79,12 @@ const TestSuite suite([] static noexcept {
             sequence.append(std::move(owned));
             expect(sequence.needs_cleanup());
             auto completed = LoweringStmtBuilder {};
-            completed.scope(std::move(sequence));
+            completed.scope(
+                std::move(sequence),
+                TargetGeneratedExpansionAttribution {
+                    .reason = TargetExpansionReason::LoweringSupport
+                }
+            );
             expect(!completed.needs_cleanup());
             const auto statements = std::move(completed).finish();
             if (!expect_equal(statements.size(), 1uz)) {
@@ -104,7 +115,7 @@ const TestSuite suite([] static noexcept {
                         .has_value());
             expect(!(sequence.continues()));
             expect(sequence.exits().contains(exit));
-            sequence.emit(return_statement());
+            sequence.emit(return_statement(), true);
             expect(std::move(sequence).finish().size() == 1uz);
         };
 
@@ -172,7 +183,14 @@ const TestSuite suite([] static noexcept {
                                 .accept(std::move(child).complete<LoweringCompleted>(std::nullopt))
                                 .has_value());
                     break;
-                case Composition::Scope: parent.scope(std::move(child)); break;
+                case Composition::Scope:
+                    parent.scope(
+                        std::move(child),
+                        TargetGeneratedExpansionAttribution {
+                            .reason = TargetExpansionReason::LoweringSupport
+                        }
+                    );
+                    break;
             }
             expect(!parent.continues());
             expect(parent.exits().contains(exit));
@@ -188,7 +206,10 @@ const TestSuite suite([] static noexcept {
         auto child = LoweringStmtBuilder {};
         child.declare(boolean_variable(target, "closed"), true);
         auto parent = LoweringStmtBuilder {};
-        parent.scope(std::move(child));
+        parent.scope(
+            std::move(child),
+            TargetGeneratedExpansionAttribution {.reason = TargetExpansionReason::LoweringSupport}
+        );
         expect(parent.continues());
         expect(!parent.needs_cleanup());
         constexpr auto exit = LoweringExitTarget {.kind = LoweringExitKind::Failure, .identity = 1};
@@ -207,13 +228,16 @@ const TestSuite suite([] static noexcept {
             auto selected = LoweringStmtBuilder {};
             selected.terminate(return_statement(), exit);
             parent.record_exits(selected.exits());
-            parent.emit(target_lowering_statement(
-                TargetIfStmt {
-                    .condition = bool_expression(true),
-                    .body = std::move(selected).finish(),
-                    .else_body = std::nullopt
-                }
-            ));
+            parent.emit(
+                target_lowering_statement(
+                    TargetIfStmt {
+                        .condition = bool_expression(true),
+                        .body = std::move(selected).finish(),
+                        .else_body = std::nullopt
+                    }
+                ),
+                true
+            );
         };
         branch(early);
         parent.declare(boolean_variable(target, "later"), true);
@@ -248,13 +272,16 @@ const TestSuite suite([] static noexcept {
         auto early_branch = LoweringStmtBuilder {};
         early_branch.terminate(return_statement(), early);
         parent.record_exits(early_branch.exits());
-        parent.emit(target_lowering_statement(
-            TargetIfStmt {
-                .condition = bool_expression(true),
-                .body = std::move(early_branch).finish(),
-                .else_body = std::nullopt
-            }
-        ));
+        parent.emit(
+            target_lowering_statement(
+                TargetIfStmt {
+                    .condition = bool_expression(true),
+                    .body = std::move(early_branch).finish(),
+                    .else_body = std::nullopt
+                }
+            ),
+            true
+        );
         parent.declare(boolean_variable(target, "later"), true);
         parent.terminate(return_statement(), late);
         expect(parent.needs_cleanup());

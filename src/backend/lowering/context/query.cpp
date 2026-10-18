@@ -31,8 +31,10 @@ auto ModuleLowering::cpp_constant_argument(
 ) noexcept -> TargetExpr {
     return {
         .value = TargetStaticCastExpr {
-            .type = reference_type(lower_type(argument.operand.type, scope), true),
-            .operand = target_child(constant_expression(*this, *argument.constant))
+            .type = reference_type(lower_type(argument.operand.type, scope), true, false),
+            .operand = target_child(
+                constant_expression(*this, *argument.constant, ConstantLiteralContext::Exact)
+            )
         }
     };
 }
@@ -191,7 +193,7 @@ auto ModuleLowering::lower_cpp_query(TypeID query_type) noexcept -> TargetTypeID
         .const_qualified = false,
     });
     const auto identifier = names().query_identifier(query_type);
-    const auto alias = named_type(names().module_support_name(active_module(), identifier));
+    const auto alias = named_type(names().module_support_name(active_module(), identifier), false);
     query_aliases.push_back(compiler_item(
         TargetDecl {TargetTypeAlias {.name = identifier, .type = underlying}},
         TargetCompilerReason::ArtifactScaffolding

@@ -45,7 +45,7 @@ auto begin_semir_test_compilation_batch(
     }
     auto syntax = parse_program(sources, SourceBatch {.modules = inputs});
     require(syntax.has_value());
-    return ProgramDraft::begin(std::move(*syntax), diagnostics);
+    return ProgramDraft::begin(std::move(*syntax), diagnostics, HostEffects::Deny);
 }
 
 auto begin_semir_test_compilation(

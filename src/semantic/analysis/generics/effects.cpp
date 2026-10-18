@@ -42,7 +42,10 @@ auto ProgramDraft::make_failure_instantiation(
     for (auto index = 0uz; index < arguments.size(); ++index) {
         if (const auto* failure = std::get_if<ConstructionFailureRef>(&arguments[index])) {
             deferred.emplace(
-                GenericFailureParameter {definition, static_cast<std::uint32_t>(index)},
+                GenericFailureParameter {
+                    .definition = definition,
+                    .index = static_cast<std::uint32_t>(index)
+                },
                 *failure
             );
         }

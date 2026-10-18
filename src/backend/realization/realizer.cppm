@@ -117,18 +117,16 @@ private:
 
     auto expression(
         const SemanticExpression& source,
-        ConstantLiteralContext literal = ConstantLiteralContext::Exact,
-        ResultDemand demand = ResultDemand::Value,
+        ConstantLiteralContext literal,
+        ResultDemand demand,
         std::optional<LifetimeRegionID> delivered_region = std::nullopt
     ) noexcept -> ContinuationTask<Lowered<LoweringResult>>;
 
     auto condition(const SemanticExpression& source) noexcept
         -> ContinuationTask<Lowered<LoweringPredicate>>;
 
-    auto operand(
-        PreparedOperand source,
-        ConstantLiteralContext literal = ConstantLiteralContext::Exact
-    ) noexcept -> ContinuationTask<Lowered<TargetExpr>>;
+    auto operand(PreparedOperand source, ConstantLiteralContext literal) noexcept
+        -> ContinuationTask<Lowered<TargetExpr>>;
 
     auto discard(const SemanticExpression& source) noexcept
         -> ContinuationTask<Lowered<LoweringCompleted>>;
@@ -171,7 +169,7 @@ private:
     auto region(
         const SemanticRegion& source,
         const LoweringResultDestination& result,
-        bool retain_async_scope = false
+        bool retain_async_scope
     ) noexcept -> ContinuationTask<LoweringStmtBuilder>;
 
     auto result_expression(
@@ -249,7 +247,7 @@ private:
     auto emit_return(
         std::optional<TargetExpr> value,
         LoweringStmtBuilder& destination,
-        const LoweringResultDestination& result = LoweringReturnResult {}
+        const LoweringResultDestination& result
     ) noexcept -> void;
 
     auto emit_failure(
@@ -333,7 +331,7 @@ private:
         LocalBindingID id,
         TargetExpr initializer,
         LoweringStmtBuilder& destination,
-        bool snapshot = false
+        bool snapshot
     ) noexcept -> void;
 
     auto declare_deferred(
@@ -403,6 +401,7 @@ private:
     std::optional<CaughtFailure> caught;
 
     struct FallibleCall final {
+        const SemCall& call;
         FailureSetID failures;
         std::optional<FailureDestination> destination;
     };

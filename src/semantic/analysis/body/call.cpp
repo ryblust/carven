@@ -46,8 +46,8 @@ auto BodyElaborator::build_call_argument(
     ASTExprID source_id,
     AccessMode access_mode,
     std::optional<ConstructionTypeRef> expected,
-    std::optional<DiagnosticCode> mismatch_code,
-    ParameterStage stage
+    ParameterStage stage,
+    std::optional<DiagnosticCode> mismatch_code
 ) noexcept -> AnalysisTask<BuiltCallArgument> {
     const auto& source = ast.expression(source_id);
     const auto selected = call_argument_operand(ast, source_id);
@@ -63,7 +63,7 @@ auto BodyElaborator::build_call_argument(
     }
     auto built = stage == ParameterStage::Static
         ? co_await static_expression(selected.expression, expected)
-        : co_await expression(selected.expression, expected);
+        : co_await expression(selected.expression, true, expected);
     if (!built.has_value()) {
         co_return std::unexpected(built.error());
     }
@@ -116,7 +116,11 @@ auto BodyElaborator::bind_call_argument(
             );
         }
         return BuiltCallArgument {
-            .argument = SemCallArgument {AccessMode::Write, std::move(place->expression)},
+            .argument =
+                SemCallArgument {
+                    .access = AccessMode::Write,
+                    .expression = std::move(place->expression)
+                },
             .pending_failures = std::move(pending_failures),
             .completes = built.completes,
         };
@@ -175,7 +179,7 @@ auto BodyElaborator::enum_case_reference(
     Span span,
     Span case_span
 ) noexcept -> AnalysisTask<BuiltExpression> {
-    auto site = BodyExprSite(*this);
+    auto site = BodyExprSite(*this, true);
     co_return co_await site
         .interpret_enum_case(enumeration_type, case_name, case_span, {}, span, false);
 }
@@ -239,7 +243,7 @@ auto BodyElaborator::call_expression(
                         .value = EnumTypeValue {.enumeration = enum_case->owner},
                     }
                 );
-                auto site = BodyExprSite(*this);
+                auto site = BodyExprSite(*this, true);
                 co_return (co_await site.interpret_enum_case(
                     type,
                     text,
@@ -255,17 +259,17 @@ auto BodyElaborator::call_expression(
         if (prepared_callee.has_value()) {
             co_return std::move(*prepared_callee);
         }
-        co_return (co_await select_expression(source.callee));
+        co_return (co_await select_expression(source.callee, true));
     }();
     if (!selected_callee.has_value()) {
         co_return std::unexpected(selected_callee.error());
     }
     if (const auto* composition = std::get_if<CompositionSelection>(&*selected_callee)) {
-        auto site = BodyExprSite(*this);
+        auto site = BodyExprSite(*this, true);
         co_return co_await construct_async_composition(site, source, composition->policy, span);
     }
     if (const auto* timeout = std::get_if<TimeoutSelection>(&*selected_callee)) {
-        auto site = BodyExprSite(*this);
+        auto site = BodyExprSite(*this, true);
         co_return co_await construct_async_timeout(site, source, timeout->contract, span);
     }
     if (const auto* intrinsic = std::get_if<AsyncIntrinsicSelection>(&*selected_callee)) {
@@ -276,7 +280,7 @@ auto BodyElaborator::call_expression(
                 "async intrinsic requires a resolved direct call"
             ));
         }
-        auto site = BodyExprSite(*this);
+        auto site = BodyExprSite(*this, true);
         co_return construct_async_intrinsic(site, source, intrinsic->kind, span);
     }
 
@@ -299,7 +303,7 @@ auto BodyElaborator::call_expression(
                     "addressof cannot take its argument"
                 ));
             }
-            auto argument = (co_await expression(selected.expression));
+            auto argument = (co_await expression(selected.expression, true));
             if (!argument) {
                 co_return std::unexpected(argument.error());
             }
@@ -368,6 +372,7 @@ auto BodyElaborator::call_expression(
                 condition
                     ? std::optional<ConstructionTypeRef>(draft().builtin_type(BuiltinType::Bool))
                     : std::nullopt,
+                ParameterStage::Runtime,
                 condition ? std::optional(
                                 builtin->function == BuiltinFunction::Assert
                                     ? DiagnosticCode::TypeConditionBool
@@ -474,8 +479,8 @@ auto BodyElaborator::call_expression(
             source.arguments[index],
             contract->parameters[index + offset].access,
             contract->parameters[index + offset].type,
-            std::nullopt,
-            contract->parameters[index + offset].stage
+            contract->parameters[index + offset].stage,
+            std::nullopt
         ));
         if (!argument.has_value()) {
             co_return std::unexpected(argument.error());
@@ -641,7 +646,7 @@ auto BodyElaborator::generic_call_expression(
     auto explicit_environment = GenericEnvironment();
     auto explicit_canonical = CanonicalGenericEnvironment();
     if (!supplied.empty()) {
-        auto site = BodyExprSite(*this);
+        auto site = BodyExprSite(*this, true);
         auto resolved =
             co_await site.resolve_generic_arguments(supplied, function.contract.parameter_kinds);
         if (!resolved) {
@@ -695,7 +700,7 @@ auto BodyElaborator::generic_call_expression(
         } else if (std::holds_alternative<TypeID>(parameter.type)) {
             expected = parameter.type;
         }
-        auto value = co_await expression(operand.expression, expected);
+        auto value = co_await expression(operand.expression, true, expected);
         if (!value) {
             co_return std::unexpected(value.error());
         }
@@ -795,10 +800,10 @@ auto BodyElaborator::generic_call_expression(
         auto result = make_built(
             result_type,
             SemGenericCall {
-                definition,
-                std::move(arguments),
-                std::move(operands),
-                BodyFailures(
+                .definition = definition,
+                .environment = std::move(arguments),
+                .arguments = std::move(operands),
+                .callee_failures = BodyFailures(
                     contract.execution == CallableExecutionKind::Async
                         ? ConstructionFailureRef(draft().intern_failure_set({}))
                         : failures
@@ -816,7 +821,11 @@ auto BodyElaborator::generic_call_expression(
         const auto operation = make_operation_type(draft(), contract.result, contract.failures);
         auto result = make_built(
             operation,
-            SemColdCall {OwnedSemanticExpression(std::move(callee)), *target, std::move(operands)},
+            SemColdCall {
+                .callee = OwnedSemanticExpression(std::move(callee)),
+                .target = *target,
+                .arguments = std::move(operands)
+            },
             span,
             std::move(pending)
         );
@@ -827,10 +836,10 @@ auto BodyElaborator::generic_call_expression(
     auto result = make_built(
         contract.result,
         SemCall {
-            OwnedSemanticExpression(std::move(callee)),
-            *target,
-            std::move(operands),
-            BodyFailures(contract.failures)
+            .callee = OwnedSemanticExpression(std::move(callee)),
+            .target = *target,
+            .arguments = std::move(operands),
+            .callee_failures = BodyFailures(contract.failures)
         },
         span,
         std::move(pending)

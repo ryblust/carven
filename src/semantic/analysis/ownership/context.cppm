@@ -168,7 +168,7 @@ enum class OwnershipAccessKind { Active, Stable, Structural };
 struct OwnershipAccess final {
     OwnershipPlace place;
     OwnershipAccessKind kind;
-    bool descendants = false;
+    bool descendants;
     auto operator<=>(const OwnershipAccess&) const noexcept = default;
 };
 
@@ -186,7 +186,7 @@ struct OwnershipStorageSite final {
     AnalysisBodyID body;
     std::size_t slot;
     OwnershipStorageSiteKind kind;
-    std::optional<ProgramOriginID> element_selection {};
+    std::optional<ProgramOriginID> element_selection;
     auto operator<=>(const OwnershipStorageSite&) const noexcept = default;
 };
 
@@ -223,7 +223,7 @@ struct OwnershipStorageObject final {
     OwnershipStorageSite site;
     bool many;
     // Cardinality never authorizes folding. Only real control/call feedback does.
-    bool feedback = false;
+    bool feedback;
 
     auto operator==(const OwnershipStorageObject& other) const noexcept -> bool;
 };
@@ -292,7 +292,7 @@ private:
 // One query retains its referent domain across dependency reevaluations. Node IDs
 // never change within that domain; call inputs receive a normalized projection.
 struct OwnershipStorageTopology final {
-    std::size_t revision = 0uz;
+    std::size_t revision;
     std::optional<std::size_t> propagated_revision;
     std::vector<OwnershipStorageObject> objects;
     std::vector<OwnershipStorageEdge> owns;
@@ -318,7 +318,7 @@ struct OwnershipCallInput final {
     std::vector<std::vector<bool>> outlives;
     std::vector<OwnershipAccess> accesses;
     std::vector<OwnershipStorageLoan> storage_readers;
-    std::vector<OwnershipStorageEdge> owns {};
+    std::vector<OwnershipStorageEdge> owns;
     std::vector<std::pair<std::size_t, std::size_t>> possible_aliases;
     auto operator==(const OwnershipCallInput&) const noexcept -> bool = default;
 };
@@ -328,8 +328,8 @@ struct OwnershipWriteEffect final {
     bool invalidates;
     bool storage;
     ProgramOriginID origin;
-    bool take = false;
-    bool preserves_backing = false;
+    bool take;
+    bool preserves_backing;
     auto operator==(const OwnershipWriteEffect& other) const noexcept -> bool;
 };
 
@@ -385,7 +385,7 @@ struct OwnershipCallQuery final {
     // Reevaluation did not enlarge the candidate answer or its retained topology.
     bool evaluation_is_closed;
     std::unique_ptr<OwnershipDiagnosisRecord> diagnosis;
-    OwnershipStorageTopology topology {};
+    OwnershipStorageTopology topology;
 };
 
 struct OwnershipLocalObject final {
@@ -400,13 +400,11 @@ struct OwnershipCatchAcceptance final {
 };
 
 struct OwnershipRelationDemand final {
-    bool observes_relations = false;
-    bool produces_relationships = false;
-    bool writes_storage = false;
+    bool observes_relations;
+    bool produces_relationships;
+    bool writes_storage;
 
-    auto requires_context() const noexcept -> bool {
-        return observes_relations || (produces_relationships && writes_storage);
-    }
+    auto requires_context() const noexcept -> bool;
 };
 
 struct OwnershipBodyFacts final {
@@ -511,8 +509,8 @@ private:
         std::optional<std::uint64_t> index,
         ProgramOriginID selection,
         OwnershipState& state,
-        bool many = false,
-        bool summarized = false
+        bool many,
+        bool summarized
     ) noexcept -> std::vector<OwnershipPlace>;
 
     auto select_element_storage(
@@ -559,7 +557,7 @@ private:
         const OwnershipRelationships& relationships,
         const OwnershipState& state,
         ProgramOriginID origin,
-        bool direct = false
+        bool direct
     ) noexcept -> void;
 
     auto preserves_backing(ConstructionTypeRef type) const noexcept -> bool;
@@ -572,8 +570,8 @@ private:
         const OwnershipPlace& target,
         const OwnershipRelationships& relationships,
         ProgramOriginID origin,
-        bool definite = true,
-        bool preserves_backing = false
+        bool definite,
+        bool preserves_backing
     ) noexcept -> void;
 
     // Records whether a returned owner could have been transferred instead of copied.
@@ -594,14 +592,14 @@ private:
     auto storage_write_conflict(
         const OwnershipState& state,
         const OwnershipPlace& target,
-        bool preserves_backing = false
+        bool preserves_backing
     ) const noexcept -> std::optional<ProgramOriginID>;
 
     auto check_storage_write(
         const OwnershipState& state,
         const OwnershipPlace& target,
         ProgramOriginID origin,
-        bool preserves_backing = false
+        bool preserves_backing
     ) noexcept -> void;
 
     auto protect_storage(const OwnershipRelationships& value) noexcept -> void;
@@ -632,7 +630,7 @@ private:
     auto write_access(
         const OwnershipPlace& target,
         ProgramOriginID origin,
-        bool invalidates = true
+        bool invalidates
     ) noexcept -> void;
 
     auto require_available(
@@ -656,7 +654,7 @@ private:
         bool read
     ) noexcept -> void;
 
-    auto place(const SemanticExpression& source, OwnershipState state, bool read = true) noexcept
+    auto place(const SemanticExpression& source, OwnershipState state, bool read) noexcept
         -> ContinuationTask<OwnershipFlow>;
 
     static auto is_leaf_expression(const SemanticExpression& source) noexcept -> bool;
@@ -673,16 +671,13 @@ private:
         bool direct
     ) noexcept -> void;
 
-    auto expression(
-        const SemanticExpression& source,
-        OwnershipState state,
-        bool direct = false
-    ) noexcept -> ContinuationTask<OwnershipFlow>;
+    auto expression(const SemanticExpression& source, OwnershipState state, bool direct) noexcept
+        -> ContinuationTask<OwnershipFlow>;
 
     auto complete_expression(const SemanticExpression& source, OwnershipState state) noexcept
         -> ContinuationTask<OwnershipFlow>;
 
-    auto region(const SemanticRegion& source, OwnershipState state, bool release = true) noexcept
+    auto region(const SemanticRegion& source, OwnershipState state, bool release) noexcept
         -> ContinuationTask<OwnershipFlow>;
 
     auto statement(const SemanticStatement& source, OwnershipState state) noexcept
@@ -799,8 +794,7 @@ public:
 
     // Query objects remain stable for this batch. Their answers are borrowed
     // during body evaluation, before the solver updates them.
-    auto query(OwnershipCallInput input, bool recursive = false) noexcept
-        -> const OwnershipCallQuery&;
+    auto query(OwnershipCallInput input, bool recursive) noexcept -> const OwnershipCallQuery&;
 
     auto region_site(
         AnalysisBodyID body,

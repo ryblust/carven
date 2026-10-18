@@ -64,7 +64,8 @@ Measurements measurements {
     .elapsed_ns = 0,
 };
 
-struct Reporter final {
+class Reporter final {
+public:
     ~Reporter() noexcept;
 };
 

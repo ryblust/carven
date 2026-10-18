@@ -1209,7 +1209,7 @@ auto valid_artifact_body_value(
 
 template<typename T>
     requires requires (T& value) { SemanticArtifactAccess::fields(value); }
-struct BinaryCodec<T> {
+struct BinaryCodec<T> final {
     template<typename Context>
     static auto write(BinaryWriter& writer, const T& value, Context& context) noexcept -> void {
         writer.write(SemanticArtifactAccess::fields(value), context);
@@ -1238,7 +1238,7 @@ struct BinaryCodec<T> {
 };
 
 template<>
-struct BinaryCodec<ProgramIdentity> {
+struct BinaryCodec<ProgramIdentity> final {
     static auto write(
         BinaryWriter& writer,
         ProgramIdentity value,
@@ -1256,7 +1256,7 @@ struct BinaryCodec<ProgramIdentity> {
 };
 
 template<>
-struct BinaryCodec<ProvenanceIdentity> {
+struct BinaryCodec<ProvenanceIdentity> final {
     static auto write(
         BinaryWriter& writer,
         ProvenanceIdentity value,
@@ -1288,7 +1288,7 @@ auto semantic_artifact_id_bound(const SemanticArtifactContext& context) noexcept
 }
 
 template<typename Tag>
-struct BinaryCodec<ProgramID<Tag>> {
+struct BinaryCodec<ProgramID<Tag>> final {
     using ID = ProgramID<Tag>;
 
     static auto write(BinaryWriter& writer, ID value, SemanticArtifactContext& context) noexcept
@@ -1318,7 +1318,7 @@ struct BinaryCodec<ProgramID<Tag>> {
 };
 
 template<typename Tag>
-struct BinaryCodec<ProvenanceID<Tag>> {
+struct BinaryCodec<ProvenanceID<Tag>> final {
     using ID = ProvenanceID<Tag>;
 
     static auto write(BinaryWriter& writer, ID value, SemanticArtifactContext& context) noexcept
@@ -1348,7 +1348,7 @@ struct BinaryCodec<ProvenanceID<Tag>> {
 };
 
 template<>
-struct BinaryCodec<BodyIdentity> {
+struct BinaryCodec<BodyIdentity> final {
     static auto write(
         BinaryWriter& writer,
         BodyIdentity value,
@@ -1389,7 +1389,7 @@ consteval auto semantic_artifact_local_table() noexcept -> std::size_t {
 }
 
 template<typename Tag>
-struct BinaryCodec<BodyLocalID<Tag>> {
+struct BinaryCodec<BodyLocalID<Tag>> final {
     using ID = BodyLocalID<Tag>;
 
     static auto write(BinaryWriter& writer, ID value, SemanticArtifactContext& context) noexcept
@@ -1424,7 +1424,7 @@ struct BinaryCodec<BodyLocalID<Tag>> {
 };
 
 template<typename Tag>
-struct BinaryCodec<TypedID<Tag>> {
+struct BinaryCodec<TypedID<Tag>> final {
     template<typename Context>
     static auto write(BinaryWriter& writer, TypedID<Tag> value, Context&) noexcept -> void {
         writer.unsigned_value(value.index(), 4);
@@ -1442,7 +1442,7 @@ struct BinaryCodec<TypedID<Tag>> {
 };
 
 template<>
-struct BinaryCodec<Span> {
+struct BinaryCodec<Span> final {
     template<typename Context>
     static auto write(BinaryWriter& writer, Span value, Context& context) noexcept -> void {
         writer.write(value.start(), context);
@@ -1468,7 +1468,7 @@ struct BinaryCodec<Span> {
 };
 
 template<>
-struct BinaryCodec<CanonicalModulePath> {
+struct BinaryCodec<CanonicalModulePath> final {
     template<typename Context>
     static auto write(
         BinaryWriter& writer,
@@ -1494,7 +1494,7 @@ struct BinaryCodec<CanonicalModulePath> {
 };
 
 template<>
-struct BinaryCodec<ProgramSourceSnapshot> {
+struct BinaryCodec<ProgramSourceSnapshot> final {
     template<typename Context>
     static auto write(
         BinaryWriter& writer,
@@ -1530,7 +1530,7 @@ struct BinaryCodec<ProgramSourceSnapshot> {
 };
 
 template<>
-struct BinaryCodec<AnalysisFailure> {
+struct BinaryCodec<AnalysisFailure> final {
     template<typename Context>
     static auto write(BinaryWriter& writer, const AnalysisFailure&, Context&) noexcept -> void {
         writer.fail("failed analysis cannot be published as a semantic artifact");
@@ -1544,7 +1544,7 @@ struct BinaryCodec<AnalysisFailure> {
 };
 
 template<>
-struct BinaryCodec<AsyncCancellationFacts> {
+struct BinaryCodec<AsyncCancellationFacts> final {
     static auto write(
         BinaryWriter& writer,
         const AsyncCancellationFacts& value,

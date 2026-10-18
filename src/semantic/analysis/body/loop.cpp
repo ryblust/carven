@@ -41,7 +41,7 @@ auto BodyElaborator::c_style_for_statement(
                 [&](const ASTVariableDecl& value) noexcept { return variable_statement(value); },
                 [&](const ASTAssignment& value) noexcept { return assignment_statement(value); },
                 [&](ASTExprID id) noexcept -> AnalysisTask<void> {
-                    auto value = (co_await expression(id));
+                    auto value = (co_await expression(id, true));
                     if (!value.has_value()) {
                         co_return std::unexpected(value.error());
                     }
@@ -63,7 +63,8 @@ auto BodyElaborator::c_style_for_statement(
     regions.pop_back();
     const auto condition_span = ast.expression(header.condition).span;
     begin_full_expression(condition_span);
-    auto value = (co_await expression(header.condition, draft().builtin_type(BuiltinType::Bool)));
+    auto value =
+        (co_await expression(header.condition, true, draft().builtin_type(BuiltinType::Bool)));
     if (!value.has_value()) {
         co_return std::unexpected(value.error());
     }
@@ -89,7 +90,7 @@ auto BodyElaborator::c_style_for_statement(
     auto body = std::move(regions.back());
     regions.pop_back();
     loops.pop_back();
-    pop_frame();
+    pop_frame(true);
     reachable = true;
     regions.push_back(empty_region(source.header.span));
     for (const auto& step : header.steps) {
@@ -103,7 +104,7 @@ auto BodyElaborator::c_style_for_statement(
                 [&](const ASTAssignment& value) noexcept { return assignment_statement(value); },
                 [&](const ASTUpdate& value) noexcept { return update_statement(value); },
                 [&](ASTExprID id) noexcept -> AnalysisTask<void> {
-                    auto value = (co_await expression(id));
+                    auto value = (co_await expression(id, true));
                     if (!value.has_value()) {
                         co_return std::unexpected(value.error());
                     }
@@ -123,14 +124,14 @@ auto BodyElaborator::c_style_for_statement(
     }
     auto steps = std::move(regions.back());
     regions.pop_back();
-    pop_frame();
+    pop_frame(true);
     reachable = condition_reachable;
     append_statement(
         SemLoop {
-            UniqueIndirect(std::move(initializer)),
-            std::move(*condition),
-            UniqueIndirect(std::move(body)),
-            UniqueIndirect(std::move(steps))
+            .initializer = UniqueIndirect(std::move(initializer)),
+            .condition = std::move(*condition),
+            .body = UniqueIndirect(std::move(body)),
+            .steps = UniqueIndirect(std::move(steps))
         },
         origin(span)
     );
@@ -173,7 +174,7 @@ auto BodyElaborator::range_for_statement(
             }
         }
         auto value = source.const_span ? co_await static_expression(id, expected)
-                                       : co_await expression(id, expected);
+                                       : co_await expression(id, true, expected);
         if (!value) {
             co_return std::unexpected(value.error());
         }
@@ -328,17 +329,17 @@ auto BodyElaborator::range_for_statement(
     auto body = std::move(regions.back());
     regions.pop_back();
     loops.pop_back();
-    pop_frame();
-    pop_frame();
+    pop_frame(true);
+    pop_frame(true);
     reachable = header_reachable;
     append_statement(
         SemRangeLoop {
-            loop_lifetime,
-            header.write_marker.has_value() ? AccessMode::Write : AccessMode::Read,
-            binding,
-            std::move(*iterable),
-            UniqueIndirect(std::move(body)),
-            expands
+            .lifetime = loop_lifetime,
+            .access = header.write_marker.has_value() ? AccessMode::Write : AccessMode::Read,
+            .binding = binding,
+            .source = std::move(*iterable),
+            .body = UniqueIndirect(std::move(body)),
+            .is_static = expands
         },
         origin(span)
     );
@@ -397,7 +398,7 @@ auto BodyElaborator::statement(ASTStmtID id) noexcept -> AnalysisTask<void> {
                 return cancel_statement(value, source.span);
             },
             [&](const ASTExprStatement& value) noexcept -> AnalysisTask<void> {
-                auto built = (co_await expression(value.expression));
+                auto built = (co_await expression(value.expression, true));
                 if (!built.has_value()) {
                     co_return std::unexpected(built.error());
                 }

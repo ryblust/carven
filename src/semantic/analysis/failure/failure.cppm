@@ -292,7 +292,7 @@ public:
     auto require_non_empty(
         ConstructionFailureRef source,
         ProgramOriginID origin,
-        bool allow_dependent = false
+        bool allow_dependent
     ) noexcept -> void;
 
     auto require_subset(
@@ -476,5 +476,5 @@ auto solve_failure_constraints(
     CompilationProvenanceReader provenance,
     const FailureTypeDiagnosticNames& type_names,
     AnalysisDiagnostics diagnostics,
-    bool validate_requirements = true
+    bool validate_requirements
 ) noexcept -> AnalysisResult<FailureSolution>;

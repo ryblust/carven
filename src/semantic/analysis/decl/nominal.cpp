@@ -98,7 +98,7 @@ auto DeclResolver::resolve_enum(
         invariant_violation("enum catalog cases are not aligned with source syntax");
     }
     const auto payload_representation =
-        std::ranges::any_of(enumeration.cases, [](const ASTEnumCase& value) noexcept {
+        std::ranges::any_of(enumeration.cases, [](const ASTEnumCase& value) static noexcept {
             return !value.payload_types.empty();
         });
     if (payload_representation && enumeration.underlying_type.has_value()) {
@@ -265,7 +265,12 @@ auto DeclResolver::resolve_enum_case(
 
     auto value = IntegerConstant::zero();
     if (source_case.initializer.has_value()) {
-        auto scope = ConstantScope {*this, symbol.module_id, syntax};
+        auto scope = ConstantScope {
+            .resolver = *this,
+            .module_id = symbol.module_id,
+            .syntax = syntax,
+            .generic_context = nullptr
+        };
         auto result = (co_await scope.evaluate_constant_expression(
             *source_case.initializer,
             numeric->underlying_type

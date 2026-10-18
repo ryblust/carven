@@ -41,7 +41,12 @@ auto DeclResolver::resolve_module_constant(
         }
         declared_type = *resolved;
     }
-    auto scope = ConstantScope {*this, symbol.module_id, syntax};
+    auto scope = ConstantScope {
+        .resolver = *this,
+        .module_id = symbol.module_id,
+        .syntax = syntax,
+        .generic_context = nullptr
+    };
     auto result =
         (co_await scope.evaluate_constant_expression(declaration.initializer, declared_type));
     if (!result) {

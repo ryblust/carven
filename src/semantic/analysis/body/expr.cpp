@@ -210,13 +210,14 @@ auto BodyElaborator::lambda_expression(
             if (!place.has_value()) {
                 co_return std::unexpected(place.error());
             }
-            operand = SemCapture {CaptureMode::Write, std::move(place->expression)};
+            operand =
+                SemCapture {.mode = CaptureMode::Write, .expression = std::move(place->expression)};
         } else {
             auto value = consume_value(built, capture.span, AccessMode::Read);
             if (!value.has_value()) {
                 co_return std::unexpected(value.error());
             }
-            operand = SemCapture {CaptureMode::Value, std::move(*value)};
+            operand = SemCapture {.mode = CaptureMode::Value, .expression = std::move(*value)};
         }
         captures.push_back(
             CaptureSource {
@@ -389,8 +390,8 @@ auto BodyExprSite::interpret_enum_case(
 
 auto BodyElaborator::select_expression(
     ASTExprID id,
-    std::optional<ConstructionTypeRef> expected,
-    bool allow_pointer_narrowing
+    bool allow_pointer_narrowing,
+    std::optional<ConstructionTypeRef> expected
 ) noexcept -> AnalysisTask<SelectedExpression> {
     const auto was_reachable = reachable;
     [[maybe_unused]] const auto path =
@@ -401,13 +402,13 @@ auto BodyElaborator::select_expression(
 
 auto BodyElaborator::expression(
     ASTExprID id,
-    std::optional<ConstructionTypeRef> expected,
-    bool allow_pointer_narrowing
+    bool allow_pointer_narrowing,
+    std::optional<ConstructionTypeRef> expected
 ) noexcept -> AnalysisTask<BuiltExpression> {
     const auto was_reachable = reachable;
     const auto entry_reachable = reachable && reference_path_reachable;
     const auto& source = ast.expression(id);
-    auto selected = (co_await select_expression(id, expected, allow_pointer_narrowing));
+    auto selected = (co_await select_expression(id, allow_pointer_narrowing, expected));
     if (!selected.has_value()) {
         co_return std::unexpected(selected.error());
     }

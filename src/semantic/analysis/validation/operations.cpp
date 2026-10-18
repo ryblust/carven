@@ -296,7 +296,7 @@ auto BodyContractVerifier::verify_expression(
                         std::get_if<TupleTypeValue>(&require_type(result->success).value);
                     if ((successes.empty()
                          && require_type(result->success).value
-                             != CanonicalTypeValue {BuiltinTypeValue {BuiltinType::Void}})
+                             != CanonicalTypeValue {BuiltinTypeValue {.kind = BuiltinType::Void}})
                         || (!successes.empty() && (!tuple || tuple->elements != successes))) {
                         invariant_violation("join result must preserve ordered tuple shape");
                     }
@@ -306,7 +306,7 @@ auto BodyContractVerifier::verify_expression(
                     if (!tuple
                         || tuple->elements.size() != 2uz
                         || require_type(tuple->elements[0]).value
-                            != CanonicalTypeValue {BuiltinTypeValue {BuiltinType::Usize}}
+                            != CanonicalTypeValue {BuiltinTypeValue {.kind = BuiltinType::Usize}}
                         || tuple->elements[1] != successes.front()
                         || !std::ranges::all_of(successes, [&](TypeID type) noexcept {
                                return type == successes.front();
@@ -331,7 +331,7 @@ auto BodyContractVerifier::verify_expression(
                     || !result
                     || input->success != result->success
                     || require_type(value.duration_ticks->type.resolved()).value
-                        != CanonicalTypeValue {BuiltinTypeValue {BuiltinType::I64}}) {
+                        != CanonicalTypeValue {BuiltinTypeValue {.kind = BuiltinType::I64}}) {
                     invariant_violation("timeout requires an operation and signed duration ticks");
                 }
                 const auto* selected = &*value.operation;
@@ -375,9 +375,9 @@ auto BodyContractVerifier::verify_expression(
                     || tuple == nullptr
                     || tuple->elements.size() != 2uz
                     || require_type(tuple->elements[0]).value
-                        != CanonicalTypeValue {BuiltinTypeValue {BuiltinType::Usize}}
+                        != CanonicalTypeValue {BuiltinTypeValue {.kind = BuiltinType::Usize}}
                     || require_type(tuple->elements[1]).value
-                        != CanonicalTypeValue {BuiltinTypeValue {BuiltinType::Bool}}
+                        != CanonicalTypeValue {BuiltinTypeValue {.kind = BuiltinType::Bool}}
                     || !require_failure_set(source.failures.resolved()).members.empty()) {
                     invariant_violation(
                         "terminal selection differs from its scalar result contract"
@@ -394,7 +394,7 @@ auto BodyContractVerifier::verify_expression(
             [&](const SemCloseChild& value) noexcept {
                 require_child(value.child);
                 if (require_type(source.type.resolved()).value
-                        != CanonicalTypeValue {BuiltinTypeValue {BuiltinType::Void}}
+                        != CanonicalTypeValue {BuiltinTypeValue {.kind = BuiltinType::Void}}
                     || !require_failure_set(source.failures.resolved()).members.empty()) {
                     invariant_violation("child drain differs from its void result contract");
                 }
@@ -412,7 +412,8 @@ auto BodyContractVerifier::verify_expression(
                 const auto& type = require_type(source.type.resolved());
                 const auto* tuple = std::get_if<TupleTypeValue>(&type.value);
                 if (value.elements.empty()) {
-                    if (type.value != CanonicalTypeValue {BuiltinTypeValue {BuiltinType::Void}}) {
+                    if (type.value
+                        != CanonicalTypeValue {BuiltinTypeValue {.kind = BuiltinType::Void}}) {
                         invariant_violation("empty tuple differs from void");
                     }
                     return;
@@ -484,7 +485,8 @@ auto BodyContractVerifier::verify_expression(
                 }
             },
             [&](const SemShortCircuit& value) noexcept {
-                const auto boolean = CanonicalTypeValue {BuiltinTypeValue {BuiltinType::Bool}};
+                const auto boolean =
+                    CanonicalTypeValue {BuiltinTypeValue {.kind = BuiltinType::Bool}};
                 if (require_type(source.type.resolved()).value != boolean
                     || value.left->type.resolved() != source.type.resolved()
                     || value.right->type.resolved() != source.type.resolved()) {
@@ -494,14 +496,14 @@ auto BodyContractVerifier::verify_expression(
             [&](const SemReport& value) noexcept {
                 if ((value.kind != ReportKind::Fail
                      && require_type(source.type.resolved()).value
-                         != CanonicalTypeValue {BuiltinTypeValue {BuiltinType::Void}})
+                         != CanonicalTypeValue {BuiltinTypeValue {.kind = BuiltinType::Void}})
                     || (value.kind == ReportKind::Fail) == value.condition.has_value()
                     || (value.condition
                         && require_type((*value.condition)->type.resolved()).value
-                            != CanonicalTypeValue {BuiltinTypeValue {BuiltinType::Bool}})
+                            != CanonicalTypeValue {BuiltinTypeValue {.kind = BuiltinType::Bool}})
                     || (value.message
                         && require_type((*value.message)->type.resolved()).value
-                            != CanonicalTypeValue {BuiltinTypeValue {BuiltinType::Str}})) {
+                            != CanonicalTypeValue {BuiltinTypeValue {.kind = BuiltinType::Str}})) {
                     invariant_violation("invalid condition report contract");
                 }
                 if (value.operand_sources) {
@@ -525,7 +527,7 @@ auto BodyContractVerifier::verify_expression(
                     value.kind == PrintKind::Println || value.kind == PrintKind::Eprintln;
                 if ((!newline && value.operands.empty())
                     || require_type(source.type.resolved()).value
-                        != CanonicalTypeValue {BuiltinTypeValue {BuiltinType::Void}}) {
+                        != CanonicalTypeValue {BuiltinTypeValue {.kind = BuiltinType::Void}}) {
                     invariant_violation("invalid printing operation contract");
                 }
                 for (const auto& [index, operand] : std::views::enumerate(value.operands)) {
@@ -541,7 +543,7 @@ auto BodyContractVerifier::verify_expression(
             [&](const SemFormat& value) noexcept {
                 if (require_type(source.type.resolved()).value
                         != CanonicalTypeValue {BuiltinTypeValue {
-                            value.receiver ? BuiltinType::Void : BuiltinType::String
+                            .kind = value.receiver ? BuiltinType::Void : BuiltinType::String
                         }}
                     || source.category != SemanticValueCategory::Value
                     || source.constant) {
@@ -550,7 +552,9 @@ auto BodyContractVerifier::verify_expression(
                 if (value.receiver
                     && ((**value.receiver).category != SemanticValueCategory::Place
                         || require_type((**value.receiver).type.resolved()).value
-                            != CanonicalTypeValue {BuiltinTypeValue {BuiltinType::String}})) {
+                            != CanonicalTypeValue {
+                                BuiltinTypeValue {.kind = BuiltinType::String}
+                            })) {
                     invariant_violation("formatted append requires a String receiver place");
                 }
                 const auto verify_structure =
@@ -607,7 +611,7 @@ auto BodyContractVerifier::verify_expression(
                             if (require_type(source.type.resolved()).value
                                 != (family == FloatIntrinsic::IsFinite
                                         ? CanonicalTypeValue {BuiltinTypeValue {
-                                              layout ? layout->mask : BuiltinType::Bool
+                                              .kind = layout ? layout->mask : BuiltinType::Bool
                                           }}
                                         : receiver)) {
                                 invariant_violation("floating operation result mismatch");
@@ -652,7 +656,8 @@ auto BodyContractVerifier::verify_expression(
                                         "slice query cannot publish a sequence extent"
                                     );
                                 }
-                                if (result != CanonicalTypeValue {BuiltinTypeValue {*builtin}}) {
+                                if (result
+                                    != CanonicalTypeValue {BuiltinTypeValue {.kind = *builtin}}) {
                                     invariant_violation("slice query result mismatch");
                                 }
                             } else if (result
@@ -666,7 +671,7 @@ auto BodyContractVerifier::verify_expression(
                             for (auto i = 1uz; i < value.operands.size(); ++i) {
                                 if (require_type(value.operands[i].expression.type.resolved()).value
                                     != CanonicalTypeValue {
-                                        BuiltinTypeValue {contract.arguments[i - 1]}
+                                        BuiltinTypeValue {.kind = contract.arguments[i - 1]}
                                     }) {
                                     invariant_violation("slice bound type mismatch");
                                 }
@@ -691,7 +696,9 @@ auto BodyContractVerifier::verify_expression(
                                     ? CanonicalTypeValue {SliceTypeValue {
                                           .element = vector->element
                                       }}
-                                    : CanonicalTypeValue {BuiltinTypeValue {BuiltinType::Usize}};
+                                    : CanonicalTypeValue {
+                                          BuiltinTypeValue {.kind = BuiltinType::Usize}
+                                      };
                                 if (input != expected) {
                                     invariant_violation("Vector factory argument mismatch");
                                 }
@@ -845,7 +852,7 @@ auto BodyContractVerifier::verify_expression(
                 };
                 for (const auto& branch : value.branches) {
                     if (require_type(branch.condition.type.resolved()).value
-                        != CanonicalTypeValue {BuiltinTypeValue {BuiltinType::Bool}}) {
+                        != CanonicalTypeValue {BuiltinTypeValue {.kind = BuiltinType::Bool}}) {
                         invariant_violation("conditional requires bool");
                     }
                     check(branch.body);
@@ -934,7 +941,7 @@ auto BodyContractVerifier::verify_expression(
                 if (pointer == nullptr
                     || pointer->target != source.type.resolved()
                     || require_type(source.type.resolved()).value
-                        == CanonicalTypeValue {BuiltinTypeValue {BuiltinType::Void}}) {
+                        == CanonicalTypeValue {BuiltinTypeValue {.kind = BuiltinType::Void}}) {
                     invariant_violation("dereference has an invalid target type");
                 }
             },

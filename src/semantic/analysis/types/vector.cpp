@@ -237,7 +237,12 @@ auto ProgramDraft::validate_vector_elements() noexcept -> AnalysisResult<void> {
             }
             auto arguments = generic_parameter_environment(owner);
             visit(
-                intern_generic_type(GenericNominalApplication {owner, std::move(arguments)}),
+                intern_generic_type(
+                    GenericNominalApplication {
+                        .definition = owner,
+                        .arguments = std::move(arguments)
+                    }
+                ),
                 false,
                 source.contract.origin,
                 0uz

@@ -65,7 +65,7 @@ auto lower_closure_type(ModuleLowering& context, CallableID callable_id) noexcep
         if (storage == nullptr) {
             invariant_violation("closure input does not name a capture");
         }
-        auto type = context.lower_type(binding.type);
+        auto type = context.lower_type(binding.type, TypeNameScope::Module);
         if (storage->mode == CaptureMode::Write) {
             type = context.target().intern_type({
                 .value =
@@ -111,7 +111,8 @@ auto lower_closure_type(ModuleLowering& context, CallableID callable_id) noexcep
         context.semantic(),
         body.region().origin,
         TargetDecl {TargetStructDecl {
-            .name = context.closure_type_name(callable_id).components().back(),
+            .name =
+                context.closure_type_name(callable_id, TypeNameScope::Module).components().back(),
             .members = std::move(members),
         }}
     );
@@ -168,7 +169,7 @@ auto lower_closure_body(ModuleLowering& context, CallableID callable_id) noexcep
         context.semantic(),
         body.region().origin,
         TargetDecl {TargetOutOfClassMemberDefinition {
-            .owner = context.closure_type_name(callable_id),
+            .owner = context.closure_type_name(callable_id, TypeNameScope::Module),
             .name = TargetOperatorName::Call,
             .parameters = std::move(parameters),
             .result = context.callable_result(callable_id),

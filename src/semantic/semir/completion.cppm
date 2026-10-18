@@ -102,9 +102,8 @@ private:
     std::unique_ptr<State> state;
 };
 
-auto exits(const SemanticExpression& expression, const CompletionPatterns& patterns = {}) noexcept
+auto exits(const SemanticExpression& expression, const CompletionPatterns& patterns) noexcept
     -> ExitSet;
-auto exits(const SemanticStatement& statement, const CompletionPatterns& patterns = {}) noexcept
+auto exits(const SemanticStatement& statement, const CompletionPatterns& patterns) noexcept
     -> ExitSet;
-auto exits(const SemanticRegion& region, const CompletionPatterns& patterns = {}) noexcept
-    -> ExitSet;
+auto exits(const SemanticRegion& region, const CompletionPatterns& patterns) noexcept -> ExitSet;

@@ -193,7 +193,7 @@ auto with_execution(std::string source_text, Action action) noexcept -> void {
         return;
     }
     auto diagnostics = DiagnosticSink();
-    auto draft = ProgramDraft::begin(std::move(*syntax), diagnostics);
+    auto draft = ProgramDraft::begin(std::move(*syntax), diagnostics, HostEffects::Deny);
     auto catalog = build_analysis_catalog(draft);
     if (!expect(catalog.has_value())) {
         return;
@@ -641,7 +641,8 @@ test { let owner = Payload { number: 1 }; ::native(owner); })",
             const auto result = execute_body(
                                     values,
                                     context,
-                                    ExecutionBody(program.bodies().body(*test.value.body))
+                                    ExecutionBody(program.bodies().body(*test.value.body)),
+                                    static_execution_limits()
             )
                                     .run();
             if (!expect(!result.has_value()) || !expect_equal(context.reports.size(), 1uz)) {
@@ -693,6 +694,7 @@ test { let owner = Payload { number: 1 }; ::native(owner); })",
             auto payload = std::make_shared<const ExecutionValue>(ExecutionAggregateValue {
                 .type = type,
                 .elements = std::move(fields),
+                .capacity = 0uz,
             });
             const auto* identity = payload.get();
             const auto lifetime = std::weak_ptr<const ExecutionValue>(payload);
@@ -702,6 +704,7 @@ test { let owner = Payload { number: 1 }; ::native(owner); })",
                     .payload = std::move(payload),
                     .origin = origin,
                     .calls = {call},
+                    .blocks = {},
                 };
                 auto result =
                     forward_value_task(forward_value_task(source_failure_task(std::move(failure))))
@@ -786,7 +789,8 @@ test { let owner = Payload { number: 1 }; ::native(owner); })",
                 auto result = execute_body(
                                   values,
                                   context,
-                                  ExecutionBody(program.bodies().body(*test.value.body))
+                                  ExecutionBody(program.bodies().body(*test.value.body)),
+                                  static_execution_limits()
                 )
                                   .run();
                 if (!expect(context.reports.size() == 1uz)) {
@@ -1634,7 +1638,8 @@ test { let owner = Payload { number: 1 }; ::native(owner); })",
                 ++comparisons;
             }
             expect_equal(comparisons, 2uz);
-            const auto completed = execute_body(values, context, body).run();
+            const auto completed =
+                execute_body(values, context, body, static_execution_limits()).run();
             expect(completed.has_value());
             if (!expect_equal(context.reports.size(), 2uz)) {
                 return;
@@ -1898,7 +1903,8 @@ import std::async using close;
             const auto completed = execute_body(
                                        values,
                                        context,
-                                       ExecutionBody(program.bodies().body(*test.value.body))
+                                       ExecutionBody(program.bodies().body(*test.value.body)),
+                                       static_execution_limits()
             )
                                        .run();
             expect(completed.has_value());

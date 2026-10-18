@@ -89,8 +89,8 @@ auto normalized_numeric_type(
 auto normalize_literal(
     ProgramDraft& draft,
     const ASTLiteral& literal,
-    std::optional<ConstructionTypeRef> expected,
-    LiteralSign sign
+    LiteralSign sign,
+    std::optional<ConstructionTypeRef> expected
 ) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure> {
     validate_expected_type(draft, expected);
     if (expected) {

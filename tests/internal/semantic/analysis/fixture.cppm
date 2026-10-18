@@ -38,7 +38,7 @@ auto analyze_test_errors(
     append_standard_sources(sources, inputs, standard_modules);
     auto parsed = parse_program(sources, SourceBatch {.modules = inputs});
     require(parsed.has_value()).note("source = ", source_view.text);
-    auto analyzed = analyze(std::move(*parsed), {}, {}, {}, HostEffects::Allow);
+    auto analyzed = analyze(std::move(*parsed), HostEffects::Allow, {}, {}, {});
     if (analyzed.has_value()) {
         return std::move(analyzed->diagnostics);
     }
@@ -61,7 +61,7 @@ auto analyze_test_program(
     append_standard_sources(sources, inputs, standard_modules);
     auto parsed = parse_program(sources, SourceBatch {.modules = inputs});
     require(parsed.has_value(), location).note("source = ", source_view.text);
-    auto analyzed = analyze(std::move(*parsed), {}, {}, {}, HostEffects::Allow);
+    auto analyzed = analyze(std::move(*parsed), HostEffects::Allow, {}, {}, {});
     require(analyzed.has_value(), location)
         .note("source = ", source_view.text)
         .note([&]() noexcept {

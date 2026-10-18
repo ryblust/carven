@@ -53,7 +53,7 @@ auto BodyExprSite::fail(Span span, DiagnosticCode code, std::string message) noe
 
 auto BodyExprSite::read(ASTExprID id, std::optional<ConstructionTypeRef> expected) noexcept
     -> AnalysisTask<Value> {
-    co_return (co_await body.expression(id, expected, allow_pointer_narrowing));
+    co_return (co_await body.expression(id, allow_pointer_narrowing, expected));
 }
 
 auto BodyExprSite::type(const Value& value) const noexcept -> ConstructionTypeRef {
@@ -155,9 +155,9 @@ auto BodyExprSite::finish_short_circuit(
     return finish(
         draft().builtin_type(BuiltinType::Bool),
         SemShortCircuit {
-            UniqueIndirect(std::move(*first)),
-            conjunction ? ShortCircuitOperator::And : ShortCircuitOperator::Or,
-            UniqueIndirect(std::move(*second))
+            .left = UniqueIndirect(std::move(*first)),
+            .operation = conjunction ? ShortCircuitOperator::And : ShortCircuitOperator::Or,
+            .right = UniqueIndirect(std::move(*second))
         },
         known,
         span,
@@ -449,7 +449,7 @@ auto BodyExprSite::finish(
         if (!expression) {
             invariant_violation("constructed expression is not a value");
         }
-        auto folded = fold_constant_expression(draft(), *expression);
+        auto folded = fold_constant_expression(draft(), *expression, ConstantFoldFailure::Diagnose);
         if (!folded) {
             return std::unexpected(folded.error());
         }
@@ -650,7 +650,7 @@ auto BodyExprSite::read_aggregate_element(
     std::optional<ConstructionTypeRef> expected,
     bool explicit_context
 ) noexcept -> AnalysisTask<Value> {
-    co_return (co_await body.expression(id, expected, explicit_context && allow_pointer_narrowing));
+    co_return (co_await body.expression(id, explicit_context && allow_pointer_narrowing, expected));
 }
 
 auto BodyExprSite::operand_state() noexcept -> OperandState {
@@ -707,7 +707,7 @@ auto BodyExprSite::standard_call(
     );
     const auto target = draft().function_declaration_copy(*function_id).callable;
     auto callee = body.make_built(
-        draft().intern_type({.value = FunctionTypeValue {target}}),
+        draft().intern_type({.value = FunctionTypeValue {.callable = target}}),
         SemCallable {.callable = target},
         span
     );
@@ -724,7 +724,7 @@ auto BodyExprSite::number_parse_call(
         co_return std::unexpected(target.error());
     }
     auto callee = body.make_built(
-        draft().intern_type({.value = FunctionTypeValue {*target}}),
+        draft().intern_type({.value = FunctionTypeValue {.callable = *target}}),
         SemCallable {.callable = *target},
         span
     );
@@ -781,7 +781,7 @@ auto BodyElaborator::await_child_intrinsic(
                 "child waiting and closing require named lexical children"
             ));
         }
-        auto selected = co_await expression(argument);
+        auto selected = co_await expression(argument, true);
         if (!selected) {
             co_return std::unexpected(selected.error());
         }
@@ -855,7 +855,7 @@ auto BodyElaborator::await_expression(const ASTPrefixExpr& source, Span span) no
             if (find_local(text) == nullptr
                 && provided
                 && (*provided == ProvidedExport::WaitReady || *provided == ProvidedExport::Close)) {
-                auto callee = co_await select_expression(call->callee);
+                auto callee = co_await select_expression(call->callee, true);
                 if (!callee) {
                     co_return std::unexpected(callee.error());
                 }
@@ -867,7 +867,7 @@ auto BodyElaborator::await_expression(const ASTPrefixExpr& source, Span span) no
             }
         }
     }
-    auto operand = co_await expression(source.operand_id);
+    auto operand = co_await expression(source.operand_id, true);
     if (!operand) {
         co_return std::unexpected(operand.error());
     }
@@ -915,6 +915,6 @@ auto BodyExprSite::observe_function(FunctionID function, Span name) noexcept -> 
     body.observe_source(
         name,
         body.catalog().declaration_location(draft(), body.catalog().function_symbol(function)),
-        draft().intern_type({.value = FunctionTypeValue {callable}})
+        draft().intern_type({.value = FunctionTypeValue {.callable = callable}})
     );
 }

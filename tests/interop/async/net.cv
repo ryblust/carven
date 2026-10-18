@@ -64,19 +64,12 @@ export(cpp) async fn duplex(first: ConnectionView, second: ConnectionView) -> bo
     };
 }
 
-export(cpp) async fn cancel_write(writer: ConnectionView, &&payload: Vector<u8>) -> bool {
-    async let pending = write_all(writer, &&payload);
-    await yield_once();
-    let second: Vector<u8> = [1];
-    let rejected = try {
-        let _ = await write(writer, &&second)?;
-        false
-    } catch {
-        NetError(error) => error == .Conflict
-    };
-    cancel pending;
-    await close(pending);
-    return rejected;
+export(cpp) async fn fill_writer(writer: ConnectionView, &&payload: Vector<u8>) throw NetError {
+    // Keep writing to an unread peer until the host cancels the operation.
+    while {
+        let bytes = payload;
+        await write_all(writer, &&bytes)?;
+    }
 }
 
 export(cpp) async fn conflict(reader: ConnectionView) -> bool {

@@ -69,7 +69,7 @@ auto evaluate_unary_constant_value(
     UnaryOperator operation,
     const ConstantFact& operand,
     TypeID result,
-    IntegerArithmetic arithmetic = IntegerArithmetic::Wrapping
+    IntegerArithmetic arithmetic
 ) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure>;
 auto evaluate_binary_constant_value(
     const ExecutionValueAccess& values,
@@ -77,7 +77,7 @@ auto evaluate_binary_constant_value(
     const ConstantFact& left,
     const ConstantFact& right,
     TypeID result,
-    IntegerArithmetic arithmetic = IntegerArithmetic::Wrapping
+    IntegerArithmetic arithmetic
 ) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure>;
 auto evaluate_cast_constant_value(
     const ExecutionValueAccess& values,
@@ -162,7 +162,8 @@ auto known_pattern_match(
                         operation,
                         fact,
                         values.constant(*bound.constant),
-                        values.builtin_type(BuiltinType::Bool)
+                        values.builtin_type(BuiltinType::Bool),
+                        IntegerArithmetic::Wrapping
                     );
                     if (!result) {
                         return std::nullopt;

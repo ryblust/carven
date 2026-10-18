@@ -35,7 +35,7 @@ auto socket_error() noexcept -> int;
 auto close_socket(Socket socket) noexcept -> void;
 
 // Codes are independent of platform errno values.
-enum class ErrorKind : std::uint8_t { None, System, Closed, Conflict };
+enum class ErrorKind : std::uint8_t { None, System, Closed, Conflict, NoProgress };
 
 struct Error final {
     ErrorKind kind;
@@ -54,17 +54,21 @@ public:
         const Connection& connection;
         std::span<const std::byte> buffer;
         bool writing;
+        bool all;
+        std::size_t transferred = 0;
+        bool acquired = false;
         Awaiter* next = nullptr;
         std::optional<Completion> completion;
         async::ResumeContinuation continuation;
 
-        auto attempt() const noexcept -> std::optional<Completion>;
+        auto attempt() noexcept -> std::optional<Completion>;
         auto suspend() noexcept -> bool;
         auto finish(Completion result) noexcept -> void;
         Awaiter(
             const Connection& connection,
             std::span<const std::byte> buffer,
-            bool writing
+            bool writing,
+            bool all
         ) noexcept;
 
     public:
@@ -121,6 +125,7 @@ public:
     auto shutdown_send() const noexcept -> Error;
     auto read(std::span<std::byte> buffer) const noexcept -> Network::Awaiter;
     auto write(std::span<const std::byte> buffer) const noexcept -> Network::Awaiter;
+    auto write_all(std::span<const std::byte> buffer) const noexcept -> Network::Awaiter;
 };
 
 struct View final {
@@ -145,6 +150,8 @@ struct WriteResult final {
 
 auto read(const View& view, std::size_t limit) noexcept -> async::AsyncOperation<ReadResult>;
 auto write(const View& view, runtime::Vector<std::uint8_t> bytes, std::size_t offset) noexcept
+    -> async::AsyncOperation<WriteResult>;
+auto write_all(const View& view, runtime::Vector<std::uint8_t> bytes) noexcept
     -> async::AsyncOperation<WriteResult>;
 
 } // namespace carven::standard::net

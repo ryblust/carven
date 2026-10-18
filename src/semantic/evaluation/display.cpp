@@ -12,7 +12,7 @@ class ExecutionDisplayText final {
 public:
     static constexpr auto byte_limit = 16384uz;
     auto text(std::string_view value) noexcept -> void;
-    auto quoted(std::string_view value, bool character_literal = false) noexcept -> void;
+    auto quoted(std::string_view value, bool character_literal) noexcept -> void;
     auto take() && noexcept -> std::string;
     auto truncated() const noexcept -> bool;
     auto line(std::size_t depth) noexcept -> void;
@@ -156,7 +156,7 @@ auto ExecutionDisplay::write(const ExecutionValue& value, std::size_t depth, boo
     }
     if (const auto string = display_text(values, value, memory)) {
         if (nested) {
-            buffer.quoted(string->view());
+            buffer.quoted(string->view(), false);
         } else {
             buffer.text(string->view());
         }

@@ -69,7 +69,7 @@ auto ProgramDraft::generic_nominal_instance_copy(NominalDeclarationRef declarati
 
 auto ProgramDraft::generic_declaration_contract_copy(GenericDeclarationID definition) const noexcept
     -> GenericDeclarationContract {
-    return generic_declaration_copy(definition).visit([](const auto& source) noexcept {
+    return generic_declaration_copy(definition).visit([](const auto& source) static noexcept {
         return source.contract;
     });
 }
@@ -89,7 +89,10 @@ auto ProgramDraft::generic_parameter_environment(GenericDeclarationID definition
     for (const auto [index, policy] : std::views::enumerate(contract.parameter_kinds)) {
         if (policy == GenericParameterKind::Type) {
             result.emplace_back(ConstructionTypeRef(intern_generic_type(
-                GenericTypeParameter {definition, static_cast<std::uint32_t>(index)}
+                GenericTypeParameter {
+                    .definition = definition,
+                    .index = static_cast<std::uint32_t>(index)
+                }
             )));
         } else {
             result.emplace_back(ConstructionFailureRef(
@@ -374,7 +377,7 @@ auto ProgramDraft::take_generic_analysis_snapshot(
             .region = std::move(body->region),
             .residual = std::move(body->residual),
             .specialized = body->specialized,
-            .generic_definition = body->generic_definition,
+            .generic_definition = body->generic_definition
         });
     }
     return result;

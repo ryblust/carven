@@ -115,7 +115,7 @@ auto prepare_binary(
             default: break;
         }
     }
-    const auto direct = [&](TargetBinaryOperator target, bool promoted = false) noexcept {
+    const auto direct = [&](TargetBinaryOperator target, bool promoted) noexcept {
         return PreparedBinary {
             .operation = target,
             .result_type = type,
@@ -128,17 +128,17 @@ auto prepare_binary(
         case BinaryOperator::BitwiseOr:    return direct(TargetBinaryOperator::BitwiseOr, true);
         case BinaryOperator::BitwiseXor:   return direct(TargetBinaryOperator::BitwiseXor, true);
         case BinaryOperator::BitwiseAnd:   return direct(TargetBinaryOperator::BitwiseAnd, true);
-        case BinaryOperator::Equal:        return direct(TargetBinaryOperator::Equal);
-        case BinaryOperator::NotEqual:     return direct(TargetBinaryOperator::NotEqual);
-        case BinaryOperator::Less:         return direct(TargetBinaryOperator::Less);
-        case BinaryOperator::LessEqual:    return direct(TargetBinaryOperator::LessEqual);
-        case BinaryOperator::Greater:      return direct(TargetBinaryOperator::Greater);
-        case BinaryOperator::GreaterEqual: return direct(TargetBinaryOperator::GreaterEqual);
-        case BinaryOperator::LeftShift:    return direct(TargetBinaryOperator::LeftShift);
+        case BinaryOperator::Equal:        return direct(TargetBinaryOperator::Equal, false);
+        case BinaryOperator::NotEqual:     return direct(TargetBinaryOperator::NotEqual, false);
+        case BinaryOperator::Less:         return direct(TargetBinaryOperator::Less, false);
+        case BinaryOperator::LessEqual:    return direct(TargetBinaryOperator::LessEqual, false);
+        case BinaryOperator::Greater:      return direct(TargetBinaryOperator::Greater, false);
+        case BinaryOperator::GreaterEqual: return direct(TargetBinaryOperator::GreaterEqual, false);
+        case BinaryOperator::LeftShift:    return direct(TargetBinaryOperator::LeftShift, false);
         case BinaryOperator::RightShift:   return direct(TargetBinaryOperator::RightShift, true);
-        case BinaryOperator::Add:          return direct(TargetBinaryOperator::Add);
-        case BinaryOperator::Subtract:     return direct(TargetBinaryOperator::Subtract);
-        case BinaryOperator::Multiply:     return direct(TargetBinaryOperator::Multiply);
+        case BinaryOperator::Add:          return direct(TargetBinaryOperator::Add, false);
+        case BinaryOperator::Subtract:     return direct(TargetBinaryOperator::Subtract, false);
+        case BinaryOperator::Multiply:     return direct(TargetBinaryOperator::Multiply, false);
         case BinaryOperator::Divide:       return direct(TargetBinaryOperator::Divide, true);
         case BinaryOperator::Remainder:    return direct(TargetBinaryOperator::Remainder, true);
     }

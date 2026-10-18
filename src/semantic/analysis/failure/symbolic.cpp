@@ -255,7 +255,8 @@ auto GenericFailureAlgebra::intern(GenericFailureExpression expression) noexcept
 
 auto GenericFailureAlgebra::unite(std::span<const GenericFailureID> inputs) noexcept
     -> GenericFailureID {
-    auto expression = GenericFailureExpression {};
+    auto expression =
+        GenericFailureExpression {.concrete_members = {}, .parameters = {}, .guards = {}};
     for (const auto input : inputs) {
         merge_expression(expression, copy(input));
     }

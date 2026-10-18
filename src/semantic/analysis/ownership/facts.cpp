@@ -3,8 +3,8 @@ module carven:semantic.analysis.ownership.facts.impl;
 import :semantic.analysis.coverage;
 import :semantic.analysis.ownership.context;
 import :semantic.semir.callable;
-import :semantic.semir.vector;
 import :semantic.semir.text;
+import :semantic.semir.vector;
 import std;
 
 namespace {
@@ -116,13 +116,27 @@ auto prepare_ownership_body_facts(
     OwnershipRecursionBuilder& recursion
 ) noexcept -> OwnershipBodyFacts {
     const auto& program = model.program;
-    auto facts = OwnershipBodyFacts {};
+    auto facts = OwnershipBodyFacts {
+        .relation_demand =
+            OwnershipRelationDemand {
+                .observes_relations = false,
+                .produces_relationships = false,
+                .writes_storage = false
+            },
+        .locals = {},
+        .retained_bindings = {},
+        .temporaries = {},
+        .lifetime_objects = {},
+        .catches = {}
+    };
     // Captures read through closure-holder relationship rows.
     facts.relation_demand.observes_relations = !body.inputs().captures.empty();
     const auto add =
         [&](ConstructionTypeRef type, ProgramOriginID origin, LifetimeRegionID lifetime) noexcept {
             const auto index = facts.locals.size();
-            facts.locals.push_back({type, origin, lifetime});
+            facts.locals.push_back(
+                OwnershipLocalObject {.type = type, .origin = origin, .lifetime = lifetime}
+            );
             facts.lifetime_objects[lifetime].push_back(index);
             return index;
         };
@@ -239,7 +253,7 @@ auto prepare_ownership_body_facts(
 } // namespace
 
 auto prepare_ownership_analysis(const AnalysisModelView& model) noexcept -> OwnershipPreparation {
-    auto result = OwnershipPreparation {};
+    auto result = OwnershipPreparation {.body_facts = {}, .recursion_components = {}};
     auto recursion = OwnershipRecursionBuilder(model);
     for (const auto& [id, body] : model.bodies()) {
         result.body_facts.emplace(id, prepare_ownership_body_facts(body, model, recursion));

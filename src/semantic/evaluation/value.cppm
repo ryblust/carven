@@ -171,7 +171,7 @@ struct ExecutionAggregateValue final {
     ConstructionTypeRef type;
     std::vector<ExecutionValue> elements;
     // Logical capacity for growable owners; host vector allocation is not observable.
-    std::size_t capacity = 0;
+    std::size_t capacity;
 };
 
 struct ExecutionEnumValue final {

@@ -12,6 +12,7 @@ import :backend.realization.realizer;
 import :backend.realization.report;
 import :backend.target.builder;
 import :backend.target.expr;
+import :backend.target.origin;
 import :backend.target.stmt;
 import :backend.target.symbol;
 import :backend.target.type;
@@ -72,7 +73,7 @@ auto BodyRealizer::ExpressionBuilder::evaluate(
     ResultDemand demand,
     PreparedUse use
 ) noexcept -> ContinuationTask<Lowered<LoweringResult>> {
-    const auto storage_scope = StorageScope(*this);
+    const auto storage_scope = StorageScope(*this, true);
     auto outer = std::move(statements);
     statements = LoweringStmtBuilder();
     auto result = (co_await finish_expression(source, literal, demand, use, true));
@@ -104,7 +105,11 @@ auto BodyRealizer::ExpressionBuilder::finish_expression(
 ) noexcept -> ContinuationTask<Lowered<LoweringResult>> {
     auto fragment = (co_await build(
         source,
-        {.demand = demand, .use = final_use, .retain_backing = true, .expression_depth = 0uz}
+        {.demand = demand,
+         .use = final_use,
+         .retain_backing = true,
+         .expression_depth = 0uz,
+         .await_fusion = std::nullopt}
     ));
     adopt(fragment);
     if (!statements.continues()) {
@@ -119,15 +124,15 @@ auto BodyRealizer::ExpressionBuilder::finish_expression(
                 && !std::holds_alternative<LoweringCompleted>(fragment.completion)) {
                 arguments.push_back(emit(fragment, final_use, literal));
             }
-            co_return take_statements(shared).complete<LoweringResult>(
-                LoweringDirectExpression {call_expression(
+            co_return take_statements(shared).complete<LoweringResult>(LoweringDirectExpression {
+                .expression = call_expression(
                     static_member_expression(
                         owner.completion_type(),
                         TargetIdentifier::from_spelling("success")
                     ),
                     std::move(arguments)
-                )}
-            );
+                )
+            });
         }
         owner.mutable_owners.insert(fragment.awaited_carrier->local);
         auto carrier = name_expression(fragment.awaited_carrier->local);
@@ -148,7 +153,8 @@ auto BodyRealizer::ExpressionBuilder::finish_expression(
         const auto completed = owner.context.async_type(
             TargetSymbol::RuntimeAsyncCompletion,
             operation->success,
-            operation->failures
+            operation->failures,
+            TypeNameScope::Module
         );
         if (completed != destination) {
             transferred = call_expression(
@@ -160,7 +166,7 @@ auto BodyRealizer::ExpressionBuilder::finish_expression(
             );
         }
         co_return take_statements(shared).complete<LoweringResult>(
-            LoweringDirectExpression {std::move(transferred)}
+            LoweringDirectExpression {.expression = std::move(transferred)}
         );
     }
     if (std::holds_alternative<LoweringCompleted>(fragment.completion)) {
@@ -172,13 +178,13 @@ auto BodyRealizer::ExpressionBuilder::finish_expression(
         co_return take_statements(shared).complete<LoweringResult>(LoweringCompleted {});
     }
     if (demand == ResultDemand::PropagateOutcome) {
-        co_return take_statements(shared).complete<LoweringResult>(
-            LoweringDirectExpression {std::get<TargetExpr>(std::move(fragment.completion))}
-        );
+        co_return take_statements(shared).complete<LoweringResult>(LoweringDirectExpression {
+            .expression = std::get<TargetExpr>(std::move(fragment.completion))
+        });
     }
     auto result = emit(fragment, final_use, literal);
     co_return take_statements(shared).complete<LoweringResult>(
-        LoweringDirectExpression {std::move(result)}
+        LoweringDirectExpression {.expression = std::move(result)}
     );
 }
 
@@ -196,11 +202,15 @@ auto BodyRealizer::ExpressionBuilder::initialize_expression(
         {.demand = retain_success ? ResultDemand::AdoptSuccess : ResultDemand::Value,
          .use = PreparedUse::Consume,
          .retain_backing = false,
-         .expression_depth = 0uz}
+         .expression_depth = 0uz,
+         .await_fusion = std::nullopt}
     ));
     adopt(fragment);
     if (!statements.continues()) {
-        destination.scope(take_statements());
+        destination.scope(
+            take_statements(false),
+            TargetGeneratedExpansionAttribution {.reason = TargetExpansionReason::LoweringSupport}
+        );
         co_return {};
     }
     if (fragment.awaited_carrier && retain_success) {
@@ -217,7 +227,8 @@ auto BodyRealizer::ExpressionBuilder::initialize_expression(
                 .value =
                     TargetIntrinsicType {
                         .symbol = TargetSymbol::RuntimeAsyncSuccessBinding,
-                        .type_argument_ids = {owner.context.lower_type(operation->success)}
+                        .type_argument_ids =
+                            {owner.context.lower_type(operation->success, TypeNameScope::Module)}
                     },
                 .const_qualified = false,
             }),
@@ -241,15 +252,18 @@ auto BodyRealizer::ExpressionBuilder::initialize_expression(
             },
             statements
         );
-        destination.scope(take_statements());
+        destination.scope(
+            take_statements(false),
+            TargetGeneratedExpansionAttribution {.reason = TargetExpansionReason::LoweringSupport}
+        );
         co_return {};
     }
     auto value = emit(fragment, PreparedUse::Consume, ConstantLiteralContext::TargetTyped);
     // Only cleanup-bearing temporaries need to end before the next source
     // statement. Final storage stays in the enclosing lexical scope.
     if (!statements.needs_cleanup() && !reservations.needs_cleanup()) {
-        destination.append(take_statements());
-        owner.declare_binding(binding, std::move(value), destination);
+        destination.append(take_statements(false));
+        owner.declare_binding(binding, std::move(value), destination, false);
         co_return {};
     }
     const auto& source = initializer;
@@ -263,12 +277,14 @@ auto BodyRealizer::ExpressionBuilder::initialize_expression(
         owner.emit_return(std::move(value), statements, LoweringYieldResult {.target = yield});
         owner.declare_binding(
             binding,
-            take_statements().result_region(
-                owner.context.lower_type(owner.metadata.binding(binding).type),
+            take_statements(false).result_region(
+                owner.context
+                    .lower_type(owner.metadata.binding(binding).type, TypeNameScope::Module),
                 yield,
                 LoweringRegionDelivery::Factory
             ),
-            destination
+            destination,
+            false
         );
         co_return {};
     }
@@ -276,7 +292,8 @@ auto BodyRealizer::ExpressionBuilder::initialize_expression(
     // owners belong to this full expression and die after direct delivery.
     const auto storage = LoweringDeferredStorage {
         .local = owner.binding_locals.at(binding),
-        .value_type = owner.context.lower_type(owner.metadata.binding(binding).type)
+        .value_type =
+            owner.context.lower_type(owner.metadata.binding(binding).type, TypeNameScope::Module)
     };
     owner.delayed_bindings.emplace(binding, storage);
     owner.declare_deferred(
@@ -286,7 +303,10 @@ auto BodyRealizer::ExpressionBuilder::initialize_expression(
         owner.needs_cleanup(owner.metadata.binding(binding).type)
     );
     owner.initialize_deferred(storage, std::move(value), statements);
-    destination.scope(take_statements());
+    destination.scope(
+        take_statements(false),
+        TargetGeneratedExpansionAttribution {.reason = TargetExpansionReason::LoweringSupport}
+    );
     co_return {};
 }
 
@@ -299,11 +319,15 @@ auto BodyRealizer::ExpressionBuilder::assign(
         {.demand = ResultDemand::Value,
          .use = PreparedUse::WritePlace,
          .retain_backing = true,
-         .expression_depth = 0uz}
+         .expression_depth = 0uz,
+         .await_fusion = std::nullopt}
     ));
     adopt(target);
     if (!statements.continues()) {
-        destination.scope(take_statements());
+        destination.scope(
+            take_statements(false),
+            TargetGeneratedExpansionAttribution {.reason = TargetExpansionReason::LoweringSupport}
+        );
         co_return {};
     }
     const auto stable = stable_place(source(target).operation);
@@ -314,15 +338,19 @@ auto BodyRealizer::ExpressionBuilder::assign(
         // Even an otherwise pure dereference selects a place before the RHS
         // may rebind its pointer slot. Do not use the value-read anchor gate.
         const auto name = owner.fresh_local(TargetTemporaryNameKind::Owner);
-        statements.emit(generated_statement(
-            TargetVariableStmt {
-                .binding = TargetVariableBinding::RvalueReference,
-                .maybe_unused = false,
-                .local = name,
-                .type = owner.context.intrinsic_type(TargetSymbol::Auto),
-                .initializer = emit(target, PreparedUse::WritePlace)
-            }
-        ));
+        statements.emit(
+            generated_statement(
+                TargetVariableStmt {
+                    .binding = TargetVariableBinding::RvalueReference,
+                    .maybe_unused = false,
+                    .local = name,
+                    .type = owner.context.intrinsic_type(TargetSymbol::Auto, false),
+                    .initializer =
+                        emit(target, PreparedUse::WritePlace, ConstantLiteralContext::Exact)
+                }
+            ),
+            true
+        );
         complete(target, Saved {.local = name, .kind = SavedKind::Place});
     }
     // A stable field path is evaluated again for the compound read.
@@ -336,13 +364,15 @@ auto BodyRealizer::ExpressionBuilder::assign(
                 {.demand = ResultDemand::Value,
                  .use = PreparedUse::ConstPlace,
                  .retain_backing = true,
-                 .expression_depth = 0uz}
+                 .expression_depth = 0uz,
+                 .await_fusion = std::nullopt}
             )
         );
         adopt(*reread);
     }
     const auto read_target = [&]() noexcept -> TargetExpr {
-        return reread ? raw(*reread) : raw(target);
+        return reread ? raw(*reread, ConstantLiteralContext::Exact, PreparedUse::ReadBorrow)
+                      : raw(target, ConstantLiteralContext::Exact, PreparedUse::ReadBorrow);
     };
     const auto target_type = source(target).operation.type.resolved();
     const auto external =
@@ -360,15 +390,18 @@ auto BodyRealizer::ExpressionBuilder::assign(
         && !external
         && owner.preparation.summary(assignment.value).requires_execution) {
         const auto name = owner.fresh_local(TargetTemporaryNameKind::Operand);
-        statements.emit(generated_statement(
-            TargetVariableStmt {
-                .binding = TargetVariableBinding::ConstValue,
-                .maybe_unused = false,
-                .local = name,
-                .type = owner.context.lower_type(target_type),
-                .initializer = read_target()
-            }
-        ));
+        statements.emit(
+            generated_statement(
+                TargetVariableStmt {
+                    .binding = TargetVariableBinding::ConstValue,
+                    .maybe_unused = false,
+                    .local = name,
+                    .type = owner.context.lower_type(target_type, TypeNameScope::Module),
+                    .initializer = read_target()
+                }
+            ),
+            true
+        );
         previous = name;
     }
     auto right = (co_await build(
@@ -376,7 +409,8 @@ auto BodyRealizer::ExpressionBuilder::assign(
         {.demand = ResultDemand::Value,
          .use = PreparedUse::Consume,
          .retain_backing = true,
-         .expression_depth = 0uz}
+         .expression_depth = 0uz,
+         .await_fusion = std::nullopt}
     ));
     adopt(right);
     if (statements.continues()) {
@@ -426,15 +460,21 @@ auto BodyRealizer::ExpressionBuilder::assign(
                 default: invariant_violation("invalid native compound assignment");
             }
         }
-        statements.emit(generated_statement(
-            TargetAssignmentStmt {
-                .target = emit(target, PreparedUse::WritePlace),
-                .op = operation,
-                .value = std::move(value)
-            }
-        ));
+        statements.emit(
+            generated_statement(
+                TargetAssignmentStmt {
+                    .target = emit(target, PreparedUse::WritePlace, ConstantLiteralContext::Exact),
+                    .op = operation,
+                    .value = std::move(value)
+                }
+            ),
+            true
+        );
     }
-    destination.scope(take_statements());
+    destination.scope(
+        take_statements(false),
+        TargetGeneratedExpansionAttribution {.reason = TargetExpansionReason::LoweringSupport}
+    );
     co_return {};
 }
 
@@ -448,7 +488,7 @@ auto BodyRealizer::expression(
         co_return (co_await active_frame->evaluate(source, literal, demand, PreparedUse::Consume));
     }
     co_return co_await ExpressionBuilder(*this, source, delivered_region)
-        .finish_expression(source, literal, demand);
+        .finish_expression(source, literal, demand, PreparedUse::Consume, false);
 }
 
 auto BodyRealizer::operand(PreparedOperand source, ConstantLiteralContext literal) noexcept
@@ -457,7 +497,13 @@ auto BodyRealizer::operand(PreparedOperand source, ConstantLiteralContext litera
         active_frame != nullptr && active_frame->owns(*source.expression)
             ? active_frame->evaluate(*source.expression, literal, ResultDemand::Value, source.use)
             : ExpressionBuilder(*this, *source.expression)
-                  .finish_expression(*source.expression, literal, ResultDemand::Value, source.use)
+                  .finish_expression(
+                      *source.expression,
+                      literal,
+                      ResultDemand::Value,
+                      source.use,
+                      false
+                  )
     );
     auto statements = LoweringStmtBuilder();
     auto value = statements.accept(std::move(result));
@@ -491,12 +537,19 @@ auto BodyRealizer::condition(const SemanticExpression& source) noexcept
             const auto completion = statements.accept((co_await discard(source)));
             if (!shared) {
                 auto completed = LoweringStmtBuilder();
-                completed.scope(std::move(statements));
+                completed.scope(
+                    std::move(statements),
+                    TargetGeneratedExpansionAttribution {
+                        .reason = TargetExpansionReason::LoweringSupport
+                    }
+                );
                 statements = std::move(completed);
             }
             co_return std::move(statements)
                 .complete<LoweringPredicate>(
-                    completion ? std::optional<LoweringPredicate>(LoweringKnownBool {known->value})
+                    completion ? std::optional<LoweringPredicate>(
+                                     LoweringKnownBool {.value = known->value}
+                                 )
                                : std::nullopt
                 );
         }
@@ -514,7 +567,9 @@ auto BodyRealizer::condition(const SemanticExpression& source) noexcept
     auto expression_value = std::move(*value);
     if (shared || !statements.needs_cleanup()) {
         co_return std::move(statements)
-            .complete<LoweringPredicate>(LoweringDynamicBool {std::move(expression_value)});
+            .complete<LoweringPredicate>(
+                LoweringDynamicBool {.expression = std::move(expression_value)}
+            );
     }
     // A statement-form condition has its own source full expression. Deliver
     // its scalar before cleanup; branch execution starts after that scope ends.
@@ -525,21 +580,30 @@ auto BodyRealizer::condition(const SemanticExpression& source) noexcept
             .binding = TargetVariableBinding::MutableValue,
             .maybe_unused = false,
             .local = name,
-            .type = context.lower_type(preparation.operation(source).type.resolved()),
+            .type = context.lower_type(
+                preparation.operation(source).type.resolved(),
+                TypeNameScope::Module
+            ),
             .initializer = bool_expression(false)
         },
         false
     );
-    statements.emit(generated_statement(
-        TargetAssignmentStmt {
-            .target = name_expression(name),
-            .op = TargetAssignmentOperator::Assign,
-            .value = std::move(expression_value)
-        }
-    ));
-    completed.scope(std::move(statements));
+    statements.emit(
+        generated_statement(
+            TargetAssignmentStmt {
+                .target = name_expression(name),
+                .op = TargetAssignmentOperator::Assign,
+                .value = std::move(expression_value)
+            }
+        ),
+        true
+    );
+    completed.scope(
+        std::move(statements),
+        TargetGeneratedExpansionAttribution {.reason = TargetExpansionReason::LoweringSupport}
+    );
     co_return std::move(completed).complete<LoweringPredicate>(
-        LoweringDynamicBool {name_expression(name)}
+        LoweringDynamicBool {.expression = name_expression(name)}
     );
 }
 
@@ -571,7 +635,7 @@ auto BodyRealizer::initialize_binding(
             || std::holds_alternative<SemTry>(initializer.value))) {
         const auto storage = LoweringDeferredStorage {
             .local = binding_locals.at(binding),
-            .value_type = context.lower_type(metadata.binding(binding).type)
+            .value_type = context.lower_type(metadata.binding(binding).type, TypeNameScope::Module)
         };
         delayed_bindings.emplace(binding, storage);
         declare_deferred(storage, true, destination, needs_cleanup(metadata.binding(binding).type));
@@ -581,7 +645,10 @@ auto BodyRealizer::initialize_binding(
             LoweringInitializeResult {.storage = storage},
             statements
         ));
-        destination.scope(std::move(statements));
+        destination.scope(
+            std::move(statements),
+            TargetGeneratedExpansionAttribution {.reason = TargetExpansionReason::LoweringSupport}
+        );
         co_return {};
     }
     (co_await ExpressionBuilder(*this, source).initialize_expression(binding, source, destination));

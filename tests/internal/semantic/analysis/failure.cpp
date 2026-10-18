@@ -213,7 +213,8 @@ const TestSuite suite([] static noexcept {
                 sets,
                 provenance.reader(),
                 names,
-                AnalysisDiagnostics(diagnostics)
+                AnalysisDiagnostics(diagnostics),
+                true
             );
             if (!expect(checked.has_value())) {
                 return;
@@ -237,7 +238,8 @@ const TestSuite suite([] static noexcept {
                 sets,
                 provenance.reader(),
                 names,
-                AnalysisDiagnostics(diagnostics)
+                AnalysisDiagnostics(diagnostics),
+                true
             );
             if (!expect(specialized.has_value())) {
                 return;
@@ -251,7 +253,8 @@ const TestSuite suite([] static noexcept {
                 sets,
                 provenance.reader(),
                 names,
-                AnalysisDiagnostics(diagnostics)
+                AnalysisDiagnostics(diagnostics),
+                true
             );
             expect(!rejected.has_value());
             expect_diagnostic(diagnostics.values(), DiagnosticCode::EffectPropagateRedundant);
@@ -385,7 +388,8 @@ const TestSuite suite([] static noexcept {
                         declarations.construction_view(),
                         provenance.reader()
                     ),
-                    AnalysisDiagnostics(diagnostics)
+                    AnalysisDiagnostics(diagnostics),
+                    true
                 );
                 if (!expect_equal(solved.has_value(), true)) {
                     return;

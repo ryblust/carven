@@ -41,11 +41,13 @@ auto realize_writer_format(
     }
     const auto output = context.target().add_local(TargetIdentifier::from_spelling("output"));
     const auto writer = context.target().add_local(TargetIdentifier::from_spelling("writer"));
-    const auto string_type = context.intrinsic_type(TargetSymbol::RuntimeString);
+    const auto string_type = context.intrinsic_type(TargetSymbol::RuntimeString, false);
     auto parameters = std::vector<TargetLambdaParameter>();
     auto statements = std::vector<TargetStmt>();
     if (value.receiver) {
-        parameters.push_back({.local = output, .type = context.reference_type(string_type)});
+        parameters.push_back(
+            {.local = output, .type = context.reference_type(string_type, false, false)}
+        );
     } else {
         statements.push_back(generated_statement(
             TargetVariableStmt {
@@ -73,7 +75,9 @@ auto realize_writer_format(
             {.local = argument,
              .type = context.lower_parameter(
                  AccessMode::Read,
-                 value.operands[original].expression.type.resolved()
+                 value.operands[original].expression.type.resolved(),
+                 TypeNameScope::Module,
+                 false
              )}
         );
         arguments.push_back(name_expression(argument));
@@ -112,7 +116,7 @@ auto realize_writer_format(
             .value =
                 TargetLambdaExpr {
                     .parameters = std::move(parameters),
-                    .result = context.lower_type(source.type.resolved()),
+                    .result = context.lower_type(source.type.resolved(), TypeNameScope::Module),
                     .body = std::move(statements),
                 }
         },
@@ -145,7 +149,7 @@ auto realize_writer_statements(
     if (text_sizes.size() != static_cast<std::size_t>(text_fields)) {
         invariant_violation("writer format received the wrong text length pack");
     }
-    const auto writer_type = context.intrinsic_type(TargetSymbol::RuntimeFormatWriter);
+    const auto writer_type = context.intrinsic_type(TargetSymbol::RuntimeFormatWriter, false);
     auto statements = std::vector<TargetStmt>();
     auto writer_arguments = target_expressions(
         std::move(output),
@@ -157,7 +161,7 @@ auto realize_writer_statements(
             {.value =
                  TargetIntrinsicType {
                      .symbol = TargetSymbol::StdInitializerList,
-                     .type_argument_ids = {context.intrinsic_type(TargetSymbol::StdSize)}
+                     .type_argument_ids = {context.intrinsic_type(TargetSymbol::StdSize, false)}
                  },
              .const_qualified = false}
         );
@@ -289,7 +293,7 @@ auto realize_format(
         operands.push_back(literal());
         return call_expression(
             static_member_expression(
-                context.lower_type(source.type.resolved()),
+                context.lower_type(source.type.resolved(), TypeNameScope::Module),
                 TargetIdentifier::from_spelling("from_str")
             ),
             std::move(operands)

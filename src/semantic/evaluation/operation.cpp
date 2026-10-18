@@ -350,7 +350,7 @@ auto finish_constant_integer(
     TypeID result,
     IntegerConstant value,
     BuiltinType type,
-    IntegerArithmetic arithmetic = IntegerArithmetic::Checked
+    IntegerArithmetic arithmetic
 ) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure> {
     if (builtin_type(values, result) != type) {
         return std::unexpected(ConstantEvaluationFailure::InvalidOperation);
@@ -715,7 +715,8 @@ auto evaluate_unary_constant_value(
                             values,
                             result,
                             IntegerConstant::from_signed(~*value),
-                            *type
+                            *type,
+                            IntegerArithmetic::Checked
                         );
                     }
                     break;
@@ -726,7 +727,8 @@ auto evaluate_unary_constant_value(
                     values,
                     result,
                     IntegerConstant::from_parts((~integer->magnitude()) & mask, false),
-                    *type
+                    *type,
+                    IntegerArithmetic::Checked
                 );
             }
             break;
@@ -1016,7 +1018,8 @@ auto evaluate_text_intrinsic_constant_value(
                 values,
                 result,
                 IntegerConstant::from_parts(static_cast<std::uint64_t>(bytes.size()), false),
-                *target
+                *target,
+                IntegerArithmetic::Checked
             );
         }
         case TextIntrinsic::IsEmpty: return constant_boolean(values, result, bytes.empty());
@@ -1113,7 +1116,13 @@ auto fold_unary_constant(
                 || builtin_type(values, (*fact)->type) == BuiltinType::F32x8))) {
         return std::unexpected(ConstantEvaluationFailure::UnsupportedOperation);
     }
-    return evaluate_unary_constant_value(values, operation, **fact, result);
+    return evaluate_unary_constant_value(
+        values,
+        operation,
+        **fact,
+        result,
+        IntegerArithmetic::Wrapping
+    );
 }
 
 auto fold_binary_constant(
@@ -1143,7 +1152,14 @@ auto fold_binary_constant(
                     || builtin_type(values, (*right_fact)->type) == BuiltinType::F32x8)))) {
         return std::unexpected(ConstantEvaluationFailure::UnsupportedOperation);
     }
-    return evaluate_binary_constant_value(values, operation, **left_fact, **right_fact, result);
+    return evaluate_binary_constant_value(
+        values,
+        operation,
+        **left_fact,
+        **right_fact,
+        result,
+        IntegerArithmetic::Wrapping
+    );
 }
 
 auto fold_cast_constant(

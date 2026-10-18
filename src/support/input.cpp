@@ -57,7 +57,7 @@ auto HostInputCursor::consume(std::size_t count) noexcept -> void {
 
 auto HostInputCursor::ready(HostInputRequest& request) noexcept -> std::optional<HostInputResult> {
     if (request.mode == HostInputMode::Chunk && request.limit == 0) {
-        return view(0);
+        return view(0, false);
     }
     if (error != 0) {
         return HostInputSystemError {.code = error};
@@ -69,7 +69,7 @@ auto HostInputCursor::ready(HostInputRequest& request) noexcept -> std::optional
         const auto available = pending.size();
 #endif
         if (available != 0) {
-            return view(std::min(request.limit, available));
+            return view(std::min(request.limit, available), false);
         }
         if (ended) {
             return view(0, true);
@@ -79,7 +79,7 @@ auto HostInputCursor::ready(HostInputRequest& request) noexcept -> std::optional
     if (request.mode == HostInputMode::Line) {
         request.scanned = std::min(request.scanned, pending.size());
         const auto begin = pending.begin() + static_cast<std::ptrdiff_t>(request.scanned);
-        const auto newline = std::find(begin, pending.end(), std::uint8_t('\n'));
+        const auto newline = std::find(begin, pending.end(), static_cast<std::uint8_t>('\n'));
         const auto content = static_cast<std::size_t>(newline - pending.begin());
         // A trailing CR may still become the first half of CRLF. At EOF
         // without LF it is ordinary content and counts toward the limit.
@@ -91,7 +91,7 @@ auto HostInputCursor::ready(HostInputRequest& request) noexcept -> std::optional
             return HostInputLimitError {};
         }
         if (newline != pending.end()) {
-            return view(content + 1);
+            return view(content + 1, false);
         }
         request.scanned = pending.size();
     } else if (pending.size() > request.limit) {

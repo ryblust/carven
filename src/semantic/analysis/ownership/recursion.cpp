@@ -66,7 +66,14 @@ auto OwnershipRecursionBuilder::finish(
     std::flat_map<AnalysisBodyID, OwnershipBodyFacts>& facts
 ) && noexcept -> std::flat_map<AnalysisBodyID, std::uint32_t> {
     direct_callees = std::flat_set<const SemanticExpression*>();
-    auto demands = std::vector<OwnershipRelationDemand>(adjacency.size());
+    auto demands = std::vector<OwnershipRelationDemand>(
+        adjacency.size(),
+        OwnershipRelationDemand {
+            .observes_relations = false,
+            .produces_relationships = false,
+            .writes_storage = false
+        }
+    );
     auto callers = std::vector<std::vector<std::uint32_t>>(adjacency.size());
     auto pending = std::vector<std::uint32_t>();
     auto queued = std::vector<bool>(adjacency.size(), false);

@@ -155,9 +155,19 @@ const { println(answer); }
             auto inputs = std::vector<SourceModuleInput>();
             constexpr auto modules = std::to_array<std::string_view>({"time"});
             append_standard_sources(sources, inputs, modules);
-            const auto standard = take_unit(
-                analyze_checked_compilation(std::move(sources), SourceBatch {.modules = inputs})
-            );
+            const auto standard = take_unit(analyze_checked_compilation(
+                std::move(sources),
+                SourceBatch {.modules = inputs},
+                std::nullopt,
+                true,
+                {
+                    .output = {},
+                    .timings = {},
+                    .collect_source_observations = false,
+                    .capture_output = false,
+                    .host_effects = HostEffects::Deny,
+                }
+            ));
             const auto consumer = checked_analysis(
                 R"cv(
 import std::time using { Duration, RangeError, sleep };

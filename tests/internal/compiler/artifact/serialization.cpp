@@ -25,8 +25,17 @@ auto serialization_program(std::string_view text) noexcept -> SemIRProgram {
         .source_id = *source,
         .module_path = *CanonicalModulePath::from_value("serialization"),
     };
-    auto analysis =
-        analyze_compilation(std::move(sources), SourceBatch {.modules = std::span(&input, 1uz)});
+    auto analysis = analyze_compilation(
+        std::move(sources),
+        SourceBatch {.modules = std::span(&input, 1uz)},
+        {
+            .output = {},
+            .timings = {},
+            .collect_source_observations = false,
+            .capture_output = false,
+            .host_effects = HostEffects::Deny,
+        }
+    );
     require(analysis.program() != nullptr).note([&]() noexcept {
         return render_diagnostics(analysis.diagnostics(), analysis.sources());
     });

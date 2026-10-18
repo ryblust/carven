@@ -5,9 +5,11 @@ import :semantic.semir.type;
 import :support.invariant;
 import std;
 
-auto SemanticExecutor::compose(ExecutionColdOperation operation, ProgramOriginID origin) noexcept
-    -> ExecutionTask<ExecutionValue> {
-    const auto action = std::get<ExecutionCompositionAction>(operation.action);
+auto SemanticExecutor::compose(
+    ExecutionCompositionAction action,
+    std::vector<ExecutionOperand> arguments,
+    ProgramOriginID origin
+) noexcept -> ExecutionTask<ExecutionValue> {
     const auto cancelled = [&]() noexcept -> ExecutionFailure {
         return ExecutionCancelled {
             .origin = origin,
@@ -24,7 +26,7 @@ auto SemanticExecutor::compose(ExecutionColdOperation operation, ProgramOriginID
     }
 
     auto children = std::vector<std::list<ExecutionLogicalTask>::iterator>();
-    children.reserve(operation.arguments.size());
+    children.reserve(arguments.size());
     auto* parent = current;
     const auto start = [&](ExecutionTask<ExecutionValue> operation) noexcept {
         tasks.emplace_back(
@@ -47,7 +49,7 @@ auto SemanticExecutor::compose(ExecutionColdOperation operation, ProgramOriginID
             .continuation = std::exchange(iterator->loop.next, {}),
         });
     };
-    for (auto& argument : operation.arguments) {
+    for (auto& argument : arguments) {
         if (auto checked = step(origin); !checked) {
             co_return std::unexpected(std::move(checked.error()));
         }
@@ -102,7 +104,11 @@ auto SemanticExecutor::compose(ExecutionColdOperation operation, ProgramOriginID
         );
         elements.push_back(std::move(value));
         return bounded_value(
-            ExecutionAggregateValue {.type = *success, .elements = std::move(elements)},
+            ExecutionAggregateValue {
+                .type = *success,
+                .elements = std::move(elements),
+                .capacity = 0uz
+            },
             origin
         );
     };
@@ -255,7 +261,11 @@ auto SemanticExecutor::compose(ExecutionColdOperation operation, ProgramOriginID
         elements.push_back(std::move(*result));
     }
     co_return bounded_value(
-        ExecutionAggregateValue {.type = *success, .elements = std::move(elements)},
+        ExecutionAggregateValue {
+            .type = *success,
+            .elements = std::move(elements),
+            .capacity = 0uz
+        },
         origin
     );
 }

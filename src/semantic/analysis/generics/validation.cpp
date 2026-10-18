@@ -15,9 +15,11 @@ namespace {
 
 auto definition_contract(const GenericDeclarationDefinition& definition) noexcept
     -> const GenericDeclarationContract& {
-    return definition.visit([](const auto& value) noexcept -> const GenericDeclarationContract& {
-        return value.contract;
-    });
+    return definition.visit(
+        [](const auto& value) static noexcept -> const GenericDeclarationContract& {
+            return value.contract;
+        }
+    );
 }
 
 auto definition_fields(const GenericDeclarationDefinition& definition) noexcept
@@ -426,7 +428,7 @@ auto ProgramDraft::validate_generic_definitions(std::optional<GenericDeclaration
             ~StorageDepth() { --depth; }
         };
         ++depth;
-        const auto active_depth = StorageDepth {depth};
+        const auto active_depth = StorageDepth {.depth = depth};
         const auto* generic = std::get_if<GenericTypeID>(&type);
         if (!generic) {
             if (type_contains_callable_view(*this, type)) {
@@ -534,8 +536,9 @@ auto ProgramDraft::validate_generic_definitions(std::optional<GenericDeclaration
             continue;
         }
         auto arguments = generic_parameter_environment(owner);
-        const auto application =
-            intern_generic_type(GenericNominalApplication {owner, std::move(arguments)});
+        const auto application = intern_generic_type(
+            GenericNominalApplication {.definition = owner, .arguments = std::move(arguments)}
+        );
         visit_storage(visit_storage, application, true, contract.origin);
     }
     if (failure) {

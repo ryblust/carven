@@ -16,6 +16,6 @@ enum class LiteralSign {
 auto normalize_literal(
     ProgramDraft& draft,
     const ASTLiteral& literal,
-    std::optional<ConstructionTypeRef> expected = std::nullopt,
-    LiteralSign sign = LiteralSign::Positive
+    LiteralSign sign,
+    std::optional<ConstructionTypeRef> expected = std::nullopt
 ) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure>;

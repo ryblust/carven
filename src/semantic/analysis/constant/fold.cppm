@@ -34,5 +34,5 @@ enum class ConstantFoldFailure { Diagnose, KeepRuntime };
 auto fold_constant_expression(
     ProgramDraft& draft,
     SemanticExpression& expression,
-    ConstantFoldFailure failure = ConstantFoldFailure::Diagnose
+    ConstantFoldFailure failure
 ) noexcept -> AnalysisResult<void>;

@@ -86,7 +86,9 @@ auto diagnose_cpp_api_surface(ProgramDraft& draft, AnalysisCatalogView catalog) 
             continue;
         }
         auto path = draft.module_path_copy(symbol.module_id).components()
-            | std::views::transform([](std::string_view value) { return std::string(value); })
+            | std::views::transform([](std::string_view value) static {
+                        return std::string(value);
+                    })
             | std::ranges::to<std::vector>();
         path.push_back(draft.spelling_copy(function.name));
         functions.push_back({

@@ -98,12 +98,12 @@ private:
     auto diagnose_invalid(std::string_view message) noexcept -> void;
     auto consume_utf8() noexcept -> bool;
     auto skip_whitespace_and_comments() noexcept -> void;
-    auto scan_interpolation(bool specification, bool multiline = false) noexcept -> void;
+    auto scan_interpolation(bool specification, bool multiline) noexcept -> void;
     auto scan_interpolation_expression() noexcept -> void;
     auto scan_token() noexcept -> void;
     auto scan_identifier() noexcept -> void;
     auto scan_number() noexcept -> void;
-    auto scan_string(bool c_string = false) noexcept -> void;
+    auto scan_string(bool c_string) noexcept -> void;
     auto scan_character() noexcept -> void;
     auto scan_cpp_header_name(char closing, TokenKind kind) noexcept -> void;
     auto consume_line_ending() noexcept -> bool;
@@ -346,7 +346,7 @@ auto Lexer::scan_interpolation_expression() noexcept -> void {
         if (delimiters.empty() && value == ':' && current(1) != ':') {
             token_start = position++;
             append_token(TokenKind::InterpolationSpec);
-            scan_interpolation(true);
+            scan_interpolation(true, false);
             return;
         }
         if (value == '(' || value == '[' || value == '{') {
@@ -389,7 +389,7 @@ auto Lexer::scan_token() noexcept -> void {
     }
 
     if (value == 'r' && (current() == '"' || current() == '#')) {
-        scan_string();
+        scan_string(false);
         return;
     }
 
@@ -472,7 +472,7 @@ auto Lexer::scan_token() noexcept -> void {
                 scan_cpp_header_name('"', CppQuoteHeaderName);
                 return;
             }
-            scan_string();
+            scan_string(false);
             return;
         case '\'': scan_character(); return;
         case '#':  scan_cpp_source_fragment(); return;

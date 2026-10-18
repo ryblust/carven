@@ -54,7 +54,7 @@ auto TargetRenderer::LayoutConstruction::leave_item(const TargetItem& item) noex
 
 auto TargetRenderer::build_layouts() noexcept -> void {
     type_layouts.resize(unit.type_count());
-    auto construction = LayoutConstruction {*this};
+    auto construction = LayoutConstruction {.renderer = *this};
     if (!traverse_target_unit(unit.sections(), construction)) {
         invariant_violation("target layout construction did not complete");
     }
@@ -87,7 +87,7 @@ auto TargetRenderer::build_type_layouts(TargetTypeID type) noexcept -> void {
             continue;
         }
         if (const auto* query = std::get_if<TargetDecltypeType>(&value.value)) {
-            auto construction = LayoutConstruction {*this};
+            auto construction = LayoutConstruction {.renderer = *this};
             if (!traverse_target_expression(query->expression(), construction)) {
                 invariant_violation("target type query layout traversal did not complete");
             }

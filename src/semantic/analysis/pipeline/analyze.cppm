@@ -14,20 +14,20 @@ import std;
 
 auto analyze(
     SyntaxProgram syntax,
+    HostEffects host_effects,
     ExecutionOutput output = {},
     TimingOutput timings = {},
-    SourceAnalysisOutput source_output = {},
-    HostEffects host_effects = HostEffects::Deny
+    SourceAnalysisOutput source_output = {}
 ) noexcept -> std::expected<Diagnosed<SemIRProgram>, Diagnostics>;
 
 // A seed contributes the checked prefix whose provenance parse_program has
 // already consumed while appending this compilation's source modules.
 auto analyze_checked(
     SyntaxProgram syntax,
+    HostEffects host_effects,
+    bool retain_definitions,
     std::optional<CheckedDefinitions> seed = std::nullopt,
     ExecutionOutput output = {},
     TimingOutput timings = {},
-    SourceAnalysisOutput source_output = {},
-    HostEffects host_effects = HostEffects::Deny,
-    bool retain_definitions = true
+    SourceAnalysisOutput source_output = {}
 ) noexcept -> std::expected<Diagnosed<CheckedUnit>, Diagnostics>;

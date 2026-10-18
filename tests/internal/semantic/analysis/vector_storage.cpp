@@ -51,7 +51,16 @@ auto recursive_child_whole_borrows(bool may_fail) noexcept -> std::string {
 auto expect_bounded_ownership(const SemIRProgram& program, std::size_t source_size) noexcept
     -> void {
     auto diagnostics = DiagnosticSink();
-    const auto generics = GenericAnalysisSnapshot {};
+    const auto generics = GenericAnalysisSnapshot {
+        .owner = std::nullopt,
+        .definitions = {},
+        .types = {},
+        .bodies = {},
+        .records = {},
+        .enum_payloads = {},
+        .test_stops = {},
+        .failures = {},
+    };
     const auto model = AnalysisModelView(program, generics);
     const auto summary = OwnershipBatchAnalyzer(model, AnalysisDiagnostics(diagnostics)).run();
     if (!expect(summary.has_value())) {
@@ -1452,7 +1461,7 @@ const TestSuite suite([] static noexcept {
             R"(fn bad() -> [i32] { let v: Vector<i32> = [1, 2]; return v; })",
             R"(fn bad() { let view: [i32] = Vector<i32>::from_slice([1, 2]); })",
         };
-        each(cases, std::identity {}, [](const auto& source) noexcept {
+        each(cases, std::identity {}, [](const auto& source) static noexcept {
             expect_diagnostic(analyze_test_errors(source), DiagnosticCode::AccessBorrowConflict);
         });
     };

@@ -52,7 +52,7 @@ public:
 
     auto unsigned_value(std::size_t width) noexcept -> std::expected<std::uint64_t, BinaryError>;
     auto take(std::size_t count) noexcept -> std::expected<std::span<const std::byte>, BinaryError>;
-    auto count(std::size_t element_size = 1) noexcept -> std::expected<std::size_t, BinaryError>;
+    auto count(std::size_t element_size) noexcept -> std::expected<std::size_t, BinaryError>;
     auto fail(std::string message) const noexcept -> std::unexpected<BinaryError>;
     auto remaining() const noexcept -> std::size_t;
     auto finish() const noexcept -> std::expected<void, BinaryError>;
@@ -75,6 +75,7 @@ auto binary_aggregate_fields(T& value) noexcept {
 
 template<typename T, typename Tuple, std::size_t... Indices>
 auto binary_construct_aggregate(Tuple& fields, std::index_sequence<Indices...>) noexcept -> T {
+    // Aggregate traversal supplies every field in declaration order, without member names.
     return T {std::move(*std::get<Indices>(fields))...};
 }
 
@@ -83,7 +84,7 @@ auto binary_optional_fields(std::index_sequence<Indices...>) noexcept
     -> std::tuple<std::optional<std::remove_cvref_t<std::tuple_element_t<Indices, Tuple>>>...>;
 
 template<typename T>
-struct BinaryCodec {
+struct BinaryCodec final {
     template<typename Context>
     static auto write(BinaryWriter& writer, const T& value, Context& context) noexcept -> void {
         static_assert(std::is_aggregate_v<T>, "type needs an owning BinaryCodec specialization");
@@ -129,7 +130,7 @@ struct BinaryCodec {
 
 template<typename T>
     requires std::is_integral_v<T> && (!std::same_as<T, bool>)
-struct BinaryCodec<T> {
+struct BinaryCodec<T> final {
     template<typename Context>
     static auto write(BinaryWriter& writer, T value, Context&) noexcept -> void {
         using Unsigned = std::make_unsigned_t<T>;
@@ -148,7 +149,7 @@ struct BinaryCodec<T> {
 };
 
 template<>
-struct BinaryCodec<bool> {
+struct BinaryCodec<bool> final {
     template<typename Context>
     static auto write(BinaryWriter& writer, bool value, Context&) noexcept -> void {
         writer.unsigned_value(value ? 1 : 0, 1);
@@ -169,7 +170,7 @@ struct BinaryCodec<bool> {
 
 template<typename T>
     requires std::is_enum_v<T>
-struct BinaryCodec<T> {
+struct BinaryCodec<T> final {
     template<typename Context>
     static auto write(BinaryWriter& writer, T value, Context& context) noexcept -> void {
         writer.write(static_cast<std::underlying_type_t<T>>(value), context);
@@ -188,7 +189,7 @@ struct BinaryCodec<T> {
 
 template<typename T>
     requires std::same_as<T, float> || std::same_as<T, double>
-struct BinaryCodec<T> {
+struct BinaryCodec<T> final {
     using Bits = std::conditional_t<sizeof(T) == 4, std::uint32_t, std::uint64_t>;
 
     template<typename Context>
@@ -208,7 +209,7 @@ struct BinaryCodec<T> {
 };
 
 template<>
-struct BinaryCodec<std::byte> {
+struct BinaryCodec<std::byte> final {
     template<typename Context>
     static auto write(BinaryWriter& writer, std::byte value, Context&) noexcept -> void {
         writer.unsigned_value(std::to_integer<std::uint8_t>(value), 1);
@@ -226,7 +227,7 @@ struct BinaryCodec<std::byte> {
 };
 
 template<>
-struct BinaryCodec<std::string> {
+struct BinaryCodec<std::string> final {
     template<typename Context>
     static auto write(BinaryWriter& writer, const std::string& value, Context&) noexcept -> void {
         writer.unsigned_value(value.size(), 8);
@@ -236,7 +237,7 @@ struct BinaryCodec<std::string> {
     template<typename Context>
     static auto read(BinaryReader& reader, Context&) noexcept
         -> std::expected<std::string, BinaryError> {
-        auto size = reader.count();
+        auto size = reader.count(sizeof(char));
         if (!size) {
             return std::unexpected(std::move(size.error()));
         }
@@ -249,7 +250,7 @@ struct BinaryCodec<std::string> {
 };
 
 template<typename T>
-struct BinaryCodec<std::optional<T>> {
+struct BinaryCodec<std::optional<T>> final {
     template<typename Context>
     static auto write(
         BinaryWriter& writer,
@@ -281,7 +282,7 @@ struct BinaryCodec<std::optional<T>> {
 };
 
 template<typename T>
-struct BinaryCodec<std::unique_ptr<T>> {
+struct BinaryCodec<std::unique_ptr<T>> final {
     template<typename Context>
     static auto write(
         BinaryWriter& writer,
@@ -313,7 +314,7 @@ struct BinaryCodec<std::unique_ptr<T>> {
 };
 
 template<typename T>
-struct BinaryCodec<UniqueIndirect<T>> {
+struct BinaryCodec<UniqueIndirect<T>> final {
     template<typename Context>
     static auto write(
         BinaryWriter& writer,
@@ -339,7 +340,7 @@ struct BinaryCodec<UniqueIndirect<T>> {
 };
 
 template<typename T, typename Allocator>
-struct BinaryCodec<std::vector<T, Allocator>> {
+struct BinaryCodec<std::vector<T, Allocator>> final {
     template<typename Context>
     static auto write(
         BinaryWriter& writer,
@@ -377,7 +378,7 @@ struct BinaryCodec<std::vector<T, Allocator>> {
 };
 
 template<typename... Values>
-struct BinaryCodec<std::tuple<Values...>> {
+struct BinaryCodec<std::tuple<Values...>> final {
     using Tuple = std::tuple<Values...>;
 
     template<typename Context>
@@ -422,7 +423,7 @@ struct BinaryCodec<std::tuple<Values...>> {
 };
 
 template<typename T, typename Allocator>
-struct BinaryCodec<std::deque<T, Allocator>> {
+struct BinaryCodec<std::deque<T, Allocator>> final {
     using Sequence = std::deque<T, Allocator>;
 
     template<typename Context>
@@ -454,7 +455,7 @@ struct BinaryCodec<std::deque<T, Allocator>> {
 };
 
 template<typename T>
-struct BinaryCodec<std::shared_ptr<T>> {
+struct BinaryCodec<std::shared_ptr<T>> final {
     template<typename Context>
     static auto write(
         BinaryWriter& writer,
@@ -486,7 +487,7 @@ struct BinaryCodec<std::shared_ptr<T>> {
 };
 
 template<typename Key, typename Value, typename Compare, typename Keys, typename Values>
-struct BinaryCodec<std::flat_map<Key, Value, Compare, Keys, Values>> {
+struct BinaryCodec<std::flat_map<Key, Value, Compare, Keys, Values>> final {
     using Map = std::flat_map<Key, Value, Compare, Keys, Values>;
 
     template<typename Context>
@@ -520,7 +521,7 @@ struct BinaryCodec<std::flat_map<Key, Value, Compare, Keys, Values>> {
 };
 
 template<typename Key, typename Value, typename Hash, typename Equal, typename Allocator>
-struct BinaryCodec<std::unordered_multimap<Key, Value, Hash, Equal, Allocator>> {
+struct BinaryCodec<std::unordered_multimap<Key, Value, Hash, Equal, Allocator>> final {
     using Map = std::unordered_multimap<Key, Value, Hash, Equal, Allocator>;
 
     template<typename Context>
@@ -552,7 +553,7 @@ struct BinaryCodec<std::unordered_multimap<Key, Value, Hash, Equal, Allocator>> 
 };
 
 template<typename First, typename Second>
-struct BinaryCodec<std::pair<First, Second>> {
+struct BinaryCodec<std::pair<First, Second>> final {
     template<typename Context>
     static auto write(
         BinaryWriter& writer,
@@ -579,7 +580,7 @@ struct BinaryCodec<std::pair<First, Second>> {
 };
 
 template<typename T, std::size_t Size>
-struct BinaryCodec<std::array<T, Size>> {
+struct BinaryCodec<std::array<T, Size>> final {
     template<typename Context>
     static auto write(
         BinaryWriter& writer,
@@ -617,7 +618,7 @@ private:
 };
 
 template<typename Key, typename Value, typename Compare, typename Allocator>
-struct BinaryCodec<std::map<Key, Value, Compare, Allocator>> {
+struct BinaryCodec<std::map<Key, Value, Compare, Allocator>> final {
     using Map = std::map<Key, Value, Compare, Allocator>;
 
     template<typename Context>
@@ -650,7 +651,7 @@ struct BinaryCodec<std::map<Key, Value, Compare, Allocator>> {
 };
 
 template<typename T, typename Compare, typename Allocator>
-struct BinaryCodec<std::set<T, Compare, Allocator>> {
+struct BinaryCodec<std::set<T, Compare, Allocator>> final {
     using Set = std::set<T, Compare, Allocator>;
 
     template<typename Context>
@@ -700,7 +701,7 @@ auto read_binary_variant(BinaryReader& reader, std::uint32_t tag, Context& conte
 }
 
 template<typename... Alternatives>
-struct BinaryCodec<std::variant<Alternatives...>> {
+struct BinaryCodec<std::variant<Alternatives...>> final {
     using Variant = std::variant<Alternatives...>;
 
     template<typename Context>
@@ -722,7 +723,7 @@ struct BinaryCodec<std::variant<Alternatives...>> {
 };
 
 template<typename Cleanup, typename... Alternatives>
-struct BinaryCodec<TreeValue<Cleanup, Alternatives...>> {
+struct BinaryCodec<TreeValue<Cleanup, Alternatives...>> final {
     using Value = TreeValue<Cleanup, Alternatives...>;
     using Variant = typename Value::Base;
 

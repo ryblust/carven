@@ -44,10 +44,8 @@ auto scan_literal_scalar(std::string_view text) noexcept
 
 enum class StringLiteralKind { Text, CString };
 
-auto scan_string_literal(
-    std::string_view text,
-    StringLiteralKind kind = StringLiteralKind::Text
-) noexcept -> std::expected<StringLiteralScan, QuotedLiteralScanError>;
+auto scan_string_literal(std::string_view text, StringLiteralKind kind) noexcept
+    -> std::expected<StringLiteralScan, QuotedLiteralScanError>;
 
 auto scan_character_literal(std::string_view text) noexcept
     -> std::expected<CharacterLiteralScan, QuotedLiteralScanError>;

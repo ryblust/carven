@@ -30,12 +30,16 @@ auto BodyRealizer::ExpressionBuilder::read_conversion_query(
 ) const noexcept -> TargetTypeID {
     const auto& value = owner.preparation.operation(expression);
     if (value.category == SemanticValueCategory::Place || value.selects_storage()) {
-        return owner.context.reference_type(owner.context.lower_type(value.type.resolved()), true);
+        return owner.context.reference_type(
+            owner.context.lower_type(value.type.resolved(), TypeNameScope::Module),
+            true,
+            false
+        );
     }
     if (const auto query = native_result_query(owner.context.semantic(), value)) {
         return owner.context.lower_cpp_query(*query);
     }
-    return owner.context.lower_type(value.type.resolved());
+    return owner.context.lower_type(value.type.resolved(), TypeNameScope::Module);
 }
 
 auto BodyRealizer::ExpressionBuilder::take_statements(bool shared) noexcept -> LoweringStmtBuilder {
@@ -164,8 +168,12 @@ auto BodyRealizer::ExpressionBuilder::emit(
             return TargetExpr {
                 .value = TargetStaticCastExpr {
                     .type = owner.context.reference_type(
-                        owner.context.lower_type(source(fragment).operation.type.resolved()),
-                        true
+                        owner.context.lower_type(
+                            source(fragment).operation.type.resolved(),
+                            TypeNameScope::Module
+                        ),
+                        true,
+                        false
                     ),
                     .operand = target_child(std::move(result))
                 }
@@ -195,7 +203,10 @@ auto BodyRealizer::ExpressionBuilder::emit(
         || use == PreparedUse::ReadArgument
         || use == PreparedUse::ConstPlace
         || use == PreparedUse::ReadPointer) {
-        const auto type = owner.context.lower_type(source(fragment).operation.type.resolved());
+        const auto type = owner.context.lower_type(
+            source(fragment).operation.type.resolved(),
+            TypeNameScope::Module
+        );
         if (use == PreparedUse::ReadPointer && !saved(fragment)) {
             result = TargetExpr {
                 .value =
@@ -204,7 +215,7 @@ auto BodyRealizer::ExpressionBuilder::emit(
         }
         result = TargetExpr {
             .value = TargetStaticCastExpr {
-                .type = owner.context.reference_type(type, true),
+                .type = owner.context.reference_type(type, true, false),
                 .operand = target_child(std::move(result))
             }
         };
@@ -269,8 +280,9 @@ auto BodyRealizer::ExpressionBuilder::anchor(
                 .binding = value_binding(use),
                 .maybe_unused = false,
                 .local = name,
-                .type = owner.context.lower_type(value.operation.type.resolved()),
-                .initializer = raw(fragment)
+                .type = owner.context
+                            .lower_type(value.operation.type.resolved(), TypeNameScope::Module),
+                .initializer = raw(fragment, ConstantLiteralContext::Exact, PreparedUse::ReadBorrow)
             },
             false
         );
@@ -298,19 +310,28 @@ auto BodyRealizer::ExpressionBuilder::anchor(
         && !owner.context.semantic()
                 .type_contents(value.operation.type.resolved())
                 .read_borrows_storage();
-    const auto type = place ? owner.context.reference_type(
-                                  owner.context.lower_type(value.operation.type.resolved()),
-                                  use != PreparedUse::WritePlace
-                                      || value.operation.category != SemanticValueCategory::Place
-                              )
+    const auto type = place
+        ? owner.context.reference_type(
+              owner.context.lower_type(value.operation.type.resolved(), TypeNameScope::Module),
+              use != PreparedUse::WritePlace
+                  || value.operation.category != SemanticValueCategory::Place,
+              false
+          )
         : read && !read_value
         ? (use == PreparedUse::ReadArgument
-               ? owner.context.lower_parameter(AccessMode::Read, value.operation.type.resolved())
+               ? owner.context.lower_parameter(
+                     AccessMode::Read,
+                     value.operation.type.resolved(),
+                     TypeNameScope::Module,
+                     false
+                 )
                : owner.context.reference_type(
-                     owner.context.lower_type(value.operation.type.resolved()),
-                     true
+                     owner.context
+                         .lower_type(value.operation.type.resolved(), TypeNameScope::Module),
+                     true,
+                     false
                  ))
-        : owner.context.lower_type(value.operation.type.resolved());
+        : owner.context.lower_type(value.operation.type.resolved(), TypeNameScope::Module);
     auto storage_type = type;
     const auto native_call =
         native_result_query(owner.context.semantic(), value.operation).has_value();
@@ -363,9 +384,12 @@ auto BodyRealizer::ExpressionBuilder::anchor(
                               use != PreparedUse::ReadArgument
                           ),
                           owner.context.reference_type(
-                              owner.context.lower_type(native_conversion->operands.front()
-                                                           .expression.type.resolved()),
-                              true
+                              owner.context.lower_type(
+                                  native_conversion->operands.front().expression.type.resolved(),
+                                  TypeNameScope::Module
+                              ),
+                              true,
+                              false
                           )}
                  },
              .const_qualified = false}
@@ -380,8 +404,8 @@ auto BodyRealizer::ExpressionBuilder::anchor(
                 || use == PreparedUse::OperandValue
                 || use == PreparedUse::WritePlace
                 || use == PreparedUse::NativeTake)
-        ? emit(fragment, use)
-        : raw(fragment);
+        ? emit(fragment, use, ConstantLiteralContext::Exact)
+        : raw(fragment, ConstantLiteralContext::Exact, PreparedUse::ReadBorrow);
     if (fragment.local_storage) {
         const auto delegated_storage =
             exact_call || (native_call && use == PreparedUse::ReadArgument) || read_conversion;
@@ -422,7 +446,7 @@ auto BodyRealizer::ExpressionBuilder::anchor(
         storage,
         std::move(initializer),
         fragment.statements,
-        exact_call ? std::optional(owner.context.intrinsic_type(TargetSymbol::DecltypeAuto))
+        exact_call ? std::optional(owner.context.intrinsic_type(TargetSymbol::DecltypeAuto, false))
                    : std::nullopt
     );
     complete(

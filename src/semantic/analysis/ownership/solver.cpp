@@ -45,7 +45,12 @@ auto OwnershipBatchAnalyzer::region_site(
         region_sites.size()
     );
     static_cast<void>(inserted);
-    return {body, found->second, OwnershipStorageSiteKind::Region};
+    return {
+        .body = body,
+        .slot = found->second,
+        .kind = OwnershipStorageSiteKind::Region,
+        .element_selection = std::nullopt
+    };
 }
 
 auto OwnershipBatchAnalyzer::body(AnalysisBodyID id) const noexcept -> const AnalysisBodyView& {
@@ -202,6 +207,7 @@ auto OwnershipBatchAnalyzer::query(OwnershipCallInput input, bool recursive) noe
             .body = input.body_id,
             .slot = canonical_sites.size(),
             .kind = OwnershipStorageSiteKind::Input,
+            .element_selection = std::nullopt
         };
         object.site = canonical_sites.emplace(object.site, canonical).first->second;
     }
@@ -248,11 +254,29 @@ auto OwnershipBatchAnalyzer::query(OwnershipCallInput input, bool recursive) noe
                 .recursive = recursive,
                 .pending_input = std::nullopt,
                 .input_revision = 0uz,
-                .answer = {},
+                .answer =
+                    OwnershipCallSummary {
+                        .completions = {},
+                        .referents = {},
+                        .owns = {},
+                        .effects = {}
+                    },
                 .consumers = {},
                 .queued = false,
                 .evaluation_is_closed = false,
-                .diagnosis = nullptr
+                .diagnosis = nullptr,
+                .topology = OwnershipStorageTopology {
+                    .revision = 0uz,
+                    .propagated_revision = std::nullopt,
+                    .objects = {},
+                    .owns = {},
+                    .possible_aliases = {},
+                    .roots = {},
+                    .anchors = {},
+                    .feedback = {},
+                    .region_revision = std::nullopt,
+                    .regions = nullptr
+                }
             })
         );
         enqueue(index);
@@ -266,7 +290,18 @@ auto OwnershipBatchAnalyzer::query(OwnershipCallInput input, bool recursive) noe
 
 auto OwnershipBatchAnalyzer::symbolic_input(const AnalysisBodyView& source) const noexcept
     -> OwnershipCallInput {
-    auto result = OwnershipCallInput {source.id(), {}, {}, {}, {}, {}, {}, {}, {}, {}};
+    auto result = OwnershipCallInput {
+        .body_id = source.id(),
+        .parameters = {},
+        .captures = {},
+        .objects = {},
+        .state = OwnershipState {.objects = {}},
+        .outlives = {},
+        .accesses = {},
+        .storage_readers = {},
+        .owns = {},
+        .possible_aliases = {}
+    };
     auto input_role = 0uz;
     const auto abstract_value =
         [&](this const auto& self,
@@ -283,7 +318,13 @@ auto OwnershipBatchAnalyzer::symbolic_input(const AnalysisBodyView& source) cons
         const auto& value = model.shape(type);
         if (std::holds_alternative<GenericTypeParameter>(value)) {
             relationships.edit().formal_bundles.push_back(
-                {{}, source.id(), input_role, std::move(source_path), origin}
+                OwnershipFormalBundle {
+                    .holder = {},
+                    .body = source.id(),
+                    .input = input_role,
+                    .source = std::move(source_path),
+                    .origin = origin
+                }
             );
             return relationships;
         }
@@ -318,7 +359,13 @@ auto OwnershipBatchAnalyzer::symbolic_input(const AnalysisBodyView& source) cons
 
         if (std::holds_alternative<CallableViewTypeValue>(value)) {
             relationships.edit().callable_loans.push_back(
-                {{}, std::nullopt, std::nullopt, origin, false}
+                OwnershipCallableLoan {
+                    .holder = {},
+                    .backing = std::nullopt,
+                    .callable = std::nullopt,
+                    .origin = origin,
+                    .direct_only = false
+                }
             );
         } else if (const auto* closure = std::get_if<ClosureTypeValue>(&value)) {
             const auto& target = body(*program.declarations().body_for_callable(closure->callable));
@@ -328,25 +375,35 @@ auto OwnershipBatchAnalyzer::symbolic_input(const AnalysisBodyView& source) cons
                 if (std::get<CaptureBindingStorage>(capture.storage).mode == CaptureMode::Write) {
                     const auto object = result.objects.size();
                     result.objects.push_back(
-                        {capture.type,
-                         capture.origin,
-                         {.body = source.id(),
-                          .slot = object,
-                          .kind = OwnershipStorageSiteKind::Input},
-                         false,
-                         false}
+                        OwnershipStorageObject {
+                            .type = capture.type,
+                            .origin = capture.origin,
+                            .site =
+                                OwnershipStorageSite {
+                                    .body = source.id(),
+                                    .slot = object,
+                                    .kind = OwnershipStorageSiteKind::Input,
+                                    .element_selection = std::nullopt
+                                },
+                            .many = false,
+                            .feedback = false
+                        }
                     );
                     result.state.objects.push_back(
-                        {.available = true,
-                         .taken = std::nullopt,
-                         .relationships = std::move(captured),
-                         .modified = false,
-                         .child_intent = std::nullopt}
+                        OwnershipObjectState {
+                            .available = true,
+                            .taken = std::nullopt,
+                            .relationships = std::move(captured),
+                            .modified = false,
+                            .child_intent = std::nullopt
+                        }
                     );
                     relationships.edit().captures.push_back(
-                        {OwnershipProjectionPath {index},
-                         OwnershipPlace {object, {}},
-                         capture.origin}
+                        OwnershipCapture {
+                            .holder = OwnershipProjectionPath {index},
+                            .target = OwnershipPlace {.object = object, .path = {}},
+                            .origin = capture.origin
+                        }
                     );
                 } else {
                     merge_relationships(
@@ -381,21 +438,36 @@ auto OwnershipBatchAnalyzer::symbolic_input(const AnalysisBodyView& source) cons
             auto elements = nest_relationships(self(slice->element, origin), {std::nullopt});
             const auto backing = result.objects.size();
             result.objects.push_back(
-                {type,
-                 origin,
-                 {.body = source.id(), .slot = backing, .kind = OwnershipStorageSiteKind::Input},
-                 false,
-                 false}
+                OwnershipStorageObject {
+                    .type = type,
+                    .origin = origin,
+                    .site =
+                        OwnershipStorageSite {
+                            .body = source.id(),
+                            .slot = backing,
+                            .kind = OwnershipStorageSiteKind::Input,
+                            .element_selection = std::nullopt
+                        },
+                    .many = false,
+                    .feedback = false
+                }
             );
             result.state.objects.push_back(
-                {.available = true,
-                 .taken = std::nullopt,
-                 .relationships = std::move(elements),
-                 .modified = false,
-                 .child_intent = std::nullopt}
+                OwnershipObjectState {
+                    .available = true,
+                    .taken = std::nullopt,
+                    .relationships = std::move(elements),
+                    .modified = false,
+                    .child_intent = std::nullopt
+                }
             );
             relationships.edit().storage_loans.push_back(
-                {{}, {backing, {}}, origin, OwnershipLoanProtection::Contents}
+                OwnershipStorageLoan {
+                    .holder = {},
+                    .backing = OwnershipPlace {.object = backing, .path = {}},
+                    .origin = origin,
+                    .protection = OwnershipLoanProtection::Contents
+                }
             );
         }
         if (const auto* structure = std::get_if<StructTypeValue>(&value)) {
@@ -446,25 +518,40 @@ auto OwnershipBatchAnalyzer::symbolic_input(const AnalysisBodyView& source) cons
             );
             auto alias = std::optional<OwnershipPlace>();
             if (borrowed) {
-                alias = OwnershipPlace {result.objects.size(), {}};
+                alias = OwnershipPlace {.object = result.objects.size(), .path = {}};
                 result.objects.push_back(
-                    {binding.type,
-                     binding.origin,
-                     {.body = source.id(),
-                      .slot = result.objects.size(),
-                      .kind = OwnershipStorageSiteKind::Input},
-                     false,
-                     false}
+                    OwnershipStorageObject {
+                        .type = binding.type,
+                        .origin = binding.origin,
+                        .site =
+                            OwnershipStorageSite {
+                                .body = source.id(),
+                                .slot = result.objects.size(),
+                                .kind = OwnershipStorageSiteKind::Input,
+                                .element_selection = std::nullopt
+                            },
+                        .many = false,
+                        .feedback = false
+                    }
                 );
                 result.state.objects.push_back(
-                    {.available = true,
-                     .taken = std::nullopt,
-                     .relationships = relationships,
-                     .modified = false,
-                     .child_intent = std::nullopt}
+                    OwnershipObjectState {
+                        .available = true,
+                        .taken = std::nullopt,
+                        .relationships = relationships,
+                        .modified = false,
+                        .child_intent = std::nullopt
+                    }
                 );
             }
-            destination.push_back({std::move(alias), std::move(relationships), {}, std::nullopt});
+            destination.push_back(
+                OwnershipCallArgument {
+                    .alias = std::move(alias),
+                    .value = std::move(relationships),
+                    .storage = {},
+                    .capture_holder = std::nullopt
+                }
+            );
         }
     };
     inputs(source.inputs().parameters, result.parameters);
@@ -557,7 +644,7 @@ auto OwnershipBatchAnalyzer::run() noexcept -> AnalysisResult<OwnershipAnalysisS
                 std::move(error->help)
             );
         }
-        const auto& definition = query(std::move(input));
+        const auto& definition = query(std::move(input), false);
         definition_queries.emplace(id, std::addressof(definition));
     }
     if (failure.has_value()) {
@@ -780,7 +867,7 @@ auto OwnershipBatchAnalyzer::run() noexcept -> AnalysisResult<OwnershipAnalysisS
         .query_count = queries.size(),
         .evaluation_count = evaluation_count,
         .storage_node_count = nodes,
-        .storage_edge_count = edges,
+        .storage_edge_count = edges
     };
 }
 

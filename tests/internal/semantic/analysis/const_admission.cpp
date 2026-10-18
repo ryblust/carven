@@ -55,7 +55,7 @@ const TestSuite suite([] static noexcept {
             };
             auto parsed = parse_program(sources, SourceBatch {.modules = std::span(&input, 1uz)});
             require(parsed.has_value());
-            const auto analyzed = analyze(std::move(*parsed));
+            const auto analyzed = analyze(std::move(*parsed), HostEffects::Deny);
             if (!expect(!analyzed.has_value())) {
                 return;
             }
@@ -85,7 +85,7 @@ const TestSuite suite([] static noexcept {
                 "private fn forward<T>(&&value: T) -> T => &&value; private const fn invalid<T>(&&value: T) -> T => forward<T>(&&value);",
                 "private import(cpp) fn provider(); private const fn invalid<T>(&&value: T) -> T { provider(); return &&value; }",
             });
-            each(rejected, std::identity {}, [](const auto& source) noexcept {
+            each(rejected, std::identity {}, [](const auto& source) static noexcept {
                 expect_diagnostic(
                     analyze_test_errors(std::string(source)),
                     DiagnosticCode::ConstAdmission
@@ -146,7 +146,7 @@ const TestSuite suite([] static noexcept {
                 if (!expect(parsed.has_value()).note("source = ", input.source)) {
                     return;
                 }
-                const auto analyzed = analyze(std::move(*parsed));
+                const auto analyzed = analyze(std::move(*parsed), HostEffects::Deny);
                 if (!expect(!analyzed.has_value()).note("source = ", input.source)) {
                     return;
                 }
@@ -176,7 +176,7 @@ const TestSuite suite([] static noexcept {
             if (!expect(parsed.has_value()).note("source = ", text)) {
                 return;
             }
-            const auto analyzed = analyze(std::move(*parsed));
+            const auto analyzed = analyze(std::move(*parsed), HostEffects::Deny);
             expect(analyzed.has_value()).note("source = ", text);
         });
     };
@@ -206,7 +206,7 @@ const TestSuite suite([] static noexcept {
             };
             auto parsed = parse_program(sources, SourceBatch {.modules = modules});
             require(parsed.has_value());
-            const auto analyzed = analyze(std::move(*parsed));
+            const auto analyzed = analyze(std::move(*parsed), HostEffects::Deny);
             if (!expect(!analyzed.has_value())) {
                 return;
             }

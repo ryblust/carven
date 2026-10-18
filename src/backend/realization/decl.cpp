@@ -14,92 +14,109 @@ struct DeclarationInitializers final {
     std::map<TargetLocalID, const TargetExpr*> initializers;
     std::map<TargetLocalID, std::size_t> references;
 
-    auto visit_variable(const TargetVariableStmt& variable) noexcept -> bool {
-        if (candidates.contains(variable.local)) {
-            initializers.emplace(variable.local, &variable.initializer);
-        }
-        return true;
-    }
-
-    auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept -> bool {
-        if (const auto* local = std::get_if<TargetLocalExpr>(&expression.value)) {
-            ++references[local->local];
-        }
-        return true;
-    }
+    auto visit_variable(const TargetVariableStmt& variable) noexcept -> bool;
+    auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept -> bool;
 };
+
+auto DeclarationInitializers::visit_variable(const TargetVariableStmt& variable) noexcept -> bool {
+    if (candidates.contains(variable.local)) {
+        initializers.emplace(variable.local, &variable.initializer);
+    }
+    return true;
+}
+
+auto DeclarationInitializers::enter_expression(
+    const TargetExpr& expression,
+    TargetExpressionRole
+) noexcept -> bool {
+    if (const auto* local = std::get_if<TargetLocalExpr>(&expression.value)) {
+        ++references[local->local];
+    }
+    return true;
+}
 
 struct RemovedInitializerUses final {
     std::map<TargetLocalID, std::size_t>& references;
     std::vector<TargetLocalID>& unused;
 
-    auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept -> bool {
-        if (const auto* local = std::get_if<TargetLocalExpr>(&expression.value)) {
-            if (--references.at(local->local) == 0) {
-                unused.push_back(local->local);
-            }
-        }
-        return true;
-    }
+    auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept -> bool;
 };
+
+auto RemovedInitializerUses::enter_expression(
+    const TargetExpr& expression,
+    TargetExpressionRole
+) noexcept -> bool {
+    if (const auto* local = std::get_if<TargetLocalExpr>(&expression.value)) {
+        if (--references.at(local->local) == 0) {
+            unused.push_back(local->local);
+        }
+    }
+    return true;
+}
 
 struct UnusedDeclarations final {
     const std::flat_set<TargetLocalID>& unused;
     const std::flat_map<TargetLocalID, UnusedInitializer>& candidates;
 
-    auto finish(std::vector<TargetStmt>& statements) const noexcept -> void {
-        for (auto& statement : statements) {
-            auto* variable = std::get_if<TargetVariableStmt>(&statement.value);
-            if (variable != nullptr
-                && unused.contains(variable->local)
-                && candidates.at(variable->local) == UnusedInitializer::Evaluate) {
-                statement.value =
-                    TargetDiscardStmt {.expression = std::move(variable->initializer)};
+    auto finish(std::vector<TargetStmt>& statements) const noexcept -> void;
+    auto enter_expression(TargetExpr& expression, TargetExpressionRole) const noexcept -> bool;
+    auto enter_statement(TargetStmt& statement) const noexcept -> bool;
+};
+
+auto UnusedDeclarations::finish(std::vector<TargetStmt>& statements) const noexcept -> void {
+    for (auto& statement : statements) {
+        auto* variable = std::get_if<TargetVariableStmt>(&statement.value);
+        if (variable != nullptr
+            && unused.contains(variable->local)
+            && candidates.at(variable->local) == UnusedInitializer::Evaluate) {
+            statement.value = TargetDiscardStmt {.expression = std::move(variable->initializer)};
+        }
+    }
+    std::erase_if(statements, [&](const TargetStmt& statement) noexcept {
+        const auto* variable = std::get_if<TargetVariableStmt>(&statement.value);
+        return variable != nullptr && unused.contains(variable->local);
+    });
+}
+
+auto UnusedDeclarations::enter_expression(
+    TargetExpr& expression,
+    TargetExpressionRole
+) const noexcept -> bool {
+    if (auto* lambda = std::get_if<TargetLambdaExpr>(&expression.value)) {
+        finish(lambda->body);
+    }
+    return true;
+}
+
+auto UnusedDeclarations::enter_statement(TargetStmt& statement) const noexcept -> bool {
+    statement.value.visit([&](auto& value) noexcept {
+        using Value = std::remove_cvref_t<decltype(value)>;
+        if constexpr (requires { value.body; }) {
+            finish(value.body);
+        } else if constexpr (std::same_as<Value, TargetBlockStmt>) {
+            finish(value.statements);
+        }
+        if constexpr (std::same_as<Value, TargetIfStmt>) {
+            if (value.else_body) {
+                finish(*value.else_body);
             }
         }
-        std::erase_if(statements, [&](const TargetStmt& statement) noexcept {
-            const auto* variable = std::get_if<TargetVariableStmt>(&statement.value);
-            return variable != nullptr && unused.contains(variable->local);
-        });
-    }
-
-    auto enter_expression(TargetExpr& expression, TargetExpressionRole) const noexcept -> bool {
-        if (auto* lambda = std::get_if<TargetLambdaExpr>(&expression.value)) {
-            finish(lambda->body);
-        }
-        return true;
-    }
-
-    auto enter_statement(TargetStmt& statement) const noexcept -> bool {
-        statement.value.visit([&](auto& value) noexcept {
-            using Value = std::remove_cvref_t<decltype(value)>;
-            if constexpr (requires { value.body; }) {
-                finish(value.body);
-            } else if constexpr (std::same_as<Value, TargetBlockStmt>) {
-                finish(value.statements);
-            }
-            if constexpr (std::same_as<Value, TargetIfStmt>) {
-                if (value.else_body) {
-                    finish(*value.else_body);
-                }
-            }
-            if constexpr (std::same_as<Value, TargetForStmt>) {
-                if (value.initializer) {
-                    auto* variable = std::get_if<TargetVariableStmt>(&value.initializer->value);
-                    if (variable != nullptr && unused.contains(variable->local)) {
-                        if (candidates.at(variable->local) == UnusedInitializer::Omit) {
-                            value.initializer.reset();
-                        } else {
-                            value.initializer->value =
-                                TargetDiscardStmt {.expression = std::move(variable->initializer)};
-                        }
+        if constexpr (std::same_as<Value, TargetForStmt>) {
+            if (value.initializer) {
+                auto* variable = std::get_if<TargetVariableStmt>(&value.initializer->value);
+                if (variable != nullptr && unused.contains(variable->local)) {
+                    if (candidates.at(variable->local) == UnusedInitializer::Omit) {
+                        value.initializer.reset();
+                    } else {
+                        value.initializer->value =
+                            TargetDiscardStmt {.expression = std::move(variable->initializer)};
                     }
                 }
             }
-        });
-        return true;
-    }
-};
+        }
+    });
+    return true;
+}
 
 auto finish_unused_declarations(
     std::vector<TargetStmt>& statements,
@@ -144,21 +161,23 @@ auto finish_unused_declarations(
 
 struct JumpReferences final {
     std::map<std::string, std::size_t> counts;
-    bool has_transfer = false;
+    bool has_transfer;
 
-    auto enter_statement(const TargetStmt& statement) noexcept -> bool {
-        if (const auto* jump = std::get_if<TargetGotoStmt>(&statement.value)) {
-            ++counts[std::string(jump->label.spelling())];
-            has_transfer = true;
-        } else if (std::holds_alternative<TargetLabelStmt>(statement.value)) {
-            has_transfer = true;
-        }
-        return true;
-    }
+    auto enter_statement(const TargetStmt& statement) noexcept -> bool;
 };
 
+auto JumpReferences::enter_statement(const TargetStmt& statement) noexcept -> bool {
+    if (const auto* jump = std::get_if<TargetGotoStmt>(&statement.value)) {
+        ++counts[std::string(jump->label.spelling())];
+        has_transfer = true;
+    } else if (std::holds_alternative<TargetLabelStmt>(statement.value)) {
+        has_transfer = true;
+    }
+    return true;
+}
+
 auto has_transfer(const TargetStmt& statement) noexcept -> bool {
-    auto transfers = JumpReferences();
+    auto transfers = JumpReferences {.counts = {}, .has_transfer = false};
     if (!traverse_target_statement(statement, transfers)) {
         invariant_violation("jump traversal did not complete");
     }
@@ -225,84 +244,92 @@ struct ExitStructuring final {
     JumpReferences& references;
 
     // A jump to the label that immediately follows it transfers nowhere.
-    auto remove_adjacent_jumps(std::vector<TargetStmt>& statements) const noexcept -> void {
-        for (auto index = 0uz; index + 1uz < statements.size();) {
-            const auto* jump = std::get_if<TargetGotoStmt>(&statements[index].value);
-            const auto* label = std::get_if<TargetLabelStmt>(&statements[index + 1uz].value);
-            if (jump == nullptr || label == nullptr || jump->label != label->label) {
-                ++index;
-                continue;
-            }
-            auto& count = references.counts[std::string(label->label.spelling())];
-            --count;
-            const auto erased = count == 0uz ? 2uz : 1uz;
-            statements.erase(
-                statements.begin() + static_cast<std::ptrdiff_t>(index),
-                statements.begin() + static_cast<std::ptrdiff_t>(index + erased)
-            );
-        }
-    }
-
-    auto list(std::vector<TargetStmt>& statements) const noexcept -> void {
-        remove_adjacent_jumps(statements);
-        for (auto index = 0uz; index < statements.size(); ++index) {
-            const auto* exit = std::get_if<TargetLabelStmt>(&statements[index].value);
-            if (exit == nullptr) {
-                continue;
-            }
-            const auto label = exit->label;
-            auto& count = references.counts[std::string(label.spelling())];
-            const auto size = statements.size();
-            if (count != 1uz || !structure_exit(statements, index, label)) {
-                continue;
-            }
-            count = 0uz;
-            index -= size - statements.size();
-            statements.erase(statements.begin() + static_cast<std::ptrdiff_t>(index));
-            --index;
-        }
-    }
-
-    auto leave_expression(TargetExpr& expression) const noexcept -> bool {
-        if (auto* lambda = std::get_if<TargetLambdaExpr>(&expression.value)) {
-            list(lambda->body);
-        }
-        return true;
-    }
-
-    auto leave_statement(TargetStmt& statement) const noexcept -> bool {
-        statement.value.visit([&](auto& value) noexcept {
-            using Value = std::remove_cvref_t<decltype(value)>;
-            if constexpr (requires { value.body; }) {
-                list(value.body);
-            } else if constexpr (std::same_as<Value, TargetBlockStmt>) {
-                list(value.statements);
-            }
-            if constexpr (std::same_as<Value, TargetIfStmt>) {
-                if (value.else_body) {
-                    list(*value.else_body);
-                }
-            }
-        });
-        return true;
-    }
+    auto remove_adjacent_jumps(std::vector<TargetStmt>& statements) const noexcept -> void;
+    auto list(std::vector<TargetStmt>& statements) const noexcept -> void;
+    auto leave_expression(TargetExpr& expression) const noexcept -> bool;
+    auto leave_statement(TargetStmt& statement) const noexcept -> bool;
 };
+
+auto ExitStructuring::remove_adjacent_jumps(std::vector<TargetStmt>& statements) const noexcept
+    -> void {
+    for (auto index = 0uz; index + 1uz < statements.size();) {
+        const auto* jump = std::get_if<TargetGotoStmt>(&statements[index].value);
+        const auto* label = std::get_if<TargetLabelStmt>(&statements[index + 1uz].value);
+        if (jump == nullptr || label == nullptr || jump->label != label->label) {
+            ++index;
+            continue;
+        }
+        auto& count = references.counts[std::string(label->label.spelling())];
+        --count;
+        const auto erased = count == 0uz ? 2uz : 1uz;
+        statements.erase(
+            statements.begin() + static_cast<std::ptrdiff_t>(index),
+            statements.begin() + static_cast<std::ptrdiff_t>(index + erased)
+        );
+    }
+}
+
+auto ExitStructuring::list(std::vector<TargetStmt>& statements) const noexcept -> void {
+    remove_adjacent_jumps(statements);
+    for (auto index = 0uz; index < statements.size(); ++index) {
+        const auto* exit = std::get_if<TargetLabelStmt>(&statements[index].value);
+        if (exit == nullptr) {
+            continue;
+        }
+        const auto label = exit->label;
+        auto& count = references.counts[std::string(label.spelling())];
+        const auto size = statements.size();
+        if (count != 1uz || !structure_exit(statements, index, label)) {
+            continue;
+        }
+        count = 0uz;
+        index -= size - statements.size();
+        statements.erase(statements.begin() + static_cast<std::ptrdiff_t>(index));
+        --index;
+    }
+}
+
+auto ExitStructuring::leave_expression(TargetExpr& expression) const noexcept -> bool {
+    if (auto* lambda = std::get_if<TargetLambdaExpr>(&expression.value)) {
+        list(lambda->body);
+    }
+    return true;
+}
+
+auto ExitStructuring::leave_statement(TargetStmt& statement) const noexcept -> bool {
+    statement.value.visit([&](auto& value) noexcept {
+        using Value = std::remove_cvref_t<decltype(value)>;
+        if constexpr (requires { value.body; }) {
+            list(value.body);
+        } else if constexpr (std::same_as<Value, TargetBlockStmt>) {
+            list(value.statements);
+        }
+        if constexpr (std::same_as<Value, TargetIfStmt>) {
+            if (value.else_body) {
+                list(*value.else_body);
+            }
+        }
+    });
+    return true;
+}
 
 struct LocalUses final {
     std::flat_set<TargetLocalID> referenced;
     std::flat_set<TargetLocalID> read;
 
-    auto enter_expression(const TargetExpr& expression, TargetExpressionRole role) noexcept
-        -> bool {
-        if (const auto* local = std::get_if<TargetLocalExpr>(&expression.value)) {
-            referenced.insert(local->local);
-            if (role == TargetExpressionRole::Operand) {
-                read.insert(local->local);
-            }
-        }
-        return true;
-    }
+    auto enter_expression(const TargetExpr& expression, TargetExpressionRole role) noexcept -> bool;
 };
+
+auto LocalUses::enter_expression(const TargetExpr& expression, TargetExpressionRole role) noexcept
+    -> bool {
+    if (const auto* local = std::get_if<TargetLocalExpr>(&expression.value)) {
+        referenced.insert(local->local);
+        if (role == TargetExpressionRole::Operand) {
+            read.insert(local->local);
+        }
+    }
+    return true;
+}
 
 struct DeclarationUses final {
     const LocalUses& uses;
@@ -330,7 +357,7 @@ auto finish_body_declarations(
     const std::flat_map<TargetLocalID, UnusedInitializer>& unused_initializers
 ) noexcept -> std::vector<bool> {
     finish_unused_declarations(statements, unused_initializers);
-    auto references = JumpReferences();
+    auto references = JumpReferences {.counts = {}, .has_transfer = false};
     if (!traverse_target_statements(statements, references)) {
         invariant_violation("jump reference traversal did not complete");
     }
@@ -341,7 +368,7 @@ auto finish_body_declarations(
         }
         structured.list(statements);
     }
-    auto uses = LocalUses();
+    auto uses = LocalUses {.referenced = {}, .read = {}};
     auto declarations = DeclarationUses {.uses = uses, .mutable_owners = mutable_owners};
     if (!traverse_target_statements(statements, uses)
         || !traverse_target_statements(statements, declarations)) {

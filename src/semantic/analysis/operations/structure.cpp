@@ -128,10 +128,10 @@ auto record_shape(ProgramDraft& draft, ConstructionTypeRef type) noexcept
         }
         auto declaration = draft.construction_struct_declaration_copy(record->structure);
         return RecordShape {
-            record->structure,
-            declaration.kind,
-            declaration.name,
-            std::move(declaration.fields)
+            .owner = record->structure,
+            .kind = declaration.kind,
+            .name = declaration.name,
+            .fields = std::move(declaration.fields)
         };
     }
     const auto* generic = std::get_if<GenericTypeID>(&type);
@@ -167,7 +167,12 @@ auto record_shape(ProgramDraft& draft, ConstructionTypeRef type) noexcept
     for (const auto& [field, type] : std::views::zip(record->fields, *types)) {
         fields.push_back({field.name, type, field.origin});
     }
-    return RecordShape {*generic, record->kind, record->contract.name, std::move(fields)};
+    return RecordShape {
+        .owner = *generic,
+        .kind = record->kind,
+        .name = record->contract.name,
+        .fields = std::move(fields)
+    };
 }
 
 // Copy is a value construction capability, independently of Read forwarding.

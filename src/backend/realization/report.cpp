@@ -41,20 +41,28 @@ auto BodyRealizer::lower_report(
     auto should_report = std::optional<TargetExpr>();
     const auto explanation = fresh_local(TargetTemporaryNameKind::Explanation);
     if (value.operand_sources) {
-        destination.emit(generated_statement(
-            TargetVariableStmt {
-                .binding = TargetVariableBinding::MutableValue,
-                .maybe_unused = false,
-                .local = explanation,
-                .type = context.intrinsic_type(TargetSymbol::RuntimeDisplayWriter),
-                .initializer = TargetExpr {
-                    .value = TargetConstructionExpr {
-                        .type = context.intrinsic_type(TargetSymbol::RuntimeDisplayWriter),
-                        .initializer = std::monostate {}
-                    }
+        destination.emit(
+            generated_statement(
+                TargetVariableStmt {
+                    .binding = TargetVariableBinding::MutableValue,
+                    .maybe_unused = false,
+                    .local = explanation,
+                    .type = context.intrinsic_type(TargetSymbol::RuntimeDisplayWriter, false),
+                    .initializer =
+                        TargetExpr {
+                            .value =
+                                TargetConstructionExpr {
+                                    .type = context.intrinsic_type(
+                                        TargetSymbol::RuntimeDisplayWriter,
+                                        false
+                                    ),
+                                    .initializer = std::monostate {}
+                                }
+                        }
                 }
-            }
-        ));
+            ),
+            true
+        );
     }
     if (value.condition && known == false && !value.operand_sources) {
         if (!destination.accept((co_await discard(**value.condition)))) {
@@ -72,7 +80,8 @@ auto BodyRealizer::lower_report(
         auto condition = destination.accept((co_await operand(
             {.expression = std::addressof(**value.condition),
              .use = PreparedUse::OperandValue,
-             .demand = PreparedDemand::Value}
+             .demand = PreparedDemand::Value},
+            ConstantLiteralContext::Exact
         )));
         condition_observation = previous;
         if (!condition) {
@@ -80,7 +89,8 @@ auto BodyRealizer::lower_report(
         }
         if (known == false) {
             destination.emit(
-                generated_statement(TargetDiscardStmt {.expression = std::move(*condition)})
+                generated_statement(TargetDiscardStmt {.expression = std::move(*condition)}),
+                true
             );
         } else {
             should_report =
@@ -108,21 +118,25 @@ auto BodyRealizer::lower_report(
             return;
         }
         destination.record_exits(report.exits());
-        destination.emit(source_statement(
-            context.semantic(),
-            origin,
-            TargetIfStmt {
-                .condition = std::move(*should_report),
-                .body = std::move(report).finish(),
-                .else_body = std::nullopt
-            }
-        ));
+        destination.emit(
+            source_statement(
+                context.semantic(),
+                origin,
+                TargetIfStmt {
+                    .condition = std::move(*should_report),
+                    .body = std::move(report).finish(),
+                    .else_body = std::nullopt
+                }
+            ),
+            true
+        );
     };
     if (value.message) {
         auto message = report.accept((co_await operand(
             {.expression = std::addressof(**value.message),
              .use = PreparedUse::ReadBorrow,
-             .demand = PreparedDemand::Value}
+             .demand = PreparedDemand::Value},
+            ConstantLiteralContext::Exact
         )));
         if (!message) {
             publish_report();
@@ -146,10 +160,13 @@ auto BodyRealizer::lower_report(
             {.kind = LoweringExitKind::Unreachable, .identity = 0}
         );
     } else {
-        report.emit(discard_statement(call_expression(
-            intrinsic_expression(TargetSymbol::RuntimeReportTestFailure),
-            std::move(arguments)
-        )));
+        report.emit(
+            discard_statement(call_expression(
+                intrinsic_expression(TargetSymbol::RuntimeReportTestFailure),
+                std::move(arguments)
+            )),
+            true
+        );
     }
     if (value.kind == ReportKind::Require || value.kind == ReportKind::Fail) {
         emit_test_exit(report);
@@ -172,7 +189,7 @@ auto BodyRealizer::emit_test_exit(LoweringStmtBuilder& destination) noexcept -> 
             target_expressions(
                 TargetExpr {
                     .value = TargetConstructionExpr {
-                        .type = context.intrinsic_type(TargetSymbol::RuntimeTestStopped),
+                        .type = context.intrinsic_type(TargetSymbol::RuntimeTestStopped, false),
                         .initializer = {}
                     }
                 }
@@ -182,9 +199,10 @@ auto BodyRealizer::emit_test_exit(LoweringStmtBuilder& destination) noexcept -> 
     destination.terminate(
         generated_statement(TargetReturnStmt {.expression = std::move(result)}),
         LoweringExitTarget {
-            std::holds_alternative<TestBodyExit>(inputs.exit) ? LoweringExitKind::Test
-                                                              : LoweringExitKind::FunctionReturn,
-            0
+            .kind = std::holds_alternative<TestBodyExit>(inputs.exit)
+                ? LoweringExitKind::Test
+                : LoweringExitKind::FunctionReturn,
+            .identity = 0uz
         }
     );
 }
@@ -220,15 +238,17 @@ auto realize_observed_comparison(
             .parameters =
                 {{.local = left,
                   .type = context.reference_type(
-                      context.lower_type(operation.left->type.resolved()),
-                      true
+                      context.lower_type(operation.left->type.resolved(), TypeNameScope::Module),
+                      true,
+                      false
                   )},
                  {.local = right,
                   .type = context.reference_type(
-                      context.lower_type(operation.right->type.resolved()),
-                      true
+                      context.lower_type(operation.right->type.resolved(), TypeNameScope::Module),
+                      true,
+                      false
                   )}},
-            .result = context.intrinsic_type(TargetSymbol::Bool),
+            .result = context.intrinsic_type(TargetSymbol::Bool, false),
             .body = std::move(body)
         }
     };

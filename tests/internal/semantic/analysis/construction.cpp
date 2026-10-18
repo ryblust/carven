@@ -48,7 +48,7 @@ auto with_catalog(std::string source_text, Action action) noexcept -> void {
         return;
     }
     auto diagnostics = DiagnosticSink();
-    auto draft = ProgramDraft::begin(std::move(*syntax), diagnostics);
+    auto draft = ProgramDraft::begin(std::move(*syntax), diagnostics, HostEffects::Deny);
     auto catalog = build_analysis_catalog(draft);
     if (!expect(catalog.has_value())) {
         return;
@@ -195,7 +195,7 @@ const TestSuite suite([] static noexcept {
                 };
                 auto parsed = parse_program(sources, SourceBatch {.modules = std::span(&input, 1)});
                 require(parsed.has_value());
-                const auto analyzed = analyze(std::move(*parsed));
+                const auto analyzed = analyze(std::move(*parsed), HostEffects::Deny);
                 if (!expect(!analyzed.has_value())) {
                     return;
                 }

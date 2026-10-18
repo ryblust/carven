@@ -30,7 +30,7 @@ auto lower_structure(ModuleLowering& context, StructID id) noexcept -> TargetDec
         members.push_back(
             TargetStructField {
                 .name = context.field_identifier(id, index),
-                .type = context.lower_type(field.type),
+                .type = context.lower_type(field.type, TypeNameScope::Module),
             }
         );
     }
@@ -61,7 +61,8 @@ auto lower_numeric_enumeration(
         declaration.origin,
         TargetDecl {TargetEnumDecl {
             .name = context.names().enumeration_identifier(id),
-            .underlying_type = context.lower_type(representation.underlying_type),
+            .underlying_type =
+                context.lower_type(representation.underlying_type, TypeNameScope::Module),
             .cases = std::move(cases),
         }}
     ));
@@ -79,13 +80,14 @@ auto lower_payload_enumeration(ModuleLowering& context, EnumID id) noexcept
     const auto& declaration = context.semantic().declarations().enumeration(id);
     const auto& representation = context.payload_enum(id);
     const auto enum_name = context.names().enumeration_identifier(id);
-    const auto enum_type = context.named_type(context.enumeration_name(id));
+    const auto enum_type =
+        context.named_type(context.enumeration_name(id, TypeNameScope::Module), false);
     auto cases = std::vector<LoweredCase>();
     for (const auto case_id : declaration.cases) {
         const auto& source = context.semantic().declarations().enum_case(case_id);
         auto payload = std::vector<TargetTypeID>();
         for (const auto type : source.payload_types) {
-            payload.push_back(context.lower_type(type));
+            payload.push_back(context.lower_type(type, TypeNameScope::Module));
         }
         cases.push_back({
             .id = case_id,
@@ -102,7 +104,7 @@ auto lower_payload_enumeration(ModuleLowering& context, EnumID id) noexcept
         for (auto index = 0uz; index < source.payload_types.size(); ++index) {
             parameters.push_back(
                 {.local = std::nullopt,
-                 .type = context.lower_type(source.payload_types[index]),
+                 .type = context.lower_type(source.payload_types[index], TypeNameScope::Module),
                  .default_value = std::nullopt}
             );
         }
@@ -127,13 +129,13 @@ auto lower_payload_enumeration(ModuleLowering& context, EnumID id) noexcept
                 .name = TargetOperatorName::Equality,
                 .parameters = target_parameters(
                     {.local = std::nullopt,
-                     .type = context.reference_type(enum_type, true),
+                     .type = context.reference_type(enum_type, true, false),
                      .default_value = std::nullopt},
                     {.local = std::nullopt,
-                     .type = context.reference_type(enum_type, true),
+                     .type = context.reference_type(enum_type, true, false),
                      .default_value = std::nullopt}
                 ),
-                .result = context.intrinsic_type(TargetSymbol::Bool),
+                .result = context.intrinsic_type(TargetSymbol::Bool, false),
                 .form = TargetMemberFunctionDefaulted {},
                 .maybe_unused = true,
                 .static_specifier = false,
@@ -159,20 +161,20 @@ auto lower_payload_enumeration(ModuleLowering& context, EnumID id) noexcept
             );
         }
         const auto record = representation.case_records[case_index];
-        const auto record_type = context.named_type(TargetName {record});
+        const auto record_type = context.named_type(TargetName {record}, false);
         if (declaration.supports_equality) {
             record_members.push_back(
                 TargetMemberFunctionDecl {
                     .name = TargetOperatorName::Equality,
                     .parameters = target_parameters(
                         {.local = std::nullopt,
-                         .type = context.reference_type(record_type, true),
+                         .type = context.reference_type(record_type, true, false),
                          .default_value = std::nullopt},
                         {.local = std::nullopt,
-                         .type = context.reference_type(record_type, true),
+                         .type = context.reference_type(record_type, true, false),
                          .default_value = std::nullopt}
                     ),
-                    .result = context.intrinsic_type(TargetSymbol::Bool),
+                    .result = context.intrinsic_type(TargetSymbol::Bool, false),
                     .form = TargetMemberFunctionDefaulted {},
                     .maybe_unused = true,
                     .static_specifier = false,
@@ -205,7 +207,7 @@ auto lower_payload_enumeration(ModuleLowering& context, EnumID id) noexcept
             .type = variant,
         }
     );
-    const auto storage_type = context.named_type(TargetName {representation.storage_type});
+    const auto storage_type = context.named_type(TargetName {representation.storage_type}, false);
     storage_members.push_back(
         TargetMemberVariable {
             .type = storage_type,
@@ -235,7 +237,7 @@ auto lower_payload_enumeration(ModuleLowering& context, EnumID id) noexcept
             enum_name,
             representation.case_records[case_index],
         });
-        const auto record_type = context.named_type(record_name);
+        const auto record_type = context.named_type(record_name, false);
         const auto member_name = TargetName::from_components({enum_name, sum_case.name});
         auto parameters = std::vector<TargetParameter>();
         auto arguments = std::vector<TargetExpr>();
@@ -244,7 +246,7 @@ auto lower_payload_enumeration(ModuleLowering& context, EnumID id) noexcept
             const auto name = context.target().add_local(enum_payload_field_identifier(index));
             parameters.push_back(
                 {.local = name,
-                 .type = context.lower_type(source.payload_types[index]),
+                 .type = context.lower_type(source.payload_types[index], TypeNameScope::Module),
                  .default_value = std::nullopt}
             );
             arguments.push_back(transfer_expression(name_expression(name)));

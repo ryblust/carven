@@ -72,6 +72,7 @@ auto Interpreter::reject(ProgramOriginID origin, std::string_view message) noexc
             },
         .fields = {},
         .calls = {},
+        .blocks = {},
     };
     report(event);
     return {.event = std::move(event)};
@@ -115,6 +116,7 @@ auto Interpreter::prepare_call(CallableID callable, ProgramOriginID origin) noex
                     },
                 .fields = {},
                 .calls = {},
+                .blocks = {},
             }
         );
     }

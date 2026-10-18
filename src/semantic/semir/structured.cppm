@@ -683,7 +683,7 @@ struct SemIRBodyData final {
     // Analysis-only source-body provenance. An instance keeps the copied local
     // identities; publication clears this link along with source bodies.
     std::optional<BodyID> specialized;
-    std::optional<GenericDeclarationID> generic_definition = std::nullopt;
+    std::optional<GenericDeclarationID> generic_definition;
 };
 
 class SemIRBody final {
@@ -736,5 +736,5 @@ struct StructuredBodyDraft final {
     SemanticRegion region;
     std::optional<SemanticRegion> residual;
     std::optional<BodyID> specialized;
-    std::optional<GenericDeclarationID> generic_definition = std::nullopt;
+    std::optional<GenericDeclarationID> generic_definition;
 };

@@ -4,10 +4,7 @@ import :frontend.literal;
 import std;
 
 auto numeric_suffix(const NumericLiteralValue& value) noexcept -> NumericSuffix {
-    if (const auto* integer = std::get_if<IntegerLiteralValue>(&value)) {
-        return integer->suffix;
-    }
-    return std::get<FloatingLiteralValue>(value).suffix;
+    return value.visit([](const auto& literal) static noexcept { return literal.suffix; });
 }
 
 auto std::formatter<NumericSuffix>::display_name(NumericSuffix suffix) noexcept

@@ -30,7 +30,7 @@ import std;
 
 auto BodyElaborator::access_expression(const ASTAccessExpr& source, Span span) noexcept
     -> AnalysisTask<BuiltExpression> {
-    auto operand = (co_await expression(source.operand_id));
+    auto operand = (co_await expression(source.operand_id, true));
     if (!operand.has_value()) {
         co_return std::unexpected(operand.error());
     }

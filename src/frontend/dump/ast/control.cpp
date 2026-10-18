@@ -586,15 +586,23 @@ auto ASTDumper::render_callable_body(
     bool is_last,
     std::string_view field
 ) noexcept -> void {
-    if (const auto* block = std::get_if<ASTBlockID>(&body)) {
-        render_ordinary_block(*block, prefix, is_last, field);
-        return;
-    }
-    const auto& expression = std::get<ASTExpressionBody>(body);
-    append_line(
-        prefix,
-        is_last,
-        std::format("{}ExpressionBody {}", field, format_dump_span(expression.arrow_span))
+    body.visit(
+        Overloaded {
+            [&](ASTBlockID block) noexcept {
+                render_ordinary_block(block, prefix, is_last, field);
+            },
+            [&](const ASTExpressionBody& expression) noexcept {
+                append_line(
+                    prefix,
+                    is_last,
+                    std::format(
+                        "{}ExpressionBody {}",
+                        field,
+                        format_dump_span(expression.arrow_span)
+                    )
+                );
+                render_expression(expression.expression, child_prefix(prefix, is_last), true);
+            },
+        }
     );
-    render_expression(expression.expression, child_prefix(prefix, is_last), true);
 }

@@ -52,7 +52,7 @@ auto TargetStatementCleanup::clear(TargetStmtValue& value) noexcept -> void {
 }
 
 auto TargetItemCleanup::clear(TargetItemValue& value) noexcept -> void {
-    const auto* space = std::get_if<TargetNamespace>(&value);
+    auto* space = std::get_if<TargetNamespace>(&value);
     if (space == nullptr) {
         return;
     }
@@ -68,7 +68,7 @@ auto TargetItemCleanup::clear(TargetItemValue& value) noexcept -> void {
             pending.push_back({std::addressof(item), false});
         }
     };
-    children(std::get<TargetNamespace>(value));
+    children(*space);
     while (!pending.empty()) {
         const auto event = pending.back();
         pending.pop_back();

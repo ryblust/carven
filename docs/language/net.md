@@ -21,7 +21,11 @@ validate their encoding as needed.
 Cancellation has the runtime's separate completion state. One read and one write
 may be active simultaneously on each native connection. A second operation in
 the same direction fails with `Conflict`. A nonempty write_all with zero progress
-fails with `NoProgress`. An empty write performs no native operation.
+fails with `NoProgress`. Empty writes perform no native operation.
+
+`write_all` holds the sending direction for the whole buffer, including short
+writes and readiness waits. Requesting cancellation does not release a connection;
+finish the operation or await its closure before closing or reusing the resource.
 
 ## Native host contract
 
@@ -30,8 +34,9 @@ connected TCP sockets into address-stable `carven::standard::net::Connection` ob
 Adoption configures nonblocking I/O; inspect `startup_error()` on the network and
 each connection. A connection owns its socket, is noncopyable and immovable, and
 closes exactly once. `close()` is idempotent after operations finish and reports
-`Conflict` while a read or write is pending. `shutdown_send()` sends an EOF after
-pending writes finish. Destruction requires no pending operations.
+`Conflict` while a read or write is pending. `shutdown_send()` returns `Conflict`
+while a write is active; otherwise it shuts down sending to establish an EOF.
+Destruction requires no pending operations.
 
 Use the generated `<carven/api/crafts/carven/std/net.hpp>` and
 `carven::api::crafts::carven::std::net::borrow({&connection})` to construct

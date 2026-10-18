@@ -18,7 +18,13 @@ auto BodyRealizer::ExpressionBuilder::discard_pending(Fragment& fragment) noexce
     }
     if (fragment.executes) {
         fragment.statements.emit(
-            generated_statement(TargetDiscardStmt {.expression = raw(fragment)})
+            generated_statement(
+                TargetDiscardStmt {
+                    .expression =
+                        raw(fragment, ConstantLiteralContext::Exact, PreparedUse::ReadBorrow)
+                }
+            ),
+            true
         );
     }
     complete(fragment, LoweringCompleted {});

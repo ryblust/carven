@@ -86,13 +86,12 @@ for _, mode in ipairs({{standard = "c++20", suffix = ""}, {standard = "c++23", s
         set_languages(mode.standard)
         add_rules("@carven/carven")
         add_files("printing/core.cv")
-        add_tests("printing", {
-            run_timeout = 30000, plain = true, pass_output_files = {"printing/stdout.txt"},
-        })
-        after_test(function (target, opt)
-            local expected = io.readfile(path.join(target:scriptdir(), "printing", "stderr.txt"))
-            local stderr = (opt.stderr or ""):gsub("\r\n", "\n")
-            assert(stderr == expected:gsub("\r\n", "\n"), stderr)
+        add_tests("printing", {run_timeout = 30000})
+        on_test(function (target, opt)
+            return import("process", {rootdir = path.join(os.projectdir(), "tests", "harness")})
+                .main(target, opt, {
+                    args = {}, stdout = "stdout.txt", stderr = "stderr.txt",
+                }, path.join(language_dir, "printing"))
         end)
     target_end()
 end

@@ -112,7 +112,9 @@ auto ConstructionRequests::standard_type(
     }
     const auto* source = owner.catalog.symbol(*symbol);
     if (const auto* enumeration = std::get_if<CatalogEnumForm>(&source->form)) {
-        co_return owner.draft.intern_type({.value = EnumTypeValue {enumeration->enumeration}});
+        co_return owner.draft.intern_type(
+            {.value = EnumTypeValue {.enumeration = enumeration->enumeration}}
+        );
     }
     const auto record = std::get<CatalogStructForm>(source->form).structure;
     const auto structure = owner.draft.construction_struct_declaration_copy(record);
@@ -150,7 +152,7 @@ auto ConstructionRequests::standard_type(
                 .build()
         ));
     }
-    co_return owner.draft.intern_type({.value = StructTypeValue {record}});
+    co_return owner.draft.intern_type({.value = StructTypeValue {.structure = record}});
 }
 
 auto ConstructionRequests::number_parser(

@@ -299,7 +299,7 @@ auto Parser::fail(std::string_view message, Span span, DiagnosticCode code) noex
 }
 
 auto Parser::fail_here(std::string_view message) noexcept -> void {
-    fail(message, current().span);
+    fail(message, current().span, DiagnosticCode::Syntax);
 }
 
 auto Parser::expect(TokenKind kind, std::string_view message) noexcept -> Token {
@@ -349,7 +349,7 @@ auto Parser::enter_syntax_nesting() noexcept -> DepthGuard {
             current().span,
             DiagnosticCode::ParseNestingTooDeep
         );
-        return DepthGuard(nullptr);
+        return DepthGuard(nullptr, 0u);
     }
     return enter_depth(syntax_nesting);
 }
@@ -395,7 +395,8 @@ auto Parser::preflight_delimiter_nesting() noexcept -> bool {
         if (delimiters.empty()) {
             fail(
                 std::format("unexpected closing delimiter '{}'", spelling(token.kind)),
-                token.span
+                token.span,
+                DiagnosticCode::Syntax
             );
             return false;
         }
@@ -410,7 +411,8 @@ auto Parser::preflight_delimiter_nesting() noexcept -> bool {
                 spelling(token.kind),
                 spelling(expected)
             ),
-            token.span
+            token.span,
+            DiagnosticCode::Syntax
         );
         return false;
     }
@@ -422,7 +424,8 @@ auto Parser::preflight_delimiter_nesting() noexcept -> bool {
                 spelling(delimiter.kind),
                 spelling(closing_delimiter(delimiter.kind))
             ),
-            delimiter.span
+            delimiter.span,
+            DiagnosticCode::Syntax
         );
         return false;
     }

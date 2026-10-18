@@ -57,13 +57,15 @@ auto OwnershipBodyAnalyzer::storage_available(
 auto OwnershipBodyAnalyzer::synchronize_storage(OwnershipState& state) const noexcept -> void {
     while (state.objects.size() < topology.objects.size()) {
         const auto available = storage_available(state, state.objects.size());
-        state.objects.push_back({
-            .available = available,
-            .taken = std::nullopt,
-            .relationships = {},
-            .modified = false,
-            .child_intent = std::nullopt,
-        });
+        state.objects.push_back(
+            OwnershipObjectState {
+                .available = available,
+                .taken = std::nullopt,
+                .relationships = {},
+                .modified = false,
+                .child_intent = std::nullopt
+            }
+        );
     }
     // A retained query domain can contain descendants discovered by an earlier
     // evaluation before this evaluation initializes their local carrier. Checked
@@ -118,7 +120,7 @@ auto OwnershipBodyAnalyzer::select_owned_storage(
             topology.objects[object].many = true;
             ++topology.revision;
         }
-        known.push_back({object, {}});
+        known.push_back(OwnershipPlace {.object = object, .path = {}});
     }
     auto anchor = topology.anchors[carrier.object];
     if (carrier.object < input.objects.size() + facts.locals.size()) {
@@ -126,12 +128,12 @@ auto OwnershipBodyAnalyzer::select_owned_storage(
         anchor.path.push_back(index);
     }
     const auto key = OwnershipStorageFeedbackKey {
-        anchor,
-        feedback_origin.value_or(selection),
-        selection,
-        element,
-        carrier.path,
-        index
+        .anchor = anchor,
+        .feedback = feedback_origin.value_or(selection),
+        .selection = selection,
+        .element = element,
+        .carrier_path = carrier.path,
+        .index = index
     };
     const auto feedback = feedback_origin.has_value() || summarized;
     if (!known.empty()) {
@@ -145,9 +147,19 @@ auto OwnershipBodyAnalyzer::select_owned_storage(
                 topology.objects[found->second].many = true;
                 ++topology.revision;
             }
-            if (!inserted && !std::ranges::contains(known, OwnershipPlace {found->second, {}})) {
-                known.push_back({found->second, {}});
-                topology.owns.push_back({carrier, found->second, index});
+            if (!inserted
+                && !std::ranges::contains(
+                    known,
+                    OwnershipPlace {.object = found->second, .path = {}}
+                )) {
+                known.push_back(OwnershipPlace {.object = found->second, .path = {}});
+                topology.owns.push_back(
+                    OwnershipStorageEdge {
+                        .carrier = carrier,
+                        .element = found->second,
+                        .index = index
+                    }
+                );
                 ++topology.revision;
             }
         }
@@ -176,22 +188,32 @@ auto OwnershipBodyAnalyzer::select_owned_storage(
                 return !part;
             });
         topology.objects.push_back(
-            {element,
-             selection,
-             {body.id(), selection.index(), OwnershipStorageSiteKind::Allocation, selection},
-             many || uncertain || topology.objects[carrier.object].many,
-             feedback}
+            OwnershipStorageObject {
+                .type = element,
+                .origin = selection,
+                .site =
+                    OwnershipStorageSite {
+                        .body = body.id(),
+                        .slot = selection.index(),
+                        .kind = OwnershipStorageSiteKind::Allocation,
+                        .element_selection = selection
+                    },
+                .many = many || uncertain || topology.objects[carrier.object].many,
+                .feedback = feedback
+            }
         );
         topology.roots.push_back(topology.roots[carrier.object]);
         topology.anchors.push_back(std::move(anchor));
     }
-    topology.owns.push_back({carrier, object, index});
+    topology.owns.push_back(
+        OwnershipStorageEdge {.carrier = carrier, .element = object, .index = index}
+    );
     ++topology.revision;
     std::ranges::sort(topology.owns);
     topology.owns.erase(std::ranges::unique(topology.owns).begin(), topology.owns.end());
     propagate_storage_facts();
     synchronize_storage(state);
-    return {{object, {}}};
+    return {OwnershipPlace {.object = object, .path = {}}};
 }
 
 auto OwnershipBodyAnalyzer::select_element_storage(
@@ -217,9 +239,15 @@ auto OwnershipBodyAnalyzer::select_element_storage(
     auto selected_storage = std::vector<OwnershipPlace>();
     for (auto selected : result) {
         if (const auto* owner = std::get_if<GenericVectorType>(&shape)) {
-            selected_storage.append_range(
-                select_owned_storage(selected, owner->element, index, selection, state)
-            );
+            selected_storage.append_range(select_owned_storage(
+                selected,
+                owner->element,
+                index,
+                selection,
+                state,
+                false,
+                false
+            ));
         } else {
             selected.path.push_back(index);
             selected_storage.push_back(std::move(selected));

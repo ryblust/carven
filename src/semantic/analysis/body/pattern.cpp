@@ -70,7 +70,7 @@ auto BodyElaborator::build_pattern(
                         "C string pointers are not literal patterns"
                     ));
                 }
-                auto normalized = normalize_literal(draft(), literal, type);
+                auto normalized = normalize_literal(draft(), literal, LiteralSign::Positive, type);
                 if (!normalized.has_value()) {
                     const auto diagnostic = constant_evaluation_diagnostic(normalized.error());
                     co_return std::unexpected(fail(
@@ -98,8 +98,8 @@ auto BodyElaborator::build_pattern(
                         return normalize_literal(
                             draft(),
                             ASTLiteral {.span = negative.number_span, .value = numeric},
-                            type,
-                            LiteralSign::Negative
+                            LiteralSign::Negative,
+                            type
                         );
                     });
                 if (!normalized.has_value()) {
@@ -151,7 +151,7 @@ auto BodyElaborator::build_pattern(
                     if (!id) {
                         co_return {};
                     }
-                    auto value = (co_await expression(*id, type));
+                    auto value = (co_await expression(*id, true, type));
                     if (!value) {
                         co_return std::unexpected(value.error());
                     }
@@ -579,7 +579,7 @@ auto BodyElaborator::build_match(
     bool value_form,
     bool allow_pointer_narrowing
 ) noexcept -> AnalysisTask<std::optional<BuiltExpression>> {
-    auto subject = (co_await expression(source.subject));
+    auto subject = (co_await expression(source.subject, true));
     if (!subject.has_value()) {
         co_return std::unexpected(subject.error());
     }
@@ -766,7 +766,7 @@ auto BodyElaborator::build_match(
         auto guard_may_reject = false;
         if (plan.source->guard.has_value()) {
             const auto id = plan.source->guard->expression;
-            auto guard = (co_await expression(id, draft().builtin_type(BuiltinType::Bool)));
+            auto guard = (co_await expression(id, true, draft().builtin_type(BuiltinType::Bool)));
             if (!guard.has_value()) {
                 co_return std::unexpected(guard.error());
             }
@@ -807,13 +807,17 @@ auto BodyElaborator::build_match(
              pattern_may_reject,
              std::move(plan.pattern_bounds)}
         );
-        pop_frame();
+        pop_frame(true);
     }
     // Keep explicit type selection for the Clang 23 coroutine workaround.
     // Do not replace with value_or; see decl/constant.cpp.
     auto result = make_built(
         result_type ? *result_type : ConstructionTypeRef {draft().builtin_type(BuiltinType::Void)},
-        SemMatch {UniqueIndirect(std::move(subject_tree)), subject_is_place, std::move(arms)},
+        SemMatch {
+            .subject = UniqueIndirect(std::move(subject_tree)),
+            .subject_is_place = subject_is_place,
+            .arms = std::move(arms)
+        },
         span,
         std::move(pending)
     );
@@ -846,7 +850,7 @@ auto BodyElaborator::match_expression(
 
 auto BodyElaborator::match_statement(const ASTMatchForm& source, Span span) noexcept
     -> AnalysisTask<void> {
-    auto built = (co_await build_match(source, span, std::nullopt, false));
+    auto built = (co_await build_match(source, span, std::nullopt, false, true));
     if (!built.has_value()) {
         co_return std::unexpected(built.error());
     }

@@ -60,7 +60,11 @@ const TestSuite suite([] static noexcept {
             );
             const auto frozen = freeze_constant_value(
                 draft,
-                ExecutionAggregateValue {.type = tuple, .elements = std::move(elements)}
+                ExecutionAggregateValue {
+                    .type = tuple,
+                    .elements = std::move(elements),
+                    .capacity = 0uz
+                }
             );
             if (!expect(frozen.has_value())) {
                 return;

@@ -261,8 +261,8 @@ struct Vector final {
     CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL native() const noexcept -> Value { return value; }
 
     // A transparent aggregate keeps vectorcall returns in SIMD registers for
-    // both MSVC and clang-cl. Default zero storage preserves value construction.
-    Value value {};
+    // both MSVC and clang-cl.
+    Value value;
 };
 
 template<typename Element, std::size_t Lanes>
@@ -330,8 +330,8 @@ struct Mask final {
 
     // Native mask storage requires each lane to be zero or all bits set.
     // A transparent aggregate keeps vectorcall returns in SIMD registers for
-    // both MSVC and clang-cl. Default zero storage preserves value construction.
-    Value value {};
+    // both MSVC and clang-cl.
+    Value value;
 };
 
 template<typename Element, std::size_t Lanes>

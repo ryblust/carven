@@ -39,5 +39,5 @@ auto collect_project_sources(
 
 // Installed sources keep a compiler-defined native identity independently of
 // consumer paths, test modes, and native compilation settings.
-auto standard_source_library(const CommandSources& sources, bool own_all_standard = false) noexcept
+auto standard_source_library(const CommandSources& sources, bool own_all_standard) noexcept
     -> std::optional<SourceLibrary>;

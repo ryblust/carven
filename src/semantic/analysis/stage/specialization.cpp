@@ -23,8 +23,7 @@ namespace {
 class Specializer final {
 public:
     Specializer(StaticStage& stage, BodyID body, StaticEnvironment environment) noexcept;
-    auto region(SemanticRegion& source, bool retain_bindings = false) noexcept
-        -> AnalysisTask<void>;
+    auto region(SemanticRegion& source, bool retain_bindings) noexcept -> AnalysisTask<void>;
     auto changed() const noexcept -> bool;
 
 private:
@@ -352,7 +351,7 @@ auto Specializer::expression(SemanticExpression& source) noexcept -> AnalysisTas
             source.value = SemIf {.branches = {}, .otherwise = std::nullopt, .is_static = false};
             co_return {};
         }
-        auto arm = co_await region(**selected);
+        auto arm = co_await region(**selected, false);
         if (!arm) {
             co_return std::unexpected(arm.error());
         }
@@ -456,7 +455,7 @@ auto Specializer::expression(SemanticExpression& source) noexcept -> AnalysisTas
                 }
             }
             if (selected.accepted && (!arm.guard || guard_normal)) {
-                auto value = co_await region(arm.body);
+                auto value = co_await region(arm.body, false);
                 if (!value) {
                     co_return std::unexpected(value.error());
                 }
@@ -468,13 +467,13 @@ auto Specializer::expression(SemanticExpression& source) noexcept -> AnalysisTas
         }
         rewritten |= std::erase_if(
                          match->arms,
-                         [](const SemMatchArm& arm) noexcept { return !arm.reachable; }
+                         [](const SemMatchArm& arm) static noexcept { return !arm.reachable; }
                      )
             != 0uz;
         co_return {};
     }
     if (auto* attempt = std::get_if<SemTry>(&source.value)) {
-        auto protected_body = co_await region(*attempt->body);
+        auto protected_body = co_await region(*attempt->body, false);
         if (!protected_body) {
             co_return std::unexpected(protected_body.error());
         }
@@ -508,7 +507,7 @@ auto Specializer::expression(SemanticExpression& source) noexcept -> AnalysisTas
             }
             rewritten |= std::erase_if(
                              arm.alternatives,
-                             [](const SemCatchAlternative& alternative) noexcept {
+                             [](const SemCatchAlternative& alternative) static noexcept {
                                  return !alternative.reachable;
                              }
                          )
@@ -534,7 +533,7 @@ auto Specializer::expression(SemanticExpression& source) noexcept -> AnalysisTas
                 }
             }
             if (accepted && (!arm.guard || guard_normal)) {
-                auto value = co_await region(arm.body);
+                auto value = co_await region(arm.body, false);
                 if (!value) {
                     co_return std::unexpected(value.error());
                 }
@@ -543,10 +542,11 @@ auto Specializer::expression(SemanticExpression& source) noexcept -> AnalysisTas
             }
             completion.finish_catch(guard_normal);
         }
-        rewritten |= std::erase_if(
-                         attempt->arms,
-                         [](const SemCatchArm& arm) noexcept { return arm.alternatives.empty(); }
-                     )
+        rewritten |=
+            std::erase_if(
+                attempt->arms,
+                [](const SemCatchArm& arm) static noexcept { return arm.alternatives.empty(); }
+            )
             != 0uz;
         if (const auto possible = completion.pending_failures()) {
             auto types = std::vector<TypeID>();
@@ -577,7 +577,7 @@ auto Specializer::expression(SemanticExpression& source) noexcept -> AnalysisTas
             if constexpr (std::same_as<Value, SemanticExpression>) {
                 co_return co_await expression(*value);
             } else {
-                co_return co_await region(*value);
+                co_return co_await region(*value, false);
             }
         });
         if (!result) {
@@ -611,7 +611,7 @@ auto Specializer::expand(SemRangeLoop& loop) noexcept -> AnalysisTask<SemExpande
             environment.insert_or_assign(*loop.binding, *current);
         }
         auto iteration = *loop.body;
-        auto result = co_await region(iteration);
+        auto result = co_await region(iteration, false);
         if (!result) {
             co_return std::unexpected(result.error());
         }
@@ -668,7 +668,7 @@ auto Specializer::statement(SemanticStatement& source) noexcept -> AnalysisTask<
             if (!input) {
                 co_return std::unexpected(input.error());
             }
-            co_return co_await region(*operation.body);
+            co_return co_await region(*operation.body, false);
         } else if constexpr (std::same_as<Operation, SemLoop>) {
             const auto saved = environment;
             auto initial = co_await region(*operation.initializer, true);
@@ -681,11 +681,11 @@ auto Specializer::statement(SemanticStatement& source) noexcept -> AnalysisTask<
                     co_return std::unexpected(condition.error());
                 }
             }
-            auto nested = co_await region(*operation.body);
+            auto nested = co_await region(*operation.body, false);
             if (!nested) {
                 co_return std::unexpected(nested.error());
             }
-            auto steps = co_await region(*operation.steps);
+            auto steps = co_await region(*operation.steps, false);
             environment = saved;
             co_return steps;
         } else if constexpr (std::same_as<Operation, SemExpandedLoop>) {
@@ -702,7 +702,7 @@ auto Specializer::statement(SemanticStatement& source) noexcept -> AnalysisTask<
                     if constexpr (std::same_as<Value, SemanticExpression>) {
                         co_return co_await expression(*value);
                     } else {
-                        co_return co_await region(*value);
+                        co_return co_await region(*value, false);
                     }
                 });
                 if (!result) {
@@ -778,7 +778,7 @@ auto specialize_region(
     SemanticRegion& region
 ) noexcept -> AnalysisTask<bool> {
     auto specializer = Specializer(stage, body, std::move(environment));
-    auto result = co_await specializer.region(region);
+    auto result = co_await specializer.region(region, false);
     if (!result) {
         co_return std::unexpected(result.error());
     }

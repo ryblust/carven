@@ -35,11 +35,11 @@ auto BodyRealizer::emit_return(
     if (local_result_exit && std::holds_alternative<LoweringReturnResult>(result)) {
         if (std::holds_alternative<LoweringDiscardResult>(local_result_exit->result)) {
             if (value) {
-                destination.emit(discard_statement(std::move(*value)));
+                destination.emit(discard_statement(std::move(*value)), true);
             }
         } else {
             deliver_result(
-                value ? LoweringResult(LoweringDirectExpression {std::move(*value)})
+                value ? LoweringResult(LoweringDirectExpression {.expression = std::move(*value)})
                       : LoweringResult(LoweringCompleted {}),
                 local_result_exit->result,
                 destination
@@ -69,7 +69,7 @@ auto BodyRealizer::emit_return(
                     || std::holds_alternative<PointerTypeValue>(type);
                 if (value.has_value()) {
                     if (context.is_void(signature.result)) {
-                        destination.emit(discard_statement(std::move(*value)));
+                        destination.emit(discard_statement(std::move(*value)), true);
                     } else if (direct) {
                         arguments.push_back(std::move(*value));
                     } else {
@@ -81,7 +81,8 @@ auto BodyRealizer::emit_return(
                             TargetExpr {
                                 .value = TargetLambdaExpr {
                                     .parameters = {},
-                                    .result = context.lower_type(signature.result),
+                                    .result =
+                                        context.lower_type(signature.result, TypeNameScope::Module),
                                     .body = std::move(body)
                                 }
                             }
@@ -98,13 +99,13 @@ auto BodyRealizer::emit_return(
                 );
             } else if (context.is_void(signature.result)) {
                 if (value) {
-                    destination.emit(discard_statement(std::move(*value)));
+                    destination.emit(discard_statement(std::move(*value)), true);
                 }
                 value = std::nullopt;
             }
         } else if (std::holds_alternative<TestBodyExit>(inputs.exit)) {
             if (value) {
-                destination.emit(discard_statement(std::move(*value)));
+                destination.emit(discard_statement(std::move(*value)), true);
             }
             value = std::nullopt;
         }
@@ -120,7 +121,7 @@ auto BodyRealizer::emit_return(
         generated_statement(TargetReturnStmt {.expression = std::move(value)}),
         std::holds_alternative<LoweringYieldResult>(result)
             ? std::get<LoweringYieldResult>(result).target
-            : LoweringExitTarget {LoweringExitKind::FunctionReturn, 0}
+            : LoweringExitTarget {.kind = LoweringExitKind::FunctionReturn, .identity = 0uz}
     );
 }
 
@@ -164,11 +165,14 @@ auto BodyRealizer::deliver_failure(
         return;
     }
     if (relay) {
-        destination.emit(discard_statement(call_member(
-            name_expression(relay->slot.storage),
-            "emplace",
-            target_expressions(std::move(value))
-        )));
+        destination.emit(
+            discard_statement(call_member(
+                name_expression(relay->slot.storage),
+                "emplace",
+                target_expressions(std::move(value))
+            )),
+            true
+        );
         emit_async_exit(
             generated_statement(TargetGotoStmt {.label = relay->label}),
             relay->target,
@@ -208,7 +212,7 @@ auto BodyRealizer::deliver_failure(
                 )
             }
         ),
-        LoweringExitTarget {LoweringExitKind::Failure, 0}
+        LoweringExitTarget {.kind = LoweringExitKind::Failure, .identity = 0uz}
     );
 }
 
@@ -229,7 +233,10 @@ auto BodyRealizer::transfer_failure(
         register_failure(source, failures, *exit, destination);
         return;
     }
-    destination.scope(dispatch_failure(source, failures, std::nullopt));
+    destination.scope(
+        dispatch_failure(source, failures, std::nullopt),
+        TargetGeneratedExpansionAttribution {.reason = TargetExpansionReason::LoweringSupport}
+    );
 }
 
 auto BodyRealizer::register_failure(
@@ -280,7 +287,7 @@ auto BodyRealizer::failure_projection(const FailureSource& source, TypeID type) 
                         std::move(storage),
                         TargetIdentifier::from_spelling("failure_if")
                     ),
-                    {context.lower_type(type)},
+                    {context.lower_type(type, TypeNameScope::Module)},
                     {}
                 );
             },
@@ -292,7 +299,7 @@ auto BodyRealizer::failure_projection(const FailureSource& source, TypeID type) 
                 }
                 return template_call_expression(
                     intrinsic_expression(TargetSymbol::StdGetIf),
-                    {context.lower_type(type)},
+                    {context.lower_type(type, TypeNameScope::Module)},
                     target_expressions(std::move(payload))
                 );
             },
@@ -325,7 +332,8 @@ auto BodyRealizer::dispatch_failure(
                 .binding = TargetVariableBinding::ConstValue,
                 .maybe_unused = false,
                 .local = projection,
-                .type = context.pointer_type(context.intrinsic_type(TargetSymbol::Auto)),
+                .type =
+                    context.pointer_type(context.intrinsic_type(TargetSymbol::Auto, false), false),
                 .initializer = failure_projection(source, type)
             },
             false
@@ -341,17 +349,20 @@ auto BodyRealizer::dispatch_failure(
             return transfers;
         }
         transfers.record_exits(transfer.exits());
-        transfers.emit(generated_statement(
-            TargetIfStmt {
-                .condition = name_expression(projection),
-                .body = std::move(transfer).finish(),
-                .else_body = std::nullopt
-            }
-        ));
+        transfers.emit(
+            generated_statement(
+                TargetIfStmt {
+                    .condition = name_expression(projection),
+                    .body = std::move(transfer).finish(),
+                    .else_body = std::nullopt
+                }
+            ),
+            true
+        );
     }
     transfers.terminate(
         generated_statement(TargetUnreachableStmt {.reason = TargetUnreachableReason::SemIRProof}),
-        LoweringExitTarget {LoweringExitKind::Unreachable, 0}
+        LoweringExitTarget {.kind = LoweringExitKind::Unreachable, .identity = 0uz}
     );
     return transfers;
 }
@@ -411,7 +422,6 @@ auto BodyRealizer::result_expression(
         co_return {};
     }
     const auto& expression_source = preparation.operation(source);
-    const auto* call = std::get_if<SemCall>(&expression_source.value);
     const auto transport = fallible(expression_source);
     const auto* callable = std::get_if<CallableBodyExit>(&inputs.exit);
     if (!is_async()
@@ -419,8 +429,7 @@ auto BodyRealizer::result_expression(
         && callable != nullptr
         && transport
         && !transport->destination
-        && call != nullptr
-        && context.call_result(*call) == context.callable_result(callable->callable_id)) {
+        && context.call_result(transport->call) == context.callable_result(callable->callable_id)) {
         auto value = destination.accept((co_await expression(
             source,
             ConstantLiteralContext::Exact,
@@ -441,7 +450,7 @@ auto BodyRealizer::result_expression(
                 generated_statement(
                     TargetReturnStmt {.expression = require_expression(std::move(*value))}
                 ),
-                LoweringExitTarget {LoweringExitKind::FunctionReturn, 0}
+                LoweringExitTarget {.kind = LoweringExitKind::FunctionReturn, .identity = 0uz}
             );
         }
         co_return {};
@@ -495,7 +504,7 @@ auto BodyRealizer::statement(const SemanticStatement& source) noexcept
                         destination
                     ));
                 } else {
-                    emit_return(std::nullopt, destination);
+                    emit_return(std::nullopt, destination, LoweringReturnResult {});
                 }
                 co_return {};
             },
@@ -560,7 +569,14 @@ auto BodyRealizer::statement(const SemanticStatement& source) noexcept
                 co_return {};
             },
             [&](const SemThrow& value) noexcept -> ContinuationTask<std::monostate> {
-                auto failure = read_value((co_await expression(value.value)), destination);
+                auto failure = read_value(
+                    (co_await expression(
+                        value.value,
+                        ConstantLiteralContext::Exact,
+                        ResultDemand::Value
+                    )),
+                    destination
+                );
                 if (failure) {
                     emit_failure(std::move(*failure), value.value, current_failure, destination);
                 }
@@ -573,16 +589,24 @@ auto BodyRealizer::statement(const SemanticStatement& source) noexcept
                     LoweringDiscardResult {},
                     evaluation
                 ));
-                destination.scope(std::move(evaluation));
+                destination.scope(
+                    std::move(evaluation),
+                    TargetGeneratedExpansionAttribution {
+                        .reason = TargetExpansionReason::LoweringSupport
+                    }
+                );
                 co_return {};
             },
             [&](const SemAsyncLet& value) noexcept -> ContinuationTask<std::monostate> {
                 auto evaluation = LoweringStmtBuilder();
-                auto operation = evaluation.accept((co_await operand({
-                    .expression = std::addressof(value.initializer),
-                    .use = PreparedUse::NativeTake,
-                    .demand = PreparedDemand::Value,
-                })));
+                auto operation = evaluation.accept((co_await operand(
+                    {
+                        .expression = std::addressof(value.initializer),
+                        .use = PreparedUse::NativeTake,
+                        .demand = PreparedDemand::Value,
+                    },
+                    ConstantLiteralContext::Exact
+                )));
                 if (operation) {
                     const auto scope = std::ranges::find(
                         async_scopes,
@@ -615,7 +639,8 @@ auto BodyRealizer::statement(const SemanticStatement& source) noexcept
                             .value_type = context.async_type(
                                 TargetSymbol::RuntimeAsyncChild,
                                 operation_type->success,
-                                operation_type->failures
+                                operation_type->failures,
+                                TypeNameScope::Module
                             ),
                         };
                         delayed_bindings.emplace(value.child, storage);
@@ -624,7 +649,12 @@ auto BodyRealizer::statement(const SemanticStatement& source) noexcept
                         // destination; initializer owners die at this source
                         // full-expression boundary after start has captured them.
                         initialize_deferred(storage, std::move(start), evaluation);
-                        destination.scope(std::move(evaluation));
+                        destination.scope(
+                            std::move(evaluation),
+                            TargetGeneratedExpansionAttribution {
+                                .reason = TargetExpansionReason::LoweringSupport
+                            }
+                        );
                     } else {
                         destination.append(std::move(evaluation));
                         destination.declare(
@@ -632,14 +662,19 @@ auto BodyRealizer::statement(const SemanticStatement& source) noexcept
                                 .binding = TargetVariableBinding::MutableValue,
                                 .maybe_unused = false,
                                 .local = binding_locals.at(value.child),
-                                .type = context.intrinsic_type(TargetSymbol::Auto),
+                                .type = context.intrinsic_type(TargetSymbol::Auto, false),
                                 .initializer = std::move(start),
                             },
                             true
                         );
                     }
                 } else {
-                    destination.scope(std::move(evaluation));
+                    destination.scope(
+                        std::move(evaluation),
+                        TargetGeneratedExpansionAttribution {
+                            .reason = TargetExpansionReason::LoweringSupport
+                        }
+                    );
                 }
                 co_return {};
             },
@@ -675,7 +710,10 @@ auto BodyRealizer::statement(const SemanticStatement& source) noexcept
                             .binding = TargetVariableBinding::MutableReference,
                             .maybe_unused = true,
                             .local = binding_locals.at(binding.binding),
-                            .type = context.lower_type(metadata.binding(binding.binding).type),
+                            .type = context.lower_type(
+                                metadata.binding(binding.binding).type,
+                                TypeNameScope::Module
+                            ),
                             .initializer = std::move(selected)
                         },
                         false
@@ -694,7 +732,12 @@ auto BodyRealizer::statement(const SemanticStatement& source) noexcept
                 co_return {};
             },
             [&](const OwnedSemanticRegion& value) noexcept -> ContinuationTask<std::monostate> {
-                destination.scope((co_await region(*value, LoweringDiscardResult {})));
+                destination.scope(
+                    (co_await region(*value, LoweringDiscardResult {}, false)),
+                    TargetGeneratedExpansionAttribution {
+                        .reason = TargetExpansionReason::LoweringSupport
+                    }
+                );
                 co_return {};
             },
             [&](const SemLoop& value) noexcept -> ContinuationTask<std::monostate> {

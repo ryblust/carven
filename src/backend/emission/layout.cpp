@@ -280,9 +280,13 @@ auto fits(
                     line_start = false;
                     return std::nullopt;
                 },
-                [](const LayoutLine&) noexcept -> std::optional<bool> { return true; },
-                [](const LayoutSourceLocation&) noexcept -> std::optional<bool> { return true; },
-                [](const LayoutGeneratedLocation&) noexcept -> std::optional<bool> { return true; },
+                [](const LayoutLine&) static noexcept -> std::optional<bool> { return true; },
+                [](const LayoutSourceLocation&) static noexcept -> std::optional<bool> {
+                    return true;
+                },
+                [](const LayoutGeneratedLocation&) static noexcept -> std::optional<bool> {
+                    return true;
+                },
                 [&](const LayoutConcat& value) noexcept -> std::optional<bool> {
                     for (const auto child : value.children | std::views::reverse) {
                         push({command.indent, command.force_preferred_choices, child});

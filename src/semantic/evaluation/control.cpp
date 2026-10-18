@@ -79,7 +79,7 @@ auto SemanticExecutor::statement(ExecutionFrame& frame, const SemanticStatement&
                         .payload = std::make_shared<const ExecutionValue>(std::move(*owned)),
                         .origin = source.origin,
                         .calls = current->calls,
-                        .blocks = current->blocks,
+                        .blocks = current->blocks
                     }}
                 );
             } else if constexpr (std::same_as<Operation, SemRethrow>) {
@@ -234,7 +234,8 @@ auto SemanticExecutor::statement(ExecutionFrame& frame, const SemanticStatement&
                             *operation.compound,
                             *prior,
                             *rhs,
-                            *result_type
+                            *result_type,
+                            IntegerArithmetic::Wrapping
                         ),
                         source.origin
                     );
@@ -282,7 +283,7 @@ auto SemanticExecutor::statement(ExecutionFrame& frame, const SemanticStatement&
                 co_return co_await close_region(frame, operation.lifetime, std::move(result));
             } else if constexpr (std::same_as<Operation, SemExpandedLoop>) {
                 for (const auto& iteration : operation.iterations) {
-                    auto result = co_await region(frame, iteration);
+                    auto result = co_await region(frame, iteration, true);
                     if (!result || result->flow == ExecutionFlow::Return) {
                         co_return result;
                     }
@@ -296,14 +297,14 @@ auto SemanticExecutor::statement(ExecutionFrame& frame, const SemanticStatement&
                 };
             } else if constexpr (std::same_as<Operation, SemConstBlock>) {
                 current->blocks.push_back({.label = operation.label, .origin = operation.source});
-                auto result = co_await region(frame, *operation.region);
+                auto result = co_await region(frame, *operation.region, true);
                 if (!result) {
                     result = std::unexpected(escaped(std::move(result.error())));
                 }
                 current->blocks.pop_back();
                 co_return result;
             } else if constexpr (std::same_as<Operation, OwnedSemanticRegion>) {
-                co_return (co_await region(frame, *operation));
+                co_return (co_await region(frame, *operation, true));
             } else {
                 static_assert(std::same_as<Operation, void>, "statement execution is missing");
             }
@@ -344,7 +345,7 @@ auto SemanticExecutor::loop(
                 };
             }
         }
-        auto body = co_await region(frame, *source.body);
+        auto body = co_await region(frame, *source.body, true);
         if (!body || body->flow == ExecutionFlow::Return) {
             co_return body;
         }
@@ -385,7 +386,8 @@ auto SemanticExecutor::open_iteration(
         );
     }
     if (canonical
-        && canonical->value == CanonicalTypeValue {BuiltinTypeValue {BuiltinType::StrCharsView}}) {
+        && canonical->value
+            == CanonicalTypeValue {BuiltinTypeValue {.kind = BuiltinType::StrCharsView}}) {
         auto evaluated = co_await value(frame, source);
         if (!evaluated) {
             co_return std::unexpected(std::move(evaluated.error()));
@@ -507,7 +509,7 @@ auto SemanticExecutor::range_loop(
                     bind(frame, source.binding->index(), std::move(*copied));
                 }
             }
-            auto body = co_await region(frame, *source.body);
+            auto body = co_await region(frame, *source.body, true);
             if (!body || body->flow == ExecutionFlow::Return) {
                 co_return body;
             }
@@ -614,7 +616,7 @@ auto SemanticExecutor::report(
             .cause = operation.kind,
             .fields = {},
             .calls = current->calls,
-            .blocks = current->blocks,
+            .blocks = current->blocks
         };
         if (operation.condition_source) {
             event.fields.push_back({

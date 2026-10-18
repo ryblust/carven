@@ -127,7 +127,7 @@ BodyRealizer::BodyRealizer(
 }
 
 auto BodyRealizer::finish() noexcept -> LoweredBody {
-    auto statements = region(metadata.region(), LoweringDiscardResult {}).run();
+    auto statements = region(metadata.region(), LoweringDiscardResult {}, false).run();
 
     if (is_async() && statements.continues()) {
         const auto* callable = std::get_if<CallableBodyExit>(&inputs.exit);
@@ -137,7 +137,7 @@ auto BodyRealizer::finish() noexcept -> LoweredBody {
         if (!context.is_void(signature.result)) {
             invariant_violation("async body has an undelivered success value");
         }
-        emit_return(std::nullopt, statements);
+        emit_return(std::nullopt, statements, LoweringReturnResult {});
     }
     if (tail_loop) {
         statements = wrap_tail_loop(std::move(statements));
@@ -155,7 +155,10 @@ auto BodyRealizer::finish() noexcept -> LoweredBody {
     }
     if (local_result_exit && statements.exits().contains(local_result_exit->exit.target)) {
         auto local = LoweringStmtBuilder();
-        local.scope(std::move(statements));
+        local.scope(
+            std::move(statements),
+            TargetGeneratedExpansionAttribution {.reason = TargetExpansionReason::LoweringSupport}
+        );
         local.resume(local_result_exit->exit.label, local_result_exit->exit.target);
         statements = std::move(local);
     }
@@ -232,7 +235,12 @@ auto BodyRealizer::region(
             auto delivery = LoweringStmtBuilder();
             (co_await result_expression(*source.result, result, delivery, source.lifetime));
             // Tail owners are initialized, observed and delivered before this block exits.
-            statements.scope(std::move(delivery));
+            statements.scope(
+                std::move(delivery),
+                TargetGeneratedExpansionAttribution {
+                    .reason = TargetExpansionReason::LoweringSupport
+                }
+            );
         } else {
             deliver_result(LoweringCompleted {}, result, statements);
         }
@@ -260,6 +268,7 @@ auto BodyRealizer::fallible(const SemanticExpression& source) const noexcept
                  .members.empty()
             || context.semantic().may_stop_test(*call))) {
         return FallibleCall {
+            .call = *call,
             .failures = call->callee_failures.resolved(),
             .destination = current_failure
         };

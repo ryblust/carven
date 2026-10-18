@@ -210,7 +210,7 @@ auto Parser::parse_multiplicative() noexcept -> std::optional<ASTExprID> {
 }
 
 auto Parser::parse_cast_expression() noexcept -> std::optional<ASTExprID> {
-    auto operand = parse_prefix_expression();
+    auto operand = parse_prefix_expression(true);
     if (!operand) {
         return std::nullopt;
     }
@@ -374,7 +374,8 @@ auto Parser::parse_postfix_expression(bool allow_propagation) noexcept -> std::o
                     || converted.ptr != text.data() + text.size()) {
                     fail(
                         "tuple element index requires an unprefixed decimal uint32 without leading zeros",
-                        component.span
+                        component.span,
+                        DiagnosticCode::Syntax
                     );
                     return std::nullopt;
                 }
@@ -788,11 +789,13 @@ auto Parser::parse_callable_body() noexcept -> std::optional<ASTCallableBody> {
 }
 
 auto Parser::callable_body_span(const ASTCallableBody& body) const noexcept -> Span {
-    if (const auto* block = std::get_if<ASTBlockID>(&body)) {
-        return builder.block(*block).span;
-    }
-    const auto& expression = std::get<ASTExpressionBody>(body);
-    return join(expression.arrow_span, builder.expression(expression.expression).span);
+    return body.visit([&](const auto& value) noexcept -> Span {
+        if constexpr (std::same_as<std::remove_cvref_t<decltype(value)>, ASTBlockID>) {
+            return builder.block(value).span;
+        } else {
+            return join(value.arrow_span, builder.expression(value.expression).span);
+        }
+    });
 }
 
 auto Parser::parse_lambda_expression() noexcept -> std::optional<ASTExprID> {
@@ -803,7 +806,8 @@ auto Parser::parse_lambda_expression() noexcept -> std::optional<ASTExprID> {
         const auto name = expect(TokenKind::Identifier, "expected capture name");
         captures.push_back({
             .span = access ? join(access->span, name.span) : name.span,
-            .write_marker = access.transform([](const Token& token) static { return token.span; }),
+            .write_marker =
+                access.transform([](const Token& token) static noexcept { return token.span; }),
             .name_span = name.span,
         });
         if (!match(TokenKind::Comma)) {
@@ -1016,7 +1020,7 @@ auto Parser::try_parse_construction() noexcept -> std::optional<ASTExprID> {
         fail_here("contextual construction requires named fields");
     }
     const auto success = !failed;
-    finish_speculation(checkpoint, success);
+    finish_speculation(checkpoint, success, true);
     if (!success) {
         return std::nullopt;
     }

@@ -16,11 +16,11 @@ AnalysisBodyView::AnalysisBodyView(const SemIRBody& body) noexcept
         binding_rows.emplace_back(
             id,
             ElaboratedLocalBinding {
-                binding.name,
-                binding.type,
-                binding.lifetime,
-                binding.storage,
-                binding.origin
+                .name = binding.name,
+                .type = binding.type,
+                .lifetime = binding.lifetime,
+                .storage = binding.storage,
+                .origin = binding.origin
             }
         );
     }
@@ -30,7 +30,7 @@ AnalysisBodyView::AnalysisBodyView(const SemIRBody& body) noexcept
             pattern.value.visit([](const auto& value) static noexcept -> ElaboratedPatternValue {
                 using Value = std::remove_cvref_t<decltype(value)>;
                 if constexpr (std::same_as<Value, TypeConstraintPattern>) {
-                    return ElaboratedTypeConstraintPattern {value.type};
+                    return ElaboratedTypeConstraintPattern {.type = value.type};
                 } else {
                     return value;
                 }
@@ -185,21 +185,27 @@ auto AnalysisModelView::compute_shape(ConstructionTypeRef type) const noexcept
             [](const auto& shape) static noexcept -> AnalysisTypeShape {
                 using Shape = std::remove_cvref_t<decltype(shape)>;
                 if constexpr (std::same_as<Shape, ArrayTypeValue>) {
-                    return ConstructionArrayTypeValue {shape.element, shape.extent};
+                    return ConstructionArrayTypeValue {
+                        .element = shape.element,
+                        .extent = shape.extent
+                    };
                 } else if constexpr (std::same_as<Shape, TupleTypeValue>) {
                     auto elements = std::vector<ConstructionTypeRef>();
                     for (const auto element : shape.elements) {
                         elements.push_back(element);
                     }
-                    return ConstructionTupleTypeValue {std::move(elements)};
+                    return ConstructionTupleTypeValue {.elements = std::move(elements)};
                 } else if constexpr (std::same_as<Shape, SliceTypeValue>) {
-                    return ConstructionSliceTypeValue {shape.element};
+                    return ConstructionSliceTypeValue {.element = shape.element};
                 } else if constexpr (std::same_as<Shape, VectorTypeValue>) {
-                    return GenericVectorType {shape.element};
+                    return GenericVectorType {.element = shape.element};
                 } else if constexpr (std::same_as<Shape, PointerTypeValue>) {
-                    return AnalysisPointerType {shape.target, shape.access};
+                    return AnalysisPointerType {.target = shape.target, .access = shape.access};
                 } else if constexpr (std::same_as<Shape, OperationTypeValue>) {
-                    return ConstructionOperationTypeValue {shape.success, shape.failures};
+                    return ConstructionOperationTypeValue {
+                        .success = shape.success,
+                        .failures = shape.failures
+                    };
                 } else {
                     return shape;
                 }
@@ -216,19 +222,25 @@ auto AnalysisModelView::compute_shape(ConstructionTypeRef type) const noexcept
             if constexpr (std::same_as<Shape, TypeID>) {
                 return this->shape(shape);
             } else if constexpr (std::same_as<Shape, GenericArrayType>) {
-                return ConstructionArrayTypeValue {shape.element, shape.extent};
+                return ConstructionArrayTypeValue {
+                    .element = shape.element,
+                    .extent = shape.extent
+                };
             } else if constexpr (std::same_as<Shape, GenericTupleType>) {
                 auto elements = std::vector<ConstructionTypeRef>();
                 for (const auto element : shape.elements) {
                     elements.push_back(element);
                 }
-                return ConstructionTupleTypeValue {std::move(elements)};
+                return ConstructionTupleTypeValue {.elements = std::move(elements)};
             } else if constexpr (std::same_as<Shape, GenericSliceType>) {
-                return ConstructionSliceTypeValue {shape.element};
+                return ConstructionSliceTypeValue {.element = shape.element};
             } else if constexpr (std::same_as<Shape, GenericPointerType>) {
-                return AnalysisPointerType {shape.target, shape.access};
+                return AnalysisPointerType {.target = shape.target, .access = shape.access};
             } else if constexpr (std::same_as<Shape, GenericOperationType>) {
-                return ConstructionOperationTypeValue {shape.success, shape.failures};
+                return ConstructionOperationTypeValue {
+                    .success = shape.success,
+                    .failures = shape.failures
+                };
             } else {
                 return shape;
             }

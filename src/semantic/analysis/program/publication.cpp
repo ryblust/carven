@@ -42,7 +42,7 @@ auto ProgramDraft::finish() && noexcept -> AnalysisResult<SemIRProgram> {
         if (!checked) {
             return std::unexpected(checked.error());
         }
-        auto passing = ReadPassingFacts {};
+        auto passing = ReadPassingFacts {.stable_parameters = {}};
         checked = analyze_body_batch(model, diagnostics, &passing);
         if (!checked) {
             return std::unexpected(checked.error());

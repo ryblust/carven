@@ -54,7 +54,7 @@ auto build_program(std::string_view module_name) noexcept -> BuiltProgram {
     require(syntax.has_value());
 
     auto diagnostics = DiagnosticSink();
-    auto builder = ProgramDraft::begin(std::move(*syntax), diagnostics);
+    auto builder = ProgramDraft::begin(std::move(*syntax), diagnostics, HostEffects::Deny);
     const auto provenance_module = builder.provenance_module_at(0uz);
     const auto program_source = builder.module_source(provenance_module);
     const auto origin = builder.append_source_origin(program_source, Span::at(0u));

@@ -194,7 +194,7 @@ constexpr auto encode_valid_utf8(char32_t scalar) noexcept -> EncodedUTF8 {
         bytes[3] = static_cast<char>(0x80u | (scalar & 0x3fu));
         width = 4;
     }
-    return {bytes, width};
+    return {.bytes = bytes, .width = width};
 }
 
 // Validates an external value before it becomes a Carven char.

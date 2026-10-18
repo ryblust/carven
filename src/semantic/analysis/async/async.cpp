@@ -68,7 +68,11 @@ auto resolve_async_builtin(
     if (!range) {
         co_return std::unexpected(range.error());
     }
-    co_return TimeoutContract {*duration, *timeout, *range};
+    co_return TimeoutContract {
+        .duration = *duration,
+        .timeout_failure = *timeout,
+        .range_failure = *range
+    };
 }
 
 namespace {
@@ -96,8 +100,8 @@ auto admitted_value(
     const AnalysisModelView& model,
     ConstructionTypeRef type,
     bool owning,
-    bool native_payload = false,
-    bool operation_input = false
+    bool native_payload,
+    bool operation_input
 ) noexcept -> ValueAdmission {
     auto pending = std::vector<ConstructionTypeRef> {type};
     auto seen = std::set<ConstructionTypeRef>();
@@ -205,7 +209,7 @@ auto analyze_async_contracts(
     const auto check_signature = [&](const auto& signature,
                                      ProgramOriginID origin,
                                      bool allow_dependent,
-                                     bool entry_arguments = false) noexcept {
+                                     bool entry_arguments) noexcept {
         const auto rejected = [&](ValueAdmission admission) noexcept {
             if (admission == ValueAdmission::Dependent && !allow_dependent) {
                 invariant_violation(
@@ -242,7 +246,7 @@ auto analyze_async_contracts(
                 );
             }
         }
-        if (rejected(admitted_value(model, signature.result, true, true))) {
+        if (rejected(admitted_value(model, signature.result, true, true, false))) {
             diagnose(
                 origin,
                 DiagnosticCode::AsyncOwnership,
@@ -251,7 +255,7 @@ auto analyze_async_contracts(
         }
         const auto failures = ConstructionFailureRef(signature.failures);
         for (const auto type : model.failure_known_members(failures)) {
-            if (rejected(admitted_value(model, type, true, true))) {
+            if (rejected(admitted_value(model, type, true, true, false))) {
                 diagnose(
                     origin,
                     DiagnosticCode::AsyncOwnership,
@@ -288,7 +292,7 @@ auto analyze_async_contracts(
     for (const auto& definition : generics.definitions) {
         if (const auto* function = std::get_if<GenericFunctionDefinition>(&definition);
             function && function->signature.execution == CallableExecutionKind::Async) {
-            check_signature(function->signature, function->contract.origin, true);
+            check_signature(function->signature, function->contract.origin, true, false);
         }
     }
     for (const auto& [definition, stops] : generics.test_stops) {
@@ -333,7 +337,7 @@ auto analyze_async_contracts(
                             }
                             signature.result = completion->success;
                             signature.failures = completion->failures;
-                            check_signature(signature, source.origin, true);
+                            check_signature(signature, source.origin, true, false);
                         }
                     }
                     if (source.category == SemanticValueCategory::Value

@@ -161,8 +161,11 @@ private:
     auto consume(ExecutionColdOperation operation, ProgramOriginID origin) noexcept
         -> ExecutionTask<ExecutionValue>;
 
-    auto compose(ExecutionColdOperation operation, ProgramOriginID origin) noexcept
-        -> ExecutionTask<ExecutionValue>;
+    auto compose(
+        ExecutionCompositionAction action,
+        std::vector<ExecutionOperand> arguments,
+        ProgramOriginID origin
+    ) noexcept -> ExecutionTask<ExecutionValue>;
 
     auto start_child(
         ExecutionFrame& frame,
@@ -222,7 +225,7 @@ private:
         ReadySelection(
             SemanticExecutor& executor,
             std::vector<ExecutionLogicalTask*> children,
-            bool accept_cancellation = false
+            bool accept_cancellation
         ) noexcept;
 
         ReadySelection(const ReadySelection&) = delete;
@@ -334,8 +337,12 @@ private:
         -> ExecutionFailure;
     auto host_operation(ExecutionColdOperation operation, ProgramOriginID origin) noexcept
         -> ExecutionTask<ExecutionValue>;
-    auto timeout(ExecutionColdOperation operation, ProgramOriginID origin) noexcept
-        -> ExecutionTask<ExecutionValue>;
+    auto timeout(
+        ExecutionTimeoutAction action,
+        ConstructionTypeRef operation_type,
+        std::vector<ExecutionOperand> arguments,
+        ProgramOriginID origin
+    ) noexcept -> ExecutionTask<ExecutionValue>;
 
     auto detach_operand(ExecutionOperand operand, ProgramOriginID origin) noexcept
         -> ExecutionResult<ExecutionValue> override;
@@ -410,11 +417,8 @@ private:
 
     enum class CopyMode { Value, Retained };
 
-    auto copy_value(
-        const ExecutionValue& value,
-        ProgramOriginID origin,
-        CopyMode mode = CopyMode::Value
-    ) noexcept -> ExecutionResult<ExecutionValue>;
+    auto copy_value(const ExecutionValue& value, ProgramOriginID origin, CopyMode mode) noexcept
+        -> ExecutionResult<ExecutionValue>;
 
     auto deliver_value(
         ExecutionValue& value,
@@ -597,7 +601,7 @@ private:
     auto statement(ExecutionFrame& frame, const SemanticStatement& statement) noexcept
         -> ExecutionTask<ExecutionCompletion>;
 
-    auto region(ExecutionFrame& frame, const SemanticRegion& region, bool cleanup = true) noexcept
+    auto region(ExecutionFrame& frame, const SemanticRegion& region, bool cleanup) noexcept
         -> ExecutionTask<ExecutionCompletion>;
 
     auto loop(ExecutionFrame& frame, const SemLoop& loop, ProgramOriginID origin) noexcept

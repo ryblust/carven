@@ -33,7 +33,7 @@ import std;
 
 auto BodyElaborator::dereference_expression(const ASTPrefixExpr& source, Span span) noexcept
     -> AnalysisTask<BuiltExpression> {
-    auto operand = (co_await expression(source.operand_id));
+    auto operand = (co_await expression(source.operand_id, true));
     if (!operand) {
         co_return std::unexpected(operand.error());
     }
@@ -131,10 +131,10 @@ auto BodyExprSite::finish_index(
                 place->access,
                 type,
                 SemIndex {
-                    UniqueIndirect(std::move(place->expression)),
-                    UniqueIndirect(std::move(*subscript)),
-                    bounds,
-                    true
+                    .source = UniqueIndirect(std::move(place->expression)),
+                    .index = UniqueIndirect(std::move(*subscript)),
+                    .bounds = bounds,
+                    .source_owns_elements = true
                 },
                 body.origin(span)
             )}},
@@ -155,10 +155,10 @@ auto BodyExprSite::finish_index(
             AccessMode::Read,
             type,
             SemIndex {
-                UniqueIndirect(std::move(*value)),
-                UniqueIndirect(std::move(*subscript)),
-                bounds,
-                false
+                .source = UniqueIndirect(std::move(*value)),
+                .index = UniqueIndirect(std::move(*subscript)),
+                .bounds = bounds,
+                .source_owns_elements = false
             },
             body.origin(span)
         );
@@ -173,10 +173,10 @@ auto BodyExprSite::finish_index(
     auto projected = finish_constructed(
         type,
         SemIndex {
-            UniqueIndirect(std::move(*value)),
-            UniqueIndirect(std::move(*subscript)),
-            bounds,
-            true
+            .source = UniqueIndirect(std::move(*value)),
+            .index = UniqueIndirect(std::move(*subscript)),
+            .bounds = bounds,
+            .source_owns_elements = true
         },
         std::move(state),
         span,
@@ -238,7 +238,7 @@ auto BodyExprSite::finish_field(
                 place->root,
                 place->access,
                 type,
-                SemField {UniqueIndirect(std::move(place->expression)), field},
+                SemField {.source = UniqueIndirect(std::move(place->expression)), .field = field},
                 body.origin(span)
             )}},
             .pending_failures = take_pending_failures(receiver),
@@ -253,7 +253,7 @@ auto BodyExprSite::finish_field(
     }
     auto projected = finish_constructed(
         type,
-        SemField {UniqueIndirect(std::move(*value)), field},
+        SemField {.source = UniqueIndirect(std::move(*value)), .field = field},
         std::move(state),
         span,
         known
@@ -266,7 +266,7 @@ auto BodyExprSite::finish_field(
 
 auto BodyElaborator::propagation_expression(const ASTPropagationExpr& source, Span span) noexcept
     -> AnalysisTask<BuiltExpression> {
-    auto operand = (co_await expression(source.operand_id));
+    auto operand = (co_await expression(source.operand_id, true));
     if (!operand.has_value()) {
         co_return std::unexpected(operand.error());
     }
@@ -275,7 +275,11 @@ auto BodyElaborator::propagation_expression(const ASTPropagationExpr& source, Sp
         co_return std::unexpected(propagated.error());
     }
     const auto type = operand->type();
-    auto result = make_built(type, SemPropagate {UniqueIndirect(take_built(*operand, span))}, span);
+    auto result = make_built(
+        type,
+        SemPropagate {.operand = UniqueIndirect(take_built(*operand, span))},
+        span
+    );
     result.completes = operand->completes;
     co_return result;
 }
@@ -299,7 +303,10 @@ auto BodyExprSite::finish_tuple_element(
             place->root,
             place->access,
             type,
-            SemTupleElement {UniqueIndirect(std::move(place->expression)), index},
+            SemTupleElement {
+                .source = UniqueIndirect(std::move(place->expression)),
+                .index = index
+            },
             body.origin(span)
         );
         projected.expression.constant = known;
@@ -317,7 +324,7 @@ auto BodyExprSite::finish_tuple_element(
     }
     auto projected = finish_constructed(
         type,
-        SemTupleElement {UniqueIndirect(std::move(*value)), index},
+        SemTupleElement {.source = UniqueIndirect(std::move(*value)), .index = index},
         std::move(state),
         span,
         known

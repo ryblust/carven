@@ -91,7 +91,7 @@ public:
         Span span
     ) noexcept -> AnalysisTask<Value>;
 
-    explicit BodyExprSite(BodyElaborator& body, bool allow_pointer_narrowing = true) noexcept;
+    explicit BodyExprSite(BodyElaborator& body, bool allow_pointer_narrowing) noexcept;
     auto draft() noexcept -> ProgramDraft&;
     auto syntax() const noexcept -> ASTView;
     auto observe_expression(ASTExprID expression, ConstructionTypeRef type) noexcept -> void;

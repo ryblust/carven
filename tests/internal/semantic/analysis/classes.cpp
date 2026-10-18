@@ -127,7 +127,7 @@ const TestSuite suite([] static noexcept {
         };
         each(
             cases,
-            [](const auto& item) noexcept { return item.first; },
+            [](const auto& item) static noexcept { return item.first; },
             [&](const auto& item) noexcept {
                 expect_diagnostic(analyze_test_errors(prelude + item.first), item.second);
             }

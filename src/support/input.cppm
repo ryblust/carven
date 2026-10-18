@@ -36,7 +36,7 @@ public:
 
 private:
     HostInputCursor() = default;
-    auto view(std::size_t count, bool end = false) const noexcept -> HostInputResult;
+    auto view(std::size_t count, bool end) const noexcept -> HostInputResult;
 
     std::vector<std::uint8_t> pending;
     bool ended = false;

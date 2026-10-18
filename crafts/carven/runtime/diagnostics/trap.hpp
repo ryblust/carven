@@ -30,19 +30,14 @@ inline thread_local TestReportContext* active_test_report = nullptr;
 // materialization to the report path; the representation alone does not promise
 // this. Native code that reaches a reporting operation names its own C++ position.
 struct SourceSite final {
-    constexpr SourceSite(
-        const char* source_file,
-        std::uint32_t source_line,
-        std::uint32_t source_column
-    ) noexcept
-        : file(source_file),
-          line(source_line),
-          column(source_column) {}
-
     static constexpr auto native(
         std::source_location location = std::source_location::current()
     ) noexcept -> SourceSite {
-        return SourceSite(location.file_name(), location.line(), location.column());
+        return SourceSite {
+            .file = location.file_name(),
+            .line = location.line(),
+            .column = location.column(),
+        };
     }
 
     const char* file;

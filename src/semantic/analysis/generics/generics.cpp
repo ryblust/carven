@@ -16,9 +16,11 @@ namespace {
 
 auto generic_contract(const GenericDeclarationDefinition& definition) noexcept
     -> const GenericDeclarationContract& {
-    return definition.visit([](const auto& value) noexcept -> const GenericDeclarationContract& {
-        return value.contract;
-    });
+    return definition.visit(
+        [](const auto& value) static noexcept -> const GenericDeclarationContract& {
+            return value.contract;
+        }
+    );
 }
 
 auto generic_fields(const GenericDeclarationDefinition& definition) noexcept
@@ -59,9 +61,11 @@ auto nominal_type(ProgramDraft& draft, NominalDeclarationRef declaration) noexce
     return declaration.visit(
         Overloaded {
             [&](StructID id) noexcept {
-                return draft.intern_type({.value = StructTypeValue {id}});
+                return draft.intern_type({.value = StructTypeValue {.structure = id}});
             },
-            [&](EnumID id) noexcept { return draft.intern_type({.value = EnumTypeValue {id}}); },
+            [&](EnumID id) noexcept {
+                return draft.intern_type({.value = EnumTypeValue {.enumeration = id}});
+            },
         }
     );
 }
@@ -384,7 +388,9 @@ auto ProgramDraft::resolve_generic_type(
                     if (!element) {
                         return std::unexpected(element.error());
                     }
-                    return intern_type({.value = ArrayTypeValue {*element, array.extent}});
+                    return intern_type(
+                        {.value = ArrayTypeValue {.element = *element, .extent = array.extent}}
+                    );
                 },
                 [&](const GenericTupleType& tuple) noexcept -> AnalysisResult<TypeID> {
                     auto result = TupleTypeValue {.elements = {}};
@@ -404,7 +410,7 @@ auto ProgramDraft::resolve_generic_type(
                     if (!element) {
                         return std::unexpected(element.error());
                     }
-                    return intern_type({.value = SliceTypeValue {*element}});
+                    return intern_type({.value = SliceTypeValue {.element = *element}});
                 },
                 [&](const GenericVectorType& sequence) noexcept -> AnalysisResult<TypeID> {
                     auto element = resolve_generic_type(
@@ -418,7 +424,7 @@ auto ProgramDraft::resolve_generic_type(
                         return std::unexpected(element.error());
                     }
                     record_vector_element(*element, origin);
-                    return intern_type({.value = VectorTypeValue {*element}});
+                    return intern_type({.value = VectorTypeValue {.element = *element}});
                 },
                 [&](const GenericPointerType& pointer) noexcept -> AnalysisResult<TypeID> {
                     auto target = resolve_generic_type(
@@ -431,7 +437,9 @@ auto ProgramDraft::resolve_generic_type(
                     if (!target) {
                         return std::unexpected(target.error());
                     }
-                    return intern_type({.value = PointerTypeValue {*target, pointer.access}});
+                    return intern_type(
+                        {.value = PointerTypeValue {.target = *target, .access = pointer.access}}
+                    );
                 },
                 [&](const GenericOperationType& operation) noexcept -> AnalysisResult<TypeID> {
                     auto success = resolve_generic_type(
@@ -458,7 +466,9 @@ auto ProgramDraft::resolve_generic_type(
                             )
                         );
                     }
-                    return intern_type({.value = OperationTypeValue {*success, *failures}});
+                    return intern_type(
+                        {.value = OperationTypeValue {.success = *success, .failures = *failures}}
+                    );
                 },
                 [&](const GenericCppNamedType& native) noexcept -> AnalysisResult<TypeID> {
                     auto types = std::vector<TypeID>();
@@ -645,7 +655,7 @@ auto ProgramDraft::instantiate_generic_nominal(
     };
 
     ++storage.generic_instance_depth;
-    const auto active_depth = InstanceDepth {storage.generic_instance_depth};
+    const auto active_depth = InstanceDepth {.depth = storage.generic_instance_depth};
     // Normalized arguments select one semantic declaration, including recursive
     // references made while its fields are being completed.
     const auto declaration = source.visit(

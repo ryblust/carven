@@ -38,7 +38,7 @@ public:
     auto finish() noexcept -> AsyncCancellationFacts;
 
 private:
-    auto add_node(bool cancelled = false) noexcept -> std::size_t;
+    auto add_node(bool cancelled) noexcept -> std::size_t;
     auto connect(std::size_t source, std::size_t consumer) noexcept -> void;
     auto is_operation(TypeID type) const noexcept -> bool;
     auto expression_node(const SemanticExpression& expression) noexcept -> std::size_t;
@@ -72,7 +72,7 @@ private:
 CancellationAnalysis::CancellationAnalysis(const SemIRProgram& semantic) noexcept
     : program(semantic),
       unknown(add_node(true)) {
-    const auto no_cancel = add_node();
+    const auto no_cancel = add_node(false);
     for (const auto entry : program.declarations().callables()) {
         const auto& signature = program.callable_signatures().signature(entry.value.signature);
         const auto body = callable_body_id(entry.value);
@@ -108,7 +108,7 @@ auto CancellationAnalysis::expression_node(const SemanticExpression& expression)
     if (const auto found = expressions.find(&expression); found != expressions.end()) {
         return found->second;
     }
-    const auto node = add_node();
+    const auto node = add_node(false);
     expressions.emplace(&expression, node);
     return node;
 }
@@ -120,7 +120,7 @@ auto CancellationAnalysis::binding_node(const SemIRBody& body, LocalBindingID bi
     if (const auto found = bindings.find(key); found != bindings.end()) {
         return found->second;
     }
-    const auto node = add_node();
+    const auto node = add_node(false);
     return bindings.emplace(key, BindingCapability {.node = node, .sourced = false}).first->second;
 }
 

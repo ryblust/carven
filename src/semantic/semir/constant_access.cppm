@@ -102,7 +102,7 @@ auto visit_execution_type(
     // Borrow the visitor as an lvalue, including through nested variant visits.
     // NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward)
     Visitor&& visitor
-) noexcept -> decltype(visitor(BuiltinTypeValue {BuiltinType::Void})) {
+) noexcept -> decltype(visitor(BuiltinTypeValue {.kind = BuiltinType::Void})) {
     if (const auto* concrete = std::get_if<TypeID>(&type)) {
         return values.type_copy(*concrete).value.visit(visitor);
     }
@@ -113,7 +113,7 @@ auto visit_execution_type(
         .visit(
             [&](
                 const auto& shape
-            ) noexcept -> decltype(visitor(BuiltinTypeValue {BuiltinType::Void})) {
+            ) noexcept -> decltype(visitor(BuiltinTypeValue {.kind = BuiltinType::Void})) {
                 if constexpr (std::same_as<std::remove_cvref_t<decltype(shape)>, TypeID>) {
                     return values.type_copy(shape).value.visit(visitor);
                 } else {

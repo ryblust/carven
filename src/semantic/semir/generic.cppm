@@ -212,7 +212,7 @@ struct GenericDeclarationContract final {
     std::vector<ProgramSpellingID> parameters;
     std::vector<GenericAudienceDependency> audience_dependencies;
     std::vector<GenericParameterKind> parameter_kinds;
-    GenericImplementationDependencies implementation_dependencies = {};
+    GenericImplementationDependencies implementation_dependencies;
 };
 
 struct GenericField final {

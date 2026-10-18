@@ -21,19 +21,19 @@ import std;
 
 auto analyze(
     SyntaxProgram syntax,
+    HostEffects host_effects,
     ExecutionOutput output,
     TimingOutput timings,
-    SourceAnalysisOutput source_output,
-    HostEffects host_effects
+    SourceAnalysisOutput source_output
 ) noexcept -> std::expected<Diagnosed<SemIRProgram>, Diagnostics> {
     auto result = analyze_checked(
         std::move(syntax),
+        host_effects,
+        false,
         std::nullopt,
         output,
         timings,
-        source_output,
-        host_effects,
-        false
+        source_output
     );
     if (!result) {
         return std::unexpected(std::move(result.error()));
@@ -46,12 +46,12 @@ auto analyze(
 
 auto analyze_checked(
     SyntaxProgram syntax,
+    HostEffects host_effects,
+    bool retain_definitions,
     std::optional<CheckedDefinitions> seed,
     ExecutionOutput output,
     TimingOutput timings,
-    SourceAnalysisOutput source_output,
-    HostEffects host_effects,
-    bool retain_definitions
+    SourceAnalysisOutput source_output
 ) noexcept -> std::expected<Diagnosed<CheckedUnit>, Diagnostics> {
     const auto scope = TimingScope(timings, TimingStage::SemanticAnalysis);
     auto observations = std::optional<SourceAnalysisBuilder>();
@@ -63,10 +63,10 @@ auto analyze_checked(
         auto draft = ProgramDraft::begin(
             std::move(syntax),
             diagnostics,
+            host_effects,
             output,
             observations ? std::addressof(*observations) : nullptr,
             timings,
-            host_effects,
             seed ? std::addressof(*seed) : nullptr
         );
 

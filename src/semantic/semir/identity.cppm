@@ -37,7 +37,7 @@ private:
     explicit constexpr BodyIdentity(
         ProgramIdentity program,
         std::uint32_t body_index,
-        BodyIdentityDomain domain = BodyIdentityDomain::Body
+        BodyIdentityDomain domain
     ) noexcept
         : program_identity(program),
           body_index_value(body_index),

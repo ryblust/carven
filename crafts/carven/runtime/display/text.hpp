@@ -38,7 +38,7 @@ public:
         bytes.append(value);
     }
 
-    auto quoted(std::string_view value, bool character_literal = false) noexcept -> void {
+    auto quoted(std::string_view value, bool character_literal) noexcept -> void {
         text(character_literal ? "'" : "\"");
         for (const auto character : value) {
             if (is_truncated) {

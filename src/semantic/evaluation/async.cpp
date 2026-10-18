@@ -302,11 +302,11 @@ auto SemanticExecutor::consume(ExecutionColdOperation operation, ProgramOriginID
     if (const auto* callable = std::get_if<CallableID>(&operation.action)) {
         co_return co_await call(*callable, std::move(operation.arguments), origin);
     }
-    if (std::holds_alternative<ExecutionCompositionAction>(operation.action)) {
-        co_return co_await compose(std::move(operation), origin);
+    if (const auto* action = std::get_if<ExecutionCompositionAction>(&operation.action)) {
+        co_return co_await compose(*action, std::move(operation.arguments), origin);
     }
-    if (std::holds_alternative<ExecutionTimeoutAction>(operation.action)) {
-        co_return co_await timeout(std::move(operation), origin);
+    if (const auto* action = std::get_if<ExecutionTimeoutAction>(&operation.action)) {
+        co_return co_await timeout(*action, operation.type, std::move(operation.arguments), origin);
     }
     if (std::holds_alternative<ExecutionInputAction>(operation.action)
         || std::holds_alternative<ExecutionTimerAction>(operation.action)) {
@@ -419,7 +419,7 @@ auto SemanticExecutor::wait_ready(
     if (children.empty()) {
         invariant_violation("execution readiness has no candidates");
     }
-    const auto [index, cancelled] = co_await ReadySelection(*this, std::move(children));
+    const auto [index, cancelled] = co_await ReadySelection(*this, std::move(children), false);
     auto result_type = type(source.type.construction(), source.origin);
     if (!result_type) {
         co_return std::unexpected(std::move(result_type.error()));
@@ -443,7 +443,11 @@ auto SemanticExecutor::wait_ready(
             .value = BooleanConstant {.value = cancelled}
         }
     );
-    co_return ExecutionAggregateValue {.type = *result_type, .elements = std::move(elements)};
+    co_return ExecutionAggregateValue {
+        .type = *result_type,
+        .elements = std::move(elements),
+        .capacity = 0uz
+    };
 }
 
 auto SemanticExecutor::close_child(

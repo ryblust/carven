@@ -37,7 +37,7 @@ auto BodyRealizer::ExpressionBuilder::complete_writer(
     auto sizes = std::vector<TargetExpr>();
     for (auto index = 0uz; index < preparation.operand_indices.size(); ++index) {
         auto& child = children[preparation.operand_indices[index] + offset];
-        operands.push_back(raw(child));
+        operands.push_back(raw(child, ConstantLiteralContext::Exact, PreparedUse::ReadBorrow));
     }
     auto operand = 0uz;
     for (const auto& field : preparation.format.fields) {
@@ -45,32 +45,45 @@ auto BodyRealizer::ExpressionBuilder::complete_writer(
         operand += writer_field_operand_count(field);
         const auto* type = std::get_if<BuiltinType>(&field);
         if (type != nullptr && (*type == BuiltinType::Str || *type == BuiltinType::String)) {
-            sizes.push_back(call_member(raw(child), "size", {}));
+            sizes.push_back(call_member(
+                raw(child, ConstantLiteralContext::Exact, PreparedUse::ReadBorrow),
+                "size",
+                {}
+            ));
         }
     }
     if (output) {
-        const auto type = owner.context.lower_type(source(fragment).operation.type.resolved());
-        statements.emit(generated_statement(
-            TargetVariableStmt {
-                .binding = TargetVariableBinding::MutableValue,
-                .maybe_unused = false,
-                .local = *output,
-                .type = type,
-                .initializer =
-                    TargetExpr {.value = TargetConstructionExpr {.type = type, .initializer = {}}}
-            }
-        ));
+        const auto type = owner.context.lower_type(
+            source(fragment).operation.type.resolved(),
+            TypeNameScope::Module
+        );
+        statements.emit(
+            generated_statement(
+                TargetVariableStmt {
+                    .binding = TargetVariableBinding::MutableValue,
+                    .maybe_unused = false,
+                    .local = *output,
+                    .type = type,
+                    .initializer =
+                        TargetExpr {
+                            .value = TargetConstructionExpr {.type = type, .initializer = {}}
+                        }
+                }
+            ),
+            true
+        );
     }
     auto writes = realize_writer_statements(
         owner.context,
         preparation.format,
         owner.fresh_local(TargetTemporaryNameKind::Operand),
-        output ? name_expression(*output) : emit(children.front(), PreparedUse::WritePlace),
+        output ? name_expression(*output)
+               : emit(children.front(), PreparedUse::WritePlace, ConstantLiteralContext::Exact),
         std::move(operands),
         std::move(sizes)
     );
     for (auto& statement : writes) {
-        statements.emit(std::move(statement));
+        statements.emit(std::move(statement), true);
     }
     if (output) {
         complete(fragment, name_expression(*output));

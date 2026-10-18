@@ -36,9 +36,12 @@ auto wrap_linkage_namespaces(
     if (items.empty()) {
         return {};
     }
-    return target_items(
-        namespace_item(context.plan().names().generated_namespace(), std::move(items))
-    );
+    return target_items(namespace_item(
+        context.plan().names().generated_namespace(),
+        std::move(items),
+        TargetCompilerReason::ArtifactScaffolding,
+        true
+    ));
 }
 
 auto lower_interface(ArtifactLowering& context, const TargetInterfaceArtifact& schedule) noexcept
@@ -120,7 +123,9 @@ auto lower_cpp_api_header(
         .preamble = {},
         .body = target_items(namespace_item(
             context.plan().names().module_names(schedule.module_id).public_namespace_name,
-            std::move(declarations)
+            std::move(declarations),
+            TargetCompilerReason::ArtifactScaffolding,
+            true
         )),
         .epilogue = {},
     };
@@ -182,9 +187,12 @@ auto lower_cpp_provider_header(
         components.push_back(
             public_target_identifier(semantic.provenance().spelling(function.name))
         );
-        items.push_back(
-            namespace_item(TargetName::from_components(std::move(components)), std::move(aliases))
-        );
+        items.push_back(namespace_item(
+            TargetName::from_components(std::move(components)),
+            std::move(aliases),
+            TargetCompilerReason::ArtifactScaffolding,
+            true
+        ));
     }
     return {.preamble = {}, .body = std::move(items), .epilogue = {}};
 }
@@ -214,7 +222,12 @@ auto lower_module(
     if (!lowered.private_declarations.empty()) {
         root.push_back(module_namespace(
             schedule.module_id,
-            target_items(namespace_item(std::nullopt, std::move(lowered.private_declarations)))
+            target_items(namespace_item(
+                std::nullopt,
+                std::move(lowered.private_declarations),
+                TargetCompilerReason::ArtifactScaffolding,
+                true
+            ))
         ));
     }
     append_items(root, std::move(lowered.shared_declarations));
@@ -222,7 +235,12 @@ auto lower_module(
     context.require_cpp_environment(schedule.module_id, CppEnvironmentRequirement::Using);
     auto module_items = std::vector<TargetItem>();
     if (!lowered.private_items.empty()) {
-        module_items.push_back(namespace_item(std::nullopt, std::move(lowered.private_items)));
+        module_items.push_back(namespace_item(
+            std::nullopt,
+            std::move(lowered.private_items),
+            TargetCompilerReason::ArtifactScaffolding,
+            true
+        ));
     }
     append_items(module_items, std::move(lowered.module_items));
     if (!module_items.empty()) {
@@ -236,7 +254,9 @@ auto lower_module(
     if (!lowered.cpp_export_facades.empty()) {
         epilogue.push_back(namespace_item(
             context.plan().names().module_names(schedule.module_id).public_namespace_name,
-            std::move(lowered.cpp_export_facades)
+            std::move(lowered.cpp_export_facades),
+            TargetCompilerReason::ArtifactScaffolding,
+            true
         ));
     }
     return {

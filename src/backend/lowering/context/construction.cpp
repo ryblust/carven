@@ -80,7 +80,11 @@ auto ModuleLowering::enum_payload_projection(
     const auto& representation = payload_enum(id);
     return template_call_expression(
         intrinsic_expression(TargetSymbol::StdGetIf),
-        {TargetIntegerLiteral {false, case_index, TargetIntegerSuffix::None}},
+        {TargetIntegerLiteral {
+            .negative = false,
+            .magnitude = case_index,
+            .suffix = TargetIntegerSuffix::None
+        }},
         target_expressions(
             address_expression(member_expression(std::move(subject), representation.storage_member))
         )
@@ -216,7 +220,9 @@ auto native_take_expression(ModuleLowering& context, TypeID type, TargetExpr val
     -> TargetExpr {
     return TargetExpr {
         .value = TargetStaticCastExpr {
-            .type = context.reference_type(context.lower_type(type), false, true),
+            .type =
+                context
+                    .reference_type(context.lower_type(type, TypeNameScope::Module), false, true),
             .operand = target_child(std::move(value))
         }
     };

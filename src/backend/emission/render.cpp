@@ -9,7 +9,7 @@ import std;
 TargetRenderer::TargetRenderer(const TargetUnit& unit, EmissionPolicy policy) noexcept
     : unit(unit),
       generated_origin(
-          policy.visit([]<typename Policy>(const Policy& value) noexcept -> std::string {
+          policy.visit([]<typename Policy>(const Policy& value) static noexcept -> std::string {
               if constexpr (std::same_as<Policy, SourceAttributedEmission>) {
                   return std::string(value.generated_origin);
               } else if constexpr (std::same_as<Policy, StableInterfaceEmission>) {

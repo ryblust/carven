@@ -31,7 +31,7 @@ auto analyze_async_program(std::string text, ExecutionOutput output = {}) noexce
     };
     auto parsed = parse_program(sources, SourceBatch {.modules = inputs});
     require(parsed.has_value());
-    auto analyzed = analyze(std::move(*parsed), output);
+    auto analyzed = analyze(std::move(*parsed), HostEffects::Deny, output);
     require(analyzed.has_value());
     return std::move(analyzed->value);
 }
@@ -398,7 +398,7 @@ const TestSuite suite([] static noexcept {
             append("providers", "export const fn yield_once() -> i32 => 7;");
             auto syntax = parse_program(sources, SourceBatch {.modules = inputs});
             require(syntax.has_value());
-            const auto analyzed = analyze(std::move(*syntax));
+            const auto analyzed = analyze(std::move(*syntax), HostEffects::Deny);
             if (!expect(analyzed.has_value())) {
                 return;
             }
@@ -434,7 +434,7 @@ const TestSuite suite([] static noexcept {
             if (!expect(syntax.has_value())) {
                 return;
             }
-            const auto analyzed = analyze(std::move(*syntax));
+            const auto analyzed = analyze(std::move(*syntax), HostEffects::Deny);
             if (!expect(analyzed.has_value())) {
                 return;
             }

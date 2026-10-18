@@ -31,7 +31,13 @@ auto OwnershipBodyAnalyzer::opaque_callable_targets(
         } else if (std::holds_alternative<CallableViewTypeValue>(shape)
                    || std::holds_alternative<ClosureTypeValue>(shape)) {
             result.edit().callable_loans.push_back(
-                {path, std::nullopt, std::nullopt, origin, false}
+                OwnershipCallableLoan {
+                    .holder = path,
+                    .backing = std::nullopt,
+                    .callable = std::nullopt,
+                    .origin = origin,
+                    .direct_only = false
+                }
             );
         }
     };
@@ -103,17 +109,24 @@ auto OwnershipBodyAnalyzer::place(
     bool read
 ) noexcept -> ContinuationTask<OwnershipFlow> {
     synchronize_storage(state);
-    auto result = OwnershipFlow {.normal = OwnershipNormal {std::move(state), {}, {}}, .exits = {}};
+    auto result = OwnershipFlow {
+        .normal = OwnershipNormal {.state = std::move(state), .value = {}, .storage = {}},
+        .exits = {}
+    };
     if (const auto* dereference = std::get_if<SemDereference>(&source.value)) {
-        auto next = (co_await expression(*dereference->source, std::move(result.normal->state)));
+        auto next =
+            (co_await expression(*dereference->source, std::move(result.normal->state), false));
         result.normal = std::move(next.normal);
         append_ownership_exits(result, next);
         if (result.normal) {
             result.normal->storage.clear();
         }
     } else if (const auto* foreign = std::get_if<SemCpp>(&source.value)) {
-        result =
-            (co_await place(foreign->operands.front().expression, std::move(result.normal->state)));
+        result = (co_await place(
+            foreign->operands.front().expression,
+            std::move(result.normal->state),
+            true
+        ));
         for (const auto& operand : std::span(foreign->operands).subspan(1)) {
             if (!result.normal.has_value()) {
                 break;
@@ -121,9 +134,16 @@ auto OwnershipBodyAnalyzer::place(
             const auto previous = accesses.size();
             auto storage = result.normal->storage;
             for (const auto& target : storage) {
-                accesses.push_back({target, selected_access_kind(source)});
+                accesses.push_back(
+                    OwnershipAccess {
+                        .place = target,
+                        .kind = selected_access_kind(source),
+                        .descendants = false
+                    }
+                );
             }
-            auto next = (co_await expression(operand.expression, std::move(result.normal->state)));
+            auto next =
+                (co_await expression(operand.expression, std::move(result.normal->state), false));
             accesses.resize(previous);
             result.normal = std::move(next.normal);
             if (result.normal) {
@@ -132,14 +152,14 @@ auto OwnershipBodyAnalyzer::place(
             append_ownership_exits(result, next);
         }
     } else if (const auto* tuple = std::get_if<SemTupleElement>(&source.value)) {
-        result = (co_await place(*tuple->source, std::move(result.normal->state)));
+        result = (co_await place(*tuple->source, std::move(result.normal->state), true));
         if (result.normal) {
             for (auto& selected : result.normal->storage) {
                 selected.path.push_back(tuple->index);
             }
         }
     } else if (const auto* field = std::get_if<SemField>(&source.value)) {
-        result = (co_await place(*field->source, std::move(result.normal->state)));
+        result = (co_await place(*field->source, std::move(result.normal->state), true));
         if (result.normal) {
             for (auto& selected : result.normal->storage) {
                 selected.path.push_back(field->field.field_index);
@@ -149,8 +169,9 @@ auto OwnershipBodyAnalyzer::place(
         const auto slice = std::holds_alternative<ConstructionSliceTypeValue>(
             analysis.model.shape(index->source->type.construction())
         );
-        result = slice ? (co_await expression(*index->source, std::move(result.normal->state)))
-                       : (co_await place(*index->source, std::move(result.normal->state)));
+        result = slice
+            ? (co_await expression(*index->source, std::move(result.normal->state), false))
+            : (co_await place(*index->source, std::move(result.normal->state), true));
         if (result.normal.has_value()) {
             const auto relationships = std::move(result.normal->value);
             auto storage = select_element_storage(
@@ -165,9 +186,16 @@ auto OwnershipBodyAnalyzer::place(
             const auto previous_readers = storage_readers.size();
             protect_storage(relationships);
             for (const auto& target : storage) {
-                accesses.push_back({target, selected_access_kind(source)});
+                accesses.push_back(
+                    OwnershipAccess {
+                        .place = target,
+                        .kind = selected_access_kind(source),
+                        .descendants = false
+                    }
+                );
             }
-            auto indexed = (co_await expression(*index->index, std::move(result.normal->state)));
+            auto indexed =
+                (co_await expression(*index->index, std::move(result.normal->state), false));
             accesses.resize(previous);
             restore_storage_readers(previous_readers);
             result.normal = std::move(indexed.normal);
@@ -198,7 +226,9 @@ auto OwnershipBodyAnalyzer::finish_expression(
         normal.storage.clear();
         if (const auto found = facts.temporaries.find(std::addressof(source));
             found != facts.temporaries.end()) {
-            normal.storage.push_back({input.objects.size() + found->second, {}});
+            normal.storage.push_back(
+                OwnershipPlace {.object = input.objects.size() + found->second, .path = {}}
+            );
         }
     }
     use(normal.value, normal.state, source.origin, direct);
@@ -233,11 +263,13 @@ auto OwnershipBodyAnalyzer::expression(
     bool direct
 ) noexcept -> ContinuationTask<OwnershipFlow> {
     synchronize_storage(state);
-    auto flow = OwnershipFlow {.normal = OwnershipNormal {std::move(state), {}, {}}, .exits = {}};
+    auto flow = OwnershipFlow {
+        .normal = OwnershipNormal {.state = std::move(state), .value = {}, .storage = {}},
+        .exits = {}
+    };
     auto operand_storage = std::vector<OwnershipPlace>();
     const auto evaluate = [&](const SemanticExpression& child,
-                              bool argument =
-                                  false) noexcept -> ContinuationTask<OwnershipRelationships> {
+                              bool argument) noexcept -> ContinuationTask<OwnershipRelationships> {
         if (!flow.normal.has_value()) {
             co_return {};
         }
@@ -270,7 +302,7 @@ auto OwnershipBodyAnalyzer::expression(
     const auto aggregate =
         [&](const SemanticExpression& child,
             const OwnershipProjectionPath& path = {}) noexcept -> ContinuationTask<std::monostate> {
-        auto value = (co_await evaluate(child));
+        auto value = (co_await evaluate(child, false));
         if (flow.normal) {
             merge_relationships(flow.normal->value, nest_relationships(std::move(value), path));
         }
@@ -280,7 +312,7 @@ auto OwnershipBodyAnalyzer::expression(
         complete_leaf_expression(source, *flow.normal, direct);
         co_return flow;
     } else if (source.category == SemanticValueCategory::Place) {
-        flow = (co_await place(source, std::move(flow.normal->state)));
+        flow = (co_await place(source, std::move(flow.normal->state), true));
     } else {
         const auto external = [&](const auto& value) noexcept -> ContinuationTask<std::monostate> {
             if (analysis.contents(source.type.construction()).contains_callable_view) {
@@ -301,7 +333,9 @@ auto OwnershipBodyAnalyzer::expression(
             visit_cpp_operands(
                 value,
                 [&](AccessMode access, const SemanticExpression& operand) noexcept {
-                    operands.push_back({access, std::addressof(operand)});
+                    operands.push_back(
+                        NativeOperand {.access = access, .expression = std::addressof(operand)}
+                    );
                 }
             );
             for (const auto& selected : operands) {
@@ -326,17 +360,23 @@ auto OwnershipBodyAnalyzer::expression(
                 if (access != AccessMode::Take && !snapshot) {
                     for (const auto& target : operand_storage) {
                         if (access == AccessMode::Write) {
-                            write_access(target, operand.origin);
+                            write_access(target, operand.origin, true);
                             writes.push_back(target);
                         }
-                        accesses.push_back({target, selected_access_kind(operand)});
+                        accesses.push_back(
+                            OwnershipAccess {
+                                .place = target,
+                                .kind = selected_access_kind(operand),
+                                .descendants = false
+                            }
+                        );
                     }
                 }
             }
             if (flow.normal) {
                 // Native Write may leave the old view in place; keep its known loans.
                 for (const auto& target : writes) {
-                    check_storage_write(flow.normal->state, target, source.origin);
+                    check_storage_write(flow.normal->state, target, source.origin, false);
                 }
                 // Native results obey the provider/caller storage contract.
                 flow.normal->value = {};
@@ -352,7 +392,13 @@ auto OwnershipBodyAnalyzer::expression(
             }
             for (const auto& loan : relationships.view().callable_loans) {
                 if (loan.backing.has_value()) {
-                    accesses.push_back({*loan.backing, OwnershipAccessKind::Active});
+                    accesses.push_back(
+                        OwnershipAccess {
+                            .place = *loan.backing,
+                            .kind = OwnershipAccessKind::Active,
+                            .descendants = false
+                        }
+                    );
                 }
             }
         };
@@ -385,13 +431,25 @@ auto OwnershipBodyAnalyzer::expression(
                 storage = operand_storage;
                 alias.reset();
                 for (const auto& selected : storage) {
-                    accesses.push_back({selected, selected_access_kind(argument.expression)});
+                    accesses.push_back(
+                        OwnershipAccess {
+                            .place = selected,
+                            .kind = selected_access_kind(argument.expression),
+                            .descendants = false
+                        }
+                    );
                 }
             }
             if (argument.access == AccessMode::Write) {
                 for (const auto& target : storage) {
                     write_access(target, argument.expression.origin, !body_known);
-                    accesses.push_back({target, selected_access_kind(argument.expression)});
+                    accesses.push_back(
+                        OwnershipAccess {
+                            .place = target,
+                            .kind = selected_access_kind(argument.expression),
+                            .descendants = false
+                        }
+                    );
                 }
             }
             if (alias.has_value()) {
@@ -401,7 +459,13 @@ auto OwnershipBodyAnalyzer::expression(
                 if (argument.access != AccessMode::Read
                     || !analysis.contents(argument.expression.type.construction())
                             .read_is_value_snapshot()) {
-                    accesses.push_back({*alias, selected_access_kind(argument.expression)});
+                    accesses.push_back(
+                        OwnershipAccess {
+                            .place = *alias,
+                            .kind = selected_access_kind(argument.expression),
+                            .descendants = false
+                        }
+                    );
                 }
             }
             protect(relationships, argument.access != AccessMode::Write);
@@ -430,10 +494,12 @@ auto OwnershipBodyAnalyzer::expression(
                 if (borrowed) {
                     for (const auto& place : operand_storage) {
                         relationships.edit().storage_loans.push_back(
-                            {{},
-                             place,
-                             argument.expression.origin,
-                             OwnershipLoanProtection::Lifetime}
+                            OwnershipStorageLoan {
+                                .holder = {},
+                                .backing = place,
+                                .origin = argument.expression.origin,
+                                .protection = OwnershipLoanProtection::Lifetime
+                            }
                         );
                     }
                     if (operand_storage.empty()) {
@@ -461,12 +527,18 @@ auto OwnershipBodyAnalyzer::expression(
                     co_return {};
                 },
                 [&](const SemBinding&) noexcept -> ContinuationTask<std::monostate> {
-                    flow = (co_await place(source, std::move(flow.normal->state)));
+                    flow = (co_await place(source, std::move(flow.normal->state), true));
                     co_return {};
                 },
                 [&](const SemCallable& value) noexcept -> ContinuationTask<std::monostate> {
                     flow.normal->value.edit().callable_loans.push_back(
-                        {{}, std::nullopt, value.callable, source.origin, false}
+                        OwnershipCallableLoan {
+                            .holder = {},
+                            .backing = std::nullopt,
+                            .callable = value.callable,
+                            .origin = source.origin,
+                            .direct_only = false
+                        }
                     );
                     co_return {};
                 },
@@ -474,9 +546,9 @@ auto OwnershipBodyAnalyzer::expression(
                     co_return {};
                 },
                 [&](const SemRange& value) noexcept -> ContinuationTask<std::monostate> {
-                    static_cast<void>((co_await evaluate(*value.begin)));
+                    static_cast<void>((co_await evaluate(*value.begin, false)));
                     if (flow.normal) {
-                        static_cast<void>((co_await evaluate(*value.end)));
+                        static_cast<void>((co_await evaluate(*value.end, false)));
                     }
                     co_return {};
                 },
@@ -505,13 +577,13 @@ auto OwnershipBodyAnalyzer::expression(
                     co_return {};
                 },
                 [&](const SemUnary& value) noexcept -> ContinuationTask<std::monostate> {
-                    static_cast<void>((co_await evaluate(*value.operand)));
+                    static_cast<void>((co_await evaluate(*value.operand, false)));
                     co_return {};
                 },
                 [&](const SemBinary& value) noexcept -> ContinuationTask<std::monostate> {
                     const auto previous_readers = storage_readers.size();
-                    protect_storage((co_await evaluate(*value.left)));
-                    static_cast<void>((co_await evaluate(*value.right)));
+                    protect_storage((co_await evaluate(*value.left, false)));
+                    static_cast<void>((co_await evaluate(*value.right, false)));
                     restore_storage_readers(previous_readers);
                     co_return {};
                 },
@@ -520,7 +592,7 @@ auto OwnershipBodyAnalyzer::expression(
                     co_return {};
                 },
                 [&](const SemShortCircuit& value) noexcept -> ContinuationTask<std::monostate> {
-                    static_cast<void>((co_await evaluate(*value.left)));
+                    static_cast<void>((co_await evaluate(*value.left, false)));
                     if (!flow.normal.has_value()) {
                         co_return {};
                     }
@@ -532,16 +604,16 @@ auto OwnershipBodyAnalyzer::expression(
                         co_return {};
                     }
                     const auto skipped = runs_right ? std::nullopt : flow.normal;
-                    static_cast<void>((co_await evaluate(*value.right)));
+                    static_cast<void>((co_await evaluate(*value.right, false)));
                     join_normal_ownership(flow.normal, skipped);
                     co_return {};
                 },
                 [&](const SemDereference&) noexcept -> ContinuationTask<std::monostate> {
-                    flow = (co_await place(source, std::move(flow.normal->state)));
+                    flow = (co_await place(source, std::move(flow.normal->state), true));
                     co_return {};
                 },
                 [&](const SemAddressOf& value) noexcept -> ContinuationTask<std::monostate> {
-                    flow = (co_await place(*value.source, std::move(flow.normal->state)));
+                    flow = (co_await place(*value.source, std::move(flow.normal->state), true));
                     if (flow.normal) {
                         flow.normal->value = {};
                         flow.normal->storage.clear();
@@ -549,7 +621,7 @@ auto OwnershipBodyAnalyzer::expression(
                     co_return {};
                 },
                 [&](const SemTupleElement& value) noexcept -> ContinuationTask<std::monostate> {
-                    const auto relationships = (co_await evaluate(*value.source));
+                    const auto relationships = (co_await evaluate(*value.source, false));
                     if (flow.normal) {
                         flow.normal->value = project_relationships(
                             relationships,
@@ -563,7 +635,7 @@ auto OwnershipBodyAnalyzer::expression(
                     co_return {};
                 },
                 [&](const SemField& value) noexcept -> ContinuationTask<std::monostate> {
-                    const auto relationships = (co_await evaluate(*value.source));
+                    const auto relationships = (co_await evaluate(*value.source, false));
                     if (flow.normal) {
                         flow.normal->value = project_relationships(
                             relationships,
@@ -578,7 +650,7 @@ auto OwnershipBodyAnalyzer::expression(
                 },
                 [&](const SemIndex& value) noexcept -> ContinuationTask<std::monostate> {
                     const auto previous_readers = storage_readers.size();
-                    const auto relationships = (co_await evaluate(*value.source));
+                    const auto relationships = (co_await evaluate(*value.source, false));
                     if (!flow.normal) {
                         co_return {};
                     }
@@ -593,9 +665,15 @@ auto OwnershipBodyAnalyzer::expression(
                     protect_storage(relationships);
                     const auto previous_accesses = accesses.size();
                     for (const auto& selected : storage) {
-                        accesses.push_back({selected, selected_access_kind(source)});
+                        accesses.push_back(
+                            OwnershipAccess {
+                                .place = selected,
+                                .kind = selected_access_kind(source),
+                                .descendants = false
+                            }
+                        );
                     }
-                    static_cast<void>((co_await evaluate(*value.index)));
+                    static_cast<void>((co_await evaluate(*value.index, false)));
                     accesses.resize(previous_accesses);
                     restore_storage_readers(previous_readers);
                     if (flow.normal) {
@@ -624,17 +702,22 @@ auto OwnershipBodyAnalyzer::expression(
                 },
                 [&](const SemReport& value) noexcept -> ContinuationTask<std::monostate> {
                     if (value.condition.has_value()) {
-                        (co_await evaluate(**value.condition));
+                        (co_await evaluate(**value.condition, false));
                     }
                     const auto success = value.condition.has_value() ? flow.normal : std::nullopt;
                     if (value.message) {
-                        (co_await evaluate(**value.message));
+                        (co_await evaluate(**value.message, false));
                     }
                     if (value.kind == ReportKind::Check) {
                         join_normal_ownership(flow.normal, success);
                     } else {
                         if (flow.normal && value.kind != ReportKind::Assert) {
-                            flow.exits.push_back({OwnershipTestStopped {}, flow.normal->state});
+                            flow.exits.push_back(
+                                OwnershipExit {
+                                    .payload = OwnershipTestStopped {},
+                                    .state = flow.normal->state
+                                }
+                            );
                         }
                         flow.normal = success;
                     }
@@ -650,11 +733,15 @@ auto OwnershipBodyAnalyzer::expression(
                     auto formatting_reads = OwnershipRelationships {};
                     if constexpr (std::same_as<Output, SemFormat>) {
                         if (value.receiver) {
-                            protect_storage((co_await evaluate(**value.receiver)));
+                            protect_storage((co_await evaluate(**value.receiver, false)));
                             destinations = operand_storage;
                             for (const auto& target : destinations) {
                                 accesses.push_back(
-                                    {target, selected_access_kind(**value.receiver)}
+                                    OwnershipAccess {
+                                        .place = target,
+                                        .kind = selected_access_kind(**value.receiver),
+                                        .descendants = false
+                                    }
                                 );
                             }
                         }
@@ -680,10 +767,12 @@ auto OwnershipBodyAnalyzer::expression(
                             && builtin->kind == BuiltinType::String) {
                             for (const auto& backing : operand_storage) {
                                 formatting_reads.edit().storage_loans.push_back(
-                                    {{},
-                                     backing,
-                                     operand.expression.origin,
-                                     OwnershipLoanProtection::Contents}
+                                    OwnershipStorageLoan {
+                                        .holder = {},
+                                        .backing = backing,
+                                        .origin = operand.expression.origin,
+                                        .protection = OwnershipLoanProtection::Contents
+                                    }
                                 );
                             }
                         }
@@ -692,7 +781,11 @@ auto OwnershipBodyAnalyzer::expression(
                             )) {
                             for (const auto& target : operand_storage) {
                                 accesses.push_back(
-                                    {target, selected_access_kind(operand.expression)}
+                                    OwnershipAccess {
+                                        .place = target,
+                                        .kind = selected_access_kind(operand.expression),
+                                        .descendants = false
+                                    }
                                 );
                             }
                         }
@@ -702,8 +795,13 @@ auto OwnershipBodyAnalyzer::expression(
                             // String Read aliases are observed after all holes complete.
                             // They must remain separate from the destination during append.
                             protect_storage(formatting_reads);
-                            write_access(destination, source.origin);
-                            check_storage_write(flow.normal->state, destination, source.origin);
+                            write_access(destination, source.origin, true);
+                            check_storage_write(
+                                flow.normal->state,
+                                destination,
+                                source.origin,
+                                false
+                            );
                         }
                         flow.normal->value = {};
                     }
@@ -718,7 +816,7 @@ auto OwnershipBodyAnalyzer::expression(
                                 -> ContinuationTask<std::monostate> {
                                 const auto previous_readers = storage_readers.size();
                                 auto relationships =
-                                    (co_await evaluate(value.operands.front().expression));
+                                    (co_await evaluate(value.operands.front().expression, false));
                                 if (family.intrinsic == SliceIntrinsic::View
                                     && !std::holds_alternative<ConstructionSliceTypeValue>(
                                         analysis.model.shape(
@@ -731,10 +829,12 @@ auto OwnershipBodyAnalyzer::expression(
                                     if (family.result_extent != 0) {
                                         for (const auto& backing : operand_storage) {
                                             relationships.edit().storage_loans.push_back(
-                                                {{},
-                                                 backing,
-                                                 source.origin,
-                                                 OwnershipLoanProtection::Contents}
+                                                OwnershipStorageLoan {
+                                                    .holder = {},
+                                                    .backing = backing,
+                                                    .origin = source.origin,
+                                                    .protection = OwnershipLoanProtection::Contents
+                                                }
                                             );
                                         }
                                     }
@@ -742,7 +842,7 @@ auto OwnershipBodyAnalyzer::expression(
                                 protect_storage(relationships);
                                 for (auto i = 1uz; i < value.operands.size(); ++i) {
                                     static_cast<void>(
-                                        (co_await evaluate(value.operands[i].expression))
+                                        (co_await evaluate(value.operands[i].expression, false))
                                     );
                                 }
                                 if (flow.normal) {
@@ -757,7 +857,7 @@ auto OwnershipBodyAnalyzer::expression(
                             [&](const FloatIntrinsic&) noexcept
                                 -> ContinuationTask<std::monostate> {
                                 for (const auto& operand : value.operands) {
-                                    static_cast<void>(co_await evaluate(operand.expression));
+                                    static_cast<void>(co_await evaluate(operand.expression, false));
                                 }
                                 if (flow.normal) {
                                     flow.normal->value = OwnershipRelationships {};
@@ -768,7 +868,7 @@ auto OwnershipBodyAnalyzer::expression(
                                 const auto previous_readers = storage_readers.size();
                                 for (const auto& operand : value.operands) {
                                     const auto relationships =
-                                        co_await evaluate(operand.expression);
+                                        co_await evaluate(operand.expression, false);
                                     protect_storage(relationships);
                                 }
                                 if (flow.normal) {
@@ -786,7 +886,7 @@ auto OwnershipBodyAnalyzer::expression(
                                 for (const auto& [index, operand] :
                                      std::views::enumerate(value.operands)) {
                                     const auto relationships =
-                                        co_await evaluate(operand.expression);
+                                        co_await evaluate(operand.expression, false);
                                     if (!flow.normal) {
                                         break;
                                     }
@@ -795,7 +895,12 @@ auto OwnershipBodyAnalyzer::expression(
                                         receiver_storage = operand_storage;
                                         for (const auto& target : receiver_storage) {
                                             accesses.push_back(
-                                                {target, selected_access_kind(operand.expression)}
+                                                OwnershipAccess {
+                                                    .place = target,
+                                                    .kind =
+                                                        selected_access_kind(operand.expression),
+                                                    .descendants = false
+                                                }
                                             );
                                         }
                                     }
@@ -803,11 +908,12 @@ auto OwnershipBodyAnalyzer::expression(
                                 if (flow.normal) {
                                     if (contract.receiver_access == AccessMode::Write) {
                                         for (const auto& target : receiver_storage) {
-                                            write_access(target, source.origin);
+                                            write_access(target, source.origin, true);
                                             check_storage_write(
                                                 flow.normal->state,
                                                 target,
-                                                source.origin
+                                                source.origin,
+                                                false
                                             );
                                         }
                                     }
@@ -826,7 +932,8 @@ auto OwnershipBodyAnalyzer::expression(
                                 auto receiver_storage = std::vector<OwnershipPlace>();
                                 for (const auto& [index, operand] :
                                      std::views::enumerate(value.operands)) {
-                                    auto relationships = (co_await evaluate(operand.expression));
+                                    auto relationships =
+                                        (co_await evaluate(operand.expression, false));
                                     if (!flow.normal) {
                                         break;
                                     }
@@ -842,10 +949,13 @@ auto OwnershipBodyAnalyzer::expression(
                                             builtin && builtin->kind == BuiltinType::String) {
                                             for (const auto& backing : operand_storage) {
                                                 relationships.edit().storage_loans.push_back(
-                                                    {{},
-                                                     backing,
-                                                     source.origin,
-                                                     OwnershipLoanProtection::Contents}
+                                                    OwnershipStorageLoan {
+                                                        .holder = {},
+                                                        .backing = backing,
+                                                        .origin = source.origin,
+                                                        .protection =
+                                                            OwnershipLoanProtection::Contents
+                                                    }
                                                 );
                                             }
                                         }
@@ -856,7 +966,12 @@ auto OwnershipBodyAnalyzer::expression(
                                         receiver_storage = operand_storage;
                                         for (const auto& selected : receiver_storage) {
                                             accesses.push_back(
-                                                {selected, selected_access_kind(operand.expression)}
+                                                OwnershipAccess {
+                                                    .place = selected,
+                                                    .kind =
+                                                        selected_access_kind(operand.expression),
+                                                    .descendants = false
+                                                }
                                             );
                                         }
                                     }
@@ -864,11 +979,12 @@ auto OwnershipBodyAnalyzer::expression(
                                 if (flow.normal) {
                                     if (text_intrinsic_writes(family)) {
                                         for (const auto& target : receiver_storage) {
-                                            write_access(target, source.origin);
+                                            write_access(target, source.origin, true);
                                             check_storage_write(
                                                 flow.normal->state,
                                                 target,
-                                                source.origin
+                                                source.origin,
+                                                false
                                             );
                                         }
                                     }
@@ -882,7 +998,7 @@ auto OwnershipBodyAnalyzer::expression(
                     );
                 },
                 [&](const SemArrayAdopt& value) noexcept -> ContinuationTask<std::monostate> {
-                    const auto original = (co_await evaluate(*value.source));
+                    const auto original = (co_await evaluate(*value.source, false));
                     if (!flow.normal.has_value()) {
                         co_return {};
                     }
@@ -920,7 +1036,13 @@ auto OwnershipBodyAnalyzer::expression(
                             callable_adaptation(program, *source_type, *target_type);
                         if (!adaptation.borrows_storage()) {
                             flow.normal->value.edit().callable_loans.push_back(
-                                {path, std::nullopt, *adaptation.callable, source.origin, false}
+                                OwnershipCallableLoan {
+                                    .holder = path,
+                                    .backing = std::nullopt,
+                                    .callable = *adaptation.callable,
+                                    .origin = source.origin,
+                                    .direct_only = false
+                                }
                             );
                             return;
                         }
@@ -939,11 +1061,13 @@ auto OwnershipBodyAnalyzer::expression(
                         for (auto element : storage) {
                             element.path.insert(element.path.end(), path.begin(), path.end());
                             flow.normal->value.edit().callable_loans.push_back(
-                                {path,
-                                 element,
-                                 adaptation.callable,
-                                 source.origin,
-                                 full_expression_storage(element.object)}
+                                OwnershipCallableLoan {
+                                    .holder = path,
+                                    .backing = element,
+                                    .callable = adaptation.callable,
+                                    .origin = source.origin,
+                                    .direct_only = full_expression_storage(element.object)
+                                }
                             );
                         }
                     };
@@ -971,7 +1095,7 @@ auto OwnershipBodyAnalyzer::expression(
                             source.origin
                         );
                     }
-                    const auto relationships = (co_await evaluate(*value.source));
+                    const auto relationships = (co_await evaluate(*value.source, false));
                     const auto& backing = operand_storage;
                     if (!flow.normal.has_value()) {
                         co_return {};
@@ -999,15 +1123,16 @@ auto OwnershipBodyAnalyzer::expression(
                     if (!adaptation.borrows_storage()) {
                         flow.normal->value = OwnershipRelationships(
                             OwnershipRelationshipRows {
-                                .callable_loans =
-                                    {{{},
-                                      std::nullopt,
-                                      *adaptation.callable,
-                                      source.origin,
-                                      false}},
+                                .callable_loans = {OwnershipCallableLoan {
+                                    .holder = {},
+                                    .backing = std::nullopt,
+                                    .callable = *adaptation.callable,
+                                    .origin = source.origin,
+                                    .direct_only = false
+                                }},
                                 .captures = {},
                                 .storage_loans = std::move(storage),
-                                .formal_bundles = {},
+                                .formal_bundles = {}
                             }
                         );
                     } else {
@@ -1016,31 +1141,39 @@ auto OwnershipBodyAnalyzer::expression(
                                 .callable_loans = {},
                                 .captures = {},
                                 .storage_loans = std::move(storage),
-                                .formal_bundles = {},
+                                .formal_bundles = {}
                             }
                         );
                         for (const auto& selected : backing) {
                             flow.normal->value.edit().callable_loans.push_back(
-                                {{},
-                                 selected,
-                                 adaptation.callable,
-                                 source.origin,
-                                 full_expression_storage(selected.object)
-                                     && analysis.contents(value.source->type.construction())
-                                            .contains_closure_owner}
+                                OwnershipCallableLoan {
+                                    .holder = {},
+                                    .backing = selected,
+                                    .callable = adaptation.callable,
+                                    .origin = source.origin,
+                                    .direct_only = full_expression_storage(selected.object)
+                                        && analysis.contents(value.source->type.construction())
+                                               .contains_closure_owner
+                                }
                             );
                         }
                     }
                     co_return {};
                 },
                 [&](const SemTake& value) noexcept -> ContinuationTask<std::monostate> {
-                    flow = (co_await place(*value.place, std::move(flow.normal->state)));
+                    flow = (co_await place(*value.place, std::move(flow.normal->state), true));
                     if (!flow.normal.has_value()) {
                         co_return {};
                     }
                     const auto target = flow.normal->storage.front();
-                    const auto effect =
-                        OwnershipWriteEffect {target, true, true, source.origin, true, false};
+                    const auto effect = OwnershipWriteEffect {
+                        .place = target,
+                        .invalidates = true,
+                        .storage = true,
+                        .origin = source.origin,
+                        .take = true,
+                        .preserves_backing = false
+                    };
                     if (!std::ranges::contains(effects, effect)) {
                         effects.push_back(effect);
                     }
@@ -1071,8 +1204,11 @@ auto OwnershipBodyAnalyzer::expression(
                         }
                         if (capture.mode == CaptureMode::Write) {
                             auto accumulated = std::move(flow.normal->value);
-                            auto selected =
-                                (co_await place(capture.expression, std::move(flow.normal->state)));
+                            auto selected = (co_await place(
+                                capture.expression,
+                                std::move(flow.normal->state),
+                                true
+                            ));
                             flow.normal = std::move(selected.normal);
                             append_ownership_exits(flow, selected);
                             if (!flow.normal.has_value()) {
@@ -1082,7 +1218,11 @@ auto OwnershipBodyAnalyzer::expression(
                             for (const auto& target : flow.normal->storage) {
                                 write_access(target, capture.expression.origin, false);
                                 flow.normal->value.edit().captures.push_back(
-                                    {OwnershipProjectionPath {index}, target, source.origin}
+                                    OwnershipCapture {
+                                        .holder = OwnershipProjectionPath {index},
+                                        .target = target,
+                                        .origin = source.origin
+                                    }
                                 );
                             }
                         } else {
@@ -1103,7 +1243,7 @@ auto OwnershipBodyAnalyzer::expression(
                     co_return {};
                 },
                 [&](const SemColdCall& value) noexcept -> ContinuationTask<std::monostate> {
-                    static_cast<void>((co_await evaluate(*value.callee)));
+                    static_cast<void>((co_await evaluate(*value.callee, false)));
                     // Only runtime arguments are retained by the cold activation.
                     const auto& signature = program.callable_signatures().signature(
                         program.declarations().callable(value.target).signature
@@ -1126,12 +1266,12 @@ auto OwnershipBodyAnalyzer::expression(
                     const auto retained = co_await evaluate(*value.operation, true);
                     if (flow.normal) {
                         merge_relationships(flow.normal->value, retained);
-                        static_cast<void>(co_await evaluate(*value.duration_ticks));
+                        static_cast<void>(co_await evaluate(*value.duration_ticks, false));
                     }
                     co_return {};
                 },
                 [&](const SemAwait& value) noexcept -> ContinuationTask<std::monostate> {
-                    static_cast<void>((co_await evaluate(*value.operand)));
+                    static_cast<void>((co_await evaluate(*value.operand, false)));
                     if (!flow.normal) {
                         co_return {};
                     }
@@ -1180,7 +1320,12 @@ auto OwnershipBodyAnalyzer::expression(
                     }
                     // Operand failures already retain their evaluation states.
                     append_failures(flow, operation->failures, flow.normal->state);
-                    flow.exits.push_back({OwnershipCancelled {}, flow.normal->state});
+                    flow.exits.push_back(
+                        OwnershipExit {
+                            .payload = OwnershipCancelled {},
+                            .state = flow.normal->state
+                        }
+                    );
                     co_return {};
                 },
                 [&](const SemWaitReady& value) noexcept -> ContinuationTask<std::monostate> {
@@ -1272,7 +1417,7 @@ auto OwnershipBodyAnalyzer::expression(
                     if (concrete.has_value()
                         && value.callee->category == SemanticValueCategory::Place) {
                         auto located =
-                            (co_await place(*value.callee, std::move(flow.normal->state)));
+                            (co_await place(*value.callee, std::move(flow.normal->state), true));
                         flow.normal = std::move(located.normal);
                         append_ownership_exits(flow, located);
                         callee =
@@ -1281,12 +1426,18 @@ auto OwnershipBodyAnalyzer::expression(
                             callee_storage = flow.normal->storage;
                         }
                     } else {
-                        callee = (co_await evaluate(*value.callee));
+                        callee = (co_await evaluate(*value.callee, false));
                         callee_storage = operand_storage;
                     }
                     if (concrete.has_value()) {
                         for (const auto& selected : callee_storage) {
-                            accesses.push_back({selected, selected_access_kind(*value.callee)});
+                            accesses.push_back(
+                                OwnershipAccess {
+                                    .place = selected,
+                                    .kind = selected_access_kind(*value.callee),
+                                    .descendants = false
+                                }
+                            );
                         }
                     }
                     protect(callee, true);
@@ -1299,7 +1450,7 @@ auto OwnershipBodyAnalyzer::expression(
                         parameters.push_back(std::move(*prepared));
                     }
                     if (flow.normal.has_value()) {
-                        auto invoked = OwnershipFlow {};
+                        auto invoked = OwnershipFlow {.normal = {}, .exits = {}};
                         const auto invoke = [&](
                                                 this const auto& self,
                                                 const OwnershipRelationships& target,
@@ -1350,7 +1501,7 @@ auto OwnershipBodyAnalyzer::expression(
                                                 .callable_loans = {},
                                                 .captures = {},
                                                 .storage_loans = target.view().storage_loans,
-                                                .formal_bundles = target.view().formal_bundles,
+                                                .formal_bundles = target.view().formal_bundles
                                             }
                                         )
                                     );

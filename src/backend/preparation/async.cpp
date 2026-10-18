@@ -12,7 +12,7 @@ import std;
 
 namespace {
 
-auto scalar(const SemIRProgram& program, TypeID type, bool allow_void = false) noexcept -> bool {
+auto scalar(const SemIRProgram& program, TypeID type, bool allow_void) noexcept -> bool {
     const auto* builtin = std::get_if<BuiltinTypeValue>(&program.types().type(type).value);
     return builtin != nullptr
         && (builtin_is_numeric(builtin->kind)
@@ -21,9 +21,14 @@ auto scalar(const SemIRProgram& program, TypeID type, bool allow_void = false) n
             || (allow_void && builtin->kind == BuiltinType::Void));
 }
 
+struct AwaitFactoryReturn final {
+    const SemanticExpression& expression;
+    const SemColdCall& call;
+};
+
 // Residual static selection can retain unconditional region wrappers.
 // Transparent factories add no execution beyond their returned cold call.
-auto factory_return(const SemanticRegion& body) noexcept -> const SemanticExpression* {
+auto factory_return(const SemanticRegion& body) noexcept -> std::optional<AwaitFactoryReturn> {
     auto* region = std::addressof(body);
     auto returned = false;
     for (;;) {
@@ -33,13 +38,13 @@ auto factory_return(const SemanticRegion& body) noexcept -> const SemanticExpres
                 continue;
             }
             if (statement != nullptr) {
-                return nullptr;
+                return std::nullopt;
             }
             statement = std::addressof(candidate);
         }
         const auto result = region->result && region->result_reachable;
         if (statement != nullptr && result) {
-            return nullptr;
+            return std::nullopt;
         }
         const auto* expression = result ? std::addressof(*region->result) : nullptr;
         if (statement != nullptr) {
@@ -56,22 +61,24 @@ auto factory_return(const SemanticRegion& body) noexcept -> const SemanticExpres
                 expression = std::addressof(evaluated->expression);
                 returned = false;
             } else {
-                return nullptr;
+                return std::nullopt;
             }
         }
         if (expression == nullptr) {
-            return nullptr;
+            return std::nullopt;
         }
         const auto& operation = BodyPreparation::operation(*expression);
-        if (std::holds_alternative<SemColdCall>(operation.value)) {
-            return returned ? std::addressof(operation) : nullptr;
+        if (const auto* call = std::get_if<SemColdCall>(&operation.value)) {
+            return returned
+                ? std::optional(AwaitFactoryReturn {.expression = operation, .call = *call})
+                : std::nullopt;
         }
         const auto* selected = std::get_if<SemIf>(&operation.value);
         if (selected == nullptr
             || selected->is_static
             || !selected->branches.empty()
             || !selected->otherwise) {
-            return nullptr;
+            return std::nullopt;
         }
         region = std::addressof(**selected->otherwise);
     }
@@ -92,7 +99,7 @@ auto producer(const SemIRProgram& program, const SemColdCall& call) noexcept
             [&](const CallableParameter& parameter) noexcept {
                 return parameter.stage != ParameterStage::Runtime
                     || parameter.access != AccessMode::Read
-                    || !scalar(program, parameter.type);
+                    || !scalar(program, parameter.type, false);
             }
         )) {
         return std::nullopt;
@@ -153,7 +160,7 @@ auto prepare_await_producer(const SemIRProgram& program, const SemanticExpressio
             [&](const CallableParameter& parameter) noexcept {
                 return parameter.stage != ParameterStage::Runtime
                     || parameter.access != AccessMode::Read
-                    || !scalar(program, parameter.type);
+                    || !scalar(program, parameter.type, false);
             }
         )) {
         return std::nullopt;
@@ -163,11 +170,11 @@ auto prepare_await_producer(const SemIRProgram& program, const SemanticExpressio
         || body.inputs().parameters.size() != call->arguments.size()) {
         return std::nullopt;
     }
-    const auto* returned = factory_return(body.region());
-    if (returned == nullptr || returned->type.resolved() != signature.result) {
+    const auto returned = factory_return(body.region());
+    if (!returned || returned->expression.type.resolved() != signature.result) {
         return std::nullopt;
     }
-    const auto& cold = std::get<SemColdCall>(returned->value);
+    const auto& cold = returned->call;
     const auto* callee = std::get_if<SemCallable>(&BodyPreparation::operation(*cold.callee).value);
     if (callee == nullptr || callee->callable != cold.target) {
         return std::nullopt;
@@ -200,7 +207,7 @@ auto scalar_parameters(const SemIRProgram& program, const CallableSignature& sig
     return std::ranges::all_of(signature.parameters, [&](const auto& parameter) noexcept {
         return parameter.stage == ParameterStage::Runtime
             && parameter.access == AccessMode::Read
-            && scalar(program, parameter.type);
+            && scalar(program, parameter.type, false);
     });
 }
 
@@ -218,7 +225,7 @@ auto scalar_call(
         && scalar_parameters(program, signature)
         && std::ranges::all_of(arguments, [&](const auto& argument) noexcept {
                return argument.access == AccessMode::Read
-                   && scalar(program, argument.expression.type.resolved());
+                   && scalar(program, argument.expression.type.resolved(), false);
            });
 }
 
@@ -336,25 +343,29 @@ struct TailReturnQuery final {
     const SemIRProgram& program;
     CallableID callable;
     PreparedTailAwaitLoop& selected;
-    std::size_t enclosing_operands = 0;
+    std::size_t enclosing_operands;
 
-    auto operator()(const SemanticExpression& expression) noexcept -> void {
-        enclosing_operands += !transparent_tail_control(program, expression);
-    }
+    auto operator()(const SemanticExpression& expression) noexcept -> void;
+    auto leave(const SemanticExpression& expression) noexcept -> void;
+    auto operator()(const SemanticStatement& statement) noexcept -> void;
+};
 
-    auto leave(const SemanticExpression& expression) noexcept -> void {
-        enclosing_operands -= !transparent_tail_control(program, expression);
-    }
+auto TailReturnQuery::operator()(const SemanticExpression& expression) noexcept -> void {
+    enclosing_operands += !transparent_tail_control(program, expression);
+}
 
-    auto operator()(const SemanticStatement& statement) noexcept -> void {
-        if (statement.reachable && enclosing_operands == 0) {
-            if (const auto* returned = std::get_if<SemReturn>(&statement.value);
-                returned != nullptr && returned->value) {
-                select_tail_await(program, *returned->value, callable, selected);
-            }
+auto TailReturnQuery::leave(const SemanticExpression& expression) noexcept -> void {
+    enclosing_operands -= !transparent_tail_control(program, expression);
+}
+
+auto TailReturnQuery::operator()(const SemanticStatement& statement) noexcept -> void {
+    if (statement.reachable && enclosing_operands == 0) {
+        if (const auto* returned = std::get_if<SemReturn>(&statement.value);
+            returned != nullptr && returned->value) {
+            select_tail_await(program, *returned->value, callable, selected);
         }
     }
-};
+}
 
 } // namespace
 
@@ -367,7 +378,7 @@ auto prepare_tail_await_loop(const SemIRProgram& program, CallableID callable) n
         std::get_if<BuiltinTypeValue>(&program.types().type(signature.result).value);
     if (!body_id
         || signature.execution != CallableExecutionKind::Async
-        || !scalar(program, signature.result)
+        || !scalar(program, signature.result, false)
         // Each char await retains its own validation and diagnostic site.
         || (result != nullptr && result->kind == BuiltinType::Char)
         || !scalar_parameters(program, signature)
@@ -379,7 +390,7 @@ auto prepare_tail_await_loop(const SemIRProgram& program, CallableID callable) n
     const auto& body = program.bodies().body(*body_id);
     if (!body.inputs().captures.empty()
         || std::ranges::any_of(body.bindings(), [&](const auto& binding) noexcept {
-               return !scalar(program, binding.value.type)
+               return !scalar(program, binding.value.type, false)
                    || std::holds_alternative<AsyncChildBindingStorage>(binding.value.storage);
            })) {
         return std::nullopt;
@@ -407,7 +418,15 @@ auto prepare_tail_await_loop(const SemIRProgram& program, CallableID callable) n
             supported &= !std::holds_alternative<SemAsyncLet>(node.value);
         }
     });
-    visit_semantic_nodes(body.region(), TailReturnQuery {program, callable, selected});
+    visit_semantic_nodes(
+        body.region(),
+        TailReturnQuery {
+            .program = program,
+            .callable = callable,
+            .selected = selected,
+            .enclosing_operands = 0uz,
+        }
+    );
     return supported && !selected.awaits.empty() ? std::optional(std::move(selected))
                                                  : std::nullopt;
 }

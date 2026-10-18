@@ -34,11 +34,14 @@ auto BodyRealizer::initialize_deferred(
     emit_return(std::move(initializer), value, LoweringYieldResult {.target = yield});
     auto factory =
         std::move(value).result_factory(factory_result.value_or(storage.value_type), yield);
-    destination.emit(discard_statement(call_member(
-        name_expression(storage.local),
-        "initialize",
-        target_expressions(std::move(factory))
-    )));
+    destination.emit(
+        discard_statement(call_member(
+            name_expression(storage.local),
+            "initialize",
+            target_expressions(std::move(factory))
+        )),
+        true
+    );
 }
 
 auto BodyRealizer::deliver_result(
@@ -50,25 +53,30 @@ auto BodyRealizer::deliver_result(
         && (std::holds_alternative<LoweringYieldResult>(result)
             || std::holds_alternative<LoweringInitializeResult>(result)
             || std::holds_alternative<LoweringAssignResult>(result))) {
-        value = LoweringDirectExpression {TargetExpr {
-            .value = TargetConstructionExpr {
-                .type = context.intrinsic_type(TargetSymbol::RuntimeVoid),
-                .initializer = std::vector<TargetExpr> {}
+        value = LoweringDirectExpression {
+            .expression = TargetExpr {
+                .value = TargetConstructionExpr {
+                    .type = context.intrinsic_type(TargetSymbol::RuntimeVoid, false),
+                    .initializer = std::vector<TargetExpr> {}
+                }
             }
-        }};
+        };
     }
     if (returns_result(result)) {
         emit_return(remaining_expression(std::move(value)), destination, result);
     } else if (const auto* initialize = std::get_if<LoweringInitializeResult>(&result)) {
         initialize_deferred(initialize->storage, require_expression(std::move(value)), destination);
     } else if (const auto* assign = std::get_if<LoweringAssignResult>(&result)) {
-        destination.emit(generated_statement(
-            TargetAssignmentStmt {
-                .target = name_expression(assign->local),
-                .op = TargetAssignmentOperator::Assign,
-                .value = require_expression(std::move(value))
-            }
-        ));
+        destination.emit(
+            generated_statement(
+                TargetAssignmentStmt {
+                    .target = name_expression(assign->local),
+                    .op = TargetAssignmentOperator::Assign,
+                    .value = require_expression(std::move(value))
+                }
+            ),
+            true
+        );
     } else if (!std::holds_alternative<LoweringCompleted>(value)) {
         invariant_violation("discarded results must complete through expression evaluation");
     }

@@ -18,7 +18,7 @@ class DisplayWriter final {
 public:
     auto text(std::string_view value) noexcept -> void { buffer.text(value); }
 
-    auto quoted(std::string_view value, bool character_literal = false) noexcept -> void {
+    auto quoted(std::string_view value, bool character_literal) noexcept -> void {
         buffer.quoted(value, character_literal);
     }
 
@@ -30,14 +30,14 @@ public:
         if constexpr (std::is_same_v<T, Void>) {
             text("()");
         } else if constexpr (std::is_same_v<T, std::string_view>) {
-            quoted(value);
+            quoted(value, false);
         } else if constexpr (std::is_same_v<T, String>) {
-            quoted(value.as_str());
+            quoted(value.as_str(), false);
         } else if constexpr (std::is_same_v<T, const char*> || std::is_same_v<T, char*>) {
             if (value == nullptr) {
                 text("nullptr");
             } else {
-                quoted(value);
+                quoted(value, false);
             }
         } else if constexpr (std::is_same_v<T, char32_t>) {
             quoted(carven::runtime::format_argument(value).as_str(), true);

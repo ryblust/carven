@@ -1,11 +1,14 @@
 #include <carven/std/net/native.hpp>
 
+#include <carven/runtime/execution/child.hpp>
+
 #include <carven/api/crafts/carven/std/net.hpp>
 #include <carven/api/tests/interop/async/net.hpp>
 
 #include <cstdio>
 #include <cstdlib>
 #include <optional>
+#include <utility>
 
 #if !defined(_WIN32)
 #include <netinet/in.h>
@@ -101,6 +104,30 @@ auto succeeds(Operation operation, net::Network& network) noexcept -> bool {
     return result != nullptr && result->value;
 }
 
+template<typename Operation>
+auto cancel_and_close(
+    net::Network& network,
+    const net::Connection& connection,
+    Operation operation
+) noexcept -> async::AsyncOperation<bool> {
+    auto& activation = co_await async::current_activation();
+    auto scope = async::ChildScope(activation);
+    auto pending = scope.start(std::move(operation));
+    co_await async::await_yield_once();
+    async::cancel(pending);
+    // Processing cancellation does not finish the source operation. The host
+    // must wait for it before closing the connection.
+    network.poll(*activation.task->driver);
+    const auto protected_connection = connection.close().kind == net::ErrorKind::Conflict;
+    const auto completion = co_await pending.observe();
+    co_await scope.close(async::ClosingPolicy::CloseOnly);
+    co_return async::Completion<bool>::success(
+        protected_connection
+        && completion.is_cancelled()
+        && connection.close().kind == net::ErrorKind::None
+    );
+}
+
 } // namespace
 
 auto run_net_cases() noexcept -> void {
@@ -142,19 +169,30 @@ auto run_net_cases() noexcept -> void {
     check(pair.reader().close().kind == net::ErrorKind::None, "idempotent close");
     check(succeeds(api::closed(reader), network), "closed connection");
     {
-        const auto blocked = Pair(network);
-        const auto view = net_api::borrow({&blocked.writer()});
+        const auto active = Pair(network);
+        const auto view = net_api::borrow({&active.reader()});
+        check(
+            succeeds(cancel_and_close(network, active.reader(), api::at_end(view)), network),
+            "read cancellation finishes before the host can close the connection"
+        );
+    }
+    {
+        const auto active = Pair(network);
+        const auto view = net_api::borrow({&active.writer()});
         payload.clear();
-        for (auto index = 0; index < 4 * 1024 * 1024; ++index) {
+        for (auto index = 0; index < 4096; ++index) {
             payload.push(1);
         }
         check(
-            succeeds(api::cancel_write(view, std::move(payload)), network),
-            "pending write conflict and cancellation drain"
-        );
-        check(
-            blocked.writer().close().kind == net::ErrorKind::None,
-            "write cancellation releases registration before close"
+            succeeds(
+                cancel_and_close(
+                    network,
+                    active.writer(),
+                    api::fill_writer(view, std::move(payload))
+                ),
+                network
+            ),
+            "write cancellation finishes before the host can close the connection"
         );
     }
     std::puts("network: pass");

@@ -130,8 +130,14 @@ const TestSuite suite([] static noexcept {
             );
             check_structure(restored, expression_count);
             auto copied = restored;
-            expect(exits(restored) == ExitSet(Exit::Normal));
-            expect(exits(copied) == ExitSet(Exit::Normal));
+            expect(
+                exits(restored, CompletionPatterns {.read = {}, .single_case = {}})
+                == ExitSet(Exit::Normal)
+            );
+            expect(
+                exits(copied, CompletionPatterns {.read = {}, .single_case = {}})
+                == ExitSet(Exit::Normal)
+            );
             visit_semantic_nodes(copied, [](SemanticExpression& node) static noexcept {
                 node.exits_test = true;
             });

@@ -59,9 +59,10 @@ auto BinaryReader::unsigned_value(std::size_t width) noexcept
     if (!bytes) {
         return std::unexpected(std::move(bytes.error()));
     }
-    auto value = std::uint64_t(0);
+    auto value = 0ull;
     for (auto index = 0uz; index < width; ++index) {
-        value |= std::uint64_t(std::to_integer<std::uint8_t>((*bytes)[index])) << (index * 8);
+        value |= static_cast<std::uint64_t>(std::to_integer<std::uint8_t>((*bytes)[index]))
+            << (index * 8);
     }
     return value;
 }

@@ -9,6 +9,7 @@ import :backend.realization.expr;
 import :backend.realization.operation;
 import :backend.realization.realizer;
 import :backend.target.expr;
+import :backend.target.origin;
 import :backend.target.stmt;
 import :backend.target.symbol;
 import :semantic.semir.async;
@@ -52,7 +53,7 @@ auto BodyRealizer::begin_async_region(
     }
     const auto scope = fresh_local(TargetTemporaryNameKind::Owner);
     async_scopes.push_back({.lifetime = source.lifetime, .scope = scope});
-    const auto type = context.intrinsic_type(TargetSymbol::RuntimeAsyncChildScope);
+    const auto type = context.intrinsic_type(TargetSymbol::RuntimeAsyncChildScope, false);
     destination.declare(
         TargetVariableStmt {
             .binding = TargetVariableBinding::MutableValue,
@@ -106,12 +107,15 @@ auto BodyRealizer::close_async_locals(
     }
     for (const auto scope : scopes) {
         auto policy = static_member_expression(
-            context.intrinsic_type(TargetSymbol::RuntimeAsyncClosingPolicy),
+            context.intrinsic_type(TargetSymbol::RuntimeAsyncClosingPolicy, false),
             TargetIdentifier::from_spelling(cancel ? "RequestCancelAndClose" : "CloseOnly")
         );
-        destination.emit(discard_statement(co_await_expression(
-            call_member(name_expression(scope), "close", target_expressions(std::move(policy)))
-        )));
+        destination.emit(
+            discard_statement(co_await_expression(
+                call_member(name_expression(scope), "close", target_expressions(std::move(policy)))
+            )),
+            true
+        );
     }
 }
 
@@ -223,7 +227,8 @@ auto BodyRealizer::ExpressionBuilder::complete_awaited(
     const auto type = owner.context.async_type(
         TargetSymbol::RuntimeAsyncCompletion,
         operation_type->success,
-        operation_type->failures
+        operation_type->failures,
+        TypeNameScope::Module
     );
     const auto automatic = fragment.local_storage;
     const auto storage = LoweringDeferredStorage {.local = completion, .value_type = type};
@@ -271,13 +276,16 @@ auto BodyRealizer::ExpressionBuilder::complete_awaited(
         auto cancelled = LoweringStmtBuilder();
         owner.emit_cancelled(cancelled);
         statements.record_exits(cancelled.exits());
-        statements.emit(generated_statement(
-            TargetIfStmt {
-                .condition = call_member(access(), "is_cancelled", {}),
-                .body = std::move(cancelled).finish(),
-                .else_body = std::nullopt
-            }
-        ));
+        statements.emit(
+            generated_statement(
+                TargetIfStmt {
+                    .condition = call_member(access(), "is_cancelled", {}),
+                    .body = std::move(cancelled).finish(),
+                    .else_body = std::nullopt
+                }
+            ),
+            true
+        );
     }
     auto success = call_member(access(), "success_if", {});
     if (!owner.context.plan().failure_abi().members(operation_type->failures).empty()) {
@@ -293,31 +301,37 @@ auto BodyRealizer::ExpressionBuilder::complete_awaited(
             failure
         );
         statements.record_exits(failure.exits());
-        statements.emit(generated_statement(
-            TargetIfStmt {
-                .condition = prefix_expression(
-                    TargetPrefixOperator::LogicalNot,
-                    call_member(access(), "success_if", {})
-                ),
-                .body = std::move(failure).finish(),
-                .else_body = std::nullopt
-            }
-        ));
+        statements.emit(
+            generated_statement(
+                TargetIfStmt {
+                    .condition = prefix_expression(
+                        TargetPrefixOperator::LogicalNot,
+                        call_member(access(), "success_if", {})
+                    ),
+                    .body = std::move(failure).finish(),
+                    .else_body = std::nullopt
+                }
+            ),
+            true
+        );
     }
     if (const auto* builtin = std::get_if<BuiltinTypeValue>(
             &owner.context.semantic().types().type(operation_type->success).value
         );
         builtin != nullptr && builtin->kind == BuiltinType::Char) {
-        statements.emit(discard_statement(call_expression(
-            intrinsic_expression(TargetSymbol::RuntimeCheckedUnicodeScalar),
-            target_expressions(
-                member_expression(
-                    dereference_expression(call_member(access(), "success_if", {})),
-                    TargetIdentifier::from_spelling("value")
-                ),
-                source_site_expression(owner.context, this->source(fragment).operation.origin)
-            )
-        )));
+        statements.emit(
+            discard_statement(call_expression(
+                intrinsic_expression(TargetSymbol::RuntimeCheckedUnicodeScalar),
+                target_expressions(
+                    member_expression(
+                        dereference_expression(call_member(access(), "success_if", {})),
+                        TargetIdentifier::from_spelling("value")
+                    ),
+                    source_site_expression(owner.context, this->source(fragment).operation.origin)
+                )
+            )),
+            true
+        );
     }
     fragment.awaited_carrier =
         AwaitedCarrier {.local = completion, .deferred = !automatic, .operation = operation};
@@ -334,7 +348,8 @@ auto BodyRealizer::ExpressionBuilder::complete_awaited(
                 .maybe_unused = false,
                 .local = projection,
                 .type = owner.context.pointer_type(
-                    owner.context.intrinsic_type(TargetSymbol::Auto, constant)
+                    owner.context.intrinsic_type(TargetSymbol::Auto, constant),
+                    false
                 ),
                 .initializer = std::move(success),
             },
@@ -387,7 +402,8 @@ auto BodyRealizer::ExpressionBuilder::snapshot_parameters(
                 .binding = TargetVariableBinding::ConstValue,
                 .maybe_unused = true,
                 .local = local,
-                .type = owner.context.lower_type(signature.parameters[index].type),
+                .type = owner.context
+                            .lower_type(signature.parameters[index].type, TypeNameScope::Module),
                 .initializer = std::move(operands[index]),
             },
             false
@@ -414,7 +430,7 @@ auto BodyRealizer::ExpressionBuilder::fuse_call(
         // Preparation proves a scalar result. Every normal exit assigns it
         // before the producer scope ends; no dynamic construction state is needed.
         storage = owner.fresh_local(TargetTemporaryNameKind::Owner);
-        const auto type = owner.context.lower_type(signature.result);
+        const auto type = owner.context.lower_type(signature.result, TypeNameScope::Module);
         statements.declare(
             TargetVariableStmt {
                 .binding = TargetVariableBinding::MutableValue,
@@ -483,7 +499,8 @@ auto BodyRealizer::emit_tail_await(
                 .expression = &call.arguments[index].expression,
                 .use = PreparedUse::OperandValue,
                 .demand = PreparedDemand::Value
-            }
+            },
+            ConstantLiteralContext::Exact
         )));
         if (!value) {
             co_return {};
@@ -494,7 +511,10 @@ auto BodyRealizer::emit_tail_await(
                 .binding = TargetVariableBinding::ConstValue,
                 .maybe_unused = false,
                 .local = local,
-                .type = context.lower_type(metadata.binding(inputs.parameters[index].first).type),
+                .type = context.lower_type(
+                    metadata.binding(inputs.parameters[index].first).type,
+                    TypeNameScope::Module
+                ),
                 .initializer = std::move(*value)
             },
             false
@@ -504,13 +524,16 @@ auto BodyRealizer::emit_tail_await(
     // Every actual observes this iteration, including swapped and repeated
     // parameters. No next-iteration slot changes until all actuals finish.
     for (auto index = 0uz; index < snapshots.size(); ++index) {
-        destination.emit(generated_statement(
-            TargetAssignmentStmt {
-                .target = name_expression(tail_loop->slots[index]),
-                .op = TargetAssignmentOperator::Assign,
-                .value = name_expression(snapshots[index])
-            }
-        ));
+        destination.emit(
+            generated_statement(
+                TargetAssignmentStmt {
+                    .target = name_expression(tail_loop->slots[index]),
+                    .op = TargetAssignmentOperator::Assign,
+                    .value = name_expression(snapshots[index])
+                }
+            ),
+            true
+        );
     }
     // The same receiver works in source loop headers, steps, and bodies;
     // lowering order does not determine the eventual native loop nesting.
@@ -526,7 +549,7 @@ auto BodyRealizer::wrap_tail_loop(LoweringStmtBuilder statements) noexcept -> Lo
     auto body = LoweringStmtBuilder();
     for (auto index = 0uz; index < inputs.parameters.size(); ++index) {
         const auto& [binding, input] = inputs.parameters[index];
-        const auto type = context.lower_type(metadata.binding(binding).type);
+        const auto type = context.lower_type(metadata.binding(binding).type, TypeNameScope::Module);
         outer.declare(
             TargetVariableStmt {
                 .binding = TargetVariableBinding::MutableValue,
@@ -550,7 +573,10 @@ auto BodyRealizer::wrap_tail_loop(LoweringStmtBuilder statements) noexcept -> Lo
     }
     body.append(std::move(statements));
     auto iteration = LoweringStmtBuilder();
-    iteration.scope(std::move(body));
+    iteration.scope(
+        std::move(body),
+        TargetGeneratedExpansionAttribution {.reason = TargetExpansionReason::LoweringSupport}
+    );
     if (iteration.exits().contains(tail_loop->next)) {
         iteration.resume(tail_loop->next_label, tail_loop->next);
     }

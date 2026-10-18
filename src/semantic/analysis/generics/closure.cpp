@@ -174,23 +174,28 @@ auto ProgramDraft::normalize_construction_types(const FailureSolution& failures)
                         using Shape = std::remove_cvref_t<decltype(shape)>;
                         if constexpr (std::same_as<Shape, ConstructionArrayTypeValue>) {
                             return intern_generic_type(
-                                GenericArrayType {normalize_child(shape.element), shape.extent}
+                                GenericArrayType {
+                                    .element = normalize_child(shape.element),
+                                    .extent = shape.extent
+                                }
                             );
                         } else if constexpr (std::same_as<Shape, ConstructionSliceTypeValue>) {
                             return intern_generic_type(
-                                GenericSliceType {normalize_child(shape.element)}
+                                GenericSliceType {.element = normalize_child(shape.element)}
                             );
                         } else if constexpr (std::same_as<Shape, ConstructionTupleTypeValue>) {
                             auto elements = std::vector<ConstructionTypeRef>();
                             for (const auto child : shape.elements) {
                                 elements.push_back(normalize_child(child));
                             }
-                            return intern_generic_type(GenericTupleType {std::move(elements)});
+                            return intern_generic_type(
+                                GenericTupleType {.elements = std::move(elements)}
+                            );
                         } else if constexpr (std::same_as<Shape, ConstructionOperationTypeValue>) {
                             return intern_generic_type(
                                 GenericOperationType {
-                                    normalize_child(shape.success),
-                                    failures.normalize(shape.failures)
+                                    .success = normalize_child(shape.success),
+                                    .failures = failures.normalize(shape.failures)
                                 }
                             );
                         } else {
@@ -236,25 +241,33 @@ auto ProgramDraft::normalize_construction_types(const FailureSolution& failures)
                 const auto effect = failures.normalize(shape.failures);
                 if (const auto* type = std::get_if<TypeID>(&success)) {
                     if (const auto* set = std::get_if<FailureSetID>(&effect)) {
-                        return intern_type({.value = OperationTypeValue {*type, *set}});
+                        return intern_type(
+                            {.value = OperationTypeValue {.success = *type, .failures = *set}}
+                        );
                     }
                 }
                 // A recursive symbolic effect may intentionally retain its
                 // Term. Final normalization cannot create new type terms after
                 // consuming the construction store.
-                return intern_generic_type(GenericOperationType {success, effect});
+                return intern_generic_type(
+                    GenericOperationType {.success = success, .failures = effect}
+                );
             } else if constexpr (std::same_as<Shape, GenericPointerType>) {
                 const auto target = child(shape.target);
                 if (const auto* concrete = std::get_if<TypeID>(&target)) {
-                    return intern_type({.value = PointerTypeValue {*concrete, shape.access}});
+                    return intern_type(
+                        {.value = PointerTypeValue {.target = *concrete, .access = shape.access}}
+                    );
                 }
-                return intern_generic_type(GenericPointerType {target, shape.access});
+                return intern_generic_type(
+                    GenericPointerType {.target = target, .access = shape.access}
+                );
             } else if constexpr (std::same_as<Shape, GenericVectorType>) {
                 const auto element = child(shape.element);
                 if (const auto* concrete = std::get_if<TypeID>(&element)) {
-                    return intern_type({.value = VectorTypeValue {*concrete}});
+                    return intern_type({.value = VectorTypeValue {.element = *concrete}});
                 }
-                return intern_generic_type(GenericVectorType {element});
+                return intern_generic_type(GenericVectorType {.element = element});
             } else if constexpr (std::same_as<Shape, GenericCppNamedType>) {
                 auto native = shape;
                 auto concrete = std::vector<TypeID>();
@@ -321,9 +334,9 @@ auto ProgramDraft::normalize_construction_types(const FailureSolution& failures)
                 return storage.generic_instances[found->second].instance.declaration.visit(
                     [&](auto nominal) noexcept -> ConstructionTypeRef {
                         if constexpr (std::same_as<decltype(nominal), StructID>) {
-                            return intern_type({.value = StructTypeValue {nominal}});
+                            return intern_type({.value = StructTypeValue {.structure = nominal}});
                         } else {
-                            return intern_type({.value = EnumTypeValue {nominal}});
+                            return intern_type({.value = EnumTypeValue {.enumeration = nominal}});
                         }
                     }
                 );
@@ -425,7 +438,7 @@ auto ProgramDraft::instantiate_generic_call(
         return std::unexpected(target.error());
     }
     auto callee = SemanticExpression {
-        .type = BodyType(intern_type({.value = FunctionTypeValue {*target}})),
+        .type = BodyType(intern_type({.value = FunctionTypeValue {.callable = *target}})),
         .lifetime = expression.lifetime,
         .origin = expression.origin,
         .constant = std::nullopt,
@@ -438,14 +451,17 @@ auto ProgramDraft::instantiate_generic_call(
     const auto contract = construction_callable_contract_copy(*target);
     auto arguments = std::move(call->arguments);
     if (contract.execution == CallableExecutionKind::Async) {
-        expression.value =
-            SemColdCall {OwnedSemanticExpression(std::move(callee)), *target, std::move(arguments)};
+        expression.value = SemColdCall {
+            .callee = OwnedSemanticExpression(std::move(callee)),
+            .target = *target,
+            .arguments = std::move(arguments)
+        };
     } else {
         expression.value = SemCall {
-            OwnedSemanticExpression(std::move(callee)),
-            *target,
-            std::move(arguments),
-            BodyFailures(contract.failures)
+            .callee = OwnedSemanticExpression(std::move(callee)),
+            .target = *target,
+            .arguments = std::move(arguments),
+            .callee_failures = BodyFailures(contract.failures)
         };
     }
     return *target;

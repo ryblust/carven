@@ -2,8 +2,8 @@ module carven:semantic.analysis.ownership.context.impl;
 
 import :diagnostics.builder;
 import :diagnostics.code;
-import :semantic.analysis.ownership.context;
 import :semantic.analysis.ownership;
+import :semantic.analysis.ownership.context;
 import :semantic.semir.contents;
 import :semantic.semir.program;
 import :semantic.semir.traversal;
@@ -13,7 +13,12 @@ import std;
 
 namespace {
 
-constexpr auto empty_relationship_rows = OwnershipRelationshipRows {};
+constexpr auto empty_relationship_rows = OwnershipRelationshipRows {
+    .callable_loans = {},
+    .captures = {},
+    .storage_loans = {},
+    .formal_bundles = {}
+};
 
 auto empty_rows(const OwnershipRelationshipRows& rows) noexcept -> bool {
     return rows.callable_loans.empty()
@@ -57,7 +62,12 @@ auto OwnershipRelationships::edit_existing() noexcept -> OwnershipRelationshipRo
 
 auto OwnershipRelationships::edit() noexcept -> OwnershipRelationshipRows& {
     if (!rows) {
-        rows = std::make_unique<OwnershipRelationshipRows>();
+        rows = std::make_unique<OwnershipRelationshipRows>(OwnershipRelationshipRows {
+            .callable_loans = {},
+            .captures = {},
+            .storage_loans = {},
+            .formal_bundles = {}
+        });
     }
     return *rows;
 }
@@ -131,4 +141,8 @@ auto OwnershipFormalBundle::operator<=>(const OwnershipFormalBundle& other) cons
 
 auto OwnershipFormalBundle::operator==(const OwnershipFormalBundle& other) const noexcept -> bool {
     return (*this <=> other) == 0;
+}
+
+auto OwnershipRelationDemand::requires_context() const noexcept -> bool {
+    return observes_relations || (produces_relationships && writes_storage);
 }

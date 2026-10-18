@@ -91,7 +91,7 @@ auto BodyElaborator::consume_value(
                 type,
                 active_builder().lifetime(),
                 evaluation_origin,
-                SemTake {UniqueIndirect(std::move(source))}
+                SemTake {.place = UniqueIndirect(std::move(source))}
             );
             value.operation_reachable = operation_reachable;
             return value;
@@ -228,7 +228,7 @@ auto BodyElaborator::coerce_to(
             ));
         }
     }
-    auto site = BodyExprSite(*this);
+    auto site = BodyExprSite(*this, true);
     const auto converted = convert_intrinsic_argument(site, built, target, span);
     if (!converted) {
         return std::unexpected(converted.error());
@@ -285,7 +285,7 @@ auto BodyElaborator::coerce_to(
             target,
             active_builder().lifetime(),
             origin(span),
-            SemArrayAdopt {UniqueIndirect(std::move(source))}
+            SemArrayAdopt {.source = UniqueIndirect(std::move(source))}
         );
         value.operation_reachable = operation_reachable;
         *built.storage = std::move(value);
@@ -339,7 +339,7 @@ auto BodyElaborator::infer_value_type(BuiltExpression& expression, Span span) no
 
 auto BodyElaborator::require_bool(BuiltExpression& value, Span span) noexcept
     -> AnalysisResult<SemanticExpression> {
-    auto site = BodyExprSite(*this);
+    auto site = BodyExprSite(*this, true);
     auto checked = require_expression_boolean(site, value, span);
     if (!checked.has_value()) {
         return std::unexpected(checked.error());

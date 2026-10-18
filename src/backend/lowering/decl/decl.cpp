@@ -136,7 +136,8 @@ auto lower_forward_declarations(ModuleLowering& context, NominalDeclarationRef d
                 return TargetEnumForwardDecl {
                     .name = context.names().enumeration_identifier(id),
                     .underlying_type = context.lower_type(
-                        std::get<NumericEnumRepresentation>(source.representation).underlying_type
+                        std::get<NumericEnumRepresentation>(source.representation).underlying_type,
+                        TypeNameScope::Module
                     ),
                 };
             },
@@ -145,10 +146,16 @@ auto lower_forward_declarations(ModuleLowering& context, NominalDeclarationRef d
     const auto type = declaration.visit(
         Overloaded {
             [&](StructID id) noexcept {
-                return context.named_type(TargetName {context.names().structure_identifier(id)});
+                return context.named_type(
+                    TargetName {context.names().structure_identifier(id)},
+                    false
+                );
             },
             [&](EnumID id) noexcept {
-                return context.named_type(TargetName {context.names().enumeration_identifier(id)});
+                return context.named_type(
+                    TargetName {context.names().enumeration_identifier(id)},
+                    false
+                );
             },
         }
     );
@@ -184,11 +191,12 @@ auto lower_forward_declarations(ModuleLowering& context, NominalDeclarationRef d
             .name = TargetName {TargetIdentifier::from_spelling("carven_inline_value")},
             .parameters = target_parameters({
                 .local = std::nullopt,
-                .type = context.pointer_type(type),
+                .type = context.pointer_type(type, false),
                 .default_value = std::nullopt,
             }),
             .result = context.intrinsic_type(
-                inline_value ? TargetSymbol::StdTrueType : TargetSymbol::StdFalseType
+                inline_value ? TargetSymbol::StdTrueType : TargetSymbol::StdFalseType,
+                false
             ),
             .form = TargetFreeFunctionDeclaration {},
             .constexpr_specifier = false,
@@ -512,7 +520,7 @@ auto lower_module_schedule(
     });
     if (!tests.empty()) {
         result.module_items.push_back(
-            namespace_item(std::nullopt, std::move(tests), TargetCompilerReason::TestHarness)
+            namespace_item(std::nullopt, std::move(tests), TargetCompilerReason::TestHarness, true)
         );
         result.module_items.push_back(lower_module_test_runner(context, schedule.emitted_tests));
     }
@@ -541,7 +549,7 @@ auto lower_entry_wrapper(ModuleLowering& context, FunctionID function_id) noexce
                 .binding = TargetVariableBinding::ConstValue,
                 .maybe_unused = false,
                 .local = storage,
-                .type = context.intrinsic_type(TargetSymbol::Auto),
+                .type = context.intrinsic_type(TargetSymbol::Auto, false),
                 .initializer = call_expression(
                     intrinsic_expression(TargetSymbol::RuntimeEntryArgs),
                     target_expressions(
@@ -582,7 +590,7 @@ auto lower_entry_wrapper(ModuleLowering& context, FunctionID function_id) noexce
                 .binding = TargetVariableBinding::ConstValue,
                 .maybe_unused = false,
                 .local = outcome,
-                .type = context.intrinsic_type(TargetSymbol::Auto),
+                .type = context.intrinsic_type(TargetSymbol::Auto, false),
                 .initializer = std::move(call),
             }
         ));

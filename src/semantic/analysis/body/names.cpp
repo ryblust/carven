@@ -400,14 +400,14 @@ auto BodyElaborator::builtin_callable(
         .origin = site,
         .lifetime = full,
         .reachable = true,
-        .value = SemExpressionStatement {std::move(operation)},
+        .value = SemExpressionStatement {.expression = std::move(operation)},
     });
     if (selection.function != BuiltinFunction::Fail) {
         statements.push_back({
             .origin = site,
             .lifetime = full,
             .reachable = true,
-            .value = SemReturn {std::nullopt},
+            .value = SemReturn {.value = std::nullopt},
         });
     }
     auto body = std::move(builder).finish(

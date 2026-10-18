@@ -123,7 +123,7 @@ auto matches_text_intrinsic_type(
         case TextIntrinsicShape::ByteSlice:
             if (const auto* slice = std::get_if<SliceTypeValue>(&actual.value)) {
                 return lookup(slice->element).value
-                    == CanonicalTypeValue {BuiltinTypeValue {BuiltinType::U8}};
+                    == CanonicalTypeValue {BuiltinTypeValue {.kind = BuiltinType::U8}};
             }
             return false;
     }

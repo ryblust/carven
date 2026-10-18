@@ -22,7 +22,7 @@ auto constant_has_storage(const ConstantValueReader& values, ConstantID id) noex
             && !std::holds_alternative<SliceConstant>(fact.value))
         || (std::holds_alternative<TextConstant>(fact.value)
             && values.type_copy(fact.type).value
-                == CanonicalTypeValue {BuiltinTypeValue {BuiltinType::String}});
+                == CanonicalTypeValue {BuiltinTypeValue {.kind = BuiltinType::String}});
 }
 
 PublishedConstantValues::PublishedConstantValues(const SemIRProgram& program) noexcept

@@ -21,7 +21,9 @@ auto tuple_constant(ProgramDraft& draft, TypeID type, const SemTuple& tuple) noe
         }
         elements.push_back(*element.constant);
     }
-    return draft.intern_constant({.type = type, .value = TupleConstant {std::move(elements)}});
+    return draft.intern_constant(
+        {.type = type, .value = TupleConstant {.elements = std::move(elements)}}
+    );
 }
 
 auto array_constant(ProgramDraft& draft, TypeID type, const SemArray& array) noexcept

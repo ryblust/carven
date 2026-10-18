@@ -51,8 +51,8 @@ class StaticExecutionContext final : public SemanticExecutionContext {
 public:
     StaticExecutionContext(
         StaticStage& stage,
-        std::optional<ExecutionRoot> root = std::nullopt,
-        StaticEvaluationPurpose purpose = StaticEvaluationPurpose::Execute
+        StaticEvaluationPurpose purpose,
+        std::optional<ExecutionRoot> root = std::nullopt
     ) noexcept;
     auto host_effects_rejection() const noexcept -> std::optional<std::string_view> override;
     auto function_for_callable(CallableID callable) const noexcept
@@ -80,8 +80,8 @@ private:
 
 StaticExecutionContext::StaticExecutionContext(
     StaticStage& stage,
-    std::optional<ExecutionRoot> root,
-    StaticEvaluationPurpose purpose
+    StaticEvaluationPurpose purpose,
+    std::optional<ExecutionRoot> root
 ) noexcept
     : stage(stage),
       draft(stage.draft()),
@@ -157,6 +157,7 @@ auto StaticExecutionContext::bind_call(
                         },
                     .fields = {},
                     .calls = {},
+                    .blocks = {}
                 }
             );
         }
@@ -194,6 +195,7 @@ auto StaticExecutionContext::prepare_call(CallableID callable, ProgramOriginID o
                 },
             .fields = {},
             .calls = {},
+            .blocks = {}
         };
     };
     const auto function = function_for_callable(callable);
@@ -565,7 +567,7 @@ auto StaticStage::instance(
             .region = std::move(expanded.region),
             .residual = std::nullopt,
             .specialized = *completed,
-            .generic_definition = source.generic_definition,
+            .generic_definition = source.generic_definition
         }
     );
     co_return callable;
@@ -576,7 +578,7 @@ auto StaticStage::evaluate(
     StaticEvaluationPurpose purpose,
     const StructuredBodyDraft* body
 ) noexcept -> AnalysisTask<ExecutionValue> {
-    auto context = StaticExecutionContext(*this, std::nullopt, purpose);
+    auto context = StaticExecutionContext(*this, purpose, std::nullopt);
     co_return delivered(
         program,
         context,
@@ -596,7 +598,7 @@ auto StaticStage::iterate(
     const std::function<AnalysisTask<bool>(std::optional<ConstantID>)>& consume,
     const StructuredBodyDraft* body
 ) noexcept -> AnalysisTask<void> {
-    auto context = StaticExecutionContext(*this);
+    auto context = StaticExecutionContext(*this, StaticEvaluationPurpose::Execute);
     auto consumer_failure = std::optional<AnalysisFailure>();
     const ExecutionIterationConsumer visit =
         [&](ExecutionOperand operand,
@@ -655,6 +657,7 @@ auto StaticStage::run_body(BodyID body, BlockSource source) noexcept -> Analysis
     const auto& definition = program.body_draft(body);
     auto context = StaticExecutionContext(
         *this,
+        StaticEvaluationPurpose::Execute,
         ExecutionRoot {
             .kind = definition.kind == BodyKind::Test ? "const test" : "const block",
             .source = source,
@@ -663,7 +666,12 @@ auto StaticStage::run_body(BodyID body, BlockSource source) noexcept -> Analysis
     co_return delivered(
         program,
         context,
-        co_await execute_body(program, context, ExecutionBody(definition, region))
+        co_await execute_body(
+            program,
+            context,
+            ExecutionBody(definition, region),
+            static_execution_limits()
+        )
     );
 }
 
@@ -674,15 +682,19 @@ auto StaticStage::run_block(BodyID body, const SemanticRegion& region, BlockSour
     if (!closed) {
         co_return std::unexpected(closed.error());
     }
-    auto context =
-        StaticExecutionContext(*this, ExecutionRoot {.kind = "const block", .source = source});
+    auto context = StaticExecutionContext(
+        *this,
+        StaticEvaluationPurpose::Execute,
+        ExecutionRoot {.kind = "const block", .source = source}
+    );
     co_return delivered(
         program,
         context,
         co_await execute_body(
             program,
             context,
-            ExecutionBody(program.body_draft(body), closed_region)
+            ExecutionBody(program.body_draft(body), closed_region),
+            static_execution_limits()
         )
     );
 }

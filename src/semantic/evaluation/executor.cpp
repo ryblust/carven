@@ -61,7 +61,7 @@ auto SemanticExecutor::fail(
                 },
             .fields = std::move(fields),
             .calls = current->calls,
-            .blocks = current->blocks,
+            .blocks = current->blocks
         }
     );
 }
@@ -94,7 +94,7 @@ auto SemanticExecutor::trap(
                 },
             .fields = std::move(fields),
             .calls = current->calls,
-            .blocks = current->blocks,
+            .blocks = current->blocks
         }
     );
 }
@@ -345,7 +345,7 @@ auto SemanticExecutor::retained_slice(ConstantID id, ProgramOriginID origin) noe
 auto SemanticExecutor::own_storage(ExecutionValue value, ProgramOriginID origin) noexcept
     -> ExecutionResult<ExecutionValue> {
     if (std::holds_alternative<ConstantID>(value)) {
-        return copy_value(value, origin);
+        return copy_value(value, origin, CopyMode::Value);
     }
     for (auto& element : execution_elements(value)) {
         auto stored = own_storage(std::move(element), origin);
@@ -431,7 +431,7 @@ auto SemanticExecutor::copy_value(
             const auto& fact = values.constant(*constant);
             if (const auto* text = std::get_if<TextConstant>(&fact.value); text
                 && values.type_copy(fact.type).value
-                    == CanonicalTypeValue {BuiltinTypeValue {BuiltinType::String}}) {
+                    == CanonicalTypeValue {BuiltinTypeValue {.kind = BuiltinType::String}}) {
                 const auto bytes = values.spelling(text->value);
                 if (auto checked = account_text(bytes.size(), origin); !checked) {
                     return std::unexpected(std::move(checked.error()));
@@ -495,7 +495,7 @@ auto SemanticExecutor::deliver_value(
         return {};
     }
     if (std::holds_alternative<ConstantID>(value)) {
-        auto copied = copy_value(value, origin);
+        auto copied = copy_value(value, origin, CopyMode::Value);
         if (!copied) {
             return std::unexpected(std::move(copied.error()));
         }
@@ -958,7 +958,7 @@ auto SemanticExecutor::detach_views(
                     fail(origin, ExecutionReason::Evaluation, "slice element is unavailable")
                 );
             }
-            auto copied = copy_value(*target, origin);
+            auto copied = copy_value(*target, origin, CopyMode::Value);
             if (!copied) {
                 return std::unexpected(std::move(copied.error()));
             }
@@ -971,7 +971,11 @@ auto SemanticExecutor::detach_views(
             }
             elements.push_back(std::move(*detached));
         }
-        return ExecutionAggregateValue {.type = slice->type, .elements = std::move(elements)};
+        return ExecutionAggregateValue {
+            .type = slice->type,
+            .elements = std::move(elements),
+            .capacity = 0uz
+        };
     }
     for (auto& element : execution_elements(value)) {
         auto detached = detach_views(std::move(element), origin, depth + 1uz);
@@ -1134,7 +1138,7 @@ auto SemanticExecutor::materialize(ExecutionOperand operand, ProgramOriginID ori
     if (!source) {
         return std::unexpected(std::move(source.error()));
     }
-    return copy_value(**source, origin);
+    return copy_value(**source, origin, CopyMode::Value);
 }
 
 auto SemanticExecutor::detach_operand(ExecutionOperand operand, ProgramOriginID origin) noexcept
@@ -1218,7 +1222,7 @@ auto SemanticExecutor::call(
                         ),
                         .origin = origin,
                         .calls = current->calls,
-                        .blocks = current->blocks,
+                        .blocks = current->blocks
                     }}
                 );
             }
@@ -1272,14 +1276,14 @@ auto SemanticExecutor::call(
                         ));
                     }
                     auto stored = owned ? own_storage(std::move(*owned), origin)
-                                        : copy_value(**selected, origin);
+                                        : copy_value(**selected, origin, CopyMode::Value);
                     if (!stored) {
                         co_return std::unexpected(std::move(stored.error()));
                     }
                     bind(frame, binding.index(), std::move(*stored));
                 }
             }
-            auto result = (co_await region(frame, body.region()));
+            auto result = (co_await region(frame, body.region(), true));
             if (!result) {
                 co_return std::unexpected(std::move(result.error()));
             }
@@ -1347,7 +1351,7 @@ auto SemanticExecutor::escaped(ExecutionFailure failure) noexcept -> ExecutionFa
                     },
                 .fields = {},
                 .calls = cancelled->calls,
-                .blocks = cancelled->blocks,
+                .blocks = cancelled->blocks
             }
         );
     }
@@ -1356,7 +1360,7 @@ auto SemanticExecutor::escaped(ExecutionFailure failure) noexcept -> ExecutionFa
         return failure;
     }
     auto fields = std::vector<ExecutionReportField>();
-    if (auto payload = display_execution_value(values, *source->payload)) {
+    if (auto payload = display_execution_value(values, *source->payload, false)) {
         fields.push_back({.label = "failure:", .text = std::move(*payload)});
     }
     return halt(
@@ -1370,7 +1374,7 @@ auto SemanticExecutor::escaped(ExecutionFailure failure) noexcept -> ExecutionFa
                 },
             .fields = std::move(fields),
             .calls = source->calls,
-            .blocks = source->blocks,
+            .blocks = source->blocks
         }
     );
 }
@@ -1399,7 +1403,7 @@ auto SemanticExecutor::root_body(ExecutionBody body) noexcept -> ExecutionTask<E
         .temporaries = {},
         .children = {},
     };
-    auto result = (co_await region(frame, body.region()));
+    auto result = (co_await region(frame, body.region(), true));
     release_frame(frame);
     if (!result) {
         co_return std::unexpected(std::move(result.error()));

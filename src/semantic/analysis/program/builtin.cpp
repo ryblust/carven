@@ -19,7 +19,9 @@ auto ProgramDraft::provided_function(ProvidedFunction function) noexcept -> Call
         );
     };
     const auto operation = [&](TypeID result) noexcept {
-        return intern_type({.value = OperationTypeValue {result, empty_failure_set()}});
+        return intern_type(
+            {.value = OperationTypeValue {.success = result, .failures = empty_failure_set()}}
+        );
     };
     auto result = builtin_type(BuiltinType::Void);
     switch (function) {
@@ -27,13 +29,15 @@ auto ProgramDraft::provided_function(ProvidedFunction function) noexcept -> Call
             parameter(BuiltinType::U8);
             parameter(BuiltinType::Usize);
             const auto bytes =
-                intern_type({.value = VectorTypeValue {builtin_type(BuiltinType::U8)}});
+                intern_type({.value = VectorTypeValue {.element = builtin_type(BuiltinType::U8)}});
             result = operation(intern_type(
                 {.value = TupleTypeValue {
-                     {bytes,
-                      builtin_type(BuiltinType::Bool),
-                      builtin_type(BuiltinType::I32),
-                      builtin_type(BuiltinType::Bool)}
+                     .elements = {
+                         bytes,
+                         builtin_type(BuiltinType::Bool),
+                         builtin_type(BuiltinType::I32),
+                         builtin_type(BuiltinType::Bool)
+                     }
                  }}
             ));
             break;
@@ -83,7 +87,7 @@ auto ProgramDraft::number_parser(BuiltinType number, ConstantID invalid) noexcep
             .policy = FailureContractPolicy::Declared,
         }
     );
-    complete_callable(callable, NumberParseImplementation {invalid});
+    complete_callable(callable, NumberParseImplementation {.invalid = invalid});
     storage.number_parsers.emplace(number, callable);
     return callable;
 }

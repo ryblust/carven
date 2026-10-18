@@ -20,10 +20,10 @@ import std;
 auto ProgramDraft::begin(
     SyntaxProgram&& syntax,
     DiagnosticSink& sink,
+    HostEffects host_effects,
     ExecutionOutput output,
     SourceAnalysisBuilder* source_analysis,
     TimingOutput timings,
-    HostEffects host_effects,
     CheckedDefinitions* seed
 ) noexcept -> ProgramDraft {
     return ProgramDraft(
@@ -671,7 +671,12 @@ auto ProgramDraft::reserve_body(BodyKind kind) noexcept -> BodyReservation {
     }
     const auto id = BodyID(program_identity, static_cast<std::uint32_t>(storage.bodies.size()));
     storage.bodies.push_back({kind, std::nullopt, nullptr});
-    return BodyReservation(id, kind, provenance_appender.reader().identity());
+    return BodyReservation(
+        id,
+        kind,
+        provenance_appender.reader().identity(),
+        BodyIdentityDomain::Body
+    );
 }
 
 auto ProgramDraft::add_body_draft(StructuredBodyDraft body) noexcept -> void {
@@ -730,7 +735,7 @@ auto ProgramDraft::set_residual(BodyID body, StructuredRegionDraft residual) noe
         .region = std::move(source.region),
         .residual = std::move(residual.region),
         .specialized = std::nullopt,
-        .generic_definition = source.generic_definition,
+        .generic_definition = source.generic_definition
     };
     storage.bodies[body.index()].definition =
         std::make_unique<StructuredBodyDraft>(std::move(completed));

@@ -87,7 +87,7 @@ private:
         explicit operator bool() const noexcept;
 
     private:
-        explicit DepthGuard(std::uint32_t* depth, std::uint32_t previous = 0) noexcept;
+        explicit DepthGuard(std::uint32_t* depth, std::uint32_t previous) noexcept;
         std::uint32_t* depth;
         std::uint32_t previous;
 
@@ -108,11 +108,7 @@ private:
     auto consume() noexcept -> Token;
     auto match(TokenKind kind) noexcept -> std::optional<Token>;
 
-    auto fail(
-        std::string_view message,
-        Span span,
-        DiagnosticCode code = DiagnosticCode::Syntax
-    ) noexcept -> void;
+    auto fail(std::string_view message, Span span, DiagnosticCode code) noexcept -> void;
 
     auto fail_here(std::string_view message) noexcept -> void;
     auto expect(TokenKind kind, std::string_view message) noexcept -> Token;
@@ -121,11 +117,8 @@ private:
     auto restore(const Checkpoint& checkpoint) noexcept -> void;
     auto begin_speculation() noexcept -> Checkpoint;
 
-    auto finish_speculation(
-        const Checkpoint& checkpoint,
-        bool commit,
-        bool retain_failure = true
-    ) noexcept -> void;
+    auto finish_speculation(const Checkpoint& checkpoint, bool commit, bool retain_failure) noexcept
+        -> void;
 
     auto remember_speculative_failure(ParseFailure failure) noexcept -> void;
     static auto join(Span first, Span last) noexcept -> Span;
@@ -204,11 +197,9 @@ private:
     auto parse_multiplicative() noexcept -> std::optional<ASTExprID>;
     auto parse_cast_expression() noexcept -> std::optional<ASTExprID>;
 
-    auto parse_prefix_expression(bool allow_propagation = true) noexcept
-        -> std::optional<ASTExprID>;
+    auto parse_prefix_expression(bool allow_propagation) noexcept -> std::optional<ASTExprID>;
 
-    auto parse_postfix_expression(bool allow_propagation = true) noexcept
-        -> std::optional<ASTExprID>;
+    auto parse_postfix_expression(bool allow_propagation) noexcept -> std::optional<ASTExprID>;
 
     auto parse_call(ASTExprID callee) noexcept -> std::optional<ASTExprID>;
     auto parse_interpolation_parts(TokenKind closing) noexcept -> std::vector<ASTInterpolationPart>;

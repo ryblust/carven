@@ -56,7 +56,7 @@ auto prepare_operation(const SemIRProgram& program, const SemanticExpression& so
                 || construction->arguments.size() != native->operands.size()) {
                 invariant_violation("native construction requires its matching argument query");
             }
-            auto plan = PreparedNativeConstruction {};
+            auto plan = PreparedNativeConstruction {.arguments = {}};
             auto retained = 0uz;
             for (const auto& argument : construction->arguments) {
                 if (argument.constant) {
@@ -103,7 +103,7 @@ auto prepare_operation(const SemIRProgram& program, const SemanticExpression& so
         );
     }
     if (const auto* print = std::get_if<SemPrint>(&source.value)) {
-        auto prepared = PreparedPrint {};
+        auto prepared = PreparedPrint {.operand_text = {}};
         for (auto index = 0uz; index < print->operands.size(); ++index) {
             if (const auto known = print->operands[index].expression.constant) {
                 const auto& fact = values.constant(*known);

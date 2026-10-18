@@ -33,7 +33,13 @@ auto source_context(
     if (artifact.modules.size() != modules.size()) {
         return std::unexpected("compilation ownership does not match semantic modules");
     }
-    auto sources = CommandSources {};
+    auto sources = CommandSources {
+        .crafts = {},
+        .carven = {},
+        .native = {},
+        .standard_modules = {},
+        .owned_modules = {},
+    };
     for (const auto [index, module] : std::views::enumerate(modules)) {
         const auto origin = provenance.source_snapshot(module.source_id).display_origin();
         sources.carven.push_back({.path = std::string(origin), .module_path = module.path});
@@ -55,7 +61,13 @@ auto load_compilation_input(
     ExecutionOutput output,
     TimingOutput timings
 ) noexcept -> std::optional<CompilationInput> {
-    auto sources = CommandSources {};
+    auto sources = CommandSources {
+        .crafts = {},
+        .carven = {},
+        .native = {},
+        .standard_modules = {},
+        .owned_modules = {},
+    };
     auto source_paths = std::vector<std::string_view>();
     auto artifact_root = std::optional<std::filesystem::path>();
     auto seed = std::optional<CheckedDefinitions>();

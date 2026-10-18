@@ -55,11 +55,14 @@ auto emitted_statement(Statement statement) noexcept -> GeneratedArtifact {
         }},
         .attribution = attribution(),
     });
-    auto unit = std::move(builder).finish({
-        .preamble = {},
-        .body = std::move(items),
-        .epilogue = {},
-    });
+    auto unit = std::move(builder).finish(
+        {
+            .preamble = {},
+            .body = std::move(items),
+            .epilogue = {},
+        },
+        TargetDirectiveInputs {.pragma_once = false, .requirements = {}, .native_headers = {}}
+    );
     return emit(
         std::move(unit),
         "fixture.cpp",

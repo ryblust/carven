@@ -69,7 +69,7 @@ auto floating_expression(ModuleLowering& context, Floating value, TypeID type) n
         std::same_as<Floating, float> ? TargetSymbol::StdUInt32 : TargetSymbol::StdUInt64;
     auto bits = TargetExpr {
         .value = TargetConstructionExpr {
-            .type = context.intrinsic_type(storage),
+            .type = context.intrinsic_type(storage, false),
             .initializer = target_expressions(
                 TargetExpr {
                     .value = TargetLiteralExpr {
@@ -85,7 +85,7 @@ auto floating_expression(ModuleLowering& context, Floating value, TypeID type) n
     };
     return template_call_expression(
         intrinsic_expression(TargetSymbol::StdBitCast),
-        {context.lower_type(type)},
+        {context.lower_type(type, TypeNameScope::Module)},
         target_expressions(std::move(bits))
     );
 }
@@ -112,7 +112,7 @@ auto typed_integer_expression(
     }
     return {
         .value = TargetConstructionExpr {
-            .type = context.lower_type(type),
+            .type = context.lower_type(type, TypeNameScope::Module),
             .initializer = target_expressions(std::move(result)),
         },
     };
@@ -134,7 +134,8 @@ auto enum_case_expression(
     std::vector<TargetExpr> payload
 ) noexcept -> TargetExpr {
     const auto owner = context.semantic().declarations().enum_case(case_id).owner;
-    const auto owner_type = context.named_type(context.enumeration_name(owner));
+    const auto owner_type =
+        context.named_type(context.enumeration_name(owner, TypeNameScope::Module), false);
     auto member =
         static_member_expression(owner_type, context.names().enum_case_identifier(case_id));
     if (std::holds_alternative<PayloadEnumRepresentation>(
@@ -159,7 +160,7 @@ auto tuple_expression(
         }
         return {
             .value = TargetConstructionExpr {
-                .type = context.lower_type(type),
+                .type = context.lower_type(type, TypeNameScope::Module),
                 .initializer = std::vector<TargetExpr> {}
             }
         };
@@ -184,7 +185,10 @@ auto tuple_expression(
     };
     for (auto index = elements.size(); index != 0uz;) {
         --index;
-        suffix.insert(suffix.begin(), context.lower_type(tuple.elements[index]));
+        suffix.insert(
+            suffix.begin(),
+            context.lower_type(tuple.elements[index], TypeNameScope::Module)
+        );
         const auto suffix_type = context.target().intern_type(
             {.value =
                  TargetIntrinsicType {
@@ -301,7 +305,7 @@ auto ConstantLowerer::initializer(
                     std::get<RangeTypeValue>(context.semantic().types().type(fact.type).value);
                 return TargetExpr {
                     .value = TargetConstructionExpr {
-                        .type = context.lower_type(fact.type),
+                        .type = context.lower_type(fact.type, TypeNameScope::Module),
                         .initializer = target_expressions(
                             typed_integer_expression(
                                 context,
@@ -377,7 +381,7 @@ auto ConstantLowerer::initializer(
                 }
                 return call_expression(
                     static_member_expression(
-                        context.lower_type(fact.type),
+                        context.lower_type(fact.type, TypeNameScope::Module),
                         TargetIdentifier::from_spelling(
                             mask        ? "from_bits"
                                 : splat ? "splat"
@@ -400,7 +404,7 @@ auto ConstantLowerer::initializer(
                 if (kind == BuiltinType::String) {
                     return call_expression(
                         static_member_expression(
-                            context.lower_type(fact.type),
+                            context.lower_type(fact.type, TypeNameScope::Module),
                             TargetIdentifier::from_spelling(
                                 ownership == ConstantOwnership::Owned ? "from_str" : "from_static"
                             )
@@ -411,7 +415,7 @@ auto ConstantLowerer::initializer(
                 if (kind == BuiltinType::StrCharsView) {
                     return TargetExpr {
                         .value = TargetConstructionExpr {
-                            .type = context.lower_type(fact.type),
+                            .type = context.lower_type(fact.type, TypeNameScope::Module),
                             .initializer = target_expressions(std::move(text)),
                         },
                     };
@@ -419,18 +423,19 @@ auto ConstantLowerer::initializer(
                 return text;
             },
             [&](const CStringConstant& value) noexcept {
-                auto storage = context.cstring_storage().find(id);
+                auto storage = context.cstring_storage().find(id, ConstantStorageRole::Elements);
                 if (!storage) {
                     storage = context.cstring_storage().append(
                         id,
-                        context.intrinsic_type(TargetSymbol::Auto),
+                        context.intrinsic_type(TargetSymbol::Auto, false),
                         call_expression(
                             intrinsic_expression(TargetSymbol::StdToArray),
                             target_expressions(string_expression(
                                 std::string(context.semantic().provenance().spelling(value.value)),
                                 TargetStringLiteralKind::String
                             ))
-                        )
+                        ),
+                        ConstantStorageRole::Elements
                     );
                 }
                 return call_member(name_expression(std::move(*storage)), "data", {});
@@ -453,7 +458,7 @@ auto ConstantLowerer::initializer(
             [&](const NullPointerConstant&) noexcept -> TargetExpr {
                 return {
                     .value = TargetStaticCastExpr {
-                        .type = context.lower_type(fact.type),
+                        .type = context.lower_type(fact.type, TypeNameScope::Module),
                         .operand = target_child(intrinsic_expression(TargetSymbol::StdNullptr)),
                     }
                 };
@@ -470,18 +475,18 @@ auto ConstantLowerer::initializer(
                 const auto owner =
                     context.semantic().declarations().enum_case(value.enum_case).owner;
                 const auto& representation = context.payload_enum(owner);
-                auto record_name = context.enumeration_name(owner);
+                auto record_name = context.enumeration_name(owner, TypeNameScope::Module);
                 record_name.append(
                     representation
                         .case_records[enum_case_index(context.semantic(), value.enum_case)]
                 );
                 return TargetExpr {
                     .value = TargetConstructionExpr {
-                        .type = context.lower_type(fact.type),
+                        .type = context.lower_type(fact.type, TypeNameScope::Module),
                         .initializer = target_expressions(
                             TargetExpr {
                                 .value = TargetConstructionExpr {
-                                    .type = context.named_type(record_name),
+                                    .type = context.named_type(record_name, false),
                                     .initializer = std::move(payload)
                                 }
                             }
@@ -497,7 +502,7 @@ auto ConstantLowerer::initializer(
                 }
                 return {
                     .value = TargetConstructionExpr {
-                        .type = context.lower_type(fact.type),
+                        .type = context.lower_type(fact.type, TypeNameScope::Module),
                         .initializer = std::move(fields),
                     },
                 };
@@ -520,7 +525,8 @@ auto ConstantLowerer::initializer(
                 }
                 return {
                     .value = TargetArrayExpr {
-                        .element_type_id = context.lower_type(array->element),
+                        .element_type_id =
+                            context.lower_type(array->element, TypeNameScope::Module),
                         .extent = target_child(integer_expression(array->extent)),
                         .elements = std::move(elements),
                     },
@@ -542,22 +548,25 @@ auto ConstantLowerer::initializer(
                         }
                         return TargetExpr {
                             .value = TargetConstructionExpr {
-                                .type = context.lower_type(fact.type),
+                                .type = context.lower_type(fact.type, TypeNameScope::Module),
                                 .initializer = std::move(elements)
                             }
                         };
                     }
                 }
-                auto storage = context.constant_storage().find(id);
+                auto storage = context.constant_storage().find(id, ConstantStorageRole::Elements);
                 if (!storage) {
                     const auto& canonical = context.semantic().types().type(fact.type).value;
-                    const auto element = context.lower_type([&]() noexcept {
-                        if constexpr (owning) {
-                            return std::get<VectorTypeValue>(canonical).element;
-                        } else {
-                            return std::get<SliceTypeValue>(canonical).element;
-                        }
-                    }());
+                    const auto element = context.lower_type(
+                        [&]() noexcept {
+                            if constexpr (owning) {
+                                return std::get<VectorTypeValue>(canonical).element;
+                            } else {
+                                return std::get<SliceTypeValue>(canonical).element;
+                            }
+                        }(),
+                        TypeNameScope::Module
+                    );
                     auto elements = std::vector<TargetExpr>();
                     elements.reserve(value.elements.size());
                     for (const auto child : value.elements) {
@@ -569,14 +578,17 @@ auto ConstantLowerer::initializer(
                     }
                     storage = context.constant_storage().append(
                         id,
-                        context.intrinsic_type(TargetSymbol::Auto),
+                        context.intrinsic_type(TargetSymbol::Auto, false),
                         TargetExpr {
-                            .value = TargetArrayExpr {
-                                .element_type_id = element,
-                                .extent = target_child(integer_expression(value.elements.size())),
-                                .elements = std::move(elements),
-                            },
-                        }
+                            .value =
+                                TargetArrayExpr {
+                                    .element_type_id = element,
+                                    .extent =
+                                        target_child(integer_expression(value.elements.size())),
+                                    .elements = std::move(elements),
+                                },
+                        },
+                        ConstantStorageRole::Elements
                     );
                 }
                 auto view = call_expression(
@@ -586,7 +598,7 @@ auto ConstantLowerer::initializer(
                 if constexpr (owning) {
                     return call_expression(
                         static_member_expression(
-                            context.lower_type(fact.type),
+                            context.lower_type(fact.type, TypeNameScope::Module),
                             TargetIdentifier::from_spelling("from_static")
                         ),
                         target_expressions(std::move(view), integer_expression(value.capacity))
@@ -611,7 +623,7 @@ auto constant_expression(
 
 auto constant_reference(ModuleLowering& context, ConstantID id) noexcept -> TargetExpr {
     if (!constant_has_storage(context.semantic(), id)) {
-        return constant_expression(context, id);
+        return constant_expression(context, id, ConstantLiteralContext::Exact);
     }
     auto stored = context.constant_storage().find(id, ConstantStorageRole::Object);
     if (!stored) {
@@ -622,7 +634,10 @@ auto constant_reference(ModuleLowering& context, ConstantID id) noexcept -> Targ
         );
         stored = context.constant_storage().append(
             id,
-            context.lower_type(context.semantic().constants().constant(id).type),
+            context.lower_type(
+                context.semantic().constants().constant(id).type,
+                TypeNameScope::Module
+            ),
             std::move(initializer),
             ConstantStorageRole::Object
         );

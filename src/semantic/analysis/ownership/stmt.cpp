@@ -15,7 +15,7 @@ auto OwnershipBodyAnalyzer::complete_expression(
     if (owns) {
         full_expression = source.lifetime;
     }
-    auto result = (co_await expression(source, std::move(state)));
+    auto result = (co_await expression(source, std::move(state), false));
     if (result.normal) {
         result.normal->value = {};
     }
@@ -32,7 +32,10 @@ auto OwnershipBodyAnalyzer::region(
     bool release
 ) noexcept -> ContinuationTask<OwnershipFlow> {
     synchronize_storage(state);
-    auto result = OwnershipFlow {.normal = OwnershipNormal {std::move(state), {}, {}}, .exits = {}};
+    auto result = OwnershipFlow {
+        .normal = OwnershipNormal {.state = std::move(state), .value = {}, .storage = {}},
+        .exits = {}
+    };
     for (const auto& item : source.statements) {
         if (!result.normal.has_value()) {
             break;
@@ -45,7 +48,7 @@ auto OwnershipBodyAnalyzer::region(
         if (std::addressof(source) == std::addressof(body.region())) {
             observe_returned_copy(*source.result, result.normal->state);
         }
-        auto next = (co_await expression(*source.result, std::move(result.normal->state)));
+        auto next = (co_await expression(*source.result, std::move(result.normal->state), false));
         result.normal = std::move(next.normal);
 
         append_ownership_exits(result, next);
@@ -68,12 +71,16 @@ auto OwnershipBodyAnalyzer::statement(
     if (owns) {
         full_expression = source.lifetime;
     }
-    auto result = OwnershipFlow {.normal = OwnershipNormal {std::move(state), {}, {}}, .exits = {}};
+    auto result = OwnershipFlow {
+        .normal = OwnershipNormal {.state = std::move(state), .value = {}, .storage = {}},
+        .exits = {}
+    };
     const auto evaluate = [&](
                               const SemanticExpression& expression_source
                           ) noexcept -> ContinuationTask<std::monostate> {
         if (result.normal.has_value()) {
-            auto next = (co_await expression(expression_source, std::move(result.normal->state)));
+            auto next =
+                (co_await expression(expression_source, std::move(result.normal->state), false));
             result.normal = std::move(next.normal);
 
             append_ownership_exits(result, next);
@@ -86,7 +93,12 @@ auto OwnershipBodyAnalyzer::statement(
                           || std::same_as<decltype(payload), OwnershipFailure>) {
                 payload.value = std::move(result.normal->value);
             }
-            result.exits.push_back({std::move(payload), std::move(result.normal->state)});
+            result.exits.push_back(
+                OwnershipExit {
+                    .payload = std::move(payload),
+                    .state = std::move(result.normal->state)
+                }
+            );
             result.normal.reset();
         }
     };
@@ -99,7 +111,7 @@ auto OwnershipBodyAnalyzer::statement(
                     }
                     (co_await evaluate(*value.value));
                 }
-                transfer(OwnershipReturn {});
+                transfer(OwnershipReturn {.value = {}});
                 co_return {};
             },
             [&](const SemBreak&) noexcept -> ContinuationTask<std::monostate> {
@@ -114,13 +126,17 @@ auto OwnershipBodyAnalyzer::statement(
                 if (!caught) {
                     invariant_violation("rethrow has no active failure payload");
                 }
-                result.exits.push_back({*caught, std::move(result.normal->state)});
+                result.exits.push_back(
+                    OwnershipExit {.payload = *caught, .state = std::move(result.normal->state)}
+                );
                 result.normal.reset();
                 co_return {};
             },
             [&](const SemThrow& value) noexcept -> ContinuationTask<std::monostate> {
                 (co_await evaluate(value.value));
-                transfer(OwnershipFailure {AnalysisFailureKey(value.failure_type), {}});
+                transfer(
+                    OwnershipFailure {.type = AnalysisFailureKey(value.failure_type), .value = {}}
+                );
                 co_return {};
             },
             [&](const SemExpressionStatement& value) noexcept -> ContinuationTask<std::monostate> {
@@ -128,7 +144,14 @@ auto OwnershipBodyAnalyzer::statement(
                 co_return {};
             },
             [&](const SemStaticBinding& value) noexcept -> ContinuationTask<std::monostate> {
-                store(result.normal->state, binding_place(value.binding), {}, source.origin);
+                store(
+                    result.normal->state,
+                    binding_place(value.binding),
+                    {},
+                    source.origin,
+                    true,
+                    false
+                );
                 co_return {};
             },
             [&](const SemDecompose& value) noexcept -> ContinuationTask<std::monostate> {
@@ -151,7 +174,9 @@ auto OwnershipBodyAnalyzer::statement(
                             result.normal->state,
                             binding_place(binding.binding),
                             project_relationships(product, path),
-                            source.origin
+                            source.origin,
+                            true,
+                            false
                         );
                         if (auto* rows = discarded.edit_existing()) {
                             const auto transferred = [&](const auto& row) noexcept {
@@ -167,7 +192,9 @@ auto OwnershipBodyAnalyzer::statement(
                         result.normal->state,
                         binding_place(value.owner),
                         discarded,
-                        source.origin
+                        source.origin,
+                        true,
+                        false
                     );
                 }
                 co_return {};
@@ -179,7 +206,9 @@ auto OwnershipBodyAnalyzer::statement(
                         result.normal->state,
                         binding_place(value.binding),
                         result.normal->value,
-                        source.origin
+                        source.origin,
+                        true,
+                        false
                     );
                 }
                 co_return {};
@@ -191,7 +220,9 @@ auto OwnershipBodyAnalyzer::statement(
                         result.normal->state,
                         binding_place(value.child),
                         result.normal->value,
-                        source.origin
+                        source.origin,
+                        true,
+                        false
                     );
                     result.normal->state.objects[binding_place(value.child).object].child_intent =
                         false;
@@ -219,7 +250,13 @@ auto OwnershipBodyAnalyzer::statement(
                         || value.compound
                         || selected_access_kind(value.target) == OwnershipAccessKind::Structural) {
                         require_available(result.normal->state, target, value.target.origin);
-                        accesses.push_back({target, selected_access_kind(value.target)});
+                        accesses.push_back(
+                            OwnershipAccess {
+                                .place = target,
+                                .kind = selected_access_kind(value.target),
+                                .descendants = false
+                            }
+                        );
                     }
                 }
                 (co_await evaluate(value.value));
@@ -260,11 +297,11 @@ auto OwnershipBodyAnalyzer::statement(
                 co_return {};
             },
             [&](const SemConstBlock& value) noexcept -> ContinuationTask<std::monostate> {
-                result = (co_await region(*value.region, std::move(result.normal->state)));
+                result = (co_await region(*value.region, std::move(result.normal->state), true));
                 co_return {};
             },
             [&](const OwnedSemanticRegion& value) noexcept -> ContinuationTask<std::monostate> {
-                result = (co_await region(*value, std::move(result.normal->state)));
+                result = (co_await region(*value, std::move(result.normal->state), true));
                 co_return {};
             },
         }

@@ -251,7 +251,7 @@ auto BodyElaborator::cpp_expression(
 auto BodyElaborator::build_cpp_argument(ASTExprID source) noexcept
     -> AnalysisTask<BuiltCppArgument> {
     const auto selected = call_argument_operand(ast, source);
-    auto built = (co_await expression(selected.expression));
+    auto built = (co_await expression(selected.expression, true));
     if (!built) {
         co_return std::unexpected(built.error());
     }
@@ -301,7 +301,12 @@ auto BodyElaborator::cpp_construct(
                     [&](SemanticExpression& value) noexcept { expressions.push_back(&value); }
                 );
                 for (auto* expression : expressions | std::views::reverse) {
-                    if (auto folded = fold_constant_expression(draft(), *expression); !folded) {
+                    if (auto folded = fold_constant_expression(
+                            draft(),
+                            *expression,
+                            ConstantFoldFailure::Diagnose
+                        );
+                        !folded) {
                         co_return std::unexpected(folded.error());
                     }
                 }

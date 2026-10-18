@@ -170,7 +170,11 @@ auto SemanticExecutor::simd(
         for (const auto lane : std::get<SIMDConstant>(inputs.front().value).lanes) {
             elements.emplace_back(atom(lane));
         }
-        co_return ExecutionAggregateValue {.type = *target, .elements = std::move(elements)};
+        co_return ExecutionAggregateValue {
+            .type = *target,
+            .elements = std::move(elements),
+            .capacity = 0uz
+        };
     }
     auto output = evaluate_simd_constant_value(values, intrinsic, owner, inputs, *target);
     if (!output) {

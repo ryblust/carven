@@ -98,7 +98,7 @@ auto append_dependency(
 }
 
 auto build_containment_graph(ProgramDraft& draft) noexcept -> NominalContainmentGraph {
-    auto graph = NominalContainmentGraph();
+    auto graph = NominalContainmentGraph {.declarations = {}, .dependencies = {}};
     const auto structures = draft.struct_declaration_ids();
     const auto enumerations = draft.enum_declaration_ids();
     graph.declarations.reserve(structures.size() + enumerations.size());

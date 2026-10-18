@@ -30,8 +30,8 @@ import std;
 auto BodyElaborator::branch_block(
     ASTBranchBlockID id,
     bool consume_result,
-    std::optional<ConstructionTypeRef> expected,
-    bool allow_pointer_narrowing
+    bool allow_pointer_narrowing,
+    std::optional<ConstructionTypeRef> expected
 ) noexcept -> AnalysisTask<std::optional<BuiltExpression>> {
     const auto& source = ((ast.branch_block(id)));
     const auto enclosing_full_expression = active_full_expression;
@@ -50,7 +50,7 @@ auto BodyElaborator::branch_block(
     ensure_reachable_diagnostics(ast.expression(*source.result).span);
     regions.back().result_reachable = reachable && reference_path_reachable;
     [[maybe_unused]] const auto path = BodyReferencePathGuard(reference_path_reachable, reachable);
-    auto result = (co_await expression(*source.result, expected, allow_pointer_narrowing));
+    auto result = (co_await expression(*source.result, allow_pointer_narrowing, expected));
     if (!result.has_value()) {
         active_full_expression = enclosing_full_expression;
         co_return std::unexpected(result.error());
@@ -80,7 +80,7 @@ auto BodyElaborator::build_branch(
             {.loop_depth = loops.size(), .construct = "a value-control branch"}
         );
     }
-    auto result = (co_await branch_block(id, !value_form, merged_type, allow_pointer_narrowing));
+    auto result = (co_await branch_block(id, !value_form, allow_pointer_narrowing, merged_type));
     if (value_form) {
         transfer_boundaries.pop_back();
     }
@@ -167,8 +167,8 @@ auto BodyElaborator::build_arm(
             BodyReferencePathGuard(reference_path_reachable, reachable);
         auto built = (co_await expression(
             *expression_id,
-            value_form ? type : std::nullopt,
-            allow_pointer_narrowing
+            allow_pointer_narrowing,
+            value_form ? type : std::nullopt
         ));
         if (!built.has_value()) {
             co_return std::unexpected(built.error());
@@ -253,6 +253,7 @@ auto BodyElaborator::build_if(
             }
             co_return co_await expression(
                 branch.condition,
+                true,
                 draft().builtin_type(BuiltinType::Bool)
             );
         }();
@@ -288,7 +289,7 @@ auto BodyElaborator::build_if(
             co_return std::unexpected(body.error());
         }
         normal = normal || (selected && reachable);
-        pop_frame();
+        pop_frame(true);
         branches.push_back({std::move(condition_tree), std::move(*body)});
         remaining = remaining && condition->completes;
         reachable = true;
@@ -314,7 +315,7 @@ auto BodyElaborator::build_if(
         }
         normal = normal || (remaining && reachable);
         otherwise.emplace(UniqueIndirect(std::move(*body)));
-        pop_frame();
+        pop_frame(true);
     } else {
         normal = normal || remaining;
     }
@@ -324,9 +325,9 @@ auto BodyElaborator::build_if(
     auto result = make_built(
         merged_type ? *merged_type : ConstructionTypeRef {draft().builtin_type(BuiltinType::Void)},
         SemIf {
-            std::move(branches),
-            std::move(otherwise),
-            source.const_span.has_value() && !static_stage()
+            .branches = std::move(branches),
+            .otherwise = std::move(otherwise),
+            .is_static = source.const_span.has_value() && !static_stage()
         },
         span,
         std::move(pending)
@@ -336,7 +337,7 @@ auto BodyElaborator::build_if(
 
 auto BodyElaborator::if_statement(const ASTIfForm& source, Span span) noexcept
     -> AnalysisTask<void> {
-    auto expression = (co_await build_if(source, span, std::nullopt, false));
+    auto expression = (co_await build_if(source, span, std::nullopt, false, true));
     if (!expression.has_value()) {
         co_return std::unexpected(expression.error());
     }
@@ -363,7 +364,7 @@ auto BodyElaborator::const_block_statement(const ASTConstBlock& source, Span spa
     failure_contexts.pop_back();
     auto region = std::move(regions.back());
     regions.pop_back();
-    pop_frame();
+    pop_frame(true);
     if (independent) {
         static_scope_frames.pop_back();
     }
@@ -393,7 +394,7 @@ auto BodyElaborator::while_statement(const ASTWhileStmt& source, Span span) noex
         const auto condition_span = ast.expression(*source.condition).span;
         begin_full_expression(condition_span);
         auto condition =
-            (co_await expression(*source.condition, draft().builtin_type(BuiltinType::Bool)));
+            (co_await expression(*source.condition, true, draft().builtin_type(BuiltinType::Bool)));
         if (!condition.has_value()) {
             co_return std::unexpected(condition.error());
         }
@@ -424,14 +425,14 @@ auto BodyElaborator::while_statement(const ASTWhileStmt& source, Span span) noex
     auto body = std::move(regions.back());
     regions.pop_back();
     loops.pop_back();
-    pop_frame();
-    pop_frame();
+    pop_frame(true);
+    pop_frame(true);
     append_statement(
         SemLoop {
-            UniqueIndirect(std::move(initializer)),
-            std::move(condition_tree),
-            UniqueIndirect(std::move(body)),
-            UniqueIndirect(std::move(steps))
+            .initializer = UniqueIndirect(std::move(initializer)),
+            .condition = std::move(condition_tree),
+            .body = UniqueIndirect(std::move(body)),
+            .steps = UniqueIndirect(std::move(steps))
         },
         origin(span)
     );

@@ -45,5 +45,5 @@ auto select_catalog_entity(
     std::string_view name,
     Span origin,
     SourceObservation* observations,
-    DiagnosticCode unresolved = DiagnosticCode::NameUnresolved
+    DiagnosticCode unresolved
 ) noexcept -> AnalysisResult<CatalogEntity>;

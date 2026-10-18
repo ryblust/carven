@@ -42,14 +42,19 @@ const TestSuite suite([] static noexcept {
             const auto f32 = compilation.builtin_type(BuiltinType::F32);
             const auto f64 = compilation.builtin_type(BuiltinType::F64);
 
-            const auto default_integer = normalize_literal(compilation, integer_literal(42u));
+            const auto default_integer =
+                normalize_literal(compilation, integer_literal(42u), LiteralSign::Positive);
             if (!expect(default_integer.has_value())) {
                 return;
             }
             expect(((default_integer->type) == (i32))).note("default_integer->type == i32");
 
-            const auto contextual =
-                normalize_literal(compilation, integer_literal(42u), ConstructionTypeRef {i64});
+            const auto contextual = normalize_literal(
+                compilation,
+                integer_literal(42u),
+                LiteralSign::Positive,
+                ConstructionTypeRef {i64}
+            );
             if (!expect(contextual.has_value())) {
                 return;
             }
@@ -59,6 +64,7 @@ const TestSuite suite([] static noexcept {
             const auto suffixed = normalize_literal(
                 compilation,
                 integer_literal(42u, NumericSuffix::I32),
+                LiteralSign::Positive,
                 ConstructionTypeRef {i64}
             );
             if (!expect(suffixed.has_value())) {
@@ -69,16 +75,19 @@ const TestSuite suite([] static noexcept {
             const auto signed_minimum = normalize_literal(
                 compilation,
                 integer_literal(128u, NumericSuffix::I8),
-                std::nullopt,
-                LiteralSign::Negative
+                LiteralSign::Negative,
+                std::nullopt
             );
             if (!expect(signed_minimum.has_value())) {
                 return;
             }
             expect_equal(std::get<IntegerConstant>(signed_minimum->value).as_signed(), -128);
 
-            const auto positive_overflow =
-                normalize_literal(compilation, integer_literal(128u, NumericSuffix::I8));
+            const auto positive_overflow = normalize_literal(
+                compilation,
+                integer_literal(128u, NumericSuffix::I8),
+                LiteralSign::Positive
+            );
             if (!expect(!(positive_overflow.has_value()))) {
                 return;
             }
@@ -94,7 +103,8 @@ const TestSuite suite([] static noexcept {
 
             const auto lexer_overflow = normalize_literal(
                 compilation,
-                integer_literal(0u, NumericSuffix::None, NumericConversion::OutOfRange)
+                integer_literal(0u, NumericSuffix::None, NumericConversion::OutOfRange),
+                LiteralSign::Positive
             );
             if (!expect(!(lexer_overflow.has_value()))) {
                 return;
@@ -122,6 +132,7 @@ const TestSuite suite([] static noexcept {
                             .suffix = NumericSuffix::None,
                         },
                 },
+                LiteralSign::Positive,
                 ConstructionTypeRef {f32}
             );
             if (!expect(floating.has_value())) {
@@ -134,12 +145,14 @@ const TestSuite suite([] static noexcept {
                 compilation,
                 ASTLiteral {
                     .span = Span::at(0u),
-                    .value = FloatingLiteralValue {
-                        .value_span = Span::at(0u),
-                        .spelling = "1.25",
-                        .suffix = NumericSuffix::None,
-                    },
-                }
+                    .value =
+                        FloatingLiteralValue {
+                            .value_span = Span::at(0u),
+                            .spelling = "1.25",
+                            .suffix = NumericSuffix::None,
+                        },
+                },
+                LiteralSign::Positive
             );
             if (!expect(default_floating.has_value())) {
                 return;
@@ -150,12 +163,14 @@ const TestSuite suite([] static noexcept {
                 compilation,
                 ASTLiteral {
                     .span = Span::at(0u),
-                    .value = FloatingLiteralValue {
-                        .value_span = Span::at(0u),
-                        .spelling = "1.7976931348623157e308",
-                        .suffix = NumericSuffix::F32,
-                    },
-                }
+                    .value =
+                        FloatingLiteralValue {
+                            .value_span = Span::at(0u),
+                            .spelling = "1.7976931348623157e308",
+                            .suffix = NumericSuffix::F32,
+                        },
+                },
+                LiteralSign::Positive
             );
             if (!expect(!(floating_overflow.has_value()))) {
                 return;
@@ -170,7 +185,8 @@ const TestSuite suite([] static noexcept {
                 ASTLiteral {
                     .span = Span::at(0u),
                     .value = StringLiteralValue {.bytes = "hello"},
-                }
+                },
+                LiteralSign::Positive
             );
             if (!expect(string.has_value())) {
                 return;
@@ -288,8 +304,8 @@ const TestSuite suite([] static noexcept {
                                         .suffix = item.suffix,
                                     },
                             },
-                            ConstructionTypeRef {compilation.builtin_type(item.expected_type)},
-                            sign
+                            sign,
+                            ConstructionTypeRef {compilation.builtin_type(item.expected_type)}
                         );
                         if (!item.bits.has_value()) {
                             if (!(expect(!(result.has_value()))

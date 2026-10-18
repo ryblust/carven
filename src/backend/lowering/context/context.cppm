@@ -91,19 +91,16 @@ public:
     auto names() const noexcept -> const TargetNamePlan&;
     auto global_function_name(FunctionID id) noexcept -> TargetName;
 
-    auto structure_name(StructID id, TypeNameScope scope = TypeNameScope::Module) noexcept
-        -> TargetName;
+    auto structure_name(StructID id, TypeNameScope scope) noexcept -> TargetName;
 
     auto field_identifier(StructID owner, std::size_t index) const noexcept -> TargetIdentifier;
 
-    auto enumeration_name(EnumID id, TypeNameScope scope = TypeNameScope::Module) noexcept
-        -> TargetName;
+    auto enumeration_name(EnumID id, TypeNameScope scope) noexcept -> TargetName;
 
     auto callable_name(CallableID id) noexcept -> TargetName;
     auto callable_expression(CallableID id) noexcept -> TargetExpr;
 
-    auto closure_type_name(CallableID id, TypeNameScope scope = TypeNameScope::Module) noexcept
-        -> TargetName;
+    auto closure_type_name(CallableID id, TypeNameScope scope) noexcept -> TargetName;
 
     auto require_callable(CallableID id) noexcept -> void;
     auto payload_enum(EnumID id) noexcept -> const TargetPayloadEnumNames&;
@@ -114,13 +111,12 @@ public:
     auto constant_storage() noexcept -> ConstantStorage&;
     auto cstring_storage() noexcept -> ConstantStorage&;
     auto make_callable_name_allocator() const noexcept -> TargetNameAllocator;
-    auto intrinsic_type(TargetSymbol symbol, bool constant = false) noexcept -> TargetTypeID;
-    auto named_type(TargetName name, bool constant = false) noexcept -> TargetTypeID;
+    auto intrinsic_type(TargetSymbol symbol, bool constant) noexcept -> TargetTypeID;
+    auto named_type(TargetName name, bool constant) noexcept -> TargetTypeID;
 
-    auto reference_type(TargetTypeID referent, bool constant = false, bool rvalue = false) noexcept
-        -> TargetTypeID;
+    auto reference_type(TargetTypeID referent, bool constant, bool rvalue) noexcept -> TargetTypeID;
 
-    auto pointer_type(TargetTypeID pointee, bool constant = false) noexcept -> TargetTypeID;
+    auto pointer_type(TargetTypeID pointee, bool constant) noexcept -> TargetTypeID;
     auto optional_type(TargetTypeID value) noexcept -> TargetTypeID;
     auto variant_type(std::span<const TypeID> members) noexcept -> TargetTypeID;
 
@@ -128,39 +124,35 @@ public:
         TargetSymbol symbol,
         TypeID success,
         FailureSetID failures,
-        TypeNameScope scope = TypeNameScope::Module
+        TypeNameScope scope
     ) noexcept -> TargetTypeID;
 
     auto callable_completion(CallableID callable_id) noexcept -> TargetTypeID;
     auto callable_result(CallableID callable_id) noexcept -> TargetTypeID;
     auto call_result(const SemCall& call) noexcept -> TargetTypeID;
 
-    auto lower_type(TypeID id, TypeNameScope scope = TypeNameScope::Module) noexcept
-        -> TargetTypeID;
+    auto lower_type(TypeID id, TypeNameScope scope) noexcept -> TargetTypeID;
 
-    auto lower_native_type(TypeID id, TypeNameScope scope = TypeNameScope::Module) noexcept
-        -> TargetTypeID;
+    auto lower_native_type(TypeID id, TypeNameScope scope) noexcept -> TargetTypeID;
 
     auto cpp_name(const CppNameReference& name) noexcept -> TargetName;
 
-    auto cpp_constant_argument(
-        const CppConstructArgument& argument,
-        TypeNameScope scope = TypeNameScope::Module
-    ) noexcept -> TargetExpr;
+    auto cpp_constant_argument(const CppConstructArgument& argument, TypeNameScope scope) noexcept
+        -> TargetExpr;
 
     auto lower_cpp_query(TypeID query_type) noexcept -> TargetTypeID;
 
     auto lower_parameter(
         AccessMode access,
         TypeID type,
-        TypeNameScope scope = TypeNameScope::Module,
-        bool requires_stable_storage = false
+        TypeNameScope scope,
+        bool requires_stable_storage
     ) noexcept -> TargetTypeID;
 
     auto lower_signature_result(
         CallableSignatureID signature,
         bool stops_test,
-        TypeNameScope scope = TypeNameScope::Module
+        TypeNameScope scope
     ) noexcept -> TargetTypeID;
 
     auto display_emitter_type(TypeID type) noexcept -> TargetTypeID;
@@ -246,6 +238,6 @@ auto target_items(TargetItem item) noexcept -> std::vector<TargetItem>;
 auto namespace_item(
     std::optional<TargetName> name,
     std::vector<TargetItem> items,
-    TargetCompilerReason reason = TargetCompilerReason::ArtifactScaffolding,
-    bool closing_comment = true
+    TargetCompilerReason reason,
+    bool closing_comment
 ) noexcept -> TargetItem;

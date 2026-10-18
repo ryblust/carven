@@ -14,7 +14,7 @@ auto constant_has_storage(const SemIRProgram& program, ConstantID id) noexcept -
 auto constant_expression(
     ModuleLowering& context,
     ConstantID constant,
-    ConstantLiteralContext use = ConstantLiteralContext::Exact
+    ConstantLiteralContext use
 ) noexcept -> TargetExpr;
 
 auto constant_reference(ModuleLowering& context, ConstantID constant) noexcept -> TargetExpr;
@@ -23,7 +23,7 @@ auto typed_integer_expression(
     ModuleLowering& context,
     const IntegerConstant& value,
     TypeID type,
-    ConstantLiteralContext use = ConstantLiteralContext::Exact
+    ConstantLiteralContext use
 ) noexcept -> TargetExpr;
 
 auto enum_case_index(const SemIRProgram& semantic, EnumCaseID case_id) noexcept -> std::size_t;

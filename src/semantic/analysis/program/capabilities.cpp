@@ -129,7 +129,7 @@ auto compute_equality_capabilities(
             }
         }
     }
-    auto result = EqualityCapabilities {};
+    auto result = EqualityCapabilities {.roots = {}, .enumerations = {}};
     for (const auto index : root_indices) {
         result.roots.push_back(supported[index]);
     }

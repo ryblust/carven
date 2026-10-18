@@ -44,7 +44,7 @@ auto check_contract_modules(
     if (!expect(syntax.has_value()).note("source = ", input.source)) {
         return;
     }
-    const auto result = analyze(std::move(*syntax));
+    const auto result = analyze(std::move(*syntax), HostEffects::Deny);
     if (!expect_equal(result.has_value(), !input.rejection)
              .note("source = ", input.source)
              .note([&]() noexcept {

@@ -44,7 +44,7 @@ class TimerQueue final {
     }
 
 public:
-    explicit TimerQueue(Clock selected = default_clock()) noexcept
+    explicit TimerQueue(Clock selected) noexcept
         : clock(selected) {}
 
     TimerQueue(const TimerQueue&) = delete;

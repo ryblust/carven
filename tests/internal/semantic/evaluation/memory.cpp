@@ -40,7 +40,7 @@ auto pair_value(TypeID type, TypeID element, std::int64_t first, std::int64_t se
     auto elements = std::vector<ExecutionValue>();
     elements.push_back(integer_value(element, first));
     elements.push_back(integer_value(element, second));
-    return ExecutionAggregateValue {.type = type, .elements = std::move(elements)};
+    return ExecutionAggregateValue {.type = type, .elements = std::move(elements), .capacity = 0uz};
 }
 
 auto enum_value(TypeID type, EnumCaseID member, TypeID element, std::int64_t payload) noexcept
@@ -170,7 +170,11 @@ const TestSuite suite([] static noexcept {
             elements.push_back(integer_value(integer, 3));
             auto memory = ExecutionMemory();
             const auto parent = memory.create(
-                ExecutionAggregateValue {.type = product, .elements = std::move(elements)}
+                ExecutionAggregateValue {
+                    .type = product,
+                    .elements = std::move(elements),
+                    .capacity = 0uz
+                }
             );
             const auto pair_slot = memory.project(parent, 0uz);
             const auto outer_sibling = memory.project(parent, 1uz);
@@ -308,7 +312,11 @@ const TestSuite suite([] static noexcept {
             }
             auto memory = ExecutionMemory();
             const auto owner = memory.create(
-                ExecutionAggregateValue {.type = array, .elements = std::move(elements)}
+                ExecutionAggregateValue {
+                    .type = array,
+                    .elements = std::move(elements),
+                    .capacity = 0uz
+                }
             );
             const auto text = ExecutionText(
                 ExecutionSlice {.type = slice, .backing = owner, .offset = 1uz, .extent = 2uz}

@@ -98,13 +98,15 @@ auto BodyRealizer::ExpressionBuilder::finish_fragment(Fragment value) noexcept -
         && owner.context.is_void(value.preparation.operation.type.resolved())) {
         auto carrier = TargetExpr {
             .value = TargetConstructionExpr {
-                .type = owner.context.intrinsic_type(TargetSymbol::RuntimeVoid),
+                .type = owner.context.intrinsic_type(TargetSymbol::RuntimeVoid, false),
                 .initializer = std::vector<TargetExpr> {}
             }
         };
         if (pending(value) && value.preparation.requires_execution) {
             auto body = std::vector<TargetStmt>();
-            body.push_back(discard_statement(raw(value)));
+            body.push_back(discard_statement(
+                raw(value, ConstantLiteralContext::Exact, PreparedUse::ReadBorrow)
+            ));
             body.push_back(
                 generated_statement(TargetReturnStmt {.expression = std::move(carrier)})
             );
@@ -113,7 +115,8 @@ auto BodyRealizer::ExpressionBuilder::finish_fragment(Fragment value) noexcept -
                     .value =
                         TargetLambdaExpr {
                             .parameters = {},
-                            .result = owner.context.intrinsic_type(TargetSymbol::RuntimeVoid),
+                            .result =
+                                owner.context.intrinsic_type(TargetSymbol::RuntimeVoid, false),
                             .body = std::move(body)
                         }
                 },
@@ -193,7 +196,7 @@ auto BodyRealizer::ExpressionBuilder::build(
             generated_statement(
                 TargetUnreachableStmt {.reason = TargetUnreachableReason::SemIRProof}
             ),
-            LoweringExitTarget {LoweringExitKind::Unreachable, 0}
+            LoweringExitTarget {.kind = LoweringExitKind::Unreachable, .identity = 0uz}
         );
         co_return finish_fragment(std::move(fragment));
     }
@@ -239,7 +242,8 @@ auto BodyRealizer::ExpressionBuilder::build(
             {.demand = ResultDemand::Discard,
              .use = PreparedUse::OperandValue,
              .retain_backing = true,
-             .expression_depth = 0uz}
+             .expression_depth = 0uz,
+             .await_fusion = std::nullopt}
         );
         discard_pending(effects);
         adopt(effects);
@@ -286,7 +290,8 @@ auto BodyRealizer::ExpressionBuilder::build(
                 .binding = TargetVariableBinding::MutableValue,
                 .maybe_unused = false,
                 .local = local,
-                .type = owner.context.lower_type(value.operation.type.resolved()),
+                .type = owner.context
+                            .lower_type(value.operation.type.resolved(), TypeNameScope::Module),
                 .initializer = co_await_expression(call_expression(
                     intrinsic_expression(TargetSymbol::RuntimeAsyncWaitReady),
                     std::move(inputs)
@@ -300,10 +305,13 @@ auto BodyRealizer::ExpressionBuilder::build(
         co_return finish_fragment(std::move(fragment));
     }
     if (const auto* close = std::get_if<SemCloseChild>(&value.operation.value)) {
-        statements.emit(discard_statement(co_await_expression(call_expression(
-            intrinsic_expression(TargetSymbol::RuntimeAsyncClose),
-            target_expressions(owner.binding_expression(close->child))
-        ))));
+        statements.emit(
+            discard_statement(co_await_expression(call_expression(
+                intrinsic_expression(TargetSymbol::RuntimeAsyncClose),
+                target_expressions(owner.binding_expression(close->child))
+            ))),
+            true
+        );
         complete(fragment, LoweringCompleted {});
         fragment.executes = true;
         fragment.observes = true;
@@ -342,16 +350,26 @@ auto BodyRealizer::ExpressionBuilder::build(
                     fragment.observes = true;
                     if (!owner.context.is_void(operation_type->success)) {
                         if (check_character) {
-                            statements.emit(discard_statement(call_expression(
-                                intrinsic_expression(TargetSymbol::RuntimeCheckedUnicodeScalar),
-                                target_expressions(
-                                    raw(completed),
-                                    source_site_expression(owner.context, expression.origin)
-                                )
-                            )));
+                            statements.emit(
+                                discard_statement(call_expression(
+                                    intrinsic_expression(TargetSymbol::RuntimeCheckedUnicodeScalar),
+                                    target_expressions(
+                                        raw(completed,
+                                            ConstantLiteralContext::Exact,
+                                            PreparedUse::ReadBorrow),
+                                        source_site_expression(owner.context, expression.origin)
+                                    )
+                                )),
+                                true
+                            );
                         }
                         if (result_needed) {
-                            complete(fragment, raw(completed));
+                            complete(
+                                fragment,
+                                raw(completed,
+                                    ConstantLiteralContext::Exact,
+                                    PreparedUse::ReadBorrow)
+                            );
                         }
                     }
                 }
@@ -368,7 +386,10 @@ auto BodyRealizer::ExpressionBuilder::build(
             auto invocation = call_expression(intrinsic_expression(symbol), {});
             if (intrinsic->kind == AsyncIntrinsic::YieldOnce
                 && request.demand == ResultDemand::Discard) {
-                statements.emit(discard_statement(co_await_expression(std::move(invocation))));
+                statements.emit(
+                    discard_statement(co_await_expression(std::move(invocation))),
+                    true
+                );
                 complete(fragment, LoweringCompleted {});
             } else {
                 complete_await(
@@ -389,7 +410,7 @@ auto BodyRealizer::ExpressionBuilder::build(
     if (std::holds_alternative<SemIf>(value.operation.value)
         || std::holds_alternative<SemMatch>(value.operation.value)
         || std::holds_alternative<SemTry>(value.operation.value)) {
-        const auto storage_scope = StorageScope(*this);
+        const auto storage_scope = StorageScope(*this, true);
         if (!result_needed) {
             (co_await owner
                  .structured_expression(expression, LoweringDiscardResult {}, statements));
@@ -408,7 +429,8 @@ auto BodyRealizer::ExpressionBuilder::build(
             complete(
                 fragment,
                 std::move(body).result_region(
-                    owner.context.lower_type(value.operation.type.resolved()),
+                    owner.context
+                        .lower_type(value.operation.type.resolved(), TypeNameScope::Module),
                     yield,
                     !scalar(value.operation.type.resolved()) ? LoweringRegionDelivery::Factory
                         : result_use == PreparedUse::OperandValue
@@ -420,7 +442,8 @@ auto BodyRealizer::ExpressionBuilder::build(
         } else {
             const auto storage = LoweringDeferredStorage {
                 .local = owner.fresh_local(TargetTemporaryNameKind::Owner),
-                .value_type = owner.context.lower_type(value.operation.type.resolved())
+                .value_type =
+                    owner.context.lower_type(value.operation.type.resolved(), TypeNameScope::Module)
             };
             auto outer = std::move(reservations);
             reservations = LoweringStmtBuilder();
@@ -450,7 +473,8 @@ auto BodyRealizer::ExpressionBuilder::build(
                 {.demand = ResultDemand::Discard,
                  .use = PreparedUse::OperandValue,
                  .retain_backing = true,
-                 .expression_depth = 0uz}
+                 .expression_depth = 0uz,
+                 .await_fusion = std::nullopt}
             );
             adopt(child);
             fragment.executes = has_effect(child);
@@ -478,7 +502,8 @@ auto BodyRealizer::ExpressionBuilder::build(
             {.demand = known == nullptr ? ResultDemand::Value : ResultDemand::Discard,
              .use = PreparedUse::OperandValue,
              .retain_backing = true,
-             .expression_depth = 0uz}
+             .expression_depth = 0uz,
+             .await_fusion = std::nullopt}
         );
         if (known) {
             discard_pending(condition);
@@ -494,13 +519,17 @@ auto BodyRealizer::ExpressionBuilder::build(
                     {.demand = result_needed ? ResultDemand::Value : ResultDemand::Discard,
                      .use = PreparedUse::OperandValue,
                      .retain_backing = true,
-                     .expression_depth = 0uz}
+                     .expression_depth = 0uz,
+                     .await_fusion = std::nullopt}
                 );
                 adopt(selected);
                 if (observed && statements.continues()) {
                     complete(
                         fragment,
-                        observe(known->value, emit(selected, PreparedUse::OperandValue))
+                        observe(
+                            known->value,
+                            emit(selected, PreparedUse::OperandValue, ConstantLiteralContext::Exact)
+                        )
                     );
                 } else {
                     fragment.executes = has_effect(selected);
@@ -518,17 +547,18 @@ auto BodyRealizer::ExpressionBuilder::build(
         }
         fragment.executes = has_effect(condition);
         fragment.observes = has_storage_read(condition);
-        auto test = emit(condition, PreparedUse::OperandValue);
+        auto test = emit(condition, PreparedUse::OperandValue, ConstantLiteralContext::Exact);
         auto selected_result = std::optional<Fragment>();
         {
-            const auto storage_scope = StorageScope(*this);
+            const auto storage_scope = StorageScope(*this, true);
             selected_result.emplace(
                 co_await build(
                     *logic->right,
                     {.demand = result_needed ? ResultDemand::Value : ResultDemand::Discard,
                      .use = PreparedUse::OperandValue,
                      .retain_backing = true,
-                     .expression_depth = 0uz}
+                     .expression_depth = 0uz,
+                     .await_fusion = std::nullopt}
                 )
             );
         }
@@ -543,7 +573,8 @@ auto BodyRealizer::ExpressionBuilder::build(
         auto selected_value = std::optional<TargetExpr>();
         if (selected.statements.continues()) {
             if (result_needed) {
-                selected_value = emit(selected, PreparedUse::OperandValue);
+                selected_value =
+                    emit(selected, PreparedUse::OperandValue, ConstantLiteralContext::Exact);
                 if (observed) {
                     selected_value = observe(
                         logic->operation == ShortCircuitOperator::And,
@@ -576,19 +607,23 @@ auto BodyRealizer::ExpressionBuilder::build(
                     .binding = TargetVariableBinding::MutableValue,
                     .maybe_unused = false,
                     .local = *name,
-                    .type = owner.context.lower_type(value.operation.type.resolved()),
+                    .type = owner.context
+                                .lower_type(value.operation.type.resolved(), TypeNameScope::Module),
                     .initializer = bool_expression(logic->operation == ShortCircuitOperator::Or)
                 },
                 false
             );
             if (selected_value) {
-                selected.statements.emit(generated_statement(
-                    TargetAssignmentStmt {
-                        .target = name_expression(*name),
-                        .op = TargetAssignmentOperator::Assign,
-                        .value = std::move(*selected_value)
-                    }
-                ));
+                selected.statements.emit(
+                    generated_statement(
+                        TargetAssignmentStmt {
+                            .target = name_expression(*name),
+                            .op = TargetAssignmentOperator::Assign,
+                            .value = std::move(*selected_value)
+                        }
+                    ),
+                    true
+                );
             }
         }
         if (logic->operation == ShortCircuitOperator::Or) {
@@ -600,13 +635,16 @@ auto BodyRealizer::ExpressionBuilder::build(
             skipped.emplace();
             skipped->push_back(discard_statement(observe(false, std::nullopt)));
         }
-        statements.emit(generated_statement(
-            TargetIfStmt {
-                .condition = std::move(test),
-                .body = std::move(selected.statements).finish(),
-                .else_body = std::move(skipped)
-            }
-        ));
+        statements.emit(
+            generated_statement(
+                TargetIfStmt {
+                    .condition = std::move(test),
+                    .body = std::move(selected.statements).finish(),
+                    .else_body = std::move(skipped)
+                }
+            ),
+            true
+        );
         if (name) {
             complete(fragment, Saved {.local = *name, .kind = SavedKind::Value});
         }
@@ -648,7 +686,7 @@ auto BodyRealizer::ExpressionBuilder::build(
     auto read_cursor = 0uz;
     auto postfix_cursor = 0uz;
     const auto commit = [&](std::size_t index) noexcept -> void {
-        anchor(children[index], inputs[index].use);
+        anchor(children[index], inputs[index].use, false);
         adopt(children[index]);
     };
     const auto commit_postfix = [&]() noexcept -> void {
@@ -725,7 +763,8 @@ auto BodyRealizer::ExpressionBuilder::build(
                                                                            : ResultDemand::Discard,
              .use = input.use,
              .retain_backing = retain_backing || crosses || multiple_uses,
-             .expression_depth = depth_boundary ? 0uz : expression_depth + 1uz}
+             .expression_depth = depth_boundary ? 0uz : expression_depth + 1uz,
+             .await_fusion = std::nullopt}
         );
         if (retain_backing || crosses || multiple_uses) {
             retain_input(child, input.use);
@@ -809,7 +848,7 @@ auto BodyRealizer::ExpressionBuilder::build(
             && (std::holds_alternative<SemColdCall>(operation.value)
                 || std::holds_alternative<SemCall>(operation.value));
         const auto child_literal = operand_literal(inputs.front().use);
-        auto invocation = fresh_operation ? raw(operand, child_literal)
+        auto invocation = fresh_operation ? raw(operand, child_literal, PreparedUse::ReadBorrow)
                                           : emit(operand, inputs.front().use, child_literal);
         if (awaited->operand_kind == AsyncAwaitOperandKind::LexicalChild) {
             invocation = call_member(std::move(invocation), "observe", {});
@@ -817,7 +856,8 @@ auto BodyRealizer::ExpressionBuilder::build(
             // A stored operation moves into the await full-expression's frame owner.
             invocation = TargetExpr {
                 .value = TargetConstructionExpr {
-                    .type = owner.context.lower_type(operation.type.resolved()),
+                    .type =
+                        owner.context.lower_type(operation.type.resolved(), TypeNameScope::Module),
                     .initializer = target_expressions(std::move(invocation))
                 }
             };
@@ -853,7 +893,7 @@ auto BodyRealizer::ExpressionBuilder::build(
         // then transfers only the selected field from its mutable storage.
         operands.push_back(
             (exact || read_conversion)
-                ? raw(children[index], child_literal)
+                ? raw(children[index], child_literal, PreparedUse::ReadBorrow)
                 : emit(
                       children[index],
                       owning_projection && index == 0uz ? PreparedUse::WritePlace

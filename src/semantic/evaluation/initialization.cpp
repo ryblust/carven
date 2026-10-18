@@ -55,7 +55,11 @@ auto SemanticExecutor::default_value(ConstructionTypeRef reference, ProgramOrigi
             elements.push_back(std::move(*element));
         }
         co_return bounded_value(
-            ExecutionAggregateValue {.type = reference, .elements = std::move(elements)},
+            ExecutionAggregateValue {
+                .type = reference,
+                .elements = std::move(elements),
+                .capacity = 0uz
+            },
             origin
         );
     }
@@ -70,7 +74,7 @@ auto SemanticExecutor::default_value(ConstructionTypeRef reference, ProgramOrigi
     const auto target = *concrete;
     const auto canonical = values.type_copy(target);
     if (std::holds_alternative<VectorTypeValue>(canonical.value)) {
-        co_return ExecutionAggregateValue {.type = target, .elements = {}};
+        co_return ExecutionAggregateValue {.type = target, .elements = {}, .capacity = 0uz};
     }
     if (const auto* builtin = std::get_if<BuiltinTypeValue>(&canonical.value)) {
         if (builtin_is_integer(builtin->kind)) {
@@ -84,13 +88,16 @@ auto SemanticExecutor::default_value(ConstructionTypeRef reference, ProgramOrigi
         }
         switch (builtin->kind) {
             case BuiltinType::Bool:
-                co_return ConstantAtom {.type = target, .value = BooleanConstant {false}};
+                co_return ConstantAtom {.type = target, .value = BooleanConstant {.value = false}};
             case BuiltinType::Char:
-                co_return ConstantAtom {.type = target, .value = CharacterConstant {U'\0'}};
+                co_return ConstantAtom {
+                    .type = target,
+                    .value = CharacterConstant {.scalar = U'\0'}
+                };
             case BuiltinType::F32:
-                co_return ConstantAtom {.type = target, .value = F32Constant {0.0f}};
+                co_return ConstantAtom {.type = target, .value = F32Constant {.value = 0.0f}};
             case BuiltinType::F64:
-                co_return ConstantAtom {.type = target, .value = F64Constant {0.0}};
+                co_return ConstantAtom {.type = target, .value = F64Constant {.value = 0.0}};
             case BuiltinType::Void:   co_return ExecutionVoid {};
             case BuiltinType::String: co_return ExecutionOwnedText({});
             case BuiltinType::Str:    co_return ExecutionText(std::string());
@@ -135,7 +142,11 @@ auto SemanticExecutor::default_value(ConstructionTypeRef reference, ProgramOrigi
             elements.push_back(std::move(*element));
         }
         co_return bounded_value(
-            ExecutionAggregateValue {.type = target, .elements = std::move(elements)},
+            ExecutionAggregateValue {
+                .type = target,
+                .elements = std::move(elements),
+                .capacity = 0uz
+            },
             origin
         );
     }

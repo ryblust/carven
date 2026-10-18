@@ -27,7 +27,7 @@ auto interpret_literal(
     const ASTLiteral& source,
     Span span,
     std::optional<ConstructionTypeRef> expected,
-    LiteralSign sign = LiteralSign::Positive
+    LiteralSign sign
 ) noexcept -> AnalysisTask<typename Site::Value> {
     if (const auto* integer = std::get_if<IntegerLiteralValue>(&source.value)) {
         if (const auto scale = duration_literal_scale(integer->suffix)) {
@@ -71,7 +71,7 @@ auto interpret_literal(
             co_return construct_default_expression(site, *expected, span);
         }
     }
-    auto fact = normalize_literal(site.draft(), source, expected, sign);
+    auto fact = normalize_literal(site.draft(), source, sign, expected);
     if (!fact.has_value()) {
         const auto diagnostic = constant_evaluation_diagnostic(fact.error());
         co_return std::unexpected(site.fail(

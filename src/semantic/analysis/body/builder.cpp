@@ -297,6 +297,7 @@ auto BodyBuilder::snapshot(SemanticRegion region) const noexcept -> StructuredBo
         .region = std::move(region),
         .residual = std::nullopt,
         .specialized = std::nullopt,
+        .generic_definition = std::nullopt
     };
 }
 
@@ -312,6 +313,7 @@ auto BodyBuilder::finish(SemanticRegion region) && noexcept -> StructuredBodyDra
         .region = std::move(region),
         .residual = std::nullopt,
         .specialized = std::nullopt,
+        .generic_definition = std::nullopt
     };
 }
 

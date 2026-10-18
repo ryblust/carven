@@ -40,7 +40,7 @@ auto BodyElaborator::cancel_statement(const ASTCancelStmt& source, Span span) no
             "cancel requires a lexical child in an async owner or const execution"
         ));
     }
-    auto selected = co_await expression(source.child);
+    auto selected = co_await expression(source.child, true);
     if (!selected) {
         co_return std::unexpected(selected.error());
     }
@@ -66,7 +66,7 @@ auto BodyElaborator::initializer_value(
     std::optional<ConstructionTypeRef> declared
 ) noexcept -> AnalysisTask<SemanticExpression> {
     const auto span = ast.expression(*source.initializer).span;
-    auto initializer = (co_await expression(*source.initializer, declared));
+    auto initializer = (co_await expression(*source.initializer, true, declared));
     if (!initializer.has_value()) {
         co_return std::unexpected(initializer.error());
     }
@@ -121,7 +121,7 @@ auto BodyElaborator::variable_statement(const ASTVariableDecl& source) noexcept
                 "async let requires one inferred named let binding in an async fn or const execution"
             ));
         }
-        auto built = co_await expression(*source.initializer);
+        auto built = co_await expression(*source.initializer, true);
         if (!built) {
             co_return std::unexpected(built.error());
         }
@@ -248,7 +248,11 @@ auto BodyElaborator::variable_statement(const ASTVariableDecl& source) noexcept
                 origin(source.span)
             );
             append_statement(
-                SemDecompose {owner.binding, std::move(*value), std::move(bindings)},
+                SemDecompose {
+                    .owner = owner.binding,
+                    .initializer = std::move(*value),
+                    .bindings = std::move(bindings)
+                },
                 origin(source.span)
             );
             co_return {};
@@ -266,7 +270,7 @@ auto BodyElaborator::variable_statement(const ASTVariableDecl& source) noexcept
             BodyBatchElaborator::StaticRoot {.initializer = *initializer, .value = std::nullopt}
         );
         append_statement(
-            SemStaticBinding {parent.binding, std::move(initializer)},
+            SemStaticBinding {.binding = parent.binding, .initializer = std::move(initializer)},
             origin(source.span)
         );
         for (const auto& binding : bindings) {
@@ -278,7 +282,10 @@ auto BodyElaborator::variable_statement(const ASTVariableDecl& source) noexcept
                     type,
                     frames.back().lifetime,
                     origin(source.span),
-                    SemTupleElement {OwnedSemanticExpression(std::move(selected)), index}
+                    SemTupleElement {
+                        .source = OwnedSemanticExpression(std::move(selected)),
+                        .index = index
+                    }
                 );
             }
             auto child = OwnedSemanticExpression(std::move(selected));
@@ -287,7 +294,7 @@ auto BodyElaborator::variable_statement(const ASTVariableDecl& source) noexcept
                 BodyBatchElaborator::StaticRoot {.initializer = *child, .value = std::nullopt}
             );
             append_statement(
-                SemStaticBinding {binding.binding, std::move(child)},
+                SemStaticBinding {.binding = binding.binding, .initializer = std::move(child)},
                 origin(source.span)
             );
         }
@@ -386,7 +393,7 @@ auto BodyElaborator::variable_statement(const ASTVariableDecl& source) noexcept
 
 auto BodyElaborator::assignment_statement(const ASTAssignment& source) noexcept
     -> AnalysisTask<void> {
-    auto target_expression = (co_await expression(source.target));
+    auto target_expression = (co_await expression(source.target, true));
     if (!target_expression.has_value()) {
         co_return std::unexpected(target_expression.error());
     }
@@ -395,7 +402,8 @@ auto BodyElaborator::assignment_statement(const ASTAssignment& source) noexcept
         co_return std::unexpected(target.error());
     }
     if (source.op == ASTAssignmentOperator::Assign) {
-        auto right = (co_await expression(source.value, target->expression.type.construction()));
+        auto right =
+            (co_await expression(source.value, true, target->expression.type.construction()));
         if (!right.has_value()) {
             co_return std::unexpected(right.error());
         }
@@ -414,7 +422,11 @@ auto BodyElaborator::assignment_statement(const ASTAssignment& source) noexcept
             co_return std::unexpected(value.error());
         }
         append_statement(
-            SemAssign {std::move(target->expression), std::nullopt, std::move(*value)},
+            SemAssign {
+                .target = std::move(target->expression),
+                .compound = std::nullopt,
+                .value = std::move(*value)
+            },
             origin(source.span)
         );
         co_return {};
@@ -433,7 +445,7 @@ auto BodyElaborator::assignment_statement(const ASTAssignment& source) noexcept
         layout && target_type == ConstructionTypeRef(draft().builtin_type(layout->vector))
         ? ConstructionTypeRef(draft().builtin_type(layout->element))
         : target_type;
-    auto right = (co_await expression(source.value, operand_type));
+    auto right = (co_await expression(source.value, true, operand_type));
     if (!right.has_value()) {
         co_return std::unexpected(right.error());
     }
@@ -497,14 +509,18 @@ auto BodyElaborator::assignment_statement(const ASTAssignment& source) noexcept
         );
     }
     append_statement(
-        SemAssign {std::move(target->expression), operation, std::move(*right_value)},
+        SemAssign {
+            .target = std::move(target->expression),
+            .compound = operation,
+            .value = std::move(*right_value)
+        },
         origin(source.span)
     );
     co_return {};
 }
 
 auto BodyElaborator::update_statement(const ASTUpdate& source) noexcept -> AnalysisTask<void> {
-    auto target_expression = (co_await expression(source.target));
+    auto target_expression = (co_await expression(source.target, true));
     if (!target_expression.has_value()) {
         co_return std::unexpected(target_expression.error());
     }
@@ -527,7 +543,7 @@ auto BodyElaborator::update_statement(const ASTUpdate& source) noexcept -> Analy
             co_return std::unexpected(updated.error());
         }
         append_statement(
-            SemExpressionStatement {take_built(*updated, source.span)},
+            SemExpressionStatement {.expression = take_built(*updated, source.span)},
             origin(source.span)
         );
         co_return {};
@@ -562,6 +578,7 @@ auto BodyElaborator::update_statement(const ASTUpdate& source) noexcept -> Analy
                     .conversion = NumericConversion::Exact,
                 },
         },
+        LiteralSign::Positive,
         target->expression.type.construction()
     );
     if (!one.has_value()) {
@@ -575,10 +592,10 @@ auto BodyElaborator::update_statement(const ASTUpdate& source) noexcept -> Analy
     );
     append_statement(
         SemAssign {
-            std::move(target->expression),
-            source.op == ASTUpdateOperator::Increment ? BinaryOperator::Add
-                                                      : BinaryOperator::Subtract,
-            std::move(right)
+            .target = std::move(target->expression),
+            .compound = source.op == ASTUpdateOperator::Increment ? BinaryOperator::Add
+                                                                  : BinaryOperator::Subtract,
+            .value = std::move(right)
         },
         origin(source.span)
     );
@@ -602,7 +619,8 @@ auto BodyElaborator::return_statement(
     }
     auto value = std::optional<SemanticExpression>();
     if (operand.has_value()) {
-        auto built = (co_await expression(*operand, infer_result ? std::nullopt : result_type));
+        auto built =
+            (co_await expression(*operand, true, infer_result ? std::nullopt : result_type));
         if (!built.has_value()) {
             co_return std::unexpected(built.error());
         }
@@ -667,7 +685,10 @@ auto BodyElaborator::return_statement(
             value = std::move(*consumed);
         }
         if (!completes) {
-            append_statement(SemExpressionStatement {std::move(*value)}, origin(span));
+            append_statement(
+                SemExpressionStatement {.expression = std::move(*value)},
+                origin(span)
+            );
             reachable = false;
             co_return {};
         }
@@ -683,7 +704,7 @@ auto BodyElaborator::return_statement(
         }
     }
     append_statement(
-        SemReturn {value.has_value() ? std::optional(std::move(*value)) : std::nullopt},
+        SemReturn {.value = value.has_value() ? std::optional(std::move(*value)) : std::nullopt},
         implicit ? expansion(keyword_span, ProgramExpansionReason::SyntheticControl) : origin(span)
     );
     reachable = false;
@@ -766,7 +787,7 @@ auto BodyElaborator::transfer_statement(const ASTControlTransfer& source) noexce
                     "throw requires a payload value"
                 ));
             }
-            auto payload = (co_await expression(*source.value));
+            auto payload = (co_await expression(*source.value, true));
             if (!payload.has_value()) {
                 co_return std::unexpected(payload.error());
             }
@@ -782,7 +803,10 @@ auto BodyElaborator::transfer_statement(const ASTControlTransfer& source) noexce
             }
             const auto& target = failure_context_for_current_path();
             draft().add_thrown_failure_member(target.term, *failure_type, throw_origin);
-            append_statement(SemThrow {std::move(*value), *failure_type}, throw_origin);
+            append_statement(
+                SemThrow {.value = std::move(*value), .failure_type = *failure_type},
+                throw_origin
+            );
             reachable = false;
             co_return {};
         }

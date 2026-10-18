@@ -22,7 +22,8 @@ struct ResolvedModuleImport final {
 
 using ResolvedModuleImportGraph = std::vector<std::vector<ResolvedModuleImport>>;
 
-struct SyntaxProgramParts final {
+class SyntaxProgramParts final {
+public:
     SyntaxProgramParts(
         CompilationProvenance provenance,
         std::vector<std::optional<SyntaxTree>> syntax_trees,

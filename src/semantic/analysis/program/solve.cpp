@@ -259,7 +259,11 @@ auto ProgramDraft::verify_body(
               body.generic_definition()->index(),
               BodyIdentityDomain::GenericDefinition
           )
-        : BodyIdentity(program_identity, body.specialized().value_or(body_id).index());
+        : BodyIdentity(
+              program_identity,
+              body.specialized().value_or(body_id).index(),
+              BodyIdentityDomain::Body
+          );
     if (body_id.owner() != program_identity
         || identity != expected_identity
         || (body.generic_definition() && body.generic_definition()->owner() != program_identity)) {
@@ -342,7 +346,7 @@ auto ProgramDraft::resolve() && noexcept -> AnalysisResult<ResolvedAnalysisProgr
     }
     auto enum_roots = std::vector<TypeID>();
     for (const auto enumeration : enum_declaration_ids()) {
-        enum_roots.push_back(intern_type({.value = EnumTypeValue {enumeration}}));
+        enum_roots.push_back(intern_type({.value = EnumTypeValue {.enumeration = enumeration}}));
     }
     resolve_enum_equality(enum_roots);
     auto failures = solve_failure_constraints(
@@ -354,7 +358,8 @@ auto ProgramDraft::resolve() && noexcept -> AnalysisResult<ResolvedAnalysisProgr
             input.declarations.construction_view(),
             provenance_appender.reader()
         ),
-        analysis_diagnostics
+        analysis_diagnostics,
+        true
     );
     if (!failures.has_value()) {
         return std::unexpected(failures.error());
@@ -436,7 +441,7 @@ auto ProgramDraft::resolve() && noexcept -> AnalysisResult<ResolvedAnalysisProgr
     auto final_bodies = BodyStore(std::move(bodies).seal());
     auto final_tests = TestStore(std::move(input.test_slots).seal());
     return ResolvedAnalysisProgram {
-        SemIRProgram(
+        .program = SemIRProgram(
             program_identity,
             std::move(provenance_appender).finish(),
             std::move(types),
@@ -452,7 +457,7 @@ auto ProgramDraft::resolve() && noexcept -> AnalysisResult<ResolvedAnalysisProgr
             std::move(generic_functions),
             std::move(test_stops)
         ),
-        std::move(generics)
+        .generics = std::move(generics)
     };
 }
 

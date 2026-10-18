@@ -58,7 +58,7 @@ public:
         bool unknown_accepted;
     };
 
-    explicit Completion(const CompletionPatterns& patterns, bool retain_patterns = false) noexcept;
+    explicit Completion(const CompletionPatterns& patterns, bool retain_patterns) noexcept;
 
     template<typename Node>
     auto evaluate(const Node& source) noexcept -> ExitSet {
@@ -75,7 +75,7 @@ public:
     auto node_flow(const Node& source) const noexcept -> Flow {
         // Expanded copies can share source PatternIDs while owning different
         // rewritten bounds. Only the incremental pattern query retains IDs.
-        auto query = Completion(patterns);
+        auto query = Completion(patterns, false);
         SemanticTraversal<true, Completion> {query}(source);
         return query.get(source);
     }
@@ -702,14 +702,14 @@ auto CompletionQuery::pending_failures() const noexcept
 
 auto exits(const SemanticExpression& expression, const CompletionPatterns& patterns) noexcept
     -> ExitSet {
-    return Completion(patterns).evaluate(expression);
+    return Completion(patterns, false).evaluate(expression);
 }
 
 auto exits(const SemanticStatement& statement, const CompletionPatterns& patterns) noexcept
     -> ExitSet {
-    return Completion(patterns).evaluate(statement);
+    return Completion(patterns, false).evaluate(statement);
 }
 
 auto exits(const SemanticRegion& region, const CompletionPatterns& patterns) noexcept -> ExitSet {
-    return Completion(patterns).evaluate(region);
+    return Completion(patterns, false).evaluate(region);
 }

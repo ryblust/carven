@@ -8,6 +8,7 @@ import :backend.realization.composition;
 import :backend.realization.pattern;
 import :backend.target.builder;
 import :backend.target.expr;
+import :backend.target.origin;
 import :backend.target.stmt;
 import :backend.target.symbol;
 import :backend.target.type;
@@ -77,13 +78,16 @@ auto PatternRealizer::branch(
     LoweringStmtBuilder& destination
 ) noexcept -> void {
     destination.record_exits(selected.exits());
-    destination.emit(generated_statement(
-        TargetIfStmt {
-            .condition = std::move(condition),
-            .body = std::move(selected).finish(),
-            .else_body = std::nullopt
-        }
-    ));
+    destination.emit(
+        generated_statement(
+            TargetIfStmt {
+                .condition = std::move(condition),
+                .body = std::move(selected).finish(),
+                .else_body = std::nullopt
+            }
+        ),
+        true
+    );
 }
 
 auto PatternRealizer::sequence(PatternSelection left, PatternSelection right) noexcept
@@ -111,13 +115,15 @@ auto PatternRealizer::sequence(PatternSelection left, PatternSelection right) no
             if (known_predicate(previous.normal) == true) {
                 previous.normal = std::move(next.normal);
             } else if (known_predicate(next.normal) != true) {
-                previous.normal = LoweringDynamicBool {binary_expression(
-                    predicate_expression(std::move(*previous.normal)),
-                    TargetBinaryOperator::LogicalAnd,
-                    predicate_expression(std::move(*next.normal))
-                )};
+                previous.normal = LoweringDynamicBool {
+                    .expression = binary_expression(
+                        predicate_expression(std::move(*previous.normal)),
+                        TargetBinaryOperator::LogicalAnd,
+                        predicate_expression(std::move(*next.normal))
+                    )
+                };
             }
-            previous.exits.merge(next.exits);
+            previous.exits.merge(next.exits, false);
             right.tests.pop_front();
         }
     }
@@ -153,7 +159,7 @@ auto PatternRealizer::select(PatternSelection selection, LoweringStmtBuilder acc
             generated_statement(
                 TargetUnreachableStmt {.reason = TargetUnreachableReason::SemIRProof}
             ),
-            LoweringExitTarget {LoweringExitKind::Unreachable, 0}
+            LoweringExitTarget {.kind = LoweringExitKind::Unreachable, .identity = 0uz}
         );
     }
     return accepted;
@@ -170,7 +176,8 @@ auto PatternRealizer::alternatives(std::vector<PatternSelection> choices) noexce
     }
     if (choices.empty()) {
         return test(
-            std::move(LoweringStmtBuilder()).complete<LoweringPredicate>(LoweringKnownBool {false})
+            std::move(LoweringStmtBuilder())
+                .complete<LoweringPredicate>(LoweringKnownBool {.value = false})
         );
     }
     if (choices.size() == 1uz) {
@@ -226,9 +233,9 @@ auto PatternRealizer::alternatives(std::vector<PatternSelection> choices) noexce
         if (!result.rejected) {
             return result;
         }
-        auto predicate = LoweringPredicate(LoweringKnownBool {false});
+        auto predicate = LoweringPredicate(LoweringKnownBool {.value = false});
         for (auto& choice : choices) {
-            auto next = choice.tests.empty() ? LoweringPredicate(LoweringKnownBool {true})
+            auto next = choice.tests.empty() ? LoweringPredicate(LoweringKnownBool {.value = true})
                                              : std::move(*choice.tests.front().normal);
             if (const auto* known = std::get_if<LoweringKnownBool>(&predicate)) {
                 if (known->value) {
@@ -236,11 +243,13 @@ auto PatternRealizer::alternatives(std::vector<PatternSelection> choices) noexce
                 }
                 predicate = std::move(next);
             } else {
-                predicate = LoweringDynamicBool {binary_expression(
-                    predicate_expression(std::move(predicate)),
-                    TargetBinaryOperator::LogicalOr,
-                    predicate_expression(std::move(next))
-                )};
+                predicate = LoweringDynamicBool {
+                    .expression = binary_expression(
+                        predicate_expression(std::move(predicate)),
+                        TargetBinaryOperator::LogicalOr,
+                        predicate_expression(std::move(next))
+                    )
+                };
             }
         }
         auto evaluation =
@@ -254,26 +263,33 @@ auto PatternRealizer::alternatives(std::vector<PatternSelection> choices) noexce
         const auto writable = alias != nullptr && alias->access == AccessMode::Write;
         const auto address =
             context.target().add_local(names.fresh(TargetTemporaryNameKind::Operand));
-        destination.emit(generated_statement(
-            TargetVariableStmt {
-                .binding = TargetVariableBinding::MutableValue,
-                .maybe_unused = false,
-                .local = address,
-                .type = context.pointer_type(
-                    writable ? context.lower_type(body.binding(binding).type)
-                             : context.target().intern_type(
-                                   {.value =
-                                        TargetIntrinsicType {
-                                            .symbol = TargetSymbol::StdAddConst,
-                                            .type_argument_ids =
-                                                {context.lower_type(body.binding(binding).type)}
-                                        },
-                                    .const_qualified = false}
-                               )
-                ),
-                .initializer = intrinsic_expression(TargetSymbol::StdNullptr)
-            }
-        ));
+        destination.emit(
+            generated_statement(
+                TargetVariableStmt {
+                    .binding = TargetVariableBinding::MutableValue,
+                    .maybe_unused = false,
+                    .local = address,
+                    .type = context.pointer_type(
+                        writable
+                            ? context.lower_type(body.binding(binding).type, TypeNameScope::Module)
+                            : context.target().intern_type(
+                                  {.value =
+                                       TargetIntrinsicType {
+                                           .symbol = TargetSymbol::StdAddConst,
+                                           .type_argument_ids = {context.lower_type(
+                                               body.binding(binding).type,
+                                               TypeNameScope::Module
+                                           )}
+                                       },
+                                   .const_qualified = false}
+                              ),
+                        false
+                    ),
+                    .initializer = intrinsic_expression(TargetSymbol::StdNullptr)
+                }
+            ),
+            true
+        );
         result.bindings.at(binding) = {
             .root = address,
             .dereference_root = true,
@@ -283,42 +299,56 @@ auto PatternRealizer::alternatives(std::vector<PatternSelection> choices) noexce
         result.source_locals.insert(address);
     }
     const auto selected = context.target().add_local(names.fresh(TargetTemporaryNameKind::Logic));
-    destination.emit(generated_statement(
-        TargetVariableStmt {
-            .binding = TargetVariableBinding::MutableValue,
-            .maybe_unused = false,
-            .local = selected,
-            .type = context.intrinsic_type(TargetSymbol::Bool),
-            .initializer = bool_expression(false)
-        }
-    ));
+    destination.emit(
+        generated_statement(
+            TargetVariableStmt {
+                .binding = TargetVariableBinding::MutableValue,
+                .maybe_unused = false,
+                .local = selected,
+                .type = context.intrinsic_type(TargetSymbol::Bool, false),
+                .initializer = bool_expression(false)
+            }
+        ),
+        true
+    );
     auto first = true;
     for (auto& choice : choices) {
         auto accepted = LoweringStmtBuilder();
         if (choice.accepted) {
             for (const auto binding : joined) {
-                accepted.emit(generated_statement(
-                    TargetAssignmentStmt {
-                        .target = name_expression(result.bindings.at(binding).root),
-                        .op = TargetAssignmentOperator::Assign,
-                        .value = call_expression(
-                            intrinsic_expression(TargetSymbol::StdAddressof),
-                            target_expressions(subject_expression(choice.bindings.at(binding)))
-                        )
-                    }
-                ));
+                accepted.emit(
+                    generated_statement(
+                        TargetAssignmentStmt {
+                            .target = name_expression(result.bindings.at(binding).root),
+                            .op = TargetAssignmentOperator::Assign,
+                            .value = call_expression(
+                                intrinsic_expression(TargetSymbol::StdAddressof),
+                                target_expressions(subject_expression(choice.bindings.at(binding)))
+                            )
+                        }
+                    ),
+                    true
+                );
             }
-            accepted.emit(generated_statement(
-                TargetAssignmentStmt {
-                    .target = name_expression(selected),
-                    .op = TargetAssignmentOperator::Assign,
-                    .value = bool_expression(true)
-                }
-            ));
+            accepted.emit(
+                generated_statement(
+                    TargetAssignmentStmt {
+                        .target = name_expression(selected),
+                        .op = TargetAssignmentOperator::Assign,
+                        .value = bool_expression(true)
+                    }
+                ),
+                true
+            );
         }
         auto attempt = select(std::move(choice), std::move(accepted));
         if (first) {
-            destination.scope(std::move(attempt));
+            destination.scope(
+                std::move(attempt),
+                TargetGeneratedExpansionAttribution {
+                    .reason = TargetExpansionReason::LoweringSupport
+                }
+            );
             first = false;
         } else {
             branch(
@@ -333,15 +363,15 @@ auto PatternRealizer::alternatives(std::vector<PatternSelection> choices) noexce
             generated_statement(
                 TargetUnreachableStmt {.reason = TargetUnreachableReason::SemIRProof}
             ),
-            LoweringExitTarget {LoweringExitKind::Unreachable, 0}
+            LoweringExitTarget {.kind = LoweringExitKind::Unreachable, .identity = 0uz}
         );
     }
     auto predicate = std::optional<LoweringPredicate>();
     if (destination.continues()) {
         if (!result.accepted || !result.rejected) {
-            predicate = LoweringKnownBool {result.accepted};
+            predicate = LoweringKnownBool {.value = result.accepted};
         } else {
-            predicate = LoweringDynamicBool {name_expression(selected)};
+            predicate = LoweringDynamicBool {.expression = name_expression(selected)};
         }
     }
     result.tests.push_back(
@@ -364,7 +394,7 @@ auto PatternRealizer::match(
     auto selection = co_await pattern.value.visit(
         Overloaded {
             [&](const WildcardPattern&) noexcept -> ContinuationTask<PatternSelection> {
-                co_return finish(LoweringKnownBool {true});
+                co_return finish(LoweringKnownBool {.value = true});
             },
             [&](const RangePattern& value) noexcept -> ContinuationTask<PatternSelection> {
                 const auto read =
@@ -374,7 +404,11 @@ auto PatternRealizer::match(
                         co_return std::nullopt;
                     }
                     if (part->constant) {
-                        co_return constant_expression(context, *part->constant);
+                        co_return constant_expression(
+                            context,
+                            *part->constant,
+                            ConstantLiteralContext::Exact
+                        );
                     }
                     if (!bound) {
                         invariant_violation("dynamic range pattern has no bound realizer");
@@ -390,7 +424,7 @@ auto PatternRealizer::match(
                     co_return finish(std::nullopt);
                 }
                 if (accepts_on_entry) {
-                    co_return finish(LoweringKnownBool {true});
+                    co_return finish(LoweringKnownBool {.value = true});
                 }
                 auto condition = std::optional<TargetExpr>();
                 if (first) {
@@ -415,30 +449,36 @@ auto PatternRealizer::match(
                                           : std::move(upper);
                 }
                 if (!condition) {
-                    co_return finish(LoweringKnownBool {true});
+                    co_return finish(LoweringKnownBool {.value = true});
                 }
-                co_return finish(LoweringDynamicBool {std::move(*condition)});
+                co_return finish(LoweringDynamicBool {.expression = std::move(*condition)});
             },
             [&](const LiteralPattern& value) noexcept -> ContinuationTask<PatternSelection> {
                 if (accepts_on_entry) {
-                    co_return finish(LoweringKnownBool {true});
+                    co_return finish(LoweringKnownBool {.value = true});
                 }
                 co_return finish(
-                    LoweringDynamicBool {binary_expression(
-                        subject_expression(subject),
-                        TargetBinaryOperator::Equal,
-                        constant_expression(context, value.constant)
-                    )}
+                    LoweringDynamicBool {
+                        .expression = binary_expression(
+                            subject_expression(subject),
+                            TargetBinaryOperator::Equal,
+                            constant_expression(
+                                context,
+                                value.constant,
+                                ConstantLiteralContext::Exact
+                            )
+                        )
+                    }
                 );
             },
             [&](const TypeConstraintPattern& value) noexcept -> ContinuationTask<PatternSelection> {
                 if (value.type != pattern.type) {
                     invariant_violation("concrete type-constraint pattern changed its type");
                 }
-                co_return finish(LoweringKnownBool {true});
+                co_return finish(LoweringKnownBool {.value = true});
             },
             [&](const BindingPattern& value) noexcept -> ContinuationTask<PatternSelection> {
-                auto result = finish(LoweringKnownBool {true});
+                auto result = finish(LoweringKnownBool {.value = true});
                 result.bindings.emplace(value.binding, subject);
                 co_return result;
             },
@@ -461,7 +501,7 @@ auto PatternRealizer::match(
                 co_return alternatives(std::move(choices));
             },
             [&](const TuplePattern& value) noexcept -> ContinuationTask<PatternSelection> {
-                auto result = finish(LoweringKnownBool {true});
+                auto result = finish(LoweringKnownBool {.value = true});
                 for (auto index = 0uz; index < value.elements.size() && result.accepted; ++index) {
                     auto element = subject;
                     element.tuple_path.push_back(static_cast<std::uint32_t>(index));
@@ -485,14 +525,16 @@ auto PatternRealizer::match(
                             .representation
                     )) {
                     if (single_case(value.enum_case) || accepts_on_entry) {
-                        co_return finish(LoweringKnownBool {true});
+                        co_return finish(LoweringKnownBool {.value = true});
                     }
                     co_return finish(
-                        LoweringDynamicBool {binary_expression(
-                            subject_expression(subject),
-                            TargetBinaryOperator::Equal,
-                            enum_case_expression(context, value.enum_case, {})
-                        )}
+                        LoweringDynamicBool {
+                            .expression = binary_expression(
+                                subject_expression(subject),
+                                TargetBinaryOperator::Equal,
+                                enum_case_expression(context, value.enum_case, {})
+                            )
+                        }
                     );
                 }
                 const auto projection = context.target().add_local(
@@ -505,7 +547,10 @@ auto PatternRealizer::match(
                         .binding = TargetVariableBinding::ConstValue,
                         .maybe_unused = false,
                         .local = projection,
-                        .type = context.pointer_type(context.intrinsic_type(TargetSymbol::Auto)),
+                        .type = context.pointer_type(
+                            context.intrinsic_type(TargetSymbol::Auto, false),
+                            false
+                        ),
                         .initializer = context.enum_payload_projection(
                             declaration.owner,
                             ordinal,
@@ -514,13 +559,15 @@ auto PatternRealizer::match(
                     },
                     false
                 );
-                auto predicate = LoweringPredicate(LoweringKnownBool {true});
+                auto predicate = LoweringPredicate(LoweringKnownBool {.value = true});
                 if (!single_case(value.enum_case) && !accepts_on_entry) {
-                    predicate = LoweringDynamicBool {binary_expression(
-                        name_expression(projection),
-                        TargetBinaryOperator::NotEqual,
-                        intrinsic_expression(TargetSymbol::StdNullptr)
-                    )};
+                    predicate = LoweringDynamicBool {
+                        .expression = binary_expression(
+                            name_expression(projection),
+                            TargetBinaryOperator::NotEqual,
+                            intrinsic_expression(TargetSymbol::StdNullptr)
+                        )
+                    };
                 }
                 auto result = finish(std::move(predicate));
                 result.source_locals.insert(projection);

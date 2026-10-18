@@ -224,7 +224,7 @@ auto Parser::parse_cpp_declaration_form(Token keyword) noexcept -> Span {
     expect(TokenKind::LeftParen, "expected '(' after declaration form");
     const auto name = expect(TokenKind::Identifier, "expected declaration form name");
     if (!failed && slice(source, name.span) != "cpp") {
-        fail("unsupported declaration form; expected 'cpp'", name.span);
+        fail("unsupported declaration form; expected 'cpp'", name.span, DiagnosticCode::Syntax);
     }
     const auto right = expect(TokenKind::RightParen, "expected ')' after declaration form");
     return join(keyword.span, right.span);
@@ -252,7 +252,11 @@ auto Parser::parse_top_level_item() noexcept -> std::optional<ASTItemID> {
     }
     if (const auto keyword = match(TokenKind::Import)) {
         if (std::holds_alternative<ASTExportDeclarationVisibility>(visibility)) {
-            fail("an import(cpp) declaration cannot be exported directly", keyword->span);
+            fail(
+                "an import(cpp) declaration cannot be exported directly",
+                keyword->span,
+                DiagnosticCode::Syntax
+            );
             discard_through_semicolon();
             return std::nullopt;
         }
@@ -286,7 +290,11 @@ auto Parser::parse_top_level_item() noexcept -> std::optional<ASTItemID> {
     }
 
     if (async_span && !check(TokenKind::Fn)) {
-        fail("async modifier must introduce a function declaration", *async_span);
+        fail(
+            "async modifier must introduce a function declaration",
+            *async_span,
+            DiagnosticCode::Syntax
+        );
         return std::nullopt;
     }
 
@@ -521,17 +529,19 @@ auto Parser::parse_record(ASTDeclarationVisibility visibility) noexcept
             if (const auto keyword = match(TokenKind::Private)) {
                 access = ASTPrivateDeclarationVisibility {.keyword_span = keyword->span};
             }
-            auto async_span = match(TokenKind::Async).transform([](const Token& token) static {
-                return token.span;
-            });
+            auto async_span =
+                match(TokenKind::Async).transform([](const Token& token) static noexcept {
+                    return token.span;
+                });
             const auto const_span =
-                match(TokenKind::Const).transform([](const Token& token) static {
+                match(TokenKind::Const).transform([](const Token& token) static noexcept {
                     return token.span;
                 });
             if (!async_span) {
-                async_span = match(TokenKind::Async).transform([](const Token& token) static {
-                    return token.span;
-                });
+                async_span =
+                    match(TokenKind::Async).transform([](const Token& token) static noexcept {
+                        return token.span;
+                    });
             }
             auto operation =
                 parse_function(access, std::nullopt, std::nullopt, const_span, async_span);
@@ -612,7 +622,11 @@ auto Parser::parse_function(
         }
         const auto target_span = join(target_start, tokens[cursor - 1uz].span);
         if (parameter_const.has_value() && access.marker.has_value()) {
-            fail("const parameter cannot have an access marker", parameter_const->span);
+            fail(
+                "const parameter cannot have an access marker",
+                parameter_const->span,
+                DiagnosticCode::Syntax
+            );
         }
         auto type = std::optional<ASTTypeID> {};
         if (match(TokenKind::Colon)) {
@@ -623,8 +637,9 @@ auto Parser::parse_function(
                                                        : access.marker.value_or(target_span);
         parameters.push_back({
             .span = join(start, end),
-            .const_span =
-                parameter_const.transform([](const Token& token) static { return token.span; }),
+            .const_span = parameter_const.transform([](const Token& token) static noexcept {
+                return token.span;
+            }),
             .access = access,
             .target = std::move(*target),
             .type = type,
@@ -704,7 +719,7 @@ auto Parser::parse_constant(ASTDeclarationVisibility visibility) noexcept
     expect(TokenKind::Const, "expected 'const'");
     const auto name = expect(TokenKind::Identifier, "expected constant name");
     if (!failed && slice(source, name.span) == "_") {
-        fail("a top-level constant requires a named target", name.span);
+        fail("a top-level constant requires a named target", name.span, DiagnosticCode::Syntax);
         return std::nullopt;
     }
 

@@ -48,7 +48,7 @@ auto prepare_format(
             value ? builtin_format_value(values, values.constant(*value)) : BuiltinFormatValue {}
         );
     }
-    auto prepared = FormatSpec {};
+    auto prepared = FormatSpec {.parts = {}};
     auto text_size = 0uz;
     auto within_budget = true;
     const auto append_text = [&](std::string bytes) noexcept {

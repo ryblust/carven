@@ -68,7 +68,7 @@ private:
         DeclResolver& resolver;
         ProgramModuleID module_id;
         ASTView syntax;
-        const GenericTypeContext* generic_context = nullptr;
+        const GenericTypeContext* generic_context;
 
         auto evaluate_constant_expression(
             ASTExprID expression,

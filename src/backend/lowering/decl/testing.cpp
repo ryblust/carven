@@ -63,7 +63,7 @@ auto lower_test(ModuleLowering& context, TestID id) noexcept -> TargetItem {
         TargetDecl {TargetFunctionDecl {
             .name = TargetName {context.names().test_function(id)},
             .parameters = {},
-            .result = context.intrinsic_type(TargetSymbol::Void),
+            .result = context.intrinsic_type(TargetSymbol::Void, false),
             .form =
                 TargetFreeFunctionDefinition {
                     .body = std::move(lowered.statements),
@@ -117,11 +117,14 @@ auto lower_module_test_runner(ModuleLowering& context, std::span<const TestID> t
             .name = TargetName {context.names().module_runner(context.active_module())},
             .parameters = target_parameters(
                 {.local = local,
-                 .type =
-                     context.reference_type(context.intrinsic_type(TargetSymbol::TestingContext)),
+                 .type = context.reference_type(
+                     context.intrinsic_type(TargetSymbol::TestingContext, false),
+                     false,
+                     false
+                 ),
                  .default_value = std::nullopt}
             ),
-            .result = context.intrinsic_type(TargetSymbol::Void),
+            .result = context.intrinsic_type(TargetSymbol::Void, false),
             .form = TargetFreeFunctionDefinition {.body = std::move(body)},
             .constexpr_specifier = false,
             .static_specifier = false,
@@ -147,10 +150,10 @@ auto lower_process_entry(
     if (arguments) {
         const auto character = context.intrinsic_type(TargetSymbol::CChar, true);
         const auto character_pointer = context.pointer_type(character, true);
-        const auto argument_vector = context.pointer_type(character_pointer);
+        const auto argument_vector = context.pointer_type(character_pointer, false);
         parameters = target_parameters(
             {.local = (*arguments)[0],
-             .type = context.intrinsic_type(TargetSymbol::Int),
+             .type = context.intrinsic_type(TargetSymbol::Int, false),
              .default_value = std::nullopt},
             {.local = (*arguments)[1], .type = argument_vector, .default_value = std::nullopt}
         );
@@ -159,7 +162,7 @@ auto lower_process_entry(
         TargetDecl {TargetFunctionDecl {
             .name = TargetName {process_entry_identifier()},
             .parameters = std::move(parameters),
-            .result = context.intrinsic_type(TargetSymbol::Int),
+            .result = context.intrinsic_type(TargetSymbol::Int, false),
             .form = TargetFreeFunctionDefinition {.body = std::move(body)},
             .constexpr_specifier = false,
             .static_specifier = false,
@@ -174,7 +177,7 @@ auto lower_test_runner_header(
     const TargetTestRunnerHeaderArtifact& schedule
 ) noexcept -> TargetUnitSections {
     auto& context = artifact.module_context(first_program_module(artifact.semantic()));
-    const auto testing_context = context.intrinsic_type(TargetSymbol::TestingContext);
+    const auto testing_context = context.intrinsic_type(TargetSymbol::TestingContext, false);
     auto declarations = std::vector<TargetItem>();
     for (const auto module_id : schedule.module_runners) {
         auto module_items = std::vector<TargetItem>();
@@ -183,10 +186,10 @@ auto lower_test_runner_header(
                 .name = TargetName {artifact.plan().names().module_runner(module_id)},
                 .parameters = target_parameters(
                     {.local = std::nullopt,
-                     .type = context.reference_type(testing_context),
+                     .type = context.reference_type(testing_context, false, false),
                      .default_value = std::nullopt}
                 ),
-                .result = context.intrinsic_type(TargetSymbol::Void),
+                .result = context.intrinsic_type(TargetSymbol::Void, false),
                 .form = TargetFreeFunctionDeclaration {},
                 .constexpr_specifier = false,
                 .static_specifier = false,
@@ -241,10 +244,10 @@ auto lower_test_runner_header(
             .name = TargetName {TargetIdentifier::from_spelling("run_generated_tests")},
             .parameters = target_parameters({
                 .local = reporter,
-                .type = context.intrinsic_type(TargetSymbol::TestingReporter),
+                .type = context.intrinsic_type(TargetSymbol::TestingReporter, false),
                 .default_value = intrinsic_expression(TargetSymbol::StdNullptr),
             }),
-            .result = context.intrinsic_type(TargetSymbol::Int),
+            .result = context.intrinsic_type(TargetSymbol::Int, false),
             .form = TargetFreeFunctionDefinition {.body = std::move(body)},
             .constexpr_specifier = false,
             .static_specifier = true,
@@ -258,7 +261,8 @@ auto lower_test_runner_header(
             TargetIdentifier::from_spelling("runtime"),
         }),
         std::move(testing_items),
-        TargetCompilerReason::TestHarness
+        TargetCompilerReason::TestHarness,
+        true
     ));
     return {
         .preamble = {},

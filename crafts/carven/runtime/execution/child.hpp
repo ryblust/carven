@@ -371,8 +371,8 @@ class WaitReadyAwaiter final {
 public:
     explicit WaitReadyAwaiter(
         std::array<detail::ChildSlot*, Count> values,
-        const std::array<bool, Count>* active = nullptr,
-        bool accept_cancellation = false
+        const std::array<bool, Count>* active,
+        bool accept_cancellation
     ) noexcept
         : children(values),
           active(active),
@@ -443,13 +443,13 @@ public:
 
     auto await_resume() const noexcept -> carven::runtime::Tuple<std::size_t, bool> {
         detail::require_protocol(committed);
-        return {winner, {cancelled, {}}};
+        return {.head = winner, .tail = {.head = cancelled, .tail = {}}};
     }
 };
 
 template<typename... Children>
 inline auto wait_ready(Children&... children) noexcept -> WaitReadyAwaiter<sizeof...(Children)> {
-    return WaitReadyAwaiter<sizeof...(Children)>({(&children.slot)...});
+    return WaitReadyAwaiter<sizeof...(Children)>({(&children.slot)...}, nullptr, false);
 }
 
 template<typename Result, typename... Failures>

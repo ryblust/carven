@@ -26,7 +26,7 @@ auto BodyRealizer::ExpressionBuilder::complete_call(
     PreparedUse use,
     bool propagate_outcome
 ) noexcept -> void {
-    const auto& call = std::get<SemCall>(source(fragment).operation.value);
+    const auto& call = transport.call;
     const auto outcome = owner.fresh_local(TargetTemporaryNameKind::Outcome);
     const auto storage =
         LoweringDeferredStorage {.local = outcome, .value_type = owner.context.call_result(call)};
@@ -41,13 +41,17 @@ auto BodyRealizer::ExpressionBuilder::complete_call(
                 .maybe_unused = false,
                 .local = outcome,
                 .type = storage.value_type,
-                .initializer = raw(fragment)
+                .initializer = raw(fragment, ConstantLiteralContext::Exact, PreparedUse::ReadBorrow)
             },
             needs_cleanup
         );
     } else {
         owner.declare_deferred(storage, false, reservations, needs_cleanup);
-        owner.initialize_deferred(storage, raw(fragment), statements);
+        owner.initialize_deferred(
+            storage,
+            raw(fragment, ConstantLiteralContext::Exact, PreparedUse::ReadBorrow),
+            statements
+        );
     }
     auto access = name_expression(outcome);
     if (!automatic) {
@@ -80,19 +84,22 @@ auto BodyRealizer::ExpressionBuilder::complete_call(
                 std::move(stopped_access),
                 TargetIdentifier::from_spelling("failure_if")
             ),
-            {owner.context.intrinsic_type(TargetSymbol::RuntimeTestStopped)},
+            {owner.context.intrinsic_type(TargetSymbol::RuntimeTestStopped, false)},
             {}
         );
         auto exit = LoweringStmtBuilder();
         owner.emit_test_exit(exit);
         statements.record_exits(exit.exits());
-        statements.emit(generated_statement(
-            TargetIfStmt {
-                .condition = std::move(stopped),
-                .body = std::move(exit).finish(),
-                .else_body = std::nullopt
-            }
-        ));
+        statements.emit(
+            generated_statement(
+                TargetIfStmt {
+                    .condition = std::move(stopped),
+                    .body = std::move(exit).finish(),
+                    .else_body = std::nullopt
+                }
+            ),
+            true
+        );
     }
     auto success = call_member(std::move(access), "success_if", {});
     if (project_success) {
@@ -108,7 +115,8 @@ auto BodyRealizer::ExpressionBuilder::complete_call(
                 .maybe_unused = false,
                 .local = name,
                 .type = owner.context.pointer_type(
-                    owner.context.intrinsic_type(TargetSymbol::Auto, constant)
+                    owner.context.intrinsic_type(TargetSymbol::Auto, constant),
+                    false
                 ),
                 .initializer = std::move(success)
             },
@@ -131,11 +139,15 @@ auto BodyRealizer::ExpressionBuilder::complete_call(
         failure
     );
     statements.record_exits(failure.exits());
-    statements.emit(generated_statement(
-        TargetIfStmt {
-            .condition = prefix_expression(TargetPrefixOperator::LogicalNot, std::move(success)),
-            .body = std::move(failure).finish(),
-            .else_body = std::nullopt
-        }
-    ));
+    statements.emit(
+        generated_statement(
+            TargetIfStmt {
+                .condition =
+                    prefix_expression(TargetPrefixOperator::LogicalNot, std::move(success)),
+                .body = std::move(failure).finish(),
+                .else_body = std::nullopt
+            }
+        ),
+        true
+    );
 }

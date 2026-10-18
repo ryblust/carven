@@ -1,7 +1,7 @@
 module carven:semantic.analysis.ownership.call.impl;
 
-import :semantic.analysis.ownership.context;
 import :semantic.analysis.failure;
+import :semantic.analysis.ownership.context;
 import :semantic.semir.program;
 import std;
 
@@ -34,7 +34,7 @@ auto OwnershipBodyAnalyzer::run() noexcept -> OwnershipBodyResult {
                 && !value.capture_holder
                 && ((!value.alias && value.storage.empty())
                     || (parameter && parameter->access == AccessMode::Read));
-            state.objects[input.objects.size() + id.index()] = {
+            state.objects[input.objects.size() + id.index()] = OwnershipObjectState {
                 .available = true,
                 .taken = std::nullopt,
                 .relationships = copy ? value.value : OwnershipRelationships {},
@@ -45,7 +45,7 @@ auto OwnershipBodyAnalyzer::run() noexcept -> OwnershipBodyResult {
     };
     initialize(body.inputs().parameters, input.parameters);
     initialize(body.inputs().captures, input.captures);
-    auto flow = region(body.region(), std::move(state)).run();
+    auto flow = region(body.region(), std::move(state), true).run();
     auto result = std::vector<OwnershipCallCompletion>();
     auto escape = std::optional<OwnershipEscape>();
     const auto complete = [&](bool test_stopped,
@@ -62,9 +62,9 @@ auto OwnershipBodyAnalyzer::run() noexcept -> OwnershipBodyResult {
                         [&](const auto root) noexcept { return root >= input.objects.size(); }
                     )) {
                     escape = OwnershipEscape {
-                        "escaping closure outlives its captured owner",
-                        body.region().origin,
-                        capture.origin
+                        .message = "escaping closure outlives its captured owner",
+                        .origin = body.region().origin,
+                        .related = capture.origin
                     };
                     return;
                 }
@@ -75,9 +75,9 @@ auto OwnershipBodyAnalyzer::run() noexcept -> OwnershipBodyResult {
                         [&](const auto root) noexcept { return root >= input.objects.size(); }
                     )) {
                     escape = OwnershipEscape {
-                        "escaping view outlives its backing",
-                        body.region().origin,
-                        loan.origin
+                        .message = "escaping view outlives its backing",
+                        .origin = body.region().origin,
+                        .related = loan.origin
                     };
                     return;
                 }
@@ -89,9 +89,9 @@ auto OwnershipBodyAnalyzer::run() noexcept -> OwnershipBodyResult {
                         [&](const auto root) noexcept { return root >= input.objects.size(); }
                     )) {
                     escape = OwnershipEscape {
-                        "escaping callable storage outlives its backing",
-                        body.region().origin,
-                        loan.origin
+                        .message = "escaping callable storage outlives its backing",
+                        .origin = body.region().origin,
+                        .related = loan.origin
                     };
                     return;
                 }
@@ -108,7 +108,14 @@ auto OwnershipBodyAnalyzer::run() noexcept -> OwnershipBodyResult {
             return answer.test_stopped == test_stopped && answer.failure == failure;
         });
         if (found == result.end()) {
-            result.push_back({test_stopped, failure, std::move(state), std::move(value)});
+            result.push_back(
+                OwnershipCallCompletion {
+                    .test_stopped = test_stopped,
+                    .failure = failure,
+                    .state = std::move(state),
+                    .value = std::move(value)
+                }
+            );
         } else {
             join_ownership_state(found->state, state);
             merge_relationships(found->value, value);
@@ -183,7 +190,7 @@ auto OwnershipBodyAnalyzer::run() noexcept -> OwnershipBodyResult {
         }
         auto copy = edge;
         copy.carrier = publish_place(std::move(copy.carrier));
-        copy.element = publish_place({copy.element, {}}).object;
+        copy.element = publish_place({.object = copy.element, .path = {}}).object;
         published_edges.push_back(std::move(copy));
     }
     std::ranges::sort(published_edges);
@@ -251,21 +258,29 @@ auto OwnershipBodyAnalyzer::append_failures(
     auto named = std::vector<TypeID>();
     for (const auto type : analysis.model.failure_known_members(failures)) {
         if (failure_mask_contains(mask, type)) {
-            flow.exits.push_back({OwnershipFailure {AnalysisFailureKey(type), value}, state});
+            flow.exits.push_back(
+                OwnershipExit {
+                    .payload = OwnershipFailure {.type = AnalysisFailureKey(type), .value = value},
+                    .state = state
+                }
+            );
             named.push_back(type);
         }
     }
     mask = residual_failure_mask(mask, std::move(named));
     if (mask.complemented || !mask.members.empty()) {
-        flow.exits.push_back({
-            OwnershipFailure {
-                AnalysisFailureKey(
-                    AnalysisSymbolicFailure {.source = failures, .mask = std::move(mask)}
-                ),
-                value
-            },
-            state,
-        });
+        flow.exits.push_back(
+            OwnershipExit {
+                .payload =
+                    OwnershipFailure {
+                        .type = AnalysisFailureKey(
+                            AnalysisSymbolicFailure {.source = failures, .mask = std::move(mask)}
+                        ),
+                        .value = value
+                    },
+                .state = state
+            }
+        );
     }
 }
 
@@ -303,9 +318,9 @@ auto OwnershipBodyAnalyzer::call_contract(
     auto result = OwnershipFlow {
         .normal =
             OwnershipNormal {
-                std::move(state),
-                opaque_callable_targets(contract.result, origin),
-                {}
+                .state = std::move(state),
+                .value = opaque_callable_targets(contract.result, origin),
+                .storage = {}
             },
         .exits = {}
     };
@@ -314,10 +329,10 @@ auto OwnershipBodyAnalyzer::call_contract(
             continue;
         }
         if (argument.alias) {
-            check_storage_write(result.normal->state, *argument.alias, origin);
+            check_storage_write(result.normal->state, *argument.alias, origin, false);
         }
         for (const auto& target : argument.storage) {
-            check_storage_write(result.normal->state, target, origin);
+            check_storage_write(result.normal->state, target, origin, false);
         }
     }
     append_failures(result, contract.failures, result.normal->state);
@@ -380,12 +395,30 @@ auto OwnershipBodyAnalyzer::call_body(
             alias = *capture_owner;
             alias->path.push_back(index);
         }
-        raw_captures.push_back({alias, std::move(value), std::move(storage), holder});
+        raw_captures.push_back(
+            OwnershipCallArgument {
+                .alias = alias,
+                .value = std::move(value),
+                .storage = std::move(storage),
+                .capture_holder = holder
+            }
+        );
     }
 
     synchronize_storage(state);
     const auto recursive_call = analysis.same_recursion_component(body.id(), target.id());
-    auto call_input = OwnershipCallInput {target.id(), {}, {}, {}, {}, {}, {}, {}, {}, {}};
+    auto call_input = OwnershipCallInput {
+        .body_id = target.id(),
+        .parameters = {},
+        .captures = {},
+        .objects = {},
+        .state = OwnershipState {.objects = {}},
+        .outlives = {},
+        .accesses = {},
+        .storage_readers = {},
+        .owns = {},
+        .possible_aliases = {}
+    };
     auto restored_sources = std::vector<std::vector<OwnershipPlace>>();
     auto normalized = std::flat_map<std::size_t, std::size_t>();
     auto external_readers = storage_readers;
@@ -432,7 +465,12 @@ auto OwnershipBodyAnalyzer::call_body(
                                   OwnershipInterfaceUse use,
                                   OwnershipProjectionPath holder,
                                   const OwnershipPlace& place) noexcept {
-            const auto role = OwnershipInterfaceRole {binding, use, std::move(holder), place.path};
+            const auto role = OwnershipInterfaceRole {
+                .binding = binding,
+                .use = use,
+                .holder = std::move(holder),
+                .path = place.path
+            };
             role_sources[role].insert(place.object);
             if (state.objects[place.object].relationships.empty()) {
                 memberships[place.object].push_back(role);
@@ -578,7 +616,11 @@ auto OwnershipBodyAnalyzer::call_body(
         for (const auto role : interface) {
             auto roots = std::vector<std::size_t> {role};
             for (auto object = 0uz; object < graph_objects.size(); ++object) {
-                if (object != role && storage_aliases({role, {}}, {object, {}})) {
+                if (object != role
+                    && storage_aliases(
+                        {.object = role, .path = {}},
+                        {.object = object, .path = {}}
+                    )) {
                     roots.push_back(object);
                 }
             }
@@ -642,7 +684,11 @@ auto OwnershipBodyAnalyzer::call_body(
                                             BoundarySelection selection) noexcept {
                     if (seen.contains(source) && state.objects[source].relationships.empty()) {
                         descriptors[source].boundaries.push_back(
-                            {direction, role, std::move(selection)}
+                            OwnershipBoundaryFamily {
+                                .direction = direction,
+                                .role = role,
+                                .selection = std::move(selection)
+                            }
                         );
                     }
                 };
@@ -728,7 +774,12 @@ auto OwnershipBodyAnalyzer::call_body(
                 );
             } else {
                 if (!recursive_call && memberships.contains(source)) {
-                    site = {target.id(), index, OwnershipStorageSiteKind::Input};
+                    site = {
+                        .body = target.id(),
+                        .slot = index,
+                        .kind = OwnershipStorageSiteKind::Input,
+                        .element_selection = std::nullopt
+                    };
                 }
                 // Non-owning contained backing/capture histories still retain
                 // allocation sites in the SCC instead of acquiring new formal roles.
@@ -785,7 +836,7 @@ auto OwnershipBodyAnalyzer::call_body(
             .parameters = std::move(parameters),
             .captures = std::move(raw_captures),
             .objects = {},
-            .state = {},
+            .state = OwnershipState {.objects = {}},
             .outlives = {},
             .accesses = {},
             .storage_readers = {},
@@ -803,18 +854,18 @@ auto OwnershipBodyAnalyzer::call_body(
         for (const auto [index, group] : std::views::enumerate(sources)) {
             const auto first = group.front();
             auto object = OwnershipStorageObject {
-                graph_objects[first].type,
-                graph_objects[first].origin,
-                source_sites[static_cast<std::size_t>(index)],
-                group.size() > 1uz,
-                false
+                .type = graph_objects[first].type,
+                .origin = graph_objects[first].origin,
+                .site = source_sites[static_cast<std::size_t>(index)],
+                .many = group.size() > 1uz,
+                .feedback = false
             };
             auto incoming_state = OwnershipObjectState {
                 .available = true,
                 .taken = std::nullopt,
                 .relationships = {},
                 .modified = false,
-                .child_intent = std::nullopt,
+                .child_intent = std::nullopt
             };
             for (const auto source : group) {
                 object.many |= many_for(source);
@@ -834,7 +885,10 @@ auto OwnershipBodyAnalyzer::call_body(
             for (auto right = left + 1uz; right < sources.size(); ++right) {
                 if (std::ranges::any_of(sources[left], [&](const auto a) noexcept {
                         return std::ranges::any_of(sources[right], [&](const auto b) noexcept {
-                            return storage_aliases({a, {}}, {b, {}});
+                            return storage_aliases(
+                                {.object = a, .path = {}},
+                                {.object = b, .path = {}}
+                            );
                         });
                     })) {
                     call_input.possible_aliases.emplace_back(left, right);
@@ -865,7 +919,11 @@ auto OwnershipBodyAnalyzer::call_body(
         for (const auto& edge : edges) {
             if (normalized.contains(edge.element) && normalized.contains(edge.carrier.object)) {
                 call_input.owns.push_back(
-                    {map_place(edge.carrier), normalized.at(edge.element), edge.index}
+                    OwnershipStorageEdge {
+                        .carrier = map_place(edge.carrier),
+                        .element = normalized.at(edge.element),
+                        .index = edge.index
+                    }
                 );
             }
         }
@@ -874,14 +932,14 @@ auto OwnershipBodyAnalyzer::call_body(
         for (const auto& group : sources) {
             auto places = std::vector<OwnershipPlace>();
             for (const auto object : group) {
-                places.push_back({object, {}});
+                places.push_back(OwnershipPlace {.object = object, .path = {}});
             }
             restored_sources.push_back(std::move(places));
         }
     }
     normalize_storage_loans(external_readers);
     const auto input_objects = restored_sources.size();
-    constexpr auto restore_place = [](OwnershipPlace place, OwnershipPlace source) noexcept {
+    constexpr auto restore_place = [](OwnershipPlace place, OwnershipPlace source) static noexcept {
         source.path.append_range(place.path);
         return source;
     };
@@ -934,7 +992,7 @@ auto OwnershipBodyAnalyzer::call_body(
     const auto many = call_input.objects
         | std::views::transform([](const auto& object) static noexcept { return object.many; })
         | std::ranges::to<std::vector>();
-    auto result = OwnershipFlow {};
+    auto result = OwnershipFlow {.normal = {}, .exits = {}};
     const auto& answers = analysis.query(std::move(call_input), recursive_call).answer;
     restored_sources.resize(input_objects + answers.referents.size());
     // New callee descendants retain their referent identity. Restore the
@@ -975,7 +1033,13 @@ auto OwnershipBodyAnalyzer::call_body(
                 for (const auto& parent : parents) {
                     const auto carrier = restore_place(edge->carrier, parent);
                     for (const auto& destination : destinations) {
-                        topology.owns.push_back({carrier, destination.object, edge->index});
+                        topology.owns.push_back(
+                            OwnershipStorageEdge {
+                                .carrier = carrier,
+                                .element = destination.object,
+                                .index = edge->index
+                            }
+                        );
                     }
                 }
             }
@@ -1000,8 +1064,14 @@ auto OwnershipBodyAnalyzer::call_body(
         for (const auto& source : restored_sources[effect.place.object]) {
             const auto place = restore_place(effect.place, source);
             if (effect.take) {
-                const auto mapped =
-                    OwnershipWriteEffect {place, true, true, effect.origin, true, false};
+                const auto mapped = OwnershipWriteEffect {
+                    .place = place,
+                    .invalidates = true,
+                    .storage = true,
+                    .origin = effect.origin,
+                    .take = true,
+                    .preserves_backing = false
+                };
                 if (!std::ranges::contains(effects, mapped)) {
                     effects.push_back(mapped);
                 }
@@ -1024,12 +1094,12 @@ auto OwnershipBodyAnalyzer::call_body(
                 write_access(place, effect.origin, effect.invalidates);
             } else {
                 const auto mapped = OwnershipWriteEffect {
-                    place,
-                    effect.invalidates,
-                    true,
-                    effect.origin,
-                    false,
-                    effect.preserves_backing
+                    .place = place,
+                    .invalidates = effect.invalidates,
+                    .storage = true,
+                    .origin = effect.origin,
+                    .take = false,
+                    .preserves_backing = effect.preserves_backing
                 };
                 if (!std::ranges::contains(effects, mapped)) {
                     effects.push_back(mapped);
@@ -1081,14 +1151,22 @@ auto OwnershipBodyAnalyzer::call_body(
         }
         const auto value = restore_facts(answer.value);
         if (answer.test_stopped) {
-            result.exits.push_back({OwnershipTestStopped {}, std::move(returned)});
+            result.exits.push_back(
+                OwnershipExit {.payload = OwnershipTestStopped {}, .state = std::move(returned)}
+            );
         } else if (answer.failure) {
             if (actual_failures) {
                 if (const auto* nominal = std::get_if<TypeID>(&answer.failure->value)) {
                     if (analysis.model.failure_may_contain(*actual_failures, *nominal)) {
                         result.exits.push_back(
-                            {OwnershipFailure {AnalysisFailureKey(*nominal), value},
-                             std::move(returned)}
+                            OwnershipExit {
+                                .payload =
+                                    OwnershipFailure {
+                                        .type = AnalysisFailureKey(*nominal),
+                                        .value = value
+                                    },
+                                .state = std::move(returned)
+                            }
                         );
                     }
                 } else {
@@ -1097,13 +1175,18 @@ auto OwnershipBodyAnalyzer::call_body(
                 }
             } else {
                 result.exits.push_back(
-                    {OwnershipFailure {*answer.failure, value}, std::move(returned)}
+                    OwnershipExit {
+                        .payload = OwnershipFailure {.type = *answer.failure, .value = value},
+                        .state = std::move(returned)
+                    }
                 );
             }
         } else {
             join_normal_ownership(
                 result.normal,
-                std::optional(OwnershipNormal {std::move(returned), value, {}})
+                std::optional(
+                    OwnershipNormal {.state = std::move(returned), .value = value, .storage = {}}
+                )
             );
         }
     }

@@ -33,7 +33,7 @@ auto BodyPreparation::operands(
     // Source Read parameters apply their value-or-borrow policy at argument
     // evaluation. Direct C++ calls retain their delegated access categories.
     const auto value_read = [&](const SemCallArgument& input,
-                                bool requires_stable_storage = false) noexcept {
+                                bool requires_stable_storage) noexcept {
         auto prepared = argument(input);
         const auto* builtin = std::get_if<BuiltinTypeValue>(
             &semantic.types().type(input.expression.type.resolved()).value
@@ -125,7 +125,7 @@ auto BodyPreparation::operands(
                     prepared != nullptr && std::holds_alternative<PreparedWriterFormat>(*prepared);
                 for (const auto& input : value.operands) {
                     if (writer) {
-                        value_read(input);
+                        value_read(input, false);
                     } else {
                         result.push_back(argument(input));
                     }
@@ -133,7 +133,7 @@ auto BodyPreparation::operands(
             },
             [&](const SemIntrinsic& value) noexcept {
                 for (const auto& input : value.operands) {
-                    value_read(input);
+                    value_read(input, false);
                 }
             },
             [&](const SemRange& value) noexcept {

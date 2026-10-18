@@ -60,7 +60,7 @@ auto BodyElaborator::build_try(
     if (!protected_body.has_value()) {
         co_return std::unexpected(protected_body.error());
     }
-    pop_frame();
+    pop_frame(true);
 
     auto completion = CompletionQuery(body_builder.completion_patterns());
     completion.enter_try(*protected_body);
@@ -335,8 +335,10 @@ auto BodyElaborator::build_try(
         }
         [[maybe_unused]] const auto accepted_path =
             BodyReferencePathGuard(reference_path_reachable, pattern_accepted);
-        const auto local_failure =
-            BodyFailureContext {local_failures, outer_failure.accepts_catch_residual};
+        const auto local_failure = BodyFailureContext {
+            .term = local_failures,
+            .accepts_catch_residual = outer_failure.accepts_catch_residual
+        };
         failure_contexts.push_back(local_failure);
         catches.push_back({accepted, local_failure});
         auto arm_pending = BodyPendingFailures();
@@ -345,7 +347,7 @@ auto BodyElaborator::build_try(
         auto guard_may_reject = false;
         if (arm.guard.has_value()) {
             const auto id = arm.guard->expression;
-            auto guard = (co_await expression(id, draft().builtin_type(BuiltinType::Bool)));
+            auto guard = (co_await expression(id, true, draft().builtin_type(BuiltinType::Bool)));
             if (!guard.has_value()) {
                 co_return std::unexpected(guard.error());
             }
@@ -411,7 +413,7 @@ auto BodyElaborator::build_try(
             incoming_failures =
                 draft().add_intersection_failure_term(incoming_failures, std::move(types));
         }
-        pop_frame();
+        pop_frame(true);
     }
 
     if (!outer_failure.accepts_catch_residual) {
@@ -427,10 +429,10 @@ auto BodyElaborator::build_try(
     auto result = make_built(
         result_type ? *result_type : ConstructionTypeRef {draft().builtin_type(BuiltinType::Void)},
         SemTry {
-            UniqueIndirect(std::move(*protected_body)),
-            BodyFailures(protected_failures),
-            BodyFailures(incoming_failures),
-            std::move(arms)
+            .body = UniqueIndirect(std::move(*protected_body)),
+            .protected_failures = BodyFailures(protected_failures),
+            .residual_failures = BodyFailures(incoming_failures),
+            .arms = std::move(arms)
         },
         span,
         std::move(pending)
@@ -464,7 +466,7 @@ auto BodyElaborator::try_expression(
 
 auto BodyElaborator::try_statement(const ASTTryForm& source, Span span) noexcept
     -> AnalysisTask<void> {
-    auto built = (co_await build_try(source, span, std::nullopt, false));
+    auto built = (co_await build_try(source, span, std::nullopt, false, true));
     if (!built.has_value()) {
         co_return std::unexpected(built.error());
     }

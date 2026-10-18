@@ -70,7 +70,7 @@ public:
     auto run() noexcept -> void;
 
 private:
-    auto location(const SemanticExpression& source, bool enclosing = false) const noexcept
+    auto location(const SemanticExpression& source, bool enclosing) const noexcept
         -> std::optional<NullPlace>;
 
     auto value_at(const NullState& state, const NullPlace& place) const noexcept -> NullValue;

@@ -32,7 +32,7 @@ auto SemanticExecutor::vector_intrinsic(
             if (!element) {
                 co_return std::unexpected(std::move(element.error()));
             }
-            auto copied = copy_value(**element, origin);
+            auto copied = copy_value(**element, origin, CopyMode::Value);
             if (!copied) {
                 co_return std::unexpected(std::move(copied.error()));
             }

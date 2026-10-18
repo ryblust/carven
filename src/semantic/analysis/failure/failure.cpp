@@ -118,7 +118,16 @@ auto FailureConstraintStore::generic_non_empty(GenericFailureID source) const no
 }
 
 auto FailureConstraintStore::add_empty_term() noexcept -> FailureTermID {
-    return term_table.add(FailureTerm {});
+    return term_table.add(
+        FailureTerm {
+            .direct_members = {},
+            .inputs = {},
+            .guarded_inputs = {},
+            .excluded_members = {},
+            .retained_members = std::nullopt,
+            .throw_sites = {}
+        }
+    );
 }
 
 auto FailureConstraintStore::add_concrete_term(std::vector<TypeID> members) noexcept

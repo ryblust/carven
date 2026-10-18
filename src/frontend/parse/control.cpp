@@ -99,7 +99,8 @@ auto Parser::parse_if_form() noexcept -> std::optional<ASTIfForm> {
     }
     return ASTIfForm {
         .span = join(const_keyword.value_or(first_keyword).span, end),
-        .const_span = const_keyword.transform([](const Token& token) static { return token.span; }),
+        .const_span =
+            const_keyword.transform([](const Token& token) static noexcept { return token.span; }),
         .branches = std::move(branches),
         .else_branch = final_else,
     };

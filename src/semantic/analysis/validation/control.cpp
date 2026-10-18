@@ -25,11 +25,11 @@ auto BodyContractVerifier::verify_region(
     const auto check_return = [&](const std::optional<SemanticExpression>& value) noexcept {
         const auto is_void = !result.has_value()
             || require_type(*result).value
-                == CanonicalTypeValue {BuiltinTypeValue {BuiltinType::Void}};
+                == CanonicalTypeValue {BuiltinTypeValue {.kind = BuiltinType::Void}};
         const auto operand_matches = !value.has_value()
             || (result.has_value() ? value->type.resolved() == *result
                                    : require_type(value->type.resolved()).value
-                        == CanonicalTypeValue {BuiltinTypeValue {BuiltinType::Void}});
+                        == CanonicalTypeValue {BuiltinTypeValue {.kind = BuiltinType::Void}});
         if (!operand_matches || (!value.has_value() && !is_void)) {
             invariant_violation("return differs from callable contract");
         }
@@ -165,7 +165,7 @@ auto BodyContractVerifier::verify_region(
                                     && (*decision == OperatorResult::Operand
                                         || require_type(value.target.type.resolved()).value
                                             == CanonicalTypeValue {BuiltinTypeValue {
-                                                *operator_result_builtin(*decision)
+                                                .kind = *operator_result_builtin(*decision)
                                             }});
                             }
                             if ((!external && !compatible)
@@ -211,7 +211,7 @@ auto BodyContractVerifier::verify() noexcept -> void {
     // An unchanged region is checked once with its executable constraints.
     if (!body.specialized()
         && (!executes || std::addressof(body.region()) != std::addressof(realized))) {
-        verify_region(body.region());
+        verify_region(body.region(), false);
     }
     if (executes) {
         verify_region(realized, true);

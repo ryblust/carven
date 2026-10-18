@@ -18,7 +18,16 @@ auto SemanticExecutor::finish_unary_value(
     if (!fact || !target) {
         return std::unexpected(!fact ? std::move(fact.error()) : std::move(target.error()));
     }
-    return finish(evaluate_unary_constant_value(values, operation, *fact, *target), source.origin);
+    return finish(
+        evaluate_unary_constant_value(
+            values,
+            operation,
+            *fact,
+            *target,
+            IntegerArithmetic::Wrapping
+        ),
+        source.origin
+    );
 }
 
 auto SemanticExecutor::finish_cast_value(
@@ -116,7 +125,14 @@ auto SemanticExecutor::finish_binary_value(
         );
     }
     auto compared = finish(
-        evaluate_binary_constant_value(values, operation.operation, *lhs, *rhs, *target),
+        evaluate_binary_constant_value(
+            values,
+            operation.operation,
+            *lhs,
+            *rhs,
+            *target,
+            IntegerArithmetic::Wrapping
+        ),
         source.origin
     );
     if (compared
@@ -132,7 +148,7 @@ auto SemanticExecutor::finish_binary_value(
 
 auto SemanticExecutor::try_expression(ExecutionFrame& frame, const SemTry& attempt) noexcept
     -> ExecutionTask<ExecutionCompletion> {
-    auto protected_result = (co_await region(frame, *attempt.body));
+    auto protected_result = (co_await region(frame, *attempt.body, true));
     if (protected_result) {
         co_return protected_result;
     }
@@ -142,7 +158,7 @@ auto SemanticExecutor::try_expression(ExecutionFrame& frame, const SemTry& attem
     }
     // Keep the original failure separate from writable pattern projections and rethrow.
     const auto failure = *source_failure;
-    auto payload = copy_value(*failure.payload, attempt.body->origin);
+    auto payload = copy_value(*failure.payload, attempt.body->origin, CopyMode::Value);
     if (!payload) {
         co_return std::unexpected(std::move(payload.error()));
     }
@@ -155,7 +171,7 @@ auto SemanticExecutor::try_expression(ExecutionFrame& frame, const SemTry& attem
         ~ReleasePayload() { memory.release(place); }
     };
 
-    const auto payload_scope = ReleasePayload {memory, payload_place};
+    const auto payload_scope = ReleasePayload {.memory = memory, .place = payload_place};
     for (const auto& arm : attempt.arms) {
         const auto reset = [&]() noexcept {
             for (const auto binding : arm.bindings) {
@@ -222,7 +238,7 @@ auto SemanticExecutor::try_expression(ExecutionFrame& frame, const SemTry& attem
                     co_return std::nullopt;
                 }
             }
-            auto result = (co_await region(frame, arm.body));
+            auto result = (co_await region(frame, arm.body, true));
             if (!result) {
                 co_return std::unexpected(std::move(result.error()));
             }
@@ -255,11 +271,11 @@ auto SemanticExecutor::if_expression(ExecutionFrame& frame, const SemIf& conditi
             co_return std::unexpected(std::move(truth.error()));
         }
         if (*truth) {
-            co_return (co_await region(frame, branch.body));
+            co_return (co_await region(frame, branch.body, true));
         }
     }
     co_return conditional.otherwise
-        ? (co_await region(frame, **conditional.otherwise))
+        ? (co_await region(frame, **conditional.otherwise, true))
         : ExecutionResult<ExecutionCompletion>(
               ExecutionCompletion {.flow = ExecutionFlow::Normal, .value = ExecutionVoid {}}
           );
@@ -288,7 +304,7 @@ auto SemanticExecutor::match_expression(ExecutionFrame& frame, const SemMatch& m
         }
     };
 
-    const auto subject_scope = ReleaseSubject {memory, owned_subject};
+    const auto subject_scope = ReleaseSubject {.memory = memory, .place = owned_subject};
     if (!selected) {
         auto subject = co_await this->value(frame, *match.subject);
         if (!subject) {
@@ -296,7 +312,7 @@ auto SemanticExecutor::match_expression(ExecutionFrame& frame, const SemMatch& m
         }
         if (std::holds_alternative<ConstantID>(*subject)
             && execution_compound_view(values, *subject)) {
-            subject = copy_value(*subject, match.subject->origin);
+            subject = copy_value(*subject, match.subject->origin, CopyMode::Value);
             if (!subject) {
                 co_return std::unexpected(std::move(subject.error()));
             }
@@ -349,7 +365,7 @@ auto SemanticExecutor::match_expression(ExecutionFrame& frame, const SemMatch& m
                 continue;
             }
         }
-        auto result = (co_await region(frame, arm.body));
+        auto result = (co_await region(frame, arm.body, true));
         reset();
         co_return result;
     }
@@ -485,7 +501,7 @@ auto SemanticExecutor::expression_value(
         if (!target) {
             co_return std::unexpected(std::move(target.error()));
         }
-        co_return copy_value(**target, source.origin);
+        co_return copy_value(**target, source.origin, CopyMode::Value);
     } else if constexpr (std::same_as<Operation, SemTake>) {
         auto selected = (co_await place(frame, *operation.place));
         if (!selected) {
@@ -527,7 +543,11 @@ auto SemanticExecutor::expression_value(
             elements.at(field.declaration_index) = std::move(*evaluated);
         }
         co_return bounded_value(
-            ExecutionAggregateValue {.type = result_type, .elements = std::move(elements)},
+            ExecutionAggregateValue {
+                .type = result_type,
+                .elements = std::move(elements),
+                .capacity = 0uz
+            },
             source.origin
         );
     } else if constexpr (std::same_as<Operation, SemField>) {
@@ -540,7 +560,7 @@ auto SemanticExecutor::expression_value(
             if (!target) {
                 co_return std::unexpected(std::move(target.error()));
             }
-            co_return copy_value(**target, source.origin);
+            co_return copy_value(**target, source.origin, CopyMode::Value);
         }
         auto receiver = (co_await this->value(frame, *operation.source));
         if (!receiver) {
@@ -657,7 +677,11 @@ auto SemanticExecutor::expression_value(
             case SliceIntrinsic::View:
             case SliceIntrinsic::Slice: {
                 if (intrinsic == SliceIntrinsic::View && sequence->extent == 0uz) {
-                    co_return ExecutionAggregateValue {.type = target, .elements = {}};
+                    co_return ExecutionAggregateValue {
+                        .type = target,
+                        .elements = {},
+                        .capacity = 0uz
+                    };
                 }
                 auto begin = 0uz;
                 auto end = sequence->extent;
@@ -791,7 +815,7 @@ auto SemanticExecutor::expression_value(
             if (!target) {
                 co_return std::unexpected(std::move(target.error()));
             }
-            co_return copy_value(**target, source.origin);
+            co_return copy_value(**target, source.origin, CopyMode::Value);
         }
         auto receiver = co_await this->value(frame, *operation.source);
         if (!receiver) {
@@ -819,7 +843,7 @@ auto SemanticExecutor::expression_value(
             if (!target) {
                 co_return std::unexpected(std::move(target.error()));
             }
-            co_return copy_value(**target, source.origin);
+            co_return copy_value(**target, source.origin, CopyMode::Value);
         }
         auto receiver = (co_await this->value(frame, *operation.source));
         if (!receiver) {
@@ -853,7 +877,7 @@ auto SemanticExecutor::expression_value(
             if (!element) {
                 co_return std::unexpected(std::move(element.error()));
             }
-            co_return copy_value(**element, source.origin);
+            co_return copy_value(**element, source.origin, CopyMode::Value);
         }
         const auto sequence = execution_compound_view(values, *receiver);
         if (!sequence) {
@@ -1146,7 +1170,10 @@ auto SemanticExecutor::expression_operation(
             if (!local) {
                 co_return std::unexpected(std::move(local.error()));
             }
-            co_return normal_result<Result>(copy_value(**local, source.origin), source);
+            co_return normal_result<Result>(
+                copy_value(**local, source.origin, CopyMode::Value),
+                source
+            );
         } else if constexpr (std::same_as<Operation, SemUnary>
                              || std::same_as<Operation, SemCast>) {
             auto operand = (co_await value(frame, *operation.operand));
@@ -1254,7 +1281,7 @@ auto SemanticExecutor::matches(
                             frame.slots[pattern_value.binding.index()] = *subject_place;
                             co_return true;
                         }
-                        auto copied = copy_value(subject, pattern.origin);
+                        auto copied = copy_value(subject, pattern.origin, CopyMode::Value);
                         if (!copied) {
                             co_return std::unexpected(std::move(copied.error()));
                         }
@@ -1381,7 +1408,8 @@ auto SemanticExecutor::matches(
                                     operation,
                                     *selected,
                                     bound,
-                                    values.builtin_type(BuiltinType::Bool)
+                                    values.builtin_type(BuiltinType::Bool),
+                                    IntegerArithmetic::Wrapping
                                 ),
                                 pattern.origin
                             );

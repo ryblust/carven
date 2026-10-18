@@ -127,7 +127,7 @@ class Driver final {
     detail::WorkNode* first = nullptr;
     detail::WorkNode* last = nullptr;
     bool dispatching = false;
-    detail::TimerQueue timers;
+    detail::TimerQueue timers {detail::default_clock()};
     detail::CancellationRegistration* cancellation_first = nullptr;
     bool cancellation_dirty = false;
     EventSource* events = nullptr;

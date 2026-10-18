@@ -462,13 +462,13 @@ auto pointer_shape(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
     if (const auto* id = std::get_if<TypeID>(&type)) {
         const auto canonical = draft.type_copy(*id);
         if (const auto* pointer = std::get_if<PointerTypeValue>(&canonical.value)) {
-            return PointerShape {pointer->target, pointer->access};
+            return PointerShape {.target = pointer->target, .access = pointer->access};
         }
     }
     if (const auto* generic = std::get_if<GenericTypeID>(&type)) {
         const auto expression = draft.generic_type_copy(*generic);
         if (const auto* pointer = std::get_if<GenericPointerType>(&expression)) {
-            return PointerShape {pointer->target, pointer->access};
+            return PointerShape {.target = pointer->target, .access = pointer->access};
         }
     }
     return std::nullopt;
@@ -605,10 +605,12 @@ auto make_pointer_type(
     }
     if (const auto* concrete = std::get_if<TypeID>(&target)) {
         return ConstructionTypeRef(
-            draft.intern_type({.value = PointerTypeValue {*concrete, access}})
+            draft.intern_type({.value = PointerTypeValue {.target = *concrete, .access = access}})
         );
     }
-    return ConstructionTypeRef(draft.intern_generic_type(GenericPointerType {target, access}));
+    return ConstructionTypeRef(
+        draft.intern_generic_type(GenericPointerType {.target = target, .access = access})
+    );
 }
 
 auto operation_shape(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
@@ -617,14 +619,17 @@ auto operation_shape(const ProgramDraft& draft, ConstructionTypeRef type) noexce
     if (const auto* concrete = std::get_if<TypeID>(&type)) {
         const auto canonical = draft.type_copy(*concrete);
         if (const auto* operation = std::get_if<OperationTypeValue>(&canonical.value)) {
-            return ConstructionOperationTypeValue {operation->success, operation->failures};
+            return ConstructionOperationTypeValue {
+                .success = operation->success,
+                .failures = operation->failures
+            };
         }
     } else if (const auto* generic = std::get_if<GenericTypeID>(&type)) {
         const auto expression = draft.generic_type_copy(*generic);
         if (const auto* operation = std::get_if<GenericOperationType>(&expression)) {
             return ConstructionOperationTypeValue {
-                unwrap_type_alias(draft, operation->success),
-                operation->failures
+                .success = unwrap_type_alias(draft, operation->success),
+                .failures = operation->failures
             };
         }
     } else {
@@ -651,7 +656,9 @@ auto make_operation_type(
     }
     if (const auto* concrete = std::get_if<TypeID>(&success)) {
         if (const auto* known = std::get_if<FailureSetID>(&failures)) {
-            return draft.intern_type({.value = OperationTypeValue {*concrete, *known}});
+            return draft.intern_type(
+                {.value = OperationTypeValue {.success = *concrete, .failures = *known}}
+            );
         }
     }
     return draft.append_construction_type(

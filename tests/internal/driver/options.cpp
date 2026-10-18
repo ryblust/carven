@@ -11,7 +11,7 @@ namespace {
 const TestSuite suite([] static noexcept {
     "Compilation options: defaults preserve source inputs"_test = [] static noexcept {
         const auto args = std::to_array<std::string>({"main.cv", "nested/worker.cv"});
-        const auto result = parse_compilation_options(args);
+        const auto result = parse_compilation_options(args, CompilationCommand::Compile);
 
         if (!expect(result.has_value())) {
             return;
@@ -42,7 +42,7 @@ const TestSuite suite([] static noexcept {
             "emit",
             "main.cv",
         });
-        const auto output = parse_compilation_options(output_args);
+        const auto output = parse_compilation_options(output_args, CompilationCommand::Compile);
 
         if (!expect(output.has_value())) {
             return;
@@ -56,7 +56,7 @@ const TestSuite suite([] static noexcept {
         expect_equal(destination->root, std::filesystem::path("emit"));
         expect_equal(output->test_mode, TestGenerationMode::RunnerHeader);
         const auto stdout_args = std::to_array<std::string>({"--stdout", "--tests", "main.cv"});
-        const auto stdout = parse_compilation_options(stdout_args);
+        const auto stdout = parse_compilation_options(stdout_args, CompilationCommand::Compile);
 
         if (!expect(stdout.has_value())) {
             return;
@@ -138,7 +138,8 @@ const TestSuite suite([] static noexcept {
             };
 
             each(cases, &InvalidCase::name, [&](const InvalidCase& test_case) noexcept {
-                const auto result = parse_compilation_options(test_case.args);
+                const auto result =
+                    parse_compilation_options(test_case.args, CompilationCommand::Compile);
                 if (!(expect(!(result.has_value())))) {
                     return;
                 }
@@ -152,7 +153,7 @@ const TestSuite suite([] static noexcept {
             "--source=app.main=/project/main.cv",
             "--tests",
         });
-        const auto request = parse_compilation_options(args);
+        const auto request = parse_compilation_options(args, CompilationCommand::Compile);
         require(request.has_value());
         require_equal(request->mapped_inputs.size(), 1uz);
         expect_equal(

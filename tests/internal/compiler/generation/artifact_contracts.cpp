@@ -148,7 +148,10 @@ const TestSuite suite([] static noexcept {
                     .source_path = std::string(inputs.front().path),
                     .content = {},
                 }}),
-                0uz
+                0uz,
+                true,
+                {},
+                {}
             );
             expect(manifest.contains("\"directory/雪\\u0009\\\"\\\\.cv\""));
             expect(manifest.contains("\"source\": \"directory/雪\\u0009\\\"\\\\.cv\""));
@@ -167,7 +170,14 @@ const TestSuite suite([] static noexcept {
                     SourceModuleInput {.source_id = *source_id, .module_path = module};
                 const auto semantic = analyze_compilation(
                     std::move(sources),
-                    SourceBatch {.modules = std::span(&input, 1)}
+                    SourceBatch {.modules = std::span(&input, 1)},
+                    {
+                        .output = {},
+                        .timings = {},
+                        .collect_source_observations = false,
+                        .capture_output = false,
+                        .host_effects = HostEffects::Deny,
+                    }
                 );
                 require(semantic.program() != nullptr);
                 const auto generated = generate_artifacts(

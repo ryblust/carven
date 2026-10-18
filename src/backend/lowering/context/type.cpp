@@ -103,7 +103,7 @@ auto ModuleLowering::variant_type(std::span<const TypeID> members) noexcept -> T
     auto alternatives = std::vector<TargetTypeID>();
     alternatives.reserve(members.size());
     for (const auto member : members) {
-        alternatives.push_back(lower_type(member));
+        alternatives.push_back(lower_type(member, TypeNameScope::Module));
     }
     return target().intern_type({
         .value =
@@ -127,7 +127,7 @@ auto ModuleLowering::lower_parameter(
         case AccessMode::Read: {
             const auto contents = semantic().type_contents(type);
             if (requires_stable_storage || contents.contains_carven_owner()) {
-                return reference_type(base, true);
+                return reference_type(base, true, false);
             }
             if (builtin != nullptr) {
                 return intrinsic_type(builtin_symbol(builtin->kind), true);
@@ -142,7 +142,7 @@ auto ModuleLowering::lower_parameter(
                 .const_qualified = false,
             });
         }
-        case AccessMode::Write: return reference_type(base);
+        case AccessMode::Write: return reference_type(base, false, false);
         case AccessMode::Take:  return base;
     }
     std::unreachable();
@@ -182,7 +182,7 @@ auto ModuleLowering::async_type(
     TypeNameScope scope
 ) noexcept -> TargetTypeID {
     auto arguments = std::vector<TargetTypeID> {
-        is_void(success) ? intrinsic_type(TargetSymbol::Void) : lower_type(success, scope)
+        is_void(success) ? intrinsic_type(TargetSymbol::Void, false) : lower_type(success, scope)
     };
     for (const auto member : plan().failure_abi().members(failures)) {
         arguments.push_back(lower_type(member, scope));
@@ -197,7 +197,12 @@ auto ModuleLowering::callable_completion(CallableID callable_id) noexcept -> Tar
     const auto& signature = semantic().callable_signatures().signature(
         semantic().declarations().callable(callable_id).signature
     );
-    return async_type(TargetSymbol::RuntimeAsyncCompletion, signature.result, signature.failures);
+    return async_type(
+        TargetSymbol::RuntimeAsyncCompletion,
+        signature.result,
+        signature.failures,
+        TypeNameScope::Module
+    );
 }
 
 auto ModuleLowering::lower_signature_result(
@@ -233,16 +238,16 @@ auto ModuleLowering::lower_signature_result(
             );
         }
         if (failures.empty() && !stops_test) {
-            return is_void(signature.result) ? intrinsic_type(TargetSymbol::Void)
+            return is_void(signature.result) ? intrinsic_type(TargetSymbol::Void, false)
                                              : lower_type(signature.result, scope);
         }
         auto arguments = std::vector<TargetTypeID> {
-            is_void(signature.result) ? intrinsic_type(TargetSymbol::Void)
+            is_void(signature.result) ? intrinsic_type(TargetSymbol::Void, false)
                                       : lower_type(signature.result, scope)
         };
         arguments.reserve(failures.size() + 2);
         if (stops_test) {
-            arguments.push_back(intrinsic_type(TargetSymbol::RuntimeTestStopped));
+            arguments.push_back(intrinsic_type(TargetSymbol::RuntimeTestStopped, false));
         }
         for (const auto member : failures) {
             arguments.push_back(lower_type(member, scope));
@@ -263,17 +268,22 @@ auto ModuleLowering::lower_signature_result(
 auto ModuleLowering::callable_result(CallableID callable_id) noexcept -> TargetTypeID {
     return lower_signature_result(
         semantic().declarations().callable(callable_id).signature,
-        semantic().may_stop_test(callable_id)
+        semantic().may_stop_test(callable_id),
+        TypeNameScope::Module
     );
 }
 
 auto ModuleLowering::call_result(const SemCall& call) noexcept -> TargetTypeID {
-    return lower_signature_result(semantic().call_signature(call), semantic().may_stop_test(call));
+    return lower_signature_result(
+        semantic().call_signature(call),
+        semantic().may_stop_test(call),
+        TypeNameScope::Module
+    );
 }
 
 auto ModuleLowering::lower_native_type(TypeID id, TypeNameScope scope) noexcept -> TargetTypeID {
     if (is_void(id)) {
-        return intrinsic_type(TargetSymbol::Void);
+        return intrinsic_type(TargetSymbol::Void, false);
     }
     const auto* native = std::get_if<CppTypeValue>(&semantic().types().type(id).value);
     if (native != nullptr && std::holds_alternative<CppQueryType>(native->form)) {
@@ -464,7 +474,7 @@ auto ModuleLowering::lower_type(TypeID id, TypeNameScope scope) noexcept -> Targ
             },
             [&](const OperationTypeValue& value) noexcept -> TargetType {
                 auto arguments = std::vector<TargetTypeID> {
-                    is_void(value.success) ? intrinsic_type(TargetSymbol::Void)
+                    is_void(value.success) ? intrinsic_type(TargetSymbol::Void, false)
                                            : lower_type(value.success, scope)
                 };
                 for (const auto member : plan().failure_abi().members(value.failures)) {

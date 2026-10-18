@@ -62,14 +62,14 @@ auto realize_callable_adaptation(
     if (preparation.array) {
         return template_call_expression(
             intrinsic_expression(TargetSymbol::RuntimeAdoptArray),
-            {context.lower_type(to), stateless},
+            {context.lower_type(to, TypeNameScope::Module), stateless},
             target_expressions(std::move(input))
         );
     }
     if (stateless) {
         return call_expression(
             static_member_expression(
-                context.lower_type(to),
+                context.lower_type(to, TypeNameScope::Module),
                 TargetIdentifier::from_spelling("from_stateless")
             ),
             target_expressions(std::move(input))
@@ -77,7 +77,7 @@ auto realize_callable_adaptation(
     }
     return TargetExpr {
         .value = TargetConstructionExpr {
-            .type = context.lower_type(to),
+            .type = context.lower_type(to, TypeNameScope::Module),
             .initializer = target_expressions(std::move(input))
         }
     };
@@ -93,7 +93,7 @@ auto realize_unary(
             [&](TargetSymbol runtime) noexcept {
                 return template_call_expression(
                     intrinsic_expression(runtime),
-                    {context.lower_type(preparation.result_type)},
+                    {context.lower_type(preparation.result_type, TypeNameScope::Module)},
                     target_expressions(std::move(operand))
                 );
             },
@@ -105,7 +105,7 @@ auto realize_unary(
     if (preparation.restore_result_type) {
         return {
             .value = TargetStaticCastExpr {
-                .type = context.lower_type(preparation.result_type),
+                .type = context.lower_type(preparation.result_type, TypeNameScope::Module),
                 .operand = target_child(std::move(result))
             }
         };
@@ -147,7 +147,7 @@ auto realize_binary(
                 }
                 return template_call_expression(
                     intrinsic_expression(runtime),
-                    {context.lower_type(preparation.result_type)},
+                    {context.lower_type(preparation.result_type, TypeNameScope::Module)},
                     std::move(arguments)
                 );
             },
@@ -159,7 +159,7 @@ auto realize_binary(
     if (preparation.restore_result_type) {
         return {
             .value = TargetStaticCastExpr {
-                .type = context.lower_type(preparation.result_type),
+                .type = context.lower_type(preparation.result_type, TypeNameScope::Module),
                 .operand = target_child(std::move(result))
             }
         };
@@ -181,7 +181,7 @@ auto native_call(
             },
             [&](const CppStaticMemberCallee<ConstructionTypeRef>& value) noexcept -> TargetExpr {
                 return static_member_expression(
-                    context.lower_type(std::get<TypeID>(value.type)),
+                    context.lower_type(std::get<TypeID>(value.type), TypeNameScope::Module),
                     TargetIdentifier::from_spelling(value.member)
                 );
             },
@@ -211,7 +211,7 @@ auto native_operation(
     std::vector<TargetExpr> arguments
 ) noexcept -> TargetExpr {
     const auto construct = [&]() noexcept -> TargetExpr {
-        auto type_id = context.lower_type(source.type.resolved());
+        auto type_id = context.lower_type(source.type.resolved(), TypeNameScope::Module);
         if (std::holds_alternative<PointerTypeValue>(
                 context.semantic().types().type(source.type.resolved()).value
             )) {
@@ -235,7 +235,7 @@ auto native_operation(
             },
             [&](const CppStaticMemberOperation& value) noexcept -> TargetExpr {
                 return static_member_expression(
-                    context.lower_type(std::get<TypeID>(value.type)),
+                    context.lower_type(std::get<TypeID>(value.type), TypeNameScope::Module),
                     TargetIdentifier::from_spelling(value.member)
                 );
             },
@@ -252,14 +252,20 @@ auto native_operation(
                                 return std::move(arguments.at(index));
                             },
                             [&](const CppConstructArgument* constant) noexcept {
-                                return context.cpp_constant_argument(*constant);
+                                return context.cpp_constant_argument(
+                                    *constant,
+                                    TypeNameScope::Module
+                                );
                             }
                         }
                     ));
                 }
                 return {
                     .value = TargetConstructionExpr {
-                        .type = context.lower_type(std::get<TypeID>(construction.target)),
+                        .type = context.lower_type(
+                            std::get<TypeID>(construction.target),
+                            TypeNameScope::Module
+                        ),
                         .initializer = std::move(delivered)
                     }
                 };
@@ -271,7 +277,8 @@ auto native_operation(
                 if (conversion.explicit_cast) {
                     return {
                         .value = TargetStaticCastExpr {
-                            .type = context.lower_type(source.type.resolved()),
+                            .type =
+                                context.lower_type(source.type.resolved(), TypeNameScope::Module),
                             .operand = target_child(std::move(arguments.front()))
                         }
                     };
@@ -345,20 +352,21 @@ auto realize_operation(
                     )) {
                     return {
                         .value = TargetStaticCastExpr {
-                            .type = context.lower_type(source.type.resolved()),
+                            .type =
+                                context.lower_type(source.type.resolved(), TypeNameScope::Module),
                             .operand = target_child(intrinsic_expression(TargetSymbol::StdNullptr)),
                         }
                     };
                 }
                 return {
                     .value = TargetConstructionExpr {
-                        .type = context.lower_type(source.type.resolved()),
+                        .type = context.lower_type(source.type.resolved(), TypeNameScope::Module),
                         .initializer = {}
                     }
                 };
             },
             [&](const SemConstant& value) noexcept -> TargetExpr {
-                return constant_expression(context, value.constant);
+                return constant_expression(context, value.constant, ConstantLiteralContext::Exact);
             },
             [](const SemBinding&) static noexcept -> TargetExpr {
                 invariant_violation("binding storage is resolved by body realization");
@@ -370,7 +378,8 @@ auto realize_operation(
                 const auto owner =
                     context.semantic().declarations().enum_case(value.enum_case).owner;
                 return static_member_expression(
-                    context.named_type(context.enumeration_name(owner)),
+                    context
+                        .named_type(context.enumeration_name(owner, TypeNameScope::Module), false),
                     context.names().enum_case_identifier(value.enum_case)
                 );
             },
@@ -383,7 +392,7 @@ auto realize_operation(
                 operands.push_back(bool_expression(value.inclusive));
                 return TargetExpr {
                     .value = TargetConstructionExpr {
-                        .type = context.lower_type(source.type.resolved()),
+                        .type = context.lower_type(source.type.resolved(), TypeNameScope::Module),
                         .initializer = std::move(operands)
                     }
                 };
@@ -394,7 +403,8 @@ auto realize_operation(
                     )) {
                     return TargetExpr {
                         .value = TargetConstructionExpr {
-                            .type = context.lower_type(source.type.resolved()),
+                            .type =
+                                context.lower_type(source.type.resolved(), TypeNameScope::Module),
                             .initializer = std::move(operands)
                         }
                     };
@@ -404,7 +414,7 @@ auto realize_operation(
                 );
                 return TargetExpr {
                     .value = TargetArrayExpr {
-                        .element_type_id = context.lower_type(array.element),
+                        .element_type_id = context.lower_type(array.element, TypeNameScope::Module),
                         .extent = target_child(integer_expression(array.extent)),
                         .elements = std::move(operands)
                     }
@@ -447,7 +457,7 @@ auto realize_operation(
                 }
                 return TargetExpr {
                     .value = TargetConstructionExpr {
-                        .type = context.lower_type(source.type.resolved()),
+                        .type = context.lower_type(source.type.resolved(), TypeNameScope::Module),
                         .initializer = std::move(ordered)
                     }
                 };
@@ -496,7 +506,7 @@ auto realize_operation(
                 }
                 return TargetExpr {
                     .value = TargetStaticCastExpr {
-                        .type = context.lower_type(source.type.resolved()),
+                        .type = context.lower_type(source.type.resolved(), TypeNameScope::Module),
                         .operand = target_child(std::move(operands[0]))
                     }
                 };
@@ -651,7 +661,10 @@ auto realize_operation(
                             if (vector_intrinsic_factory(family.intrinsic)) {
                                 return call_expression(
                                     static_member_expression(
-                                        context.lower_type(source.type.resolved()),
+                                        context.lower_type(
+                                            source.type.resolved(),
+                                            TypeNameScope::Module
+                                        ),
                                         TargetIdentifier::from_spelling(
                                             family.intrinsic == VectorIntrinsic::FromSlice
                                                 ? "from_slice"
@@ -731,7 +744,10 @@ auto realize_operation(
                             if (simd_is_factory(family)) {
                                 return call_expression(
                                     static_member_expression(
-                                        context.lower_type(source.type.resolved()),
+                                        context.lower_type(
+                                            source.type.resolved(),
+                                            TypeNameScope::Module
+                                        ),
                                         TargetIdentifier::from_spelling(name)
                                     ),
                                     std::move(operands)
@@ -786,7 +802,10 @@ auto realize_operation(
                                 case TextIntrinsic::FromStr:
                                     return call_expression(
                                         static_member_expression(
-                                            context.lower_type(source.type.resolved()),
+                                            context.lower_type(
+                                                source.type.resolved(),
+                                                TypeNameScope::Module
+                                            ),
                                             TargetIdentifier::from_spelling("from_str")
                                         ),
                                         std::move(operands)
@@ -794,7 +813,10 @@ auto realize_operation(
                                 case TextIntrinsic::FromU32Unchecked:
                                     return TargetExpr {
                                         .value = TargetStaticCastExpr {
-                                            .type = context.lower_type(source.type.resolved()),
+                                            .type = context.lower_type(
+                                                source.type.resolved(),
+                                                TypeNameScope::Module
+                                            ),
                                             .operand = target_child(std::move(operands[0]))
                                         }
                                     };
@@ -837,7 +859,7 @@ auto realize_operation(
             [&](const SemClosure&) noexcept -> TargetExpr {
                 return TargetExpr {
                     .value = TargetConstructionExpr {
-                        .type = context.lower_type(source.type.resolved()),
+                        .type = context.lower_type(source.type.resolved(), TypeNameScope::Module),
                         .initializer = std::move(operands)
                     }
                 };
@@ -865,12 +887,15 @@ auto realize_operation(
                       )
                     : nullptr;
                 if (parser) {
-                    operands.push_back(constant_expression(context, parser->invalid));
+                    operands.push_back(
+                        constant_expression(context, parser->invalid, ConstantLiteralContext::Exact)
+                    );
                     return template_call_expression(
                         intrinsic_expression(TargetSymbol::RuntimeParseNumber),
-                        {context.lower_type(source.type.resolved()),
+                        {context.lower_type(source.type.resolved(), TypeNameScope::Module),
                          context.lower_type(
-                             context.semantic().constants().constant(parser->invalid).type
+                             context.semantic().constants().constant(parser->invalid).type,
+                             TypeNameScope::Module
                          )},
                         std::move(operands)
                     );
@@ -896,8 +921,9 @@ auto realize_operation(
                     context.semantic().types().type(source.type.resolved()).value
                 );
                 auto arguments = std::vector<TargetTemplateArgument> {
-                    context.is_void(operation.success) ? context.intrinsic_type(TargetSymbol::Void)
-                                                       : context.lower_type(operation.success)
+                    context.is_void(operation.success)
+                        ? context.intrinsic_type(TargetSymbol::Void, false)
+                        : context.lower_type(operation.success, TypeNameScope::Module)
                 };
                 auto symbol = TargetSymbol::RuntimeAsyncWhenAll;
                 for (auto index = 0uz; index < value.inputs.size(); ++index) {
@@ -930,7 +956,7 @@ auto realize_operation(
                 }
                 for (const auto failure :
                      context.plan().failure_abi().members(operation.failures)) {
-                    arguments.emplace_back(context.lower_type(failure));
+                    arguments.emplace_back(context.lower_type(failure, TypeNameScope::Module));
                 }
                 return template_call_expression(
                     intrinsic_expression(symbol),
@@ -943,14 +969,15 @@ auto realize_operation(
                     context.semantic().types().type(source.type.resolved()).value
                 );
                 auto arguments = std::vector<TargetTemplateArgument> {
-                    context.is_void(operation.success) ? context.intrinsic_type(TargetSymbol::Void)
-                                                       : context.lower_type(operation.success),
-                    context.lower_type(value.timeout_failure),
-                    context.lower_type(value.range_failure),
+                    context.is_void(operation.success)
+                        ? context.intrinsic_type(TargetSymbol::Void, false)
+                        : context.lower_type(operation.success, TypeNameScope::Module),
+                    context.lower_type(value.timeout_failure, TypeNameScope::Module),
+                    context.lower_type(value.range_failure, TypeNameScope::Module),
                 };
                 for (const auto failure :
                      context.plan().failure_abi().members(operation.failures)) {
-                    arguments.emplace_back(context.lower_type(failure));
+                    arguments.emplace_back(context.lower_type(failure, TypeNameScope::Module));
                 }
                 return template_call_expression(
                     intrinsic_expression(TargetSymbol::RuntimeAsyncTimeout),
@@ -1011,7 +1038,7 @@ auto realize_operation(
                         .parameters = {},
                         .result = native_result_query(context.semantic(), source)
                             ? context.lower_cpp_query(source.type.resolved())
-                            : context.lower_type(source.type.resolved()),
+                            : context.lower_type(source.type.resolved(), TypeNameScope::Module),
                         .body = std::move(body)
                     }
                 }

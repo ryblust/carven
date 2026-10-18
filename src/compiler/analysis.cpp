@@ -79,13 +79,13 @@ auto CompilationAnalysis::analyze(
     };
     auto analyzed = analyze_checked(
         std::move(*syntax),
+        options.host_effects,
+        retain_definitions,
         std::move(seed),
         options.capture_output || options.output ? ExecutionOutput(capture) : ExecutionOutput {},
         options.timings,
         options.collect_source_observations ? SourceAnalysisOutput(collect)
-                                            : SourceAnalysisOutput {},
-        options.host_effects,
-        retain_definitions
+                                            : SourceAnalysisOutput {}
     );
     if (analyzed) {
         result.semantic.emplace(std::move(analyzed->value));

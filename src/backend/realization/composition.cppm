@@ -47,8 +47,8 @@ struct LoweringExitSummary final {
 
     auto contains(LoweringExitTarget target) const noexcept -> bool;
     auto crosses_cleanup(LoweringExitTarget target) const noexcept -> bool;
-    auto add(LoweringExitTarget target, bool needs_cleanup = false) noexcept -> void;
-    auto merge(const LoweringExitSummary& other, bool needs_cleanup = false) noexcept -> void;
+    auto add(LoweringExitTarget target, bool needs_cleanup) noexcept -> void;
+    auto merge(const LoweringExitSummary& other, bool needs_cleanup) noexcept -> void;
     auto consume(LoweringExitTarget target) noexcept -> bool;
 };
 
@@ -178,18 +178,13 @@ public:
     auto replace_exit(LoweringExitTarget target, const LoweringExitSummary& continuation) noexcept
         -> void;
 
-    auto emit(TargetStmt statement, bool continues = true) noexcept -> void;
+    auto emit(TargetStmt statement, bool continues) noexcept -> void;
     auto declare(TargetVariableStmt variable, bool needs_cleanup) noexcept -> void;
     auto terminate(TargetStmt statement, LoweringExitTarget target) noexcept -> void;
     auto append(LoweringStmtBuilder source) noexcept -> void;
     auto attribute(const TargetAttribution& attribution) noexcept -> void;
 
-    auto scope(
-        LoweringStmtBuilder source,
-        TargetAttribution attribution = TargetGeneratedExpansionAttribution {
-            .reason = TargetExpansionReason::LoweringSupport
-        }
-    ) noexcept -> void;
+    auto scope(LoweringStmtBuilder source, TargetAttribution attribution) noexcept -> void;
 
     auto resume(TargetIdentifier label, LoweringExitTarget target) noexcept -> void;
 

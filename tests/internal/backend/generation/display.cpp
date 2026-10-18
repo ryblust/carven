@@ -15,7 +15,7 @@ import std;
 namespace {
 
 struct DisplayQuery final {
-    std::size_t nodes = 0uz;
+    std::size_t nodes;
 
     auto enter_expression(const TargetExpr&, TargetExpressionRole) noexcept -> bool {
         ++nodes;
@@ -37,7 +37,7 @@ auto count_nodes(std::string source) noexcept -> std::size_t {
          .library = std::nullopt},
         {}
     );
-    auto query = DisplayQuery {};
+    auto query = DisplayQuery {.nodes = 0uz};
     for (const auto artifact : compilation.target().artifacts()) {
         const auto unit = lower_artifact(compilation, artifact.id);
         require(traverse_target_unit(unit.sections(), query));

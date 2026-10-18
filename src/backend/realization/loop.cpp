@@ -4,6 +4,7 @@ import :backend.generation.names;
 import :backend.lowering.context;
 import :backend.realization.realizer;
 import :backend.target.expr;
+import :backend.target.origin;
 import :backend.target.stmt;
 import :backend.target.symbol;
 import :semantic.semir.body;
@@ -54,7 +55,7 @@ auto take_for_step(ModuleLowering& context, LoweringStmtBuilder& steps) noexcept
                     .value =
                         TargetLambdaExpr {
                             .parameters = {},
-                            .result = context.intrinsic_type(TargetSymbol::Void),
+                            .result = context.intrinsic_type(TargetSymbol::Void, false),
                             .body = std::move(statements)
                         }
                 },
@@ -72,24 +73,33 @@ auto BodyRealizer::lower_loop(const SemLoop& value, LoweringStmtBuilder& destina
     auto initializer = (co_await region(*value.initializer, LoweringDiscardResult {}, true));
     if (!initializer.continues()) {
         leave_async_scopes(outer_scopes);
-        destination.scope(std::move(initializer));
+        destination.scope(
+            std::move(initializer),
+            TargetGeneratedExpansionAttribution {.reason = TargetExpansionReason::LoweringSupport}
+        );
         co_return {};
     }
     auto condition_statements = LoweringStmtBuilder();
     auto condition = value.condition.has_value()
         ? condition_statements.accept((co_await this->condition(*value.condition)))
-        : std::optional<LoweringPredicate>(LoweringKnownBool {true});
+        : std::optional<LoweringPredicate>(LoweringKnownBool {.value = true});
     if (!condition_statements.continues()) {
         initializer.append(std::move(condition_statements));
         leave_async_scopes(outer_scopes);
-        destination.scope(std::move(initializer));
+        destination.scope(
+            std::move(initializer),
+            TargetGeneratedExpansionAttribution {.reason = TargetExpansionReason::LoweringSupport}
+        );
         co_return {};
     }
     if (known_predicate(condition) == false) {
         initializer.append(std::move(condition_statements));
         close_async_scopes(outer_scopes, false, initializer);
         leave_async_scopes(outer_scopes);
-        destination.scope(std::move(initializer));
+        destination.scope(
+            std::move(initializer),
+            TargetGeneratedExpansionAttribution {.reason = TargetExpansionReason::LoweringSupport}
+        );
         co_return {};
     }
     // Lowering chooses syntax before realizing the body, so a native for loop
@@ -105,14 +115,14 @@ auto BodyRealizer::lower_loop(const SemLoop& value, LoweringStmtBuilder& destina
         .continue_async_scopes = async_scopes.size(),
     };
     const auto outer_loop = std::exchange(current_loop, continuation);
-    auto steps = (co_await region(*value.steps, LoweringDiscardResult {}));
+    auto steps = (co_await region(*value.steps, LoweringDiscardResult {}, false));
     const auto direct_condition = condition_statements.empty();
     auto for_step = direct_condition && !preparation.requires_coroutine_context(*value.steps)
         ? take_for_step(context, steps)
         : std::nullopt;
     const auto step = for_step || steps.empty() ? std::nullopt : std::optional(step_label);
     current_loop->step = step;
-    auto body_statements = (co_await region(*value.body, LoweringDiscardResult {}));
+    auto body_statements = (co_await region(*value.body, LoweringDiscardResult {}, false));
     current_loop = outer_loop;
     const auto continued = body_statements.exits().contains(continuation.target);
     const auto breaks = body_statements.exits().contains(continuation.break_target);
@@ -129,19 +139,25 @@ auto BodyRealizer::lower_loop(const SemLoop& value, LoweringStmtBuilder& destina
     } else if (conditional) {
         auto exit_body = LoweringStmtBuilder();
         exit_body.terminate(generated_statement(TargetBreakStmt {}), continuation.break_target);
-        iteration.emit(generated_statement(
-            TargetIfStmt {
-                .condition = prefix_expression(
-                    TargetPrefixOperator::LogicalNot,
-                    predicate_expression(std::move(*condition))
-                ),
-                .body = std::move(exit_body).finish(),
-                .else_body = std::nullopt
-            }
-        ));
+        iteration.emit(
+            generated_statement(
+                TargetIfStmt {
+                    .condition = prefix_expression(
+                        TargetPrefixOperator::LogicalNot,
+                        predicate_expression(std::move(*condition))
+                    ),
+                    .body = std::move(exit_body).finish(),
+                    .else_body = std::nullopt
+                }
+            ),
+            true
+        );
     }
     if (step.has_value()) {
-        iteration.scope(std::move(body_statements));
+        iteration.scope(
+            std::move(body_statements),
+            TargetGeneratedExpansionAttribution {.reason = TargetExpansionReason::LoweringSupport}
+        );
     } else {
         iteration.append(std::move(body_statements));
     }
@@ -179,7 +195,10 @@ auto BodyRealizer::lower_loop(const SemLoop& value, LoweringStmtBuilder& destina
     }
     close_async_scopes(outer_scopes, false, initializer);
     leave_async_scopes(outer_scopes);
-    destination.scope(std::move(initializer));
+    destination.scope(
+        std::move(initializer),
+        TargetGeneratedExpansionAttribution {.reason = TargetExpansionReason::LoweringSupport}
+    );
     co_return {};
 }
 
@@ -196,7 +215,8 @@ auto BodyRealizer::lower_range(const SemRangeLoop& value, LoweringStmtBuilder& d
     if (!borrowed.empty()) {
         const auto element = context.lower_type(
             std::get<ArrayTypeValue>(context.semantic().types().type(source.type.resolved()).value)
-                .element
+                .element,
+            TypeNameScope::Module
         );
         const auto constant = context.target().intern_type(
             {.value =
@@ -216,7 +236,7 @@ auto BodyRealizer::lower_range(const SemRangeLoop& value, LoweringStmtBuilder& d
         }
         iterable = TargetExpr {
             .value = TargetArrayExpr {
-                .element_type_id = context.pointer_type(constant),
+                .element_type_id = context.pointer_type(constant, false),
                 .extent = target_child(integer_expression(borrowed.size())),
                 .elements = std::move(addresses)
             }
@@ -227,11 +247,15 @@ auto BodyRealizer::lower_range(const SemRangeLoop& value, LoweringStmtBuilder& d
              .use = range_value                      ? PreparedUse::OperandValue
                  : value.access == AccessMode::Write ? PreparedUse::WritePlace
                                                      : PreparedUse::ReadBorrow,
-             .demand = PreparedDemand::Value}
+             .demand = PreparedDemand::Value},
+            ConstantLiteralContext::Exact
         )));
     }
     if (!scope.continues()) {
-        destination.scope(std::move(scope));
+        destination.scope(
+            std::move(scope),
+            TargetGeneratedExpansionAttribution {.reason = TargetExpansionReason::LoweringSupport}
+        );
         co_return {};
     }
     const auto exclusive = [&]() noexcept {
@@ -255,7 +279,7 @@ auto BodyRealizer::lower_range(const SemRangeLoop& value, LoweringStmtBuilder& d
                 .binding = TargetVariableBinding::ConstValue,
                 .maybe_unused = false,
                 .local = *bounds,
-                .type = context.lower_type(source.type.resolved()),
+                .type = context.lower_type(source.type.resolved(), TypeNameScope::Module),
                 .initializer = std::move(*iterable)
             },
             false
@@ -265,7 +289,7 @@ auto BodyRealizer::lower_range(const SemRangeLoop& value, LoweringStmtBuilder& d
                 .binding = TargetVariableBinding::MutableValue,
                 .maybe_unused = false,
                 .local = index,
-                .type = context.lower_type(range->element),
+                .type = context.lower_type(range->element, TypeNameScope::Module),
                 .initializer = member_expression(
                     name_expression(*bounds),
                     TargetIdentifier::from_spelling("first")
@@ -291,16 +315,19 @@ auto BodyRealizer::lower_range(const SemRangeLoop& value, LoweringStmtBuilder& d
                 .binding = TargetVariableBinding::ConstReference,
                 .maybe_unused = true,
                 .local = binding_locals.at(*value.binding),
-                .type = context.lower_type(metadata.binding(*value.binding).type),
+                .type = context.lower_type(
+                    metadata.binding(*value.binding).type,
+                    TypeNameScope::Module
+                ),
                 .initializer = dereference_expression(name_expression(index))
             },
             false
         );
     }
     if (bounds && value.binding) {
-        declare_binding(*value.binding, name_expression(index), iteration);
+        declare_binding(*value.binding, name_expression(index), iteration, false);
     }
-    iteration.append((co_await region(*value.body, LoweringDiscardResult {})));
+    iteration.append((co_await region(*value.body, LoweringDiscardResult {}, false)));
     current_loop = outer_loop;
     const auto advances = iteration.continues() || iteration.exits().contains(continuation.target);
     static_cast<void>(iteration.consume_exit(continuation.target));
@@ -318,50 +345,61 @@ auto BodyRealizer::lower_range(const SemRangeLoop& value, LoweringStmtBuilder& d
                 }
             );
         }
-        scope.emit(generated_statement(
-            TargetForStmt {
-                .initializer = std::nullopt,
-                .condition = binary_expression(
-                    name_expression(index),
-                    TargetBinaryOperator::Less,
-                    member_expression(
-                        name_expression(*bounds),
-                        TargetIdentifier::from_spelling("last")
-                    )
-                ),
-                .steps = std::move(steps),
-                .body = std::move(iteration).finish()
-            }
-        ));
+        scope.emit(
+            generated_statement(
+                TargetForStmt {
+                    .initializer = std::nullopt,
+                    .condition = binary_expression(
+                        name_expression(index),
+                        TargetBinaryOperator::Less,
+                        member_expression(
+                            name_expression(*bounds),
+                            TargetIdentifier::from_spelling("last")
+                        )
+                    ),
+                    .steps = std::move(steps),
+                    .body = std::move(iteration).finish()
+                }
+            ),
+            true
+        );
     } else {
-        scope.emit(generated_statement(
-            TargetRangeForStmt {
-                .binding = !borrowed.empty()            ? TargetVariableBinding::ConstValue
-                    : value.access == AccessMode::Write ? TargetVariableBinding::MutableReference
-                    : !value.binding.has_value()        ? TargetVariableBinding::ConstReference
-                                                        : TargetVariableBinding::MutableValue,
-                .maybe_unused = true,
-                .local =
-                    !borrowed.empty() || !value.binding ? index : binding_locals.at(*value.binding),
-                .type = !borrowed.empty() ? context.intrinsic_type(TargetSymbol::Auto)
-                    : value.binding.has_value()
-                    ? (value.access == AccessMode::Write
-                           ? context.intrinsic_type(TargetSymbol::Auto)
-                           : context.lower_parameter(
-                                 AccessMode::Read,
-                                 metadata.binding(*value.binding).type,
-                                 TypeNameScope::Module,
-                                 context.semantic()
-                                     .type_contents(metadata.binding(*value.binding).type)
-                                     .contains_native_value
-                             ))
-                    : context.intrinsic_type(TargetSymbol::Auto),
-                .range = std::move(*iterable),
-                .body = std::move(iteration).finish()
-            }
-        ));
+        scope.emit(
+            generated_statement(
+                TargetRangeForStmt {
+                    .binding = !borrowed.empty() ? TargetVariableBinding::ConstValue
+                        : value.access == AccessMode::Write
+                        ? TargetVariableBinding::MutableReference
+                        : !value.binding.has_value() ? TargetVariableBinding::ConstReference
+                                                     : TargetVariableBinding::MutableValue,
+                    .maybe_unused = true,
+                    .local = !borrowed.empty() || !value.binding
+                        ? index
+                        : binding_locals.at(*value.binding),
+                    .type = !borrowed.empty() ? context.intrinsic_type(TargetSymbol::Auto, false)
+                        : value.binding.has_value()
+                        ? (value.access == AccessMode::Write
+                               ? context.intrinsic_type(TargetSymbol::Auto, false)
+                               : context.lower_parameter(
+                                     AccessMode::Read,
+                                     metadata.binding(*value.binding).type,
+                                     TypeNameScope::Module,
+                                     context.semantic()
+                                         .type_contents(metadata.binding(*value.binding).type)
+                                         .contains_native_value
+                                 ))
+                        : context.intrinsic_type(TargetSymbol::Auto, false),
+                    .range = std::move(*iterable),
+                    .body = std::move(iteration).finish()
+                }
+            ),
+            true
+        );
     }
-    destination.scope(std::move(scope));
+    destination.scope(
+        std::move(scope),
+        TargetGeneratedExpansionAttribution {.reason = TargetExpansionReason::LoweringSupport}
+    );
     co_return {};
 }
 
@@ -386,13 +424,16 @@ auto BodyRealizer::lower_expanded_loop(
             .continue_async_scopes = async_scopes.size()
         };
         const auto outer_loop = std::exchange(current_loop, continuation);
-        auto body = (co_await region(source, LoweringDiscardResult {}));
+        auto body = (co_await region(source, LoweringDiscardResult {}, false));
         const auto step = current_loop->step;
         break_label = current_loop->break_label;
         current_loop = outer_loop;
         const auto continued = body.exits().contains(continuation.target);
         auto iteration = LoweringStmtBuilder();
-        iteration.scope(std::move(body));
+        iteration.scope(
+            std::move(body),
+            TargetGeneratedExpansionAttribution {.reason = TargetExpansionReason::LoweringSupport}
+        );
         if (continued) {
             iteration.resume(*step, continuation.target);
         }
@@ -401,6 +442,9 @@ auto BodyRealizer::lower_expanded_loop(
     if (expanded.exits().contains(break_target)) {
         expanded.resume(*break_label, break_target);
     }
-    destination.scope(std::move(expanded));
+    destination.scope(
+        std::move(expanded),
+        TargetGeneratedExpansionAttribution {.reason = TargetExpansionReason::LoweringSupport}
+    );
     co_return {};
 }

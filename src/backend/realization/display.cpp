@@ -242,12 +242,12 @@ auto ModuleLowering::display_emitter_type(TypeID type) noexcept -> TargetTypeID 
     if (!std::holds_alternative<StructTypeValue>(canonical)
         && !std::holds_alternative<EnumTypeValue>(canonical)
         && !std::holds_alternative<TupleTypeValue>(canonical)) {
-        const auto emitter_type = intrinsic_type(TargetSymbol::RuntimeScalarDisplay);
+        const auto emitter_type = intrinsic_type(TargetSymbol::RuntimeScalarDisplay, false);
         display_types.emplace(type, emitter_type);
         return emitter_type;
     }
     const auto name = names().display_identifier(type);
-    const auto helper_type = named_type(names().module_support_name(active_module(), name));
+    const auto helper_type = named_type(names().module_support_name(active_module(), name), false);
     display_types.emplace(type, helper_type);
     auto locals = make_callable_name_allocator();
     constexpr auto scope = TargetScopeID {.ordinal = 0};
@@ -259,17 +259,21 @@ auto ModuleLowering::display_emitter_type(TypeID type) noexcept -> TargetTypeID 
         auto result = std::vector<TargetParameter>();
         result.push_back({
             .local = named ? std::optional(writer) : std::nullopt,
-            .type = reference_type(intrinsic_type(TargetSymbol::RuntimeDisplayWriter)),
+            .type = reference_type(
+                intrinsic_type(TargetSymbol::RuntimeDisplayWriter, false),
+                false,
+                false
+            ),
             .default_value = std::nullopt,
         });
         result.push_back({
             .local = named ? std::optional(value) : std::nullopt,
-            .type = reference_type(lower_type(type), true),
+            .type = reference_type(lower_type(type, TypeNameScope::Module), true, false),
             .default_value = std::nullopt,
         });
         result.push_back({
             .local = named ? std::optional(depth) : std::nullopt,
-            .type = intrinsic_type(TargetSymbol::StdSize),
+            .type = intrinsic_type(TargetSymbol::StdSize, false),
             .default_value = std::nullopt,
         });
         return result;
@@ -279,7 +283,7 @@ auto ModuleLowering::display_emitter_type(TypeID type) noexcept -> TargetTypeID 
         TargetMemberFunctionDecl {
             .name = TargetOperatorName::Call,
             .parameters = parameters(false),
-            .result = intrinsic_type(TargetSymbol::Void),
+            .result = intrinsic_type(TargetSymbol::Void, false),
             .form = TargetMemberFunctionDeclaration {},
             .maybe_unused = false,
             .static_specifier = false,
@@ -298,7 +302,7 @@ auto ModuleLowering::display_emitter_type(TypeID type) noexcept -> TargetTypeID 
             .owner = names().module_support_name(active_module(), name),
             .name = TargetOperatorName::Call,
             .parameters = parameters(true),
-            .result = intrinsic_type(TargetSymbol::Void),
+            .result = intrinsic_type(TargetSymbol::Void, false),
             .body = std::move(body),
             .const_qualified = true,
             .inline_specifier = true,

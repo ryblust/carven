@@ -677,7 +677,7 @@ auto traverse_target_unit(const TargetUnitSections& sections, Visitor& visitor) 
 template<typename Visitor>
 class TargetTraversalEvents final {
 public:
-    static constexpr bool cleanup_edges = []() consteval {
+    static constexpr bool cleanup_edges = []() static consteval noexcept {
         if constexpr (requires { Visitor::cleanup_edges; }) {
             return Visitor::cleanup_edges;
         } else {

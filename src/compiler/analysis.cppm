@@ -86,25 +86,15 @@ private:
 auto analyze_compilation(
     SourceManager sources,
     SourceBatch batch,
-    CompilationAnalysisOptions options =
-        {.output = {},
-         .timings = {},
-         .collect_source_observations = false,
-         .capture_output = false,
-         .host_effects = HostEffects::Deny},
+    CompilationAnalysisOptions options,
     std::span<const ParsedSourceInput> parsed = {}
 ) noexcept -> CompilationAnalysis;
 
 auto analyze_checked_compilation(
     SourceManager sources,
     SourceBatch batch,
-    std::optional<CheckedDefinitions> seed = std::nullopt,
-    bool retain_definitions = true,
-    CompilationAnalysisOptions options =
-        {.output = {},
-         .timings = {},
-         .collect_source_observations = false,
-         .capture_output = false,
-         .host_effects = HostEffects::Deny},
+    std::optional<CheckedDefinitions> seed,
+    bool retain_definitions,
+    CompilationAnalysisOptions options,
     std::span<const ParsedSourceInput> parsed = {}
 ) noexcept -> CompilationAnalysis;

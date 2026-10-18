@@ -8,7 +8,7 @@ import std;
 struct ContinuationTaskLoop final {
     std::coroutine_handle<> next;
 
-    auto resume_one() noexcept -> void { std::exchange(next, {}).resume(); }
+    auto resume_one() noexcept -> void;
 };
 
 template<typename Value>
@@ -84,7 +84,7 @@ public:
 
     // Synchronous entry points drive a root task. Dependencies await their children.
     auto run() && noexcept -> Value {
-        auto loop = ContinuationTaskLoop {};
+        auto loop = ContinuationTaskLoop {.next = {}};
         start(loop);
         while (loop.next) {
             loop.resume_one();

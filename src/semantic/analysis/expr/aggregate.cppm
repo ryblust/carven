@@ -181,7 +181,12 @@ auto construct_tuple_expression(
         elements.push_back(std::move(*operand));
     }
     const auto type = make_tuple_type(site.draft(), std::move(types));
-    co_return site.finish_constructed(type, SemTuple {std::move(elements)}, std::move(state), span);
+    co_return site.finish_constructed(
+        type,
+        SemTuple {.elements = std::move(elements)},
+        std::move(state),
+        span
+    );
 }
 
 template<typename Site>

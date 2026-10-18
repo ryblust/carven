@@ -65,7 +65,7 @@ class Cursor final {
     std::size_t console_committed = 0;
 #endif
 
-    auto view(std::size_t count, bool end = false) const noexcept -> ReadyResult {
+    auto view(std::size_t count, bool end) const noexcept -> ReadyResult {
         return ByteView {.bytes = std::span(pending).first(count), .end = end};
     }
 
@@ -88,7 +88,7 @@ public:
 
     auto ready(Request& request) noexcept -> std::optional<ReadyResult> {
         if (request.mode == ReadMode::Chunk && request.limit == 0) {
-            return view(0);
+            return view(0, false);
         }
         if (error != 0) {
             return ReadError {.code = error, .limited = false};
@@ -100,7 +100,7 @@ public:
             const auto available = pending.size();
 #endif
             if (available != 0) {
-                return view(std::min(request.limit, available));
+                return view(std::min(request.limit, available), false);
             }
             if (ended) {
                 return view(0, true);
@@ -122,7 +122,7 @@ public:
                 return ReadError {.code = 0, .limited = true};
             }
             if (newline != pending.end()) {
-                return view(content + 1);
+                return view(content + 1, false);
             }
             request.scanned = pending.size();
         } else if (pending.size() > request.limit) {

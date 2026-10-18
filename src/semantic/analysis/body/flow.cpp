@@ -192,7 +192,10 @@ auto BodyElaborator::append_statement(
 }
 
 auto BodyElaborator::append_expression(BuiltExpression& expression, Span span) noexcept -> void {
-    append_statement(SemExpressionStatement {take_built(expression, span)}, origin(span));
+    append_statement(
+        SemExpressionStatement {.expression = take_built(expression, span)},
+        origin(span)
+    );
 }
 
 auto BodyElaborator::inferred_result_type() const noexcept -> ConstructionTypeRef {

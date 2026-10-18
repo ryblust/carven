@@ -27,12 +27,18 @@ private import(cpp) async fn native_write(
     offset: usize
 ) -> ::carven::standard::net::WriteResult = ::carven::standard::net::write;
 
+private import(cpp) async fn native_write_all(
+    connection: ::carven::standard::net::View,
+    &&bytes: Vector<u8>
+) -> ::carven::standard::net::WriteResult = ::carven::standard::net::write_all;
+
 private fn validate(kind: u8, code: i32) throw NetError {
     match kind {
         0 => {},
         1 => throw NetError::System(code),
         2 => throw NetError::Closed,
         3 => throw NetError::Conflict,
+        4 => throw NetError::NoProgress,
         _ => assert(false),
     }
 }
@@ -56,15 +62,7 @@ export async fn write(connection: ConnectionView, &&bytes: Vector<u8>) -> usize 
 }
 
 export async fn write_all(connection: ConnectionView, &&bytes: Vector<u8>) throw NetError {
-    var pending = &&bytes;
-    let length = pending.length();
-    var offset: usize = 0;
-    while offset < length {
-        var result = await native_write(connection.native, &&pending, offset);
-        validate(result.error as u8, result.code as i32)?;
-        let count = result.count as usize;
-        if count == 0 { throw NetError::NoProgress; }
-        offset += count;
-        pending = (&result).take_bytes() as Vector<u8>;
-    }
+    if bytes.is_empty() { return; }
+    let result = await native_write_all(connection.native, &&bytes);
+    validate(result.error as u8, result.code as i32)?;
 }

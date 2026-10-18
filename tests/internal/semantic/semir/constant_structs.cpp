@@ -71,7 +71,11 @@ const TestSuite suite([] static noexcept {
                 for (const auto field : fields) {
                     elements.emplace_back(field);
                 }
-                return ExecutionAggregateValue {.type = type, .elements = std::move(elements)};
+                return ExecutionAggregateValue {
+                    .type = type,
+                    .elements = std::move(elements),
+                    .capacity = 0uz
+                };
             };
             const auto frozen = freeze_constant_value(draft, make_value({integer, boolean}));
             if (!expect(frozen.has_value())) {
@@ -90,7 +94,11 @@ const TestSuite suite([] static noexcept {
             invalid_fields.emplace_back(boolean);
             expect(!(freeze_constant_value(
                 draft,
-                ExecutionAggregateValue {.type = type, .elements = std::move(invalid_fields)}
+                ExecutionAggregateValue {
+                    .type = type,
+                    .elements = std::move(invalid_fields),
+                    .capacity = 0uz
+                }
             )));
             expect(std::move(draft).finish().has_value());
         };

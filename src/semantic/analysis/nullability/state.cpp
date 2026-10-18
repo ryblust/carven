@@ -274,7 +274,8 @@ auto NullabilityBodyAnalyzer::failures(
     const auto mask = analysis.failure_support(failures_id);
     if (mask.complemented) {
         flow.exits.push_back(
-            {.payload = AnalysisFailureKey(AnalysisSymbolicFailure {failures_id, mask}),
+            {.payload =
+                 AnalysisFailureKey(AnalysisSymbolicFailure {.source = failures_id, .mask = mask}),
              .state = flow.normal->state}
         );
     } else {

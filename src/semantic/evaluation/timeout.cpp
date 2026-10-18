@@ -5,16 +5,19 @@ import :semantic.semir.type;
 import :support.invariant;
 import std;
 
-auto SemanticExecutor::timeout(ExecutionColdOperation operation, ProgramOriginID origin) noexcept
-    -> ExecutionTask<ExecutionValue> {
-    const auto action = std::get<ExecutionTimeoutAction>(operation.action);
+auto SemanticExecutor::timeout(
+    ExecutionTimeoutAction action,
+    ConstructionTypeRef operation_type,
+    std::vector<ExecutionOperand> arguments,
+    ProgramOriginID origin
+) noexcept -> ExecutionTask<ExecutionValue> {
     if (cancel_requested()) {
         co_return std::unexpected(cancelled(origin));
     }
-    if (operation.arguments.size() != 2uz) {
+    if (arguments.size() != 2uz) {
         invariant_violation("timeout requires two operands");
     }
-    auto duration = materialize(std::move(operation.arguments.back()), origin);
+    auto duration = materialize(std::move(arguments.back()), origin);
     if (!duration) {
         co_return std::unexpected(std::move(duration.error()));
     }
@@ -29,7 +32,7 @@ auto SemanticExecutor::timeout(ExecutionColdOperation operation, ProgramOriginID
     const auto fail_with = [&](TypeID failure) noexcept -> ExecutionFailure {
         return source_failure(
             failure,
-            ExecutionAggregateValue {.type = failure, .elements = {}},
+            ExecutionAggregateValue {.type = failure, .elements = {}, .capacity = 0uz},
             origin
         );
     };
@@ -47,8 +50,8 @@ auto SemanticExecutor::timeout(ExecutionColdOperation operation, ProgramOriginID
     }
     const auto success = visit_execution_type(
         values,
-        operation.type,
-        [](const auto& shape) noexcept -> ConstructionTypeRef {
+        operation_type,
+        [](const auto& shape) static noexcept -> ConstructionTypeRef {
             using Shape = std::remove_cvref_t<decltype(shape)>;
             if constexpr (std::same_as<Shape, OperationTypeValue>
                           || std::same_as<Shape, ConstructionOperationTypeValue>) {
@@ -63,25 +66,21 @@ auto SemanticExecutor::timeout(ExecutionColdOperation operation, ProgramOriginID
         co_return std::unexpected(std::move(result.error()));
     }
     auto timer = std::make_unique<ExecutionColdOperation>(ExecutionColdOperation {
-        .type = operation.type,
+        .type = operation_type,
         .action =
             ExecutionTimerAction {.deadline = instant + delay, .failure = action.timeout_failure},
         .arguments = {}
     });
     auto inputs = std::vector<ExecutionOperand>();
-    inputs.push_back(std::move(operation.arguments.front()));
+    inputs.push_back(std::move(arguments.front()));
     inputs.emplace_back(ExecutionValue(std::move(timer)));
     co_return co_await compose(
-        ExecutionColdOperation {
-            .type = operation.type,
-            .action =
-                ExecutionCompositionAction {
-                    .policy = AsyncCompositionPolicy::WhenAny,
-                    .success = *result,
-                    .selection = ExecutionSelectionResult::Direct
-                },
-            .arguments = std::move(inputs)
+        ExecutionCompositionAction {
+            .policy = AsyncCompositionPolicy::WhenAny,
+            .success = *result,
+            .selection = ExecutionSelectionResult::Direct
         },
+        std::move(inputs),
         origin
     );
 }

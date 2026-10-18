@@ -41,7 +41,7 @@ struct CompilationOptionError final {
 
 auto parse_compilation_options(
     std::span<const std::string> args,
-    CompilationCommand command = CompilationCommand::Compile
+    CompilationCommand command
 ) noexcept -> std::expected<CompilationOptions, CompilationOptionError>;
 
 auto format_compilation_option_error(const CompilationOptionError& error) noexcept -> std::string;

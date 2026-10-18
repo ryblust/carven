@@ -142,7 +142,7 @@ auto NullabilityBodyAnalyzer::statement(const SemanticStatement& source, NullSta
                     co_return {};
                 }
                 const auto facts = flow.normal->value;
-                if (const auto target = location(value.target)) {
+                if (const auto target = location(value.target, false)) {
                     store(flow.normal->state, *target, facts);
                 } else {
                     invalidate(flow.normal->state, location(value.target, true));
@@ -180,7 +180,7 @@ auto NullabilityBodyAnalyzer::statement(const SemanticStatement& source, NullSta
 auto NullabilityBodyAnalyzer::conditional(const SemIf& source, NullState state) noexcept
     -> ContinuationTask<NullFlow> {
     auto remaining = std::optional(NullNormal {.state = std::move(state), .value = {}});
-    auto result = NullFlow();
+    auto result = NullFlow {.normal = std::nullopt, .exits = {}};
     for (const auto& branch : source.branches) {
         if (!remaining) {
             break;
@@ -238,7 +238,10 @@ auto NullabilityBodyAnalyzer::bind_pattern(
                 for (const auto child : pattern.alternatives) {
                     auto candidate = state;
                     bind_pattern(candidate, child, value);
-                    join_null_normal(joined, std::optional(NullNormal {std::move(candidate), {}}));
+                    join_null_normal(
+                        joined,
+                        std::optional(NullNormal {.state = std::move(candidate), .value = {}})
+                    );
                 }
                 if (joined) {
                     state = std::move(joined->state);
@@ -287,7 +290,8 @@ auto NullabilityBodyAnalyzer::match(const SemMatch& source, NullState state) noe
             continue;
         }
         auto selected = *remaining;
-        const auto place = source.subject_is_place ? location(*source.subject) : std::nullopt;
+        const auto place =
+            source.subject_is_place ? location(*source.subject, false) : std::nullopt;
         if (place && std::ranges::any_of(arm.bindings, [&](LocalBindingID binding) noexcept {
                 const auto* access =
                     std::get_if<AccessBindingStorage>(&body.binding(binding).storage);

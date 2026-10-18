@@ -52,7 +52,7 @@ public:
     // Executes an expression that reads no local binding.
     auto evaluate(
         const SemanticExpression& expression,
-        StaticEvaluationPurpose purpose = StaticEvaluationPurpose::Execute,
+        StaticEvaluationPurpose purpose,
         const StructuredBodyDraft* body = nullptr
     ) noexcept -> AnalysisTask<ExecutionValue>;
 

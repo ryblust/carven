@@ -201,7 +201,7 @@ auto ProgramDraft::instantiate_generic_function(
         ~Depth() { --value; }
     };
 
-    const auto depth = Depth {storage.generic_instance_depth};
+    const auto depth = Depth {.value = storage.generic_instance_depth};
     auto effects = make_failure_instantiation(definition, formation_arguments);
     auto contract = function->signature;
     contract.failures = effects.substitute(contract.failures);

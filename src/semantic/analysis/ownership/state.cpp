@@ -23,16 +23,24 @@ OwnershipBodyAnalyzer::OwnershipBodyAnalyzer(
         topology.possible_aliases = input.possible_aliases;
         for (const auto [index, local] : std::views::enumerate(facts.locals)) {
             topology.objects.push_back(
-                {local.type,
-                 local.origin,
-                 {body.id(), static_cast<std::size_t>(index), OwnershipStorageSiteKind::Allocation},
-                 false,
-                 false}
+                OwnershipStorageObject {
+                    .type = local.type,
+                    .origin = local.origin,
+                    .site =
+                        OwnershipStorageSite {
+                            .body = body.id(),
+                            .slot = static_cast<std::size_t>(index),
+                            .kind = OwnershipStorageSiteKind::Allocation,
+                            .element_selection = std::nullopt
+                        },
+                    .many = false,
+                    .feedback = false
+                }
             );
         }
         for (auto index = 0uz; index < topology.objects.size(); ++index) {
             topology.roots.push_back({index});
-            topology.anchors.push_back({index, {}});
+            topology.anchors.push_back(OwnershipPlace {.object = index, .path = {}});
         }
     }
     // Recursive input growth preserves slot identity and local indices. Only
@@ -100,7 +108,9 @@ auto OwnershipBodyAnalyzer::object_origin(std::size_t object) const noexcept -> 
 
 auto OwnershipBodyAnalyzer::diagnosis_record() noexcept -> OwnershipDiagnosisRecord& {
     if (!diagnosis) {
-        diagnosis = std::make_unique<OwnershipDiagnosisRecord>();
+        diagnosis = std::make_unique<OwnershipDiagnosisRecord>(
+            OwnershipDiagnosisRecord {.error = {}, .returned_copies = {}}
+        );
     }
     return *diagnosis;
 }
@@ -178,13 +188,25 @@ auto OwnershipBodyAnalyzer::leave(OwnershipFlow& flow, LifetimeRegionID lifetime
         }
         // Close child loans before backing objects leave their lifetime.
         for (const auto object : found->second) {
-            state.objects[input.objects.size() + object] = {};
+            state.objects[input.objects.size() + object] = OwnershipObjectState {
+                .available = false,
+                .taken = std::nullopt,
+                .relationships = {},
+                .modified = false,
+                .child_intent = std::nullopt
+            };
         }
         for (auto object = input.objects.size() + facts.locals.size();
              object < state.objects.size();
              ++object) {
             if (!storage_available(state, object)) {
-                state.objects[object] = {};
+                state.objects[object] = OwnershipObjectState {
+                    .available = false,
+                    .taken = std::nullopt,
+                    .relationships = {},
+                    .modified = false,
+                    .child_intent = std::nullopt
+                };
             }
         }
     };
@@ -229,7 +251,7 @@ auto OwnershipBodyAnalyzer::retain(
 ) const noexcept -> void {
     const auto found = facts.temporaries.find(std::addressof(source));
     if (found != facts.temporaries.end()) {
-        state.objects[input.objects.size() + found->second] = {
+        state.objects[input.objects.size() + found->second] = OwnershipObjectState {
             .available = true,
             .taken = std::nullopt,
             .relationships = relationships,
@@ -253,7 +275,9 @@ auto OwnershipBodyAnalyzer::references(
         std::size_t storage;
     };
 
-    auto pending = std::vector<PendingRelationships> {{relationships, 0uz, 0uz, 0uz}};
+    auto pending = std::vector<PendingRelationships> {
+        PendingRelationships {.value = relationships, .capture = 0uz, .loan = 0uz, .storage = 0uz}
+    };
     while (!pending.empty()) {
         auto& current = pending.back();
         auto target = std::optional<OwnershipPlace>();
@@ -273,10 +297,15 @@ auto OwnershipBodyAnalyzer::references(
         }
         if (target && visited.insert(*target).second) {
             pending.push_back(
-                {project_relationships(state.objects[target->object].relationships, target->path),
-                 0uz,
-                 0uz,
-                 0uz}
+                PendingRelationships {
+                    .value = project_relationships(
+                        state.objects[target->object].relationships,
+                        target->path
+                    ),
+                    .capture = 0uz,
+                    .loan = 0uz,
+                    .storage = 0uz
+                }
             );
         }
     }
@@ -399,7 +428,7 @@ auto OwnershipBodyAnalyzer::store(
     // Loop convergence still updates storage while diagnostic scans are suspended.
     check_storage_write(state, target, origin, preserves_backing);
     if (diagnosing) {
-        use(relationships, state, origin);
+        use(relationships, state, origin, false);
         for (const auto& loan : relationships.view().storage_loans) {
             if (loan.backing.object == target.object
                 || !outlives(loan.backing.object, target.object)) {
@@ -474,8 +503,9 @@ auto OwnershipBodyAnalyzer::store(
 
 auto OwnershipBodyAnalyzer::binding_place(LocalBindingID binding) const noexcept -> OwnershipPlace {
     const auto found = aliases.find(binding);
-    return found == aliases.end() ? OwnershipPlace {input.objects.size() + binding.index(), {}}
-                                  : found->second;
+    return found == aliases.end()
+        ? OwnershipPlace {.object = input.objects.size() + binding.index(), .path = {}}
+        : found->second;
 }
 
 auto OwnershipBodyAnalyzer::binding_places(
@@ -537,7 +567,14 @@ auto OwnershipBodyAnalyzer::write_access(
     ProgramOriginID origin,
     bool invalidates
 ) noexcept -> void {
-    const auto effect = OwnershipWriteEffect {target, invalidates, false, origin, false, false};
+    const auto effect = OwnershipWriteEffect {
+        .place = target,
+        .invalidates = invalidates,
+        .storage = false,
+        .origin = origin,
+        .take = false,
+        .preserves_backing = false
+    };
     if (!std::ranges::contains(effects, effect)) {
         effects.push_back(effect);
     }
@@ -648,18 +685,18 @@ auto OwnershipBodyAnalyzer::take_conflict(
         for (const auto& selected : places) {
             if (storage_ancestor(target, selected, false)) {
                 return TakeConflict {
-                    DiagnosticCode::AccessBorrowConflict,
-                    "Take would invalidate a borrowed pattern binding",
-                    body.binding(binding).origin
+                    .code = DiagnosticCode::AccessBorrowConflict,
+                    .message = "Take would invalidate a borrowed pattern binding",
+                    .related = body.binding(binding).origin
                 };
             }
         }
     }
-    if (const auto loan = storage_write_conflict(state, target)) {
+    if (const auto loan = storage_write_conflict(state, target, false)) {
         return TakeConflict {
             .code = DiagnosticCode::AccessBorrowConflict,
             .message = "operation conflicts with a live borrowed view",
-            .related = loan,
+            .related = loan
         };
     }
     for (const auto& holder : state.objects) {
@@ -668,7 +705,7 @@ auto OwnershipBodyAnalyzer::take_conflict(
                 return TakeConflict {
                     .code = DiagnosticCode::AccessBorrowConflict,
                     .message = "Take conflicts with a live callable view",
-                    .related = loan.origin,
+                    .related = loan.origin
                 };
             }
         }
@@ -678,7 +715,7 @@ auto OwnershipBodyAnalyzer::take_conflict(
             return TakeConflict {
                 .code = DiagnosticCode::AccessOperationConflict,
                 .message = "Take conflicts with an active access",
-                .related = std::nullopt,
+                .related = std::nullopt
             };
         }
     }
@@ -688,7 +725,7 @@ auto OwnershipBodyAnalyzer::take_conflict(
                 return TakeConflict {
                     .code = DiagnosticCode::AccessCaptureConflict,
                     .message = "Take conflicts with a live Write capture",
-                    .related = capture.origin,
+                    .related = capture.origin
                 };
             }
         }
@@ -729,7 +766,14 @@ auto OwnershipBodyAnalyzer::check_storage_write(
     ProgramOriginID origin,
     bool preserves_backing
 ) noexcept -> void {
-    const auto effect = OwnershipWriteEffect {target, true, true, origin, false, preserves_backing};
+    const auto effect = OwnershipWriteEffect {
+        .place = target,
+        .invalidates = true,
+        .storage = true,
+        .origin = origin,
+        .take = false,
+        .preserves_backing = preserves_backing
+    };
     if (!std::ranges::contains(effects, effect)) {
         effects.push_back(effect);
     }

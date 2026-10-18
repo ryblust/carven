@@ -35,7 +35,10 @@ auto SemanticExecutor::provided_call(
             if (!instant) {
                 co_return std::unexpected(std::move(instant.error()));
             }
-            co_return ConstantAtom {result, IntegerConstant::from_signed(*instant)};
+            co_return ConstantAtom {
+                .type = result,
+                .value = IntegerConstant::from_signed(*instant)
+            };
         }
         case ProvidedFunction::ReadInput: {
             auto mode = HostInputMode::Chunk;
@@ -289,7 +292,7 @@ auto SemanticExecutor::host_operation(
         if (timer->failure) {
             co_return std::unexpected(source_failure(
                 *timer->failure,
-                ExecutionAggregateValue {.type = *timer->failure, .elements = {}},
+                ExecutionAggregateValue {.type = *timer->failure, .elements = {}, .capacity = 0uz},
                 origin
             ));
         }
@@ -358,13 +361,19 @@ auto SemanticExecutor::input_value(const HostInputResult& response, const InputW
             .capacity = bytes.size()
         }
     );
-    result.emplace_back(ConstantAtom {.type = fields[1], .value = BooleanConstant {end}});
+    result.emplace_back(ConstantAtom {.type = fields[1], .value = BooleanConstant {.value = end}});
     result.emplace_back(
         ConstantAtom {.type = fields[2], .value = IntegerConstant::from_signed(system_error)}
     );
-    result.emplace_back(ConstantAtom {.type = fields[3], .value = BooleanConstant {limited}});
+    result.emplace_back(
+        ConstantAtom {.type = fields[3], .value = BooleanConstant {.value = limited}}
+    );
     return bounded_value(
-        ExecutionAggregateValue {.type = result_type, .elements = std::move(result)},
+        ExecutionAggregateValue {
+            .type = result_type,
+            .elements = std::move(result),
+            .capacity = 0uz
+        },
         origin
     );
 }

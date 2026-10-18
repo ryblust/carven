@@ -195,7 +195,7 @@ struct CompositionSlots<Input, Rest...> final {
             return tail.template race_success<Product, Output>(selected, index + 1);
         }
         return Output::success_from([&]() noexcept -> Product {
-            return {selected, {value(), {}}};
+            return {.head = selected, .tail = {.head = value(), .tail = {}}};
         });
     }
 
@@ -209,7 +209,7 @@ struct CompositionSlots<Input, Rest...> final {
 
     auto product() noexcept -> carven::runtime::
         Tuple<typename Traits::Value, typename CompositionInput<Rest>::Value...> {
-        return {value(), tail.product()};
+        return {.head = value(), .tail = tail.product()};
     }
 };
 
@@ -218,7 +218,7 @@ struct CompositionSlots<Input, Rest...> final {
 template<bool Validate, typename Input>
 auto composition_operand(Input input, carven::runtime::SourceSite site) noexcept
     -> detail::CompositionOperand<Input, Validate> {
-    return {std::move(input), site};
+    return {.operation = std::move(input), .site = site};
 }
 
 // Private generated-code ABI. Input parameters own cold operations; constructing

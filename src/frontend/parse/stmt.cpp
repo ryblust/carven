@@ -372,7 +372,7 @@ auto Parser::finish_assignment(ASTExprID target) noexcept -> std::optional<ASTAs
 
 auto Parser::parse_update() noexcept -> std::optional<ASTUpdate> {
     const auto operation = consume();
-    const auto target = parse_prefix_expression();
+    const auto target = parse_prefix_expression(true);
     if (!target) {
         return std::nullopt;
     }
@@ -450,7 +450,7 @@ auto Parser::parse_for_statement() noexcept -> std::optional<ASTStmtID> {
     const auto const_keyword = match(TokenKind::Const);
     const auto keyword = expect(TokenKind::For, "expected 'for'");
     const auto const_span =
-        const_keyword.transform([](const Token& token) static { return token.span; });
+        const_keyword.transform([](const Token& token) static noexcept { return token.span; });
     auto header = parse_for_header(const_span);
     if (!header) {
         return std::nullopt;
@@ -494,7 +494,7 @@ auto Parser::parse_for_header(std::optional<Span> const_span) noexcept
             .span = join(start, end_span),
             .value = ASTRangeForHeader {
                 .write_marker =
-                    access.transform([](const Token& token) static { return token.span; }),
+                    access.transform([](const Token& token) static noexcept { return token.span; }),
                 .target = std::move(*target),
                 .type = type,
                 .iterable = iterable,
@@ -503,7 +503,7 @@ auto Parser::parse_for_header(std::optional<Span> const_span) noexcept
     }
 
     if (const_span) {
-        fail("'const for' requires a range header", *const_span);
+        fail("'const for' requires a range header", *const_span, DiagnosticCode::Syntax);
         return std::nullopt;
     }
     auto initializer = ASTForInitializer {

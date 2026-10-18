@@ -18,7 +18,9 @@ auto interpret_expression(
 ) noexcept -> AnalysisTask<typename Site::Selection> {
     const auto& source = site.syntax().expression(expression);
     if (const auto* form = std::get_if<ASTLiteral>(&source.value)) {
-        co_return (co_await interpret_literal(site, *form, source.span, expected));
+        co_return (
+            co_await interpret_literal(site, *form, source.span, expected, LiteralSign::Positive)
+        );
     }
     using ValueTask = AnalysisTask<typename Site::Value>;
     using SelectionTask = AnalysisTask<typename Site::Selection>;
