@@ -226,7 +226,7 @@ auto with_execution(std::string source_text, Action action) noexcept -> void {
             origin,
             SemCallable {.callable = function.callable}
         );
-        auto expression = [&]() noexcept {
+        const auto expression = [&]() noexcept {
             if (contract.execution == CallableExecutionKind::Async) {
                 const auto operation = draft.append_construction_type(
                     {.value = ConstructionOperationTypeValue {

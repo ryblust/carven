@@ -103,7 +103,7 @@ const TestSuite suite([] static noexcept {
 
     "Generic instances: library identities preserve unused arguments across consumer domains and request order"_test =
         [] static noexcept {
-            const auto names = [](std::string calls, std::string domain) static noexcept {
+            const auto names = [](const std::string& calls, std::string domain) static noexcept {
                 const auto semantic = analyze_test_program(
                     "export fn tag<T>() -> i32 => 42; fn use() {" + calls + "}"
                 );

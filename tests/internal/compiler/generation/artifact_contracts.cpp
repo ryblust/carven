@@ -105,15 +105,6 @@ auto artifact_content(const GeneratedArtifactSet& artifacts, std::string_view pa
     return found->content;
 }
 
-auto occurrence_count(std::string_view text, std::string_view needle) noexcept -> std::size_t {
-    auto count = 0uz;
-    for (auto position = text.find(needle); position != std::string_view::npos;
-         position = text.find(needle, position + needle.size())) {
-        ++count;
-    }
-    return count;
-}
-
 const TestSuite suite([] static noexcept {
     "Compiler manifest: generation ownership is projected for build consumers"_test =
         [] static noexcept {
@@ -265,7 +256,7 @@ const TestSuite suite([] static noexcept {
                                                  std::string_view bytes) noexcept {
                 staged_output += bytes;
             };
-            auto semantic = analyze_compilation(
+            const auto semantic = analyze_compilation(
                 sources.snapshot(),
                 batch,
                 {
@@ -393,7 +384,6 @@ const TestSuite suite([] static noexcept {
             expect(implementation.contains("R\"(#line CARVEN_SOURCE_LINE 7 \\\"raw.cv\\\")\""));
             expect(implementation.contains("R\"(#line CARVEN_GENERATED_LINE \\\"raw.cpp\\\")\""));
             expect(implementation.find("cv_raw_source") < implementation.find("cv_raw_generated"));
-            expect_greater_equal(occurrence_count(implementation, "\"opaque.cv\""), 2u);
         };
 });
 

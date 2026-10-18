@@ -39,7 +39,7 @@ auto SemanticExecutor::compose(ExecutionColdOperation operation, ProgramOriginID
                 .condition_observation = std::nullopt,
             }
         );
-        auto iterator = std::prev(tasks.end());
+        const auto iterator = std::prev(tasks.end());
         children.push_back(iterator);
         iterator->operation->start(iterator->loop);
         ready.push_back({

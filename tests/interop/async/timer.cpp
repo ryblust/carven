@@ -72,7 +72,7 @@ auto cold() noexcept -> void {
     auto live = 0;
     auto destroyed = 0;
     {
-        auto operation =
+        const auto operation =
             captured_timer(timers, std::make_unique<Lifetime>(live, destroyed), observed);
         check(live == 1 && destroyed == 0, "unstarted operation owns capture");
         check(observed.started == 0, "construction does not start timer");
@@ -169,7 +169,7 @@ auto sibling_timer(
     int& live,
     int& destroyed
 ) noexcept -> async::AsyncOperation<void> {
-    auto lifetime = Lifetime(live, destroyed);
+    const auto lifetime = Lifetime(live, destroyed);
     trace.push_back(number);
     auto result = co_await timers.wait_for(2ms);
     check(result.success_if() != nullptr, "ordinary child close waits for timer success");
@@ -231,7 +231,7 @@ auto pre_cancel_body(
     auto scope = async::ChildScope(co_await async::current_activation());
     auto child = scope.start(timer(timers, delay, observed));
     async::cancel(child);
-    auto result = co_await child.observe();
+    const auto result = co_await child.observe();
     check(result.is_cancelled(), "cancel before start is accepted at timer consumption");
     check(!async::cancel_requested(), "child cancellation does not request parent cancellation");
     co_await scope.close(async::ClosingPolicy::CloseOnly);
@@ -278,7 +278,7 @@ public:
     }
 };
 
-auto borrowed_timer(TimerQueue& timers, bool& alive, Observation& observed) noexcept
+auto borrowed_timer(TimerQueue& timers, const bool& alive, Observation& observed) noexcept
     -> async::AsyncOperation<void> {
     check(alive, "descendant backing alive at registration");
     auto result = co_await timer(timers, 1h, observed);
@@ -293,7 +293,7 @@ auto ancestor(
     Observation& own,
     Observation& descendant
 ) noexcept -> async::AsyncOperation<void> {
-    auto backing = Backing(timers, alive, destroyed);
+    const auto backing = Backing(timers, alive, destroyed);
     auto scope = async::ChildScope(co_await async::current_activation());
     auto child = scope.start(borrowed_timer(timers, alive, descendant));
     auto result = co_await timer(timers, 1h, own);

@@ -1113,7 +1113,7 @@ auto OwnershipBodyAnalyzer::expression(
                 },
                 [&](const SemColdCompose& value) noexcept -> ContinuationTask<std::monostate> {
                     for (const auto& input : value.inputs) {
-                        auto retained = co_await evaluate(input.expression, true);
+                        const auto retained = co_await evaluate(input.expression, true);
                         if (!flow.normal) {
                             break;
                         }
@@ -1123,7 +1123,7 @@ auto OwnershipBodyAnalyzer::expression(
                     co_return {};
                 },
                 [&](const SemColdTimeout& value) noexcept -> ContinuationTask<std::monostate> {
-                    auto retained = co_await evaluate(*value.operation, true);
+                    const auto retained = co_await evaluate(*value.operation, true);
                     if (flow.normal) {
                         merge_relationships(flow.normal->value, retained);
                         static_cast<void>(co_await evaluate(*value.duration_ticks));

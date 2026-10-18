@@ -21,7 +21,7 @@ auto compile(
     ExecutionOutput output,
     TimingOutput timings
 ) noexcept -> std::expected<Diagnosed<GeneratedArtifactSet>, Diagnostics> {
-    auto semantic = analyze_compilation(
+    const auto semantic = analyze_compilation(
         sources.snapshot(),
         batch,
         {.output = output,

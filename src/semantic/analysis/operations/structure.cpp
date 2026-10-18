@@ -107,8 +107,8 @@ auto default_initialization(ProgramDraft& draft, ConstructionTypeRef type) noexc
             }
             return draft.construction_type_copy(std::get<TypeTermID>(reference));
         },
-        [&](ConstructionTypeRef reference, auto shape) noexcept {
-            if constexpr (std::same_as<decltype(shape), StructTypeValue>) {
+        [&](ConstructionTypeRef reference, const auto& shape) noexcept {
+            if constexpr (std::same_as<std::remove_cvref_t<decltype(shape)>, StructTypeValue>) {
                 return draft.construction_struct_declaration_copy(shape.structure);
             } else {
                 return record_shape(draft, reference);

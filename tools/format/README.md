@@ -15,6 +15,10 @@ carven-format write src
 carven-format help check
 ```
 
+Windows Unicode command-line arguments are converted to UTF-8. On POSIX,
+arguments, including the executable name, must be valid UTF-8. Invalid text is
+an input error. Empty arguments are preserved.
+
 The executable accepts:
 
 | Command | Behavior |

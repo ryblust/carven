@@ -97,7 +97,7 @@ function main(target, opt, case_spec, case_dir)
             io.writefile(stdin_file, step.stdin_bytes, {encoding = "binary"})
         end
         local exit_code, run_error = os.execv(program, args, {
-            try = true, timeout = step.run_timeout or 30000, curdir = work_dir, envs = envs,
+            try = true, timeout = 30000, curdir = work_dir, envs = envs,
             stdout = stdout_file, stderr = stderr_file,
             stdin = stdin_file,
         })

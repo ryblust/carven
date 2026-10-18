@@ -210,7 +210,7 @@ auto SemanticExecutor::poll_host() noexcept -> void {
     if (!result) {
         cursor.fill();
         if (auto filled = cursor.ready(input.request)) {
-            result.emplace(std::move(*filled));
+            result.emplace(*filled);
         }
     }
     if (result) {

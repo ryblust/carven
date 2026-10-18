@@ -2,10 +2,12 @@ module carven:driver.cli.impl;
 
 import :driver.cli;
 import :driver.compile;
+import :driver.diagnostic;
 import :driver.dump;
 import :driver.interpret;
 import :driver.options;
 import :driver.run;
+import :support.process;
 import std;
 
 namespace {
@@ -43,8 +45,13 @@ auto print_version() noexcept -> int {
 
 } // namespace
 
-auto carven_main(int argc, const char* const* argv) noexcept -> int {
-    const auto args = std::span(argv + 1, static_cast<std::size_t>(argc - 1));
+auto carven_main(int argc, const char* const* native_argv) noexcept -> int {
+    const auto arguments = process::arguments(argc, native_argv);
+    if (!arguments) {
+        return emit_driver_error(arguments.error());
+    }
+    const auto argv = std::span(*arguments);
+    const auto args = argv.subspan(1);
 
     if (args.empty()) {
         return print_help();

@@ -284,7 +284,14 @@ auto OwnershipBodyAnalyzer::call(
         );
         return call_contract(contract, arguments, std::move(state), origin);
     }
-    return call_body(*target_id, captures, capture_owner, arguments, std::move(state), origin);
+    return call_body(
+        *target_id,
+        captures,
+        std::move(capture_owner),
+        arguments,
+        std::move(state),
+        origin
+    );
 }
 
 auto OwnershipBodyAnalyzer::call_contract(
@@ -820,7 +827,7 @@ auto OwnershipBodyAnalyzer::call_body(
                     map_facts(state.objects[source].relationships)
                 );
             }
-            call_input.objects.push_back(std::move(object));
+            call_input.objects.push_back(object);
             call_input.state.objects.push_back(std::move(incoming_state));
         }
         for (auto left = 0uz; left < sources.size(); ++left) {

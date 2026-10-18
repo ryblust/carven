@@ -124,15 +124,15 @@ auto write(
 }
 
 auto cold() noexcept -> void {
-    auto pipe = Pipe();
+    const auto pipe = Pipe();
     auto queue = PipeQueue();
     auto observed = Observation {.started = 0, .finished = 0, .cancelled = false};
     constexpr auto data = std::array {std::byte {42}};
     auto buffer = std::array<std::byte, 1> {};
     check(raw_write(pipe.writer(), data) == 1, "preload cold read observation");
     {
-        auto reading = read(queue, pipe.reader(), buffer, observed);
-        auto writing = write(queue, pipe.writer(), data, observed);
+        const auto reading = read(queue, pipe.reader(), buffer, observed);
+        const auto writing = write(queue, pipe.writer(), data, observed);
         check(observed.started == 0, "cold construction does not execute I/O");
     }
     check(
@@ -151,7 +151,7 @@ auto cold() noexcept -> void {
     balanced(queue);
 }
 
-auto transfer_body(PipeQueue& queue, Pipe& pipe) noexcept -> async::AsyncOperation<void> {
+auto transfer_body(PipeQueue& queue, const Pipe& pipe) noexcept -> async::AsyncOperation<void> {
     constexpr auto data = std::array {std::byte {1}, std::byte {2}, std::byte {3}};
     auto buffer = std::array<std::byte, 4> {};
     auto written = co_await queue.write_some(pipe.writer(), data);
@@ -168,7 +168,7 @@ auto transfer_body(PipeQueue& queue, Pipe& pipe) noexcept -> async::AsyncOperati
 }
 
 auto transfer() noexcept -> void {
-    auto pipe = Pipe();
+    const auto pipe = Pipe();
     auto queue = PipeQueue();
     auto result = async::drive_root(transfer_body(queue, pipe), &queue);
     check(result.success_if() != nullptr, "ready I/O transfers its complete payload");
@@ -206,7 +206,7 @@ auto eof_error() noexcept -> void {
         check(result.success_if() != nullptr, "buffered EOF completes");
     }
     {
-        auto pipe = Pipe();
+        const auto pipe = Pipe();
         auto buffer = std::array<std::byte, 1> {};
         auto observed = Observation {.started = 0, .finished = 0, .cancelled = false};
         auto result = async::drive_root(read(queue, pipe.writer(), buffer, observed), &queue);
@@ -239,7 +239,7 @@ public:
     }
 };
 
-auto writer_task(PipeQueue& queue, int fd, Observation& reading, bool& released) noexcept
+auto writer_task(PipeQueue& queue, int fd, const Observation& reading, bool& released) noexcept
     -> async::AsyncOperation<void> {
     check(
         queue.pending_count() == 1 && reading.started == 1 && reading.finished == 0,
@@ -252,8 +252,12 @@ auto writer_task(PipeQueue& queue, int fd, Observation& reading, bool& released)
     co_return async::Completion<void>::success();
 }
 
-auto delayed_body(PipeQueue& queue, Pipe& pipe, bool& released, Observation& observed) noexcept
-    -> async::AsyncOperation<void> {
+auto delayed_body(
+    PipeQueue& queue,
+    const Pipe& pipe,
+    bool& released,
+    Observation& observed
+) noexcept -> async::AsyncOperation<void> {
     auto buffer = std::array<std::byte, 2> {};
     auto scope = async::ChildScope(co_await async::current_activation());
     auto reader = scope.start(read(queue, pipe.reader(), buffer, observed));
@@ -269,7 +273,7 @@ auto delayed_body(PipeQueue& queue, Pipe& pipe, bool& released, Observation& obs
 }
 
 auto delayed() noexcept -> void {
-    auto pipe = Pipe();
+    const auto pipe = Pipe();
     auto queue = PipeQueue();
     auto released = false;
     auto source = PollGate(queue, released);
@@ -314,7 +318,7 @@ public:
     }
 };
 
-auto timed_read(PipeQueue& queue, Pipe& pipe, bool data_ready, Observation& observed) noexcept
+auto timed_read(PipeQueue& queue, const Pipe& pipe, bool data_ready, Observation& observed) noexcept
     -> async::AsyncOperation<bool> {
     auto scope = async::ChildScope(co_await async::current_activation());
     auto buffer = std::array<std::byte, 1> {};
@@ -344,7 +348,7 @@ auto timed_read(PipeQueue& queue, Pipe& pipe, bool data_ready, Observation& obse
 }
 
 auto timer_deadline() noexcept -> void {
-    auto pipe = Pipe();
+    const auto pipe = Pipe();
     auto queue = PipeQueue();
     auto observed = Observation {.started = 0, .finished = 0, .cancelled = false};
     auto result = async::drive_root(timed_read(queue, pipe, false, observed), &queue);
@@ -358,7 +362,7 @@ auto timer_deadline() noexcept -> void {
 }
 
 auto timer_cancel() noexcept -> void {
-    auto pipe = Pipe();
+    const auto pipe = Pipe();
     auto queue = PipeQueue();
     auto observed = Observation {.started = 0, .finished = 0, .cancelled = false};
     constexpr auto data = std::array {std::byte {9}};
@@ -372,7 +376,7 @@ auto timer_cancel() noexcept -> void {
 }
 
 auto idle_wait() noexcept -> void {
-    auto pipe = Pipe();
+    const auto pipe = Pipe();
     auto queue = PipeQueue();
     auto source = ExternalWriter(queue, pipe.writer());
     auto buffer = std::array<std::byte, 1> {};
@@ -414,7 +418,7 @@ auto borrowing_read(
     PipeQueue& queue,
     int fd,
     Buffer& buffer,
-    bool& alive,
+    const bool& alive,
     Observation& observed
 ) noexcept -> Operation {
     check(alive, "borrowed buffer lives during registration");
@@ -439,7 +443,7 @@ auto ancestor(
     auto own_buffer = std::array<std::byte, 1> {};
     auto scope = async::ChildScope(co_await async::current_activation());
     auto child = scope.start(borrowing_read(queue, child_fd, buffer, alive, descendant));
-    auto result = co_await read(queue, own_fd, own_buffer, own);
+    const auto result = co_await read(queue, own_fd, own_buffer, own);
     check(result.is_cancelled(), "registered ancestor accepts cancellation");
     co_await scope.close(async::ClosingPolicy::CloseOnly);
     check(
@@ -451,8 +455,8 @@ auto ancestor(
 
 auto cancelled_close_body(
     PipeQueue& queue,
-    Pipe& own_pipe,
-    Pipe& child_pipe,
+    const Pipe& own_pipe,
+    const Pipe& child_pipe,
     bool& alive,
     int& destroyed,
     Observation& own,
@@ -478,8 +482,8 @@ auto cancelled_close_body(
 }
 
 auto cancelled_close() noexcept -> void {
-    auto own_pipe = Pipe();
-    auto child_pipe = Pipe();
+    const auto own_pipe = Pipe();
+    const auto child_pipe = Pipe();
     auto queue = PipeQueue();
     auto alive = false;
     auto destroyed = 0;
@@ -496,8 +500,12 @@ auto cancelled_close() noexcept -> void {
     balanced(queue);
 }
 
-auto committed_body(PipeQueue& queue, Pipe& pipe, bool& released, Observation& observed) noexcept
-    -> async::AsyncOperation<void> {
+auto committed_body(
+    PipeQueue& queue,
+    const Pipe& pipe,
+    bool& released,
+    Observation& observed
+) noexcept -> async::AsyncOperation<void> {
     auto& activation = co_await async::current_activation();
     auto buffer = std::array<std::byte, 1> {};
     auto scope = async::ChildScope(activation);
@@ -526,7 +534,7 @@ auto committed_body(PipeQueue& queue, Pipe& pipe, bool& released, Observation& o
 }
 
 auto committed() noexcept -> void {
-    auto pipe = Pipe();
+    const auto pipe = Pipe();
     auto queue = PipeQueue();
     auto released = false;
     auto source = PollGate(queue, released);
@@ -560,7 +568,7 @@ public:
     }
 };
 
-auto rearm_body(PipeQueue& queue, Pipe& pipe) noexcept -> async::AsyncOperation<void> {
+auto rearm_body(PipeQueue& queue, const Pipe& pipe) noexcept -> async::AsyncOperation<void> {
     auto buffer = std::array<std::byte, 1> {};
     for (const auto value : {std::byte {11}, std::byte {12}}) {
         auto received = co_await queue.read_some(pipe.reader(), buffer);
@@ -573,7 +581,7 @@ auto rearm_body(PipeQueue& queue, Pipe& pipe) noexcept -> async::AsyncOperation<
 }
 
 auto rearm() noexcept -> void {
-    auto pipe = Pipe();
+    const auto pipe = Pipe();
     auto queue = PipeQueue();
     auto source = Refill(queue, pipe.writer());
     auto result = async::drive_root(rearm_body(queue, pipe), &source);
@@ -581,7 +589,7 @@ auto rearm() noexcept -> void {
     balanced(queue);
 }
 
-auto fill(Pipe& pipe) noexcept -> std::size_t {
+auto fill(const Pipe& pipe) noexcept -> std::size_t {
     constexpr auto block = std::array<std::byte, 4096> {};
     auto filled = std::size_t(0);
     for (const auto width : {block.size(), std::size_t(1)}) {
@@ -604,7 +612,7 @@ auto fill(Pipe& pipe) noexcept -> std::size_t {
 
 auto backpressure_body(
     PipeQueue& queue,
-    Pipe& pipe,
+    const Pipe& pipe,
     std::size_t capacity,
     bool& released,
     Observation& observed
@@ -674,7 +682,7 @@ auto backpressure_body(
 }
 
 auto backpressure() noexcept -> void {
-    auto pipe = Pipe();
+    const auto pipe = Pipe();
     const auto capacity = fill(pipe);
     auto queue = PipeQueue();
     auto released = false;

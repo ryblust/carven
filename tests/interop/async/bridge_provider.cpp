@@ -76,7 +76,7 @@ namespace async_bridge {
 
 auto bridge_read_byte(const Context& context) noexcept -> providers::bridge_read_byte::Completion {
     check(&context == context.host_address, "noncopyable Read context is the host holder");
-    auto lifetime = BufferLifetime(context.observed);
+    const auto lifetime = BufferLifetime(context.observed);
     auto buffer = std::array<std::byte, 1> {};
     auto result = co_await context.queue.read_some(context.fd, buffer);
     co_return read_completion(std::move(result), buffer[0], context.observed);
@@ -88,7 +88,7 @@ auto bridge_write_byte(const Context& context, std::int32_t value) noexcept
         &context == context.host_address && value >= 0 && value <= 255,
         "valid write context and byte"
     );
-    auto lifetime = BufferLifetime(context.observed);
+    const auto lifetime = BufferLifetime(context.observed);
     const auto buffer = std::array {static_cast<std::byte>(value)};
     auto result = co_await context.queue.write_some(context.fd, buffer);
     ++context.observed.finished;
@@ -113,7 +113,7 @@ auto bridge_trivial_byte(const TrivialContext& context, std::int32_t marker) noe
         &context == context.host_address && marker == 23,
         "trivial Read context retains host identity through factory and yielding argument"
     );
-    auto lifetime = BufferLifetime(*context.observed);
+    const auto lifetime = BufferLifetime(*context.observed);
     auto buffer = std::array<std::byte, 1> {};
     auto result = co_await context.queue->read_some(context.fd, buffer);
     co_return read_completion(std::move(result), buffer[0], *context.observed);

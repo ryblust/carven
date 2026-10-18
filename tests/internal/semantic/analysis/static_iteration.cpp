@@ -26,7 +26,7 @@ auto with_iteration(std::string_view text, Check check) noexcept -> void {
         require(stream == ExecutionOutputStream::Standard);
         output.append(bytes);
     };
-    auto result = analyze_compilation(
+    const auto result = analyze_compilation(
         std::move(sources),
         SourceBatch {.modules = std::span(&input, 1uz)},
         {.output = write_output,

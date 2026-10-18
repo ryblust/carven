@@ -111,7 +111,7 @@ auto run_net_cases() noexcept -> void {
     const auto reader = net_api::borrow({&pair.reader()});
     const auto writer = net_api::borrow({&pair.writer()});
     {
-        auto unstarted = api::at_end(reader);
+        const auto unstarted = api::at_end(reader);
     }
     check(succeeds(api::conflict(reader), network), "same-direction conflict and cancel drain");
     check(succeeds(api::timed_out(reader), network), "timeout drain");

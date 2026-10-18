@@ -47,8 +47,8 @@ delta
 The native declaration uses `std::string_view`; the Carven contract uses `str`.
 The generated API header supplies the complete `Report` representation, including
 its `Vector<String>`. C++ uses `auto` for the returned report, accesses its fields,
-and iterates its records directly. The workflow and its C++ provider form a
-shared static target. The application and native behavior test each supply a C++
-entry and link that target, reusing the compiled workflow. `checks.cpp` checks
-record order, counts, and report ownership after the input streams are destroyed.
+and iterates its records directly. One application target compiles `main.cpp`,
+`workflow.cv`, and `stream.cpp` together. The native behavior test replaces the
+C++ entry with `checks.cpp`, checking record order, counts, and report ownership
+after the input streams are destroyed.
 All example targets are excluded from the default compiler build.

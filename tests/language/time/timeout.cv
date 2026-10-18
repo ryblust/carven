@@ -65,6 +65,8 @@ async fn run_timeout() throw RangeError {
     assert(drained && started == 2 && closed == 1);
 
     async let parent = protected(&started, &closed);
+    // cooperative() increments started through a mutable borrow while this task yields.
+    // Generated C++ triggers bugprone-infinite-loop, which misses that coroutine update.
     while started != 3 {
         await yield_once();
     }

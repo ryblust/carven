@@ -99,6 +99,8 @@ template<typename Visitor>
 auto visit_execution_type(
     const ExecutionValueAccess& values,
     ConstructionTypeRef type,
+    // Borrow the visitor as an lvalue, including through nested variant visits.
+    // NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward)
     Visitor&& visitor
 ) noexcept -> decltype(visitor(BuiltinTypeValue {BuiltinType::Void})) {
     if (const auto* concrete = std::get_if<TypeID>(&type)) {

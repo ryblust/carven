@@ -208,7 +208,7 @@ auto FailureInstantiation::substitute_generic(GenericFailureID source) noexcept
                 "symbolic failure instantiation is missing its parameter environment"
             );
         }
-        auto input = environment.parameter(component.parameter);
+        const auto input = environment.parameter(component.parameter);
         destination.require_source(input);
         inputs.push_back(filter(input, component.mask));
     }

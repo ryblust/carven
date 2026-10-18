@@ -26,7 +26,7 @@ auto compilation_option_error(CompilationOptionErrorKind kind, std::string_view 
 } // namespace
 
 auto parse_compilation_options(
-    std::span<const char* const> args,
+    std::span<const std::string> args,
     CompilationCommand command
 ) noexcept -> std::expected<CompilationOptions, CompilationOptionError> {
     auto request = CompilationOptions {

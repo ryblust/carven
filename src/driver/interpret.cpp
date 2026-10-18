@@ -151,7 +151,7 @@ auto report_execution_error(
 
 } // namespace
 
-auto run_interpret_command(std::string_view executable, std::span<const char* const> args) noexcept
+auto run_interpret_command(std::string_view executable, std::span<const std::string> args) noexcept
     -> int {
     if (args.size() == 1
         && (std::string_view(args[0]) == "--help" || std::string_view(args[0]) == "-h")) {

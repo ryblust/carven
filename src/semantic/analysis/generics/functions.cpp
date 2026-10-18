@@ -231,7 +231,7 @@ auto ProgramDraft::instantiate_generic_function(
         .is_const = function->is_const,
     });
     storage.functions_by_callable.emplace(callable, function_id);
-    auto reservation = reserve_body(BodyKind::Function);
+    const auto reservation = reserve_body(BodyKind::Function);
     const auto body_id = reservation.id();
     complete_callable(callable, FunctionBodyImplementation {.body = body_id});
     const auto slot_index = storage.generic_function_instances.size();

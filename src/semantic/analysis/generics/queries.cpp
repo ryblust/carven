@@ -132,9 +132,9 @@ auto ProgramDraft::generic_member_types(GenericTypeID type) const noexcept
 
 auto ProgramDraft::cache_generic_record_fields(
     GenericTypeID type,
-    std::vector<ConstructionTypeRef> fields
+    const std::vector<ConstructionTypeRef>& fields
 ) noexcept -> void {
-    storage.generic_record_shapes.try_emplace(type, std::move(fields));
+    storage.generic_record_shapes.try_emplace(type, fields);
 }
 
 auto ProgramDraft::prepare_generic_analysis_shapes() noexcept -> void {

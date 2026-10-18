@@ -166,7 +166,7 @@ auto chunks() noexcept -> void {
     auto transfer = Transfer();
     transfer.preload();
     {
-        auto cold = api::copy(transfer.reader, transfer.writer);
+        const auto cold = api::copy(transfer.reader, transfer.writer);
     }
     check(
         transfer.reading.started == 0 && transfer.writing.started == 0,

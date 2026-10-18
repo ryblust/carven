@@ -612,6 +612,9 @@ auto BodyRealizer::ExpressionBuilder::build(
         }
         co_return finish_fragment(std::move(fragment));
     }
+    // Fallible calls split the full expression at their outcome declaration.
+    // Borrowed success values still need their operand owners after that call.
+    retain_backing |= owner.fallible(value.operation).has_value();
     auto& inputs = fragment.preparation.operands;
     const auto* native_conversion = std::get_if<SemCpp>(&value.operation.value);
     const auto* conversion = native_conversion

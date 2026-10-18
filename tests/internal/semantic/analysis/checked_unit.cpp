@@ -144,7 +144,7 @@ const { println(answer); }
             });
             expect_equal(integer_constant(*consumer.program(), "answer"), 42ll);
             expect_equal(captured_output(consumer), std::string("42\n"));
-            auto unit = take_unit(std::move(consumer));
+            const auto unit = take_unit(std::move(consumer));
             expect(unit.cacheable);
             expect(unit.definitions.empty());
         };
@@ -155,7 +155,7 @@ const { println(answer); }
             auto inputs = std::vector<SourceModuleInput>();
             constexpr auto modules = std::to_array<std::string_view>({"time"});
             append_standard_sources(sources, inputs, modules);
-            auto standard = take_unit(
+            const auto standard = take_unit(
                 analyze_checked_compilation(std::move(sources), SourceBatch {.modules = inputs})
             );
             const auto consumer = checked_analysis(
@@ -176,7 +176,7 @@ async fn wait() throw RangeError { await sleep(0ns)?; }
 
     "Checked unit: imported declarations retain diagnostic source identities"_test =
         [] static noexcept {
-            auto library =
+            const auto library =
                 take_unit(checked_analysis("export fn argument(value: i32) {}", "library"));
             const auto consumer = checked_analysis(
                 "import library using argument; fn invalid() { argument(); }",
@@ -195,7 +195,7 @@ async fn wait() throw RangeError { await sleep(0ns)?; }
             "crafts.carven.std.time"
         ));
         expect(pure.cacheable);
-        auto observed = take_unit(checked_analysis(
+        const auto observed = take_unit(checked_analysis(
             "export const fn sample() -> i64 => monotonic_now(); "
             "const captured = sample(); const { println(\"producer host\"); }",
             "crafts.carven.std.time"

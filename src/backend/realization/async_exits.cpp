@@ -71,7 +71,7 @@ auto BodyRealizer::realize_async_exits(std::vector<TargetStmt>& statements) noex
                 locals.push_back(variable->local);
             }
             if (const auto* exit = std::get_if<TargetPendingExitStmt>(&statement.value)) {
-                auto node = async_exits.extract(exit->identity);
+                const auto node = async_exits.extract(exit->identity);
                 if (node.empty()) {
                     invariant_violation("async exit has no realization record");
                 }

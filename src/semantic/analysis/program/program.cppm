@@ -177,7 +177,7 @@ public:
 
     auto cache_generic_record_fields(
         GenericTypeID type,
-        std::vector<ConstructionTypeRef> fields
+        const std::vector<ConstructionTypeRef>& fields
     ) noexcept -> void;
 
     auto validate_generic_definitions(

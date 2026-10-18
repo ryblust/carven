@@ -1,3 +1,14 @@
-import "demo/native.hpp" using native_answer;
+import "demo/native.hpp";
 
-export fn answer() -> i32 => native_answer();
+private import(cpp) fn native_answer() -> i32;
+
+private fn parse(text: str) -> i32 => i32::parse(text)?;
+
+export fn answer(use_native: bool) -> i32 {
+    if use_native { return native_answer(); }
+    return try {
+        parse("42")?
+    } catch {
+        _ => 0,
+    };
+}

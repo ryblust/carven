@@ -22,7 +22,7 @@ auto ProgramDraft::finish() && noexcept -> AnalysisResult<SemIRProgram> {
     if (!solved) {
         return std::unexpected(solved.error());
     }
-    auto generics = std::move(solved->generics);
+    const auto generics = std::move(solved->generics);
     auto result = AnalysisResult<SemIRProgram> {std::move(solved->program)};
     if (const auto failure = diagnostics.failure()) {
         return std::unexpected(*failure);

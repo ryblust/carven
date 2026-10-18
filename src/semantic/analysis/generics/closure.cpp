@@ -97,7 +97,7 @@ auto ProgramDraft::normalize_generic_environment(
             );
         } else if (const auto* query = std::get_if<GenericCppQueryType>(&shape)) {
             auto closed = true;
-            auto normalized = map_cpp_query_types(
+            const auto normalized = map_cpp_query_types(
                 *query,
                 [&](ConstructionTypeRef type) noexcept -> ConstructionTypeRef {
                     const auto resolved = self(self, type);

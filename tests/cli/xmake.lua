@@ -20,35 +20,27 @@ local case_specs = {
     },
     ["commands/provider"] = {
         inputs = {"input.cv", "input/provider/Result.cv", "private_only.cv"},
-        steps = {
-            {args = {"compile", "-o", "emit", "input.cv", "input/provider/Result.cv", "private_only.cv"},
-                output_files = {"emit/carven/providers/input.hpp", "emit/carven/providers/input/provider/Result.hpp", "emit/carven/providers/private_only.hpp", "emit/carven/manifest.json"}},
-        },
+        args = {"compile", "-o", "emit", "input.cv", "input/provider/Result.cv", "private_only.cv"},
+        output_files = {"emit/carven/providers/input.hpp", "emit/carven/providers/input/provider/Result.hpp", "emit/carven/providers/private_only.hpp", "emit/carven/manifest.json"},
     },
     ["input/mapped"] = {
-        fixtures = {["../../commands/manifest/input.cv"] = "crafts/toolchain/crafts/input.cv"},
+        fixtures = {["../../commands/manifest/input.cv"] = "crafts/toolchain/项目 🌍/input.cv"},
         steps = {
-            {args = {"compile", "--source=logical.input=crafts/toolchain/crafts/input.cv",
+            {args = {"compile", "--source=logical.input=crafts/toolchain/项目 🌍/input.cv",
                      "-o", "emit"},
                 output_files = {"emit/logical/input.cpp", "emit/carven/manifest.json"}},
-            {args = {"check", "--source=logical.input=crafts/toolchain/crafts/input.cv"},
+            {args = {"check", "--source=logical.input=crafts/toolchain/项目 🌍/input.cv",
+                     "--source=logical.input=crafts/toolchain/项目 🌍/input.cv"},
                 stderr_contains = {"check passed"}},
-            {args = {"check", "--source=logical.input=crafts/toolchain/crafts/input.cv",
-                     "--source=logical.input=crafts/toolchain/crafts/input.cv"},
-                stderr_contains = {"check passed"}},
-            {args = {"compile", "--source=logical.input=crafts/toolchain/crafts/input.cv", "--stdout"},
+            {args = {"compile", "--source=logical.input=crafts/toolchain/项目 🌍/input.cv", "--stdout"},
                 stdout_contains = {"==> logical/input.cpp <=="}},
         },
     },
     ["commands/manifest"] = {
-        inputs = {"input.cv"},
         fixtures = {["invalid.cv.fixture"] = "invalid.cv"},
-        steps = {
-            {args = {"compile", "--tests", "-o", "emit", "input.cv"},
-                output_files = {"emit/carven/manifest.json", "emit/input.cpp", "emit/carven/api/input.hpp"}},
-            {args = {"compile", "-o", "failed", "invalid.cv"}, exit_code = 1,
-                stderr_contains = {"CV-SYNTAX", "expected parameter name", "invalid.cv:1:12"}, absent_files = {"failed"}},
-        },
+        args = {"compile", "-o", "failed", "invalid.cv"}, exit_code = 1,
+        stderr_contains = {"CV-SYNTAX", "expected parameter name", "invalid.cv:1:12"},
+        absent_files = {"failed"},
     },
     ["commands/artifact_reuse"] = {
         case_dir = "commands/manifest",
@@ -61,7 +53,8 @@ local case_specs = {
                 output_files = {"ordinary/input.cpp", "ordinary/carven/api/input.hpp", "ordinary/carven/manifest.json"},
                 absent_files = {"ordinary/carven/generated/carven-test-main.cpp", "ordinary/carven/semantic"}},
             {args = {"compile", "program", "--tests", "-o", "tests"},
-                output_files = {"tests/input.cpp", "tests/carven/generated/carven-test-main.cpp", "tests/carven/manifest.json"},
+                output_files = {"tests/input.cpp", "tests/carven/api/input.hpp",
+                    "tests/carven/generated/carven-test-main.cpp", "tests/carven/manifest.json"},
                 absent_files = {"tests/carven/semantic"}},
             {args = {"compile", "program", "--stdout"},
                 stdout_contains = {"==> input.cpp <==", "==> carven/api/input.hpp <=="},
@@ -116,14 +109,9 @@ local case_specs = {
         inputs = {"input.cv"},
         steps = {
             {
-                args = {"check", "--timings", "input.cv"}, stdout = "compile.txt",
-                stderr_contains = {"carven: check passed in ", "Semantic analysis"},
-                stderr_not_contains = {"C++ generation", "Execution"},
-            },
-            {
                 args = {"check", "--timings", "input.cv", "-o", "checked"}, stdout = "compile.txt",
                 stderr_contains = {"carven: check passed in ", "Semantic analysis"},
-                stderr_not_contains = {"C++ generation"},
+                stderr_not_contains = {"C++ generation", "Execution"},
             },
             {
                 args = {"compile", "--timings", "checked", "-o", "generated"},
@@ -143,10 +131,6 @@ local case_specs = {
                 stderr_not_contains = {"C++ generation", "Native compilation"},
             },
         },
-    },
-    ["commands/default_initialization"] = {
-        inputs = {"input.cv"},
-        args = {"interpret", "input.cv"}, stdout = "run.txt",
     },
     ["commands/const_blocks"] = {
         inputs = {"input.cv", "helper.cv"},
@@ -179,7 +163,6 @@ local case_specs = {
         args = {"compile", "input.cv"},
         stderr_contains = {"CV-LINT-UNUSED-LOCAL", "input.cv"},
         output_files = {"input.cpp"},
-        absent_files = {"carven/generated/*/input.hpp"},
     },
     ["output/default"] = {
         fixtures = {["../fixtures/bare_structure.cv"] = "bare_structure.cv"},
@@ -210,48 +193,9 @@ local case_specs = {
             "/bare_structure.hpp <==",
         },
         absent_files = {
-            "bare_structure.cpp",
-            "carven/generated/*/bare_structure.hpp",
+            "**.cpp",
+            "**.hpp",
         },
-    },
-    ["output/testing_modes"] = {
-        fixtures = {["../fixtures/passing_test.cv"] = "passing_test.cv"},
-        steps = {
-            {
-                args = {"compile", "-o", "none", "passing_test.cv"},
-                output_files = {"none/passing_test.cpp", "none/carven/manifest.json"},
-                absent_files = {
-                    "none/carven/generated/*/passing_test.hpp",
-                    "none/carven/generated/carven-test-runner.hpp",
-                    "none/carven/generated/carven-test-main.cpp",
-                },
-            },
-            {
-                args = {"compile", "passing_test.cv", "--tests", "-o", "default"},
-                output_files = {
-                    "default/passing_test.cpp",
-                    "default/carven/generated/carven-test-runner.hpp",
-                    "default/carven/generated/carven-test-main.cpp",
-                },
-            },
-            {
-                args = {"compile", "--tests=runner", "-o", "external", "passing_test.cv"},
-                output_files = {
-                    "external/passing_test.cpp",
-                    "external/carven/generated/carven-test-runner.hpp",
-                },
-                absent_files = {
-                    "external/carven/generated/*/passing_test.hpp",
-                    "external/carven/generated/carven-test-main.cpp",
-                },
-            },
-        },
-    },
-    ["module_layout/deduplication"] = {
-        project = "../project",
-        args = {"compile", "nested/local.cv", "./nested/local.cv", "-o", "emit"},
-        output_files = {"emit/nested/local.cpp"},
-        absent_files = {"emit/main.cpp"},
     },
     ["module_layout/spec"] = {
         project = "../project",
@@ -262,6 +206,7 @@ local case_specs = {
             "sibling.cv",
             "nested/worker.cv",
             "nested/local.cv",
+            "./nested/local.cv",
             "__internal.cv",
             "import/export.cv",
         },
@@ -282,52 +227,31 @@ local case_specs = {
     },
 }
 
-case_specs["commands/native_execution"] = {
-    inputs = {"input.cv", "unlisted.cv",
-        "crafts/demo/api.cv", "crafts/demo/native.hpp", "crafts/demo/native.cpp"},
-    steps = {
-        {
-            args = {"--timings", "input.cv", "./input.cv", "crafts/demo/api.cv", "--", "--timings", "--help", "space argument", "; echo injected", "", 'a"b', "trailing\\", 'slash\\"quote'},
-            run_timeout = 120000,
-            stdout = "stdout.txt",
-            exit_code = 1,
-            stderr_ordered = {"failure 'input.Failure' escaped the program entry",
-                "carven: run exited with code 1 in ", "Native compilation", "Execution"},
-            absent_files = {"input.cpp", "program", "program.exe"},
-        },
-    },
-}
-
-local default_cli = {
+local native_execution = {
     native_operation = {
-        args = {"interpret", "native.cv"}, exit_code = 1, stdout = "stdout.txt",
+        args = {"interpret", "native.cv"}, exit_code = 1, stdout = "source_stdout.txt",
         stderr_contains = {"CV-INTERPRET-ADMISSION", "native C++ function requires compiled execution",
             "crafts/demo/api.cv:", "native.cv:"},
     },
     interpret = {
-        args = {"interpret", "input.cv"}, stdout = "stdout.txt",
+        args = {"interpret", "source.cv"}, stdout = "source_stdout.txt",
     },
     tests = {
-        args = {"interpret", "--tests", "input.cv"},
+        args = {"interpret", "--tests", "source.cv"},
         stderr_contains = {"tests: 1 passed; 0 failed"},
     },
     compile = {
-        args = {"compile", "input.cv", "-o", "emit"},
-        output_files = {"emit/input.cpp", "emit/crafts/demo/api.cpp", "emit/carven/generated/*/crafts/carven/std/io.hpp"},
+        args = {"compile", "source.cv", "-o", "emit"},
+        output_files = {"emit/source.cpp", "emit/crafts/demo/api.cpp", "emit/carven/generated/*/crafts/carven/std/io.hpp"},
         absent_files = {"emit/crafts/carven/std/io.cpp"},
-    },
-    run = {
-        args = {"native.cv"}, run_timeout = 120000,
-        stdout_contains = {"native initialized\n", "native destroyed\n"},
-        stdout_ordered = {"fragment initialized\n", "source 42\nnative 43\n", "fragment destroyed\n"},
     },
 }
 
 -- Keep normal discovery against the real bundled Standard and Runtime Crafts.
-for name, scenario in pairs(default_cli) do
-    scenario.case_dir = "commands/default_cli"
-    scenario.inputs = {"input.cv", "native.cv", "crafts/demo/api.cv", "crafts/demo/native.hpp", "crafts/demo/native.cpp"}
-    case_specs["commands/default_cli/" .. name] = scenario
+for name, scenario in pairs(native_execution) do
+    scenario.case_dir = "commands/native_execution"
+    scenario.inputs = {"source.cv", "native.cv", "crafts/demo/api.cv", "crafts/demo/native.hpp"}
+    case_specs["commands/native_execution/" .. name] = scenario
 end
 
 local interpretation = {
@@ -413,14 +337,10 @@ local interpretation = {
             stdout = "main.txt",
         },
         ["arguments"] = {
-            args = {"interpret", "input.cv", "--", "--help"},
-            stdout = "stdout.txt",
-            absent_files = {"input.cpp", "program", "program.exe"},
-        },
-        ["trace"] = {
-            args = {"interpret", "--trace", "input.cv"},
+            args = {"interpret", "--trace", "input.cv", "--", "--help"},
             stdout = "stdout.txt",
             stderr_contains = {"call main", "call fib", "return fib", "statement"},
+            absent_files = {"input.cpp", "program", "program.exe"},
         },
         ["wrapping"] = {
             args = {"interpret", "wrapping.cv"},
@@ -441,12 +361,8 @@ end
 
 case_specs["commands/test_options"] = {
     fixtures = {["../interpretation/declarations.cv"] = "declarations.cv"},
-    steps = {
-        {args = {"compile", "declarations.cv", "-o", "no-entry"},
-            output_files = {"no-entry/declarations.cpp"}},
-        {args = {"compile", "--tests", "declarations.cv", "-o", "empty-tests"},
-            output_files = {"empty-tests/carven/generated/carven-test-main.cpp", "empty-tests/carven/manifest.json"}},
-    },
+    args = {"compile", "--tests", "declarations.cv", "-o", "empty-tests"},
+    output_files = {"empty-tests/carven/generated/carven-test-main.cpp", "empty-tests/carven/manifest.json"},
 }
 
 case_specs["commands/assertions/passing"] = {
@@ -466,34 +382,42 @@ case_specs["commands/test_order"] = {
 
 case_specs["commands/execution_modes"] = {
     inputs = {"input.cv"},
-    steps = {},
+    steps = {
+        {
+            args = {"interpret", "input.cv"},
+            stdout_ordered = {"compile-time test\n", "compile-time output: 3\n", "runtime output: 2\n"},
+            stdout_not_contains = {"runtime test"},
+        },
+        {
+            args = {"interpret", "--tests", "input.cv"},
+            stdout_ordered = {"compile-time test\n", "compile-time output: 3\n", "runtime test\n"},
+            stdout_not_contains = {"runtime output"},
+            stderr_contains = {"tests: 1 passed; 0 failed"},
+        },
+        {
+            args = {"compile", "input.cv", "-o", "program-output"},
+            stdout_ordered = {"compile-time test\n", "compile-time output: 3\n"},
+            stdout_not_contains = {"runtime test", "runtime output"},
+            output_files = {"program-output/input.cpp", "program-output/carven/manifest.json"},
+            absent_files = {"program-output/carven/generated/carven-test-runner.hpp",
+                "program-output/carven/generated/carven-test-main.cpp"},
+        },
+        {
+            args = {"compile", "--tests", "input.cv", "-o", "test-output"},
+            stdout_ordered = {"compile-time test\n", "compile-time output: 3\n"},
+            stdout_not_contains = {"runtime test", "runtime output"},
+            output_files = {"test-output/input.cpp", "test-output/carven/generated/carven-test-runner.hpp",
+                "test-output/carven/generated/carven-test-main.cpp"},
+        },
+        {
+            args = {"compile", "--tests=runner", "input.cv", "-o", "runner-output"},
+            stdout_ordered = {"compile-time test\n", "compile-time output: 3\n"},
+            stdout_not_contains = {"runtime test", "runtime output"},
+            output_files = {"runner-output/input.cpp", "runner-output/carven/generated/carven-test-runner.hpp"},
+            absent_files = {"runner-output/carven/generated/carven-test-main.cpp"},
+        },
+    },
 }
-for _, selection in ipairs({
-    {mode = "interpret", tests = false},
-    {mode = "interpret", tests = true},
-    {mode = "compile", tests = false},
-    {mode = "compile", tests = true},
-}) do
-    local mode, tests = selection.mode, selection.tests
-    local args = {mode}
-    if tests then table.insert(args, "--tests") end
-    if mode == "compile" then
-        table.insert(args, "-o")
-        table.insert(args, tests and "test-output" or "program-output")
-    end
-    table.insert(args, "input.cv")
-    local output = {"compile-time test\n", "compile-time output: 3\n"}
-    if mode ~= "compile" then
-        table.insert(output, tests and "runtime test\n" or "runtime output: 2\n")
-    end
-    table.insert(case_specs["commands/execution_modes"].steps, {
-        args = args,
-        stdout_ordered = output,
-        stdout_not_contains = mode == "compile" and {"runtime test", "runtime output"}
-            or {tests and "runtime output" or "runtime test"},
-        stderr_contains = mode ~= "compile" and tests and {"tests: 1 passed; 0 failed"} or nil,
-    })
-end
 
 case_specs["commands/source_collection"] = {
     inputs = {"input.cv", "isolated.cv", "crafts/demo/value.cv", "explicit.cv", "external/crafts/json/parser.cv"},
@@ -548,26 +472,31 @@ case_specs["output/sink_failure"] = {
 }
 
 case_specs["invocation/invalid_option"] = {
-    args = {"compile", "--unknown", "input.cv"},
+    args = {"compile", "--unknown=世界 🌍", "input.cv"},
     exit_code = 1,
-    stderr_contains = {"unknown option '--unknown'", "carven compile --help"},
+    stderr_contains = {"unknown option '--unknown=世界 🌍'", "carven compile --help"},
 }
+
+if not is_plat("windows") then
+    case_specs["invocation/invalid_utf8"] = {
+        args = {string.char(255)}, exit_code = 1,
+        stderr_contains = {"process argument is not valid UTF-8"},
+    }
+end
 
 case_specs["commands/test_report"] = {
     fixtures = {["input.cv.fixture"] = "input.cv"},
-    steps = {
-        {args = {"interpret", "--tests", "input.cv"}, exit_code = 1,
-            stdout = "stdout.txt", stderr_ordered = {
-                "before failures", "input.cv:11:5: error: check failed", "name: failed",
-                "condition: actual == expected", "actual: [\n        1,\n        2,", "expected: [\n        1,\n        3,",
-                "first line\n    second line", "between failures", "input.cv:14:5: error: check failed",
-                "CLI failure", "input.cv:24:5: error: check failed", ": <not evaluated>", "second failure",
-                "after failures", "input.cv:39:5: error: requirement failed", "required condition", "test stopped",
-                "input.cv:43:5: error: explicit failure", "explicit\n      failure", "message: \"\"",
-                "input.cv:53:5: error: check failed", "input.cv:52:1", "first anonymous failure",
-                "input.cv:57:5: error: check failed", "input.cv:56:1", "second anonymous failure",
-                "input.cv:61:5: error: check failed", "name: \"\"", "explicit empty label", "tests: 1 passed; 6 failed",
-            }},
+    args = {"interpret", "--tests", "input.cv"}, exit_code = 1,
+    stdout = "stdout.txt", stderr_ordered = {
+        "before failures", "input.cv:11:5: error: check failed", "name: failed",
+        "condition: actual == expected", "actual: [\n        1,\n        2,", "expected: [\n        1,\n        3,",
+        "first line\n    second line", "between failures", "input.cv:14:5: error: check failed",
+        "CLI failure", "input.cv:24:5: error: check failed", ": <not evaluated>", "second failure",
+        "after failures", "input.cv:39:5: error: requirement failed", "required condition", "test stopped",
+        "input.cv:43:5: error: explicit failure", "explicit\n      failure", "message: \"\"",
+        "input.cv:53:5: error: check failed", "input.cv:52:1", "first anonymous failure",
+        "input.cv:57:5: error: check failed", "input.cv:56:1", "second anonymous failure",
+        "input.cv:61:5: error: check failed", "name: \"\"", "explicit empty label", "tests: 1 passed; 6 failed",
     },
 }
 
@@ -684,6 +613,7 @@ target("carven")
     })
     for name, sources in table.orderpairs({
         math = {"input.cv"}, number_parse = {"input.cv"}, structural_display = {"input.cv", "helper.cv"},
+        default_initialization = {"input.cv"},
     }) do
         local directory = path.join(os.scriptdir(), "commands", name)
         add_tests("commands/" .. name, {

@@ -20,7 +20,7 @@ auto SemanticExecutor::timeout(ExecutionColdOperation operation, ProgramOriginID
     }
     const auto fact = read_fact(*duration, origin);
     if (!fact) {
-        co_return std::unexpected(std::move(fact.error()));
+        co_return std::unexpected(fact.error());
     }
     const auto* ticks = std::get_if<IntegerConstant>(&fact->value);
     if (!ticks) {

@@ -22,6 +22,10 @@ accepted). Top-level help lists commands; each command has its own usage and
 options. `carven --version` and `carven -V` print `carven v<version>` followed by
 a newline. With no arguments, `carven` prints the top-level help and succeeds.
 
+Windows Unicode command-line arguments are converted to UTF-8. On POSIX,
+arguments, including the executable name, must be valid UTF-8. Invalid text is
+an input error. Empty arguments are preserved.
+
 ## Source collection
 
 By default, `check`, source compilation, native execution, and `interpret` combine
@@ -81,6 +85,9 @@ working directory. Before `--`, arguments are source paths, `--tests`, or
 Artifact output and external test-runner options belong to `compile`.
 
 `CXX` selects one compiler executable name or path, defaulting to `clang++`.
+An unset or empty value uses the default. Windows reads `CXX` from the Unicode
+process environment and converts it to UTF-8; invalid POSIX UTF-8 values are
+reported as errors.
 GCC-style drivers use `-std=c++20`; `cl` and `clang-cl` use MSVC-style arguments
 and separate temporary object files. The compiler, SDK, and linker must be
 available in the current environment. POSIX and Windows process adapters invoke

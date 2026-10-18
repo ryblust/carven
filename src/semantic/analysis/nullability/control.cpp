@@ -43,7 +43,9 @@ auto NullabilityBodyAnalyzer::statement(const SemanticStatement& source, NullSta
     };
     const auto transfer = [&](NullExitPayload payload) noexcept {
         if (flow.normal) {
-            flow.exits.push_back({.payload = payload, .state = std::move(flow.normal->state)});
+            flow.exits.push_back(
+                {.payload = std::move(payload), .state = std::move(flow.normal->state)}
+            );
             flow.normal.reset();
         }
     };

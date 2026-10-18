@@ -88,7 +88,7 @@ async_transfer::Context::~Context() noexcept {
 
 auto transfer_read(const Context& context) noexcept -> providers::transfer_read::Completion {
     check(&context == context.host_address, "read borrows host holder");
-    auto loan = BufferLoan(context.observed);
+    const auto loan = BufferLoan(context.observed);
     auto result = co_await context.queue.read_some(context.fd, context.buffer);
     co_return complete(std::move(result), context);
 }
@@ -104,7 +104,7 @@ auto transfer_write(const Context& context, std::int32_t offset, std::int32_t co
                 <= context.buffer.size() - static_cast<std::size_t>(offset),
         "write cursor selects nonempty host buffer range"
     );
-    auto loan = BufferLoan(context.observed);
+    const auto loan = BufferLoan(context.observed);
     const auto slice =
         context.buffer.subspan(static_cast<std::size_t>(offset), static_cast<std::size_t>(count));
     auto result = co_await context.queue.write_some(context.fd, slice);

@@ -10,6 +10,9 @@ target("carven-format")
     set_kind("binary")
     add_deps("carven-format-modules")
     add_files("src/main.cpp")
+    if is_mode("release") then
+        set_policy("build.optimization.lto", true)
+    end
     add_tests("help", {
         group = "format", run_timeout = 10000, runargs = {"help"}, pass_outputs = {".*Usage:.*"},
     })

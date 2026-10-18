@@ -6,17 +6,11 @@ gamma
 delta
 ]]
 
-target("carven-example-stream-collector-workflow")
-    set_kind("static")
-    add_rules("@carven/carven")
-    add_includedirs(".", {public = true})
-    add_files("workflow.cv", "stream.cpp")
-target_end()
-
 target("carven-example-stream-collector")
     set_kind("binary")
-    add_deps("carven-example-stream-collector-workflow")
-    add_files("main.cpp")
+    add_rules("@carven/carven")
+    add_includedirs(".")
+    add_files("main.cpp", "workflow.cv", "stream.cpp")
     add_tests("behavior", {
         files = {"checks.cpp"}, remove_files = {"main.cpp"}, run_timeout = 30000,
     })

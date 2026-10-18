@@ -10,7 +10,7 @@ namespace {
 
 const TestSuite suite([] static noexcept {
     "Compilation options: defaults preserve source inputs"_test = [] static noexcept {
-        constexpr auto args = std::to_array<const char*>({"main.cv", "nested/worker.cv"});
+        const auto args = std::to_array<std::string>({"main.cv", "nested/worker.cv"});
         const auto result = parse_compilation_options(args);
 
         if (!expect(result.has_value())) {
@@ -36,7 +36,7 @@ const TestSuite suite([] static noexcept {
     };
 
     "Compilation options: explicit modes retain their selected values"_test = [] static noexcept {
-        constexpr auto output_args = std::to_array<const char*>({
+        const auto output_args = std::to_array<std::string>({
             "--tests=runner",
             "-o",
             "emit",
@@ -55,7 +55,7 @@ const TestSuite suite([] static noexcept {
         }
         expect_equal(destination->root, std::filesystem::path("emit"));
         expect_equal(output->test_mode, TestGenerationMode::RunnerHeader);
-        constexpr auto stdout_args = std::to_array<const char*>({"--stdout", "--tests", "main.cv"});
+        const auto stdout_args = std::to_array<std::string>({"--stdout", "--tests", "main.cv"});
         const auto stdout = parse_compilation_options(stdout_args);
 
         if (!expect(stdout.has_value())) {
@@ -70,8 +70,8 @@ const TestSuite suite([] static noexcept {
 
     "Compilation options: artifact directories use the ordinary input and output path"_test =
         [] static noexcept {
-            constexpr auto args =
-                std::to_array<const char*>({"standard", "main.cv", "-o", "app.output"});
+            const auto args =
+                std::to_array<std::string>({"standard", "main.cv", "-o", "app.output"});
             for (const auto command : {CompilationCommand::Check, CompilationCommand::Compile}) {
                 const auto result = parse_compilation_options(args, command);
                 if (!expect(result.has_value())) {
@@ -93,7 +93,7 @@ const TestSuite suite([] static noexcept {
         [] static noexcept {
             struct InvalidCase final {
                 std::string_view name;
-                std::vector<const char*> args;
+                std::vector<std::string> args;
                 CompilationOptionErrorKind kind;
                 std::optional<std::string_view> option;
             };
@@ -148,7 +148,7 @@ const TestSuite suite([] static noexcept {
         };
 
     "Compilation options: mapped inputs retain source ownership"_test = [] static noexcept {
-        constexpr auto args = std::to_array<const char*>({
+        const auto args = std::to_array<std::string>({
             "--source=app.main=/project/main.cv",
             "--tests",
         });

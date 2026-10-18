@@ -22,6 +22,8 @@ failures fail the command.
 
 The root build copies `xmake/generated.clang-tidy` as `.clang-tidy` into the actual
 Carven output directory of each consumer and the shared standard-library generator.
+It publishes these build-owned profiles during configuration and restores them
+after generation preparation, which removes files outside its artifact inventory.
 It copies the base `.clang-tidy` into the parent directory so custom output
 directories, including those outside the project, inherit the same base checks.
 The generated profile applies to the Carven output subtree and adjusts parameter,

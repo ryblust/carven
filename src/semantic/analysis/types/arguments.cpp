@@ -7,7 +7,7 @@ import std;
 namespace {
 
 auto argument_error(
-    ProgramDraft& draft,
+    const ProgramDraft& draft,
     ProgramModuleID module,
     Span span,
     std::string message
@@ -78,7 +78,7 @@ auto resolve_source_generic_argument(
             "generic argument kind differs from its parameter"
         ));
     }
-    co_return std::move(*result);
+    co_return *result;
 }
 
 auto resolve_generic_source_arguments(
@@ -121,7 +121,7 @@ auto resolve_generic_source_arguments(
         if (!resolved) {
             co_return std::unexpected(resolved.error());
         }
-        result.push_back(std::move(*resolved));
+        result.push_back(*resolved);
     }
     co_return result;
 }

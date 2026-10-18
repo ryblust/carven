@@ -96,6 +96,8 @@ using GenericTypeExpression = std::variant<
     GenericCppQueryType>;
 
 template<typename Visitor>
+// A traversal reuses the same visitor; invoking an rvalue must not consume it.
+// NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward)
 auto visit_generic_type_children(const GenericTypeExpression& type, Visitor&& visitor) noexcept
     -> void {
     type.visit([&](const auto& shape) noexcept {
@@ -129,6 +131,7 @@ auto visit_generic_type_children(const GenericTypeExpression& type, Visitor&& vi
 }
 
 template<typename Visitor>
+// NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward)
 auto visit_construction_type_children(const ConstructionType& type, Visitor&& visitor) noexcept
     -> void {
     type.value.visit([&](const auto& shape) noexcept {
@@ -175,6 +178,8 @@ auto generic_argument_matches(GenericParameterKind kind, const Argument& argumen
 }
 
 template<typename Visitor>
+// Preserve the lvalue visitor protocol used by the child traversals.
+// NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward)
 auto visit_generic_argument_types(const GenericArgument& argument, Visitor&& visitor) noexcept
     -> void {
     if (const auto* type = std::get_if<ConstructionTypeRef>(&argument)) {
@@ -183,6 +188,7 @@ auto visit_generic_argument_types(const GenericArgument& argument, Visitor&& vis
 }
 
 template<typename Visitor>
+// NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward)
 auto visit_generic_argument_failures(const GenericArgument& argument, Visitor&& visitor) noexcept
     -> void {
     if (const auto* failures = std::get_if<ConstructionFailureRef>(&argument)) {

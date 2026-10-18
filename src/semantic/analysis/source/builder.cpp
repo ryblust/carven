@@ -113,8 +113,8 @@ auto SourceObservation::record(
 }
 
 auto SourceObservation::merge(SourceObservation&& child) noexcept -> void {
-    for (auto& occurrence : child.occurrences) {
-        occurrences.push_back(std::move(occurrence));
+    for (const auto& occurrence : child.occurrences) {
+        occurrences.push_back(occurrence);
     }
 }
 

@@ -786,7 +786,7 @@ auto BodyElaborator::generic_call_expression(
     }
     if (!resolved_target) {
         auto result_type = contract.result;
-        auto failures = contract.failures;
+        const auto failures = contract.failures;
         if (contract.execution == CallableExecutionKind::Async) {
             result_type = make_operation_type(draft(), contract.result, failures);
         } else {

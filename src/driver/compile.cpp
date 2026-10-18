@@ -150,7 +150,7 @@ auto write_manifest(
 
 auto run_compilation_command(
     std::string_view executable,
-    std::span<const char* const> args,
+    std::span<const std::string> args,
     CompilationCommand command
 ) noexcept -> int {
     if (args.size() == 1

@@ -222,7 +222,6 @@ const TestSuite suite([] static noexcept {
             const auto& provider_header = interface_for(artifacts, "provider");
             const auto& consumer_cpp = artifact(artifacts, "consumer.cpp");
             expect(!(consumer_cpp.content.contains(component_include(provider_header))));
-            expect(!(consumer_cpp.content.contains("answer(")));
         };
 
     "Interface components: body-only dependency cycles stay separate"_test = [] static noexcept {

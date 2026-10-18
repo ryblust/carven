@@ -1,10 +1,3 @@
-module;
-#include <cstdio>
-#if defined(_WIN32)
-#include <fcntl.h>
-#include <io.h>
-#endif
-
 module carven:format.main;
 
 import :diagnostics.report;
@@ -13,6 +6,7 @@ import :format.files;
 import :source.manager;
 import :source.text;
 import :support.path;
+import :support.process;
 import std;
 
 namespace {
@@ -24,11 +18,10 @@ enum class OutputMode {
 };
 
 auto write_stdout(std::string_view text) noexcept -> int {
-    // Preserve source bytes and report write failures without exceptions.
-    const auto written = std::fwrite(text.data(), 1uz, text.size(), stdout);
-    const auto flushed = std::fflush(stdout);
-    if (written != text.size() || flushed != 0) {
-        std::println(stderr, "carven-format: cannot write stdout");
+    std::cout.write(text.data(), static_cast<std::streamsize>(text.size()));
+    std::cout.flush();
+    if (!std::cout) {
+        std::println(std::cerr, "carven-format: cannot write stdout");
         return 2;
     }
     return 0;
@@ -82,39 +75,47 @@ auto show_help(std::string_view topic) noexcept -> int {
             "Help does not read source files.\n"
         );
     }
-    std::println(stderr, "carven-format: unknown help topic '{}'; use 'carven-format help'", topic);
+    std::println(
+        std::cerr,
+        "carven-format: unknown help topic '{}'; use 'carven-format help'",
+        topic
+    );
     return 2;
 }
 
 } // namespace
 
-extern "C++" auto main(int argc, char** argv) noexcept -> int {
-#if defined(_WIN32)
-    if (_setmode(_fileno(stdin), _O_BINARY) == -1 || _setmode(_fileno(stdout), _O_BINARY) == -1) {
-        std::println(stderr, "carven-format: cannot enable binary standard streams");
+extern "C++" auto main(int native_argc, const char* const* native_argv) noexcept -> int {
+    const auto arguments = process::arguments(native_argc, native_argv);
+    if (!arguments) {
+        std::println(std::cerr, "carven-format: {}", arguments.error());
         return 2;
     }
-#endif
+    const auto& argv = *arguments;
+    if (!process::enable_binary_standard_streams()) {
+        std::println(std::cerr, "carven-format: cannot enable binary standard streams");
+        return 2;
+    }
     auto mode = OutputMode::Stdout;
-    auto first_input = 1;
-    if (argc > 1) {
+    auto first_input = 1uz;
+    if (argv.size() > 1uz) {
         const auto command = std::string_view(argv[1]);
         if (command == "help") {
-            if (argc > 3) {
+            if (argv.size() > 3uz) {
                 std::println(
-                    stderr,
+                    std::cerr,
                     "carven-format: help accepts at most one command\nUsage: carven-format help [COMMAND]"
                 );
                 return 2;
             }
-            return show_help(argc == 3 ? std::string_view(argv[2]) : std::string_view());
+            return show_help(argv.size() == 3uz ? std::string_view(argv[2]) : std::string_view());
         }
         if (command == "check" || command == "write") {
             mode = command == "check" ? OutputMode::Check : OutputMode::Write;
-            first_input = 2;
-            if (argc == first_input) {
+            first_input = 2uz;
+            if (argv.size() == first_input) {
                 std::println(
-                    stderr,
+                    std::cerr,
                     "carven-format: {} requires an input; use 'carven-format {} .' for the current directory\n"
                     "Usage: carven-format {} FILE|DIR ...",
                     command,
@@ -126,13 +127,16 @@ extern "C++" auto main(int argc, char** argv) noexcept -> int {
         }
     }
     auto inputs = std::vector<std::string_view>();
-    for (auto index = first_input; index < argc; ++index) {
+    for (auto index = first_input; index < argv.size(); ++index) {
         inputs.emplace_back(argv[index]);
     }
     const auto stdin_input = inputs.empty() || (inputs.size() == 1uz && inputs.front() == "-");
     if ((mode == OutputMode::Write && stdin_input)
         || (!stdin_input && std::ranges::find(inputs, "-") != inputs.end())) {
-        std::println(stderr, "carven-format: stdin cannot be written or combined with file inputs");
+        std::println(
+            std::cerr,
+            "carven-format: stdin cannot be written or combined with file inputs"
+        );
         return 2;
     }
     auto sources = SourceManager();
@@ -140,24 +144,24 @@ extern "C++" auto main(int argc, char** argv) noexcept -> int {
     if (stdin_input) {
         auto text = std::string(std::istreambuf_iterator<char>(std::cin), {});
         if (std::cin.bad()) {
-            std::println(stderr, "carven-format: cannot read stdin");
+            std::println(std::cerr, "carven-format: cannot read stdin");
             return 2;
         }
         const auto id = sources.append_virtual("stdin", std::move(text));
         if (!id) {
-            std::println(stderr, "carven-format: {}", id.error().message);
+            std::println(std::cerr, "carven-format: {}", id.error().message);
             return 2;
         }
         batch_inputs.push_back(FormattingInput {.path = {}, .source_id = *id});
     } else {
         const auto paths = collect_format_paths(inputs);
         if (!paths) {
-            std::println(stderr, "carven-format: {}", paths.error());
+            std::println(std::cerr, "carven-format: {}", paths.error());
             return 2;
         }
         if (mode == OutputMode::Stdout && paths->size() != 1uz) {
             std::println(
-                stderr,
+                std::cerr,
                 "carven-format: stdout requires exactly one file; use check or write for multiple files"
             );
             return 2;
@@ -166,7 +170,7 @@ extern "C++" auto main(int argc, char** argv) noexcept -> int {
             const auto id = sources.append_file(path_to_generic_utf8(path));
             if (!id) {
                 std::println(
-                    stderr,
+                    std::cerr,
                     "carven-format: {}: {}",
                     id.error().origin,
                     id.error().message
@@ -178,7 +182,7 @@ extern "C++" auto main(int argc, char** argv) noexcept -> int {
     }
     const auto batch = format_batch(sources, batch_inputs);
     if (!batch) {
-        std::print(stderr, "{}", render_diagnostics(batch.error(), sources));
+        std::print(std::cerr, "{}", render_diagnostics(batch.error(), sources));
         return 2;
     }
     if (mode == OutputMode::Check) {
@@ -186,7 +190,7 @@ extern "C++" auto main(int argc, char** argv) noexcept -> int {
         const auto directory = std::filesystem::current_path(error);
         if (error) {
             std::println(
-                stderr,
+                std::cerr,
                 "carven-format: cannot resolve current directory: {}",
                 error.message()
             );
@@ -201,7 +205,7 @@ extern "C++" auto main(int argc, char** argv) noexcept -> int {
     if (mode == OutputMode::Write) {
         const auto written = write_formatted_batch(*batch);
         if (!written) {
-            std::println(stderr, "carven-format: {}", written.error());
+            std::println(std::cerr, "carven-format: {}", written.error());
             return 2;
         }
         return 0;

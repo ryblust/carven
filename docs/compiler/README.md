@@ -51,10 +51,16 @@ owned runtime-test count, and cacheability for build integration.
 ## Source and command boundaries
 
 `driver/` owns options, file loading, diagnostic presentation, artifact output,
-and native process execution. `driver.sources` collects `.cv` and `.cpp` files
-from the toolchain and working-directory Crafts roots, deduplicates canonical
-paths, and sorts by absolute physical path. Checking receives physical paths
-and resolved module identities; imports resolve within this closed batch.
+and native process execution. `driver.cli` normalizes compiler process arguments
+through `support.process` before command dispatch. The formatter uses the same
+adapter. Both entries retain UTF-8 argument storage while command parsers borrow
+string ranges.
+`support.process` also reads UTF-8 environment values; `driver.run` selects
+`CXX` and applies the default compiler name.
+`driver.sources` collects `.cv` and `.cpp` files from the toolchain and
+working-directory Crafts roots, deduplicates canonical paths, and sorts by
+absolute physical path. Checking receives physical paths and resolved module
+identities; imports resolve within this closed batch.
 Mapped inputs select the build system's owned source batch. Dependencies come
 from retained standard-library definitions or matching toolchain sources.
 

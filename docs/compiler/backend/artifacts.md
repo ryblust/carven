@@ -29,7 +29,9 @@ locals, temporaries, and labels. The plan owns the immutable module reservations
 borrowed by these local allocators. `ModuleLowering::field_identifier` derives
 nominal member names from their semantic identity and planned enclosing name.
 Source encoding is injective: reserved C++ names and source spellings in its escape
-domain are encoded. The plan also owns encoded public namespace and function names
+domain are encoded. Standard stream names (`stdin`, `stdout`, `stderr`) use the
+same encoding because supported CRTs can define them as object-like macros.
+The plan also owns encoded public namespace and function names
 shared by API headers and export façades. Artifact paths retain canonical source names.
 Closure names use source-location order within their owning module. Closures
 sharing a source location are ordered by their semantic callable identity.

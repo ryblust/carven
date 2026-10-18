@@ -202,7 +202,7 @@ auto resolve_named_value(
             if (!resolved) {
                 co_return std::unexpected(resolved.error());
             }
-            failures = std::move(*resolved);
+            failures = *resolved;
         }
         co_return make_operation_type(draft, *success, failures);
     }
@@ -663,7 +663,7 @@ auto resolve_function_type(
         if (!resolved.has_value()) {
             co_return std::unexpected(resolved.error());
         }
-        failures = std::move(*resolved);
+        failures = *resolved;
     }
     if (!std::holds_alternative<FailureSetID>(failures)) {
         co_return std::unexpected(fail(
@@ -996,7 +996,7 @@ auto resolve_generic_type_contents(
                             if (!resolved) {
                                 co_return std::unexpected(resolved.error());
                             }
-                            failures = std::move(*resolved);
+                            failures = *resolved;
                         }
                         co_return draft.intern_generic_type(
                             GenericOperationType {
@@ -1064,7 +1064,7 @@ auto resolve_generic_type_contents(
                                 if (!resolved) {
                                     co_return std::unexpected(resolved.error());
                                 }
-                                arguments.push_back(std::move(*resolved));
+                                arguments.push_back(*resolved);
                             }
                             co_return draft.intern_generic_type(
                                 GenericNominalApplication {

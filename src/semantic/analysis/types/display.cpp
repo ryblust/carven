@@ -250,7 +250,7 @@ auto type_display_name(
                         }
                         text += component;
                     }
-                    text += "<";
+                    text += '<';
                     for (const auto [index, argument] : std::views::enumerate(value.arguments)) {
                         if (index != 0) {
                             text += ", ";
@@ -279,7 +279,7 @@ auto type_display_name(
                                 auto first = true;
                                 for (const auto member : draft.failure_set_copy(*known).members) {
                                     if (!first) {
-                                        text += "+";
+                                        text += '+';
                                     }
                                     first = false;
                                     text += name(member);

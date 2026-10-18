@@ -92,8 +92,10 @@ const TestSuite tests([] static noexcept {
                                             std::string_view bytes) noexcept {
                 ordinary_output += bytes;
             };
-            auto observed = analyze_observed(std::string(observed_source), true, write_observed);
-            auto ordinary = analyze_observed(std::string(observed_source), false, write_ordinary);
+            const auto observed =
+                analyze_observed(std::string(observed_source), true, write_observed);
+            const auto ordinary =
+                analyze_observed(std::string(observed_source), false, write_ordinary);
             require(observed.program() != nullptr);
             require(ordinary.program() != nullptr);
             const auto occurrences = observed.source_occurrences();

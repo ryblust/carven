@@ -359,7 +359,7 @@ auto ProgramDraft::resolve() && noexcept -> AnalysisResult<ResolvedAnalysisProgr
     if (!failures.has_value()) {
         return std::unexpected(failures.error());
     }
-    auto failure_owner = std::make_shared<const FailureSolution>(std::move(*failures));
+    const auto failure_owner = std::make_shared<const FailureSolution>(std::move(*failures));
     const auto resolved_types = normalize_construction_types(*failure_owner);
     if (source_observer != nullptr) {
         source_observer->resolve_types(resolved_types);

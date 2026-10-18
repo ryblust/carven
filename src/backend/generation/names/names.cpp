@@ -10,6 +10,12 @@ auto implementation_reserved(std::string_view spelling) noexcept -> bool {
         || (spelling.size() >= 2 && spelling[0] == '_' && spelling[1] >= 'A' && spelling[1] <= 'Z');
 }
 
+// These standard stream names are object-like macros on supported CRTs.
+// Namespaces and parenthesized function names do not prevent their expansion.
+auto standard_stream_macro(std::string_view spelling) noexcept -> bool {
+    return spelling == "stdin" || spelling == "stdout" || spelling == "stderr";
+}
+
 auto encoded_identifier(std::string_view spelling, std::string_view prefix = "cv_name_") noexcept
     -> std::string {
     static constexpr auto digits = std::string_view("0123456789abcdef");
@@ -37,6 +43,7 @@ auto source_identifier(std::string_view spelling, std::string_view enclosing_cla
     -> std::string {
     auto result = TargetIdentifier::accepts_spelling(spelling)
             && !implementation_reserved(spelling)
+            && !standard_stream_macro(spelling)
             && !generated_content_identifier(spelling)
             && !spelling.starts_with("cv_name_")
         ? std::string(spelling)
@@ -219,6 +226,7 @@ auto TargetNameAllocator::claim(std::string_view preferred, TargetScopeID scope)
 auto public_target_identifier(std::string_view spelling) noexcept -> TargetIdentifier {
     if (TargetIdentifier::accepts_spelling(spelling)
         && !implementation_reserved(spelling)
+        && !standard_stream_macro(spelling)
         && !spelling.starts_with("cv_escaped_")) {
         return TargetIdentifier::from_spelling(spelling);
     }

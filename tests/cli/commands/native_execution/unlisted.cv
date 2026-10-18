@@ -1,3 +1,0 @@
-import absent using missing;
-
-fn unused() => missing();

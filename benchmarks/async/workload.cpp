@@ -50,7 +50,7 @@ auto Queue::resume_one() noexcept -> void {
     if (head == nullptr) {
         std::terminate();
     }
-    auto* node = head;
+    const auto* node = head;
     head = node->next;
     if (head == nullptr) {
         tail = nullptr;
@@ -121,7 +121,7 @@ auto run_workload() noexcept -> Task {
 #elif CARVEN_ASYNC_BENCH_STATIC
         checksum += co_await static_leaf<CARVEN_ASYNC_BENCH_YIELD != 0>(value);
 #elif CARVEN_ASYNC_BENCH_STORED
-        auto operation = leaf(value, false);
+        const auto operation = leaf(value, false);
         const auto following = value + 1;
         checksum += (co_await operation) + following;
 #else

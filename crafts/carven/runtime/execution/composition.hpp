@@ -242,6 +242,8 @@ auto compose(Inputs... inputs) noexcept -> AsyncOperation<Result, Failures...> {
         auto active = std::array<bool, count>();
         active.fill(true);
         auto remaining = count;
+        // Race records a failure here; other policy instantiations only read it.
+        // NOLINTNEXTLINE(misc-const-correctness)
         auto fallback = std::optional<std::size_t>();
         auto output = std::optional<Output>();
         while (remaining != 0) {

@@ -28,7 +28,7 @@ auto declaration_index(std::size_t struct_count, NominalDeclarationRef declarati
 }
 
 auto append_dependency(
-    ProgramDraft& draft,
+    const ProgramDraft& draft,
     NominalContainmentGraph& graph,
     std::size_t struct_count,
     std::size_t owner,

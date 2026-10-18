@@ -316,7 +316,7 @@ auto SemanticExecutor::retained_storage(ConstantID id, ProgramOriginID origin) n
     if (!storage) {
         return std::unexpected(std::move(storage.error()));
     }
-    const auto place = memory.create(std::move(*storage));
+    auto place = memory.create(std::move(*storage));
     retained_backings.emplace(id, place);
     return place;
 }
@@ -510,7 +510,7 @@ auto SemanticExecutor::deliver_value(
             return {};
         } else if constexpr (std::same_as<Value, ExecutionAggregateValue>
                              || std::same_as<Value, ExecutionEnumValue>) {
-            auto children = execution_elements(value);
+            const auto children = execution_elements(value);
             const auto enum_case = [&]() noexcept -> std::optional<EnumCaseID> {
                 if constexpr (std::same_as<Value, ExecutionEnumValue>) {
                     return delivered.enum_case;

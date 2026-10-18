@@ -25,6 +25,8 @@ Result destinations are function return, local lambda yield, final-storage
 initialization, and discard. Discard preserves required execution without
 extracting an unused success payload. Operand realization determines storage
 identity and observation or transfer behavior before composing the result.
+Fallible calls retain borrowed operand owners through success projection and
+consumption, including when an initializer otherwise permits direct composition.
 An expression with a proved absent execution entry retains its type as
 `SemUnreachable`. Realization emits a semantic-proof unreachable statement and
 produces no normal value.

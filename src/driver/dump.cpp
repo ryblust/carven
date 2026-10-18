@@ -47,11 +47,11 @@ auto print_help() noexcept -> int {
     return 0;
 }
 
-auto parse_request(std::span<const char* const> args) noexcept
+auto parse_request(std::span<const std::string> args) noexcept
     -> std::expected<DumpRequest, std::string> {
     auto positional = std::vector<std::string_view>();
     auto show_timings = false;
-    for (const auto argument : args) {
+    for (const auto& argument : args) {
         const auto arg = std::string_view(argument);
         if (arg == "--timings") {
             show_timings = true;
@@ -81,7 +81,7 @@ auto parse_request(std::span<const char* const> args) noexcept
 
 } // namespace
 
-auto run_dump_command(std::span<const char* const> args) noexcept -> int {
+auto run_dump_command(std::span<const std::string> args) noexcept -> int {
     if (args.size() == 1
         && (std::string_view(args.front()) == "--help" || std::string_view(args.front()) == "-h")) {
         return print_help();

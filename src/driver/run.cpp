@@ -15,6 +15,7 @@ import :semantic.semir.decl;
 import :semantic.semir.program;
 import :semantic.semir.table;
 import :support.path;
+import :support.process;
 import :support.timing;
 import std;
 
@@ -49,7 +50,7 @@ TemporaryDirectory::~TemporaryDirectory() {
 
 } // namespace
 
-auto run_native_command(std::string_view executable, std::span<const char* const> args) noexcept
+auto run_native_command(std::string_view executable, std::span<const std::string> args) noexcept
     -> int {
     auto show_timings = false;
     auto tests = false;
@@ -75,6 +76,14 @@ auto run_native_command(std::string_view executable, std::span<const char* const
     }
     if (input_paths.empty()) {
         return emit_driver_error("running a program requires at least one source file", "carven");
+    }
+    const auto configured_compiler = process::environment("CXX");
+    if (!configured_compiler) {
+        return emit_driver_error(std::format("CXX: {}", configured_compiler.error()));
+    }
+    auto compiler = configured_compiler->value_or("");
+    if (compiler.empty()) {
+        compiler = "clang++";
     }
     auto timings = CommandTimings(show_timings, "run");
     const auto sources = collect_command_sources(executable, input_paths, timings.output());
@@ -125,7 +134,7 @@ auto run_native_command(std::string_view executable, std::span<const char* const
     }
     const auto cleanup = TemporaryDirectory(*directory);
     const auto output_directory = path_to_generic_utf8(*directory);
-    if (const auto written = write_artifacts(output_directory, *artifacts); !written) {
+    if (const auto written = write_artifacts(*directory, *artifacts); !written) {
         return emit_driver_error(written.error());
     }
     writing.stop();
@@ -135,10 +144,6 @@ auto run_native_command(std::string_view executable, std::span<const char* const
 #else
     const auto binary = path_to_generic_utf8(*directory / "program");
 #endif
-    const auto configured_cxx = std::getenv("CXX");
-    const auto compiler = std::string(
-        configured_cxx != nullptr && *configured_cxx != '\0' ? configured_cxx : "clang++"
-    );
     auto compiler_name = path_to_generic_utf8(path_from_utf8(compiler).filename());
     std::ranges::transform(
         compiler_name,
@@ -236,7 +241,7 @@ auto run_native_command(std::string_view executable, std::span<const char* const
     compilation.stop();
     auto program_args = std::vector<std::string> {binary};
     if (separator < args.size()) {
-        for (const auto argument : args.subspan(separator + 1)) {
+        for (const auto& argument : args.subspan(separator + 1)) {
             program_args.emplace_back(argument);
         }
     }

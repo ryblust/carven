@@ -344,7 +344,7 @@ auto GenericFailureAlgebra::bounds(GenericFailureID source, bool upper) const no
             return found->second;
         }
         auto expression = copy(id);
-        auto guards = std::exchange(expression.guards, {});
+        const auto guards = std::exchange(expression.guards, {});
         if (upper) {
             for (const auto& contribution : guards) {
                 merge_expression(expression, self(self, contribution.source));

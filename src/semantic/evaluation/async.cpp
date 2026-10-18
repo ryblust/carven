@@ -287,7 +287,7 @@ auto SemanticExecutor::poll_cancellation() noexcept -> void {
     }
     for (auto iterator = cancellation_waiters.begin(); iterator != cancellation_waiters.end();) {
         auto& selection = **iterator++;
-        for (auto* task = selection.cancellation_task; task != nullptr; task = task->parent) {
+        for (const auto* task = selection.cancellation_task; task != nullptr; task = task->parent) {
             if (task->requested) {
                 selection.commit(selection.children.size(), true);
                 ready.push_back(*selection.continuation);

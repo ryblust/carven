@@ -192,7 +192,7 @@ async fn main() throw IOError {
                 }
                 auto timed_out = std::atomic_bool(false);
                 auto writer_ok = std::atomic_bool(false);
-                auto writer = std::jthread([&](std::stop_token stop) noexcept {
+                auto writer = std::jthread([&](const std::stop_token& stop) noexcept {
                     while (!timed_out.load()) {
                         if (stop.stop_requested()) {
                             return;

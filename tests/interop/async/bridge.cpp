@@ -102,13 +102,13 @@ auto put(int fd, std::byte byte) noexcept -> void {
 }
 
 auto cold() noexcept -> void {
-    auto pipe = Pipe();
+    const auto pipe = Pipe();
     auto queue = PipeQueue();
     auto observed = observations();
     {
         auto context = Context(queue, pipe.reader(), observed);
         {
-            auto operation = api::source_read(context);
+            const auto operation = api::source_read(context);
             check(observed.started == 0, "exported source root remains cold");
         }
         balanced(queue, observed);
@@ -182,7 +182,7 @@ public:
 };
 
 auto pending() noexcept -> void {
-    auto pipe = Pipe();
+    const auto pipe = Pipe();
     auto queue = PipeQueue();
     auto observed = observations();
     auto context = Context(queue, pipe.reader(), observed);
@@ -196,7 +196,7 @@ auto pending() noexcept -> void {
 }
 
 auto failures() noexcept -> void {
-    auto pipe = Pipe();
+    const auto pipe = Pipe();
     auto queue = PipeQueue();
     auto observed = observations();
     auto context = Context(queue, pipe.writer(), observed);
@@ -215,7 +215,7 @@ auto failures() noexcept -> void {
 }
 
 auto cancelled_close_case(int mode) noexcept -> void {
-    auto pipe = Pipe();
+    const auto pipe = Pipe();
     auto queue = PipeQueue();
     auto observed = observations();
     {
@@ -246,7 +246,7 @@ auto cancelled_close() noexcept -> void {
 }
 
 auto trivial() noexcept -> void {
-    auto pipe = Pipe();
+    const auto pipe = Pipe();
     auto queue = PipeQueue();
     auto observed = observations();
     auto context = TrivialContext {
@@ -269,7 +269,7 @@ auto cancel_character() noexcept -> async::AsyncOperation<void> {
     auto scope = async::ChildScope(co_await async::current_activation());
     auto child = scope.start(api::source_character(0xd800, false));
     async::cancel(child);
-    auto result = co_await child.observe();
+    const auto result = co_await child.observe();
     check(
         result.is_cancelled(),
         "cancelled char completion never reads or validates absent success"
@@ -282,7 +282,7 @@ auto cancel_join_characters() noexcept -> async::AsyncOperation<void> {
     auto scope = async::ChildScope(co_await async::current_activation());
     auto child = scope.start(api::source_join_characters(0xd800, false));
     async::cancel(child);
-    auto result = co_await child.observe();
+    const auto result = co_await child.observe();
     check(result.is_cancelled(), "cancelled char composition never reads absent success");
     co_await scope.close(async::ClosingPolicy::CloseOnly);
     co_return async::Completion<void>::success();

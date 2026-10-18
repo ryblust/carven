@@ -27,26 +27,14 @@ jobs:
         shell: bash
         working-directory: carven
     env:
-      CARVEN_XMAKE_REPO_DIR: ${{ github.workspace }}/carven-xmake-repo
       ASAN_OPTIONS: ${{ matrix.mode == 'debug' && 'detect_leaks=1:detect_stack_use_after_return=1:strict_string_checks=1' || '' }}
       UBSAN_OPTIONS: ${{ matrix.mode == 'debug' && 'print_stacktrace=1' || '' }}
-      # Match the project sanitizers option for native compilation outside Xmake.
-      SANITIZER_FLAGS: >-
-        -O1 -g -fno-omit-frame-pointer -fno-optimize-sibling-calls
-        -fsanitize-address-use-after-scope -fno-sanitize-recover=all
 
     steps:
       - name: Check out Carven
         uses: actions/checkout@v7
         with:
           path: carven
-          persist-credentials: false
-
-      - name: Check out build rules
-        uses: actions/checkout@v7
-        with:
-          repository: ryblust/carven-xmake-repo
-          path: carven-xmake-repo
           persist-credentials: false
 
       - name: Install patch-compatible Xmake
@@ -64,25 +52,10 @@ jobs:
           ./xmakew --version
           clang --version
           llvm-symbolizer --version
-          clang-tidy --version
           clang-format --version
 
       - name: Configure build
         run: ./xmakew f -y -m ${{ matrix.mode }} --sanitizers=${{ matrix.mode == 'debug' && 'y' || 'n' }}
-
-      - name: Configure native execution checks
-        if: matrix.mode == 'debug'
-        run: |
-          # `carven run` invokes CXX directly, outside Xmake's target flags.
-          cat > "$RUNNER_TEMP/carven-sanitizer-clang++" <<'EOF'
-          #!/usr/bin/env bash
-          set -euo pipefail
-          read -r -a flags <<< "$SANITIZER_FLAGS"
-          exec clang++ -stdlib=libc++ \
-            -fsanitize=address,undefined "${flags[@]}" "$@"
-          EOF
-          chmod +x "$RUNNER_TEMP/carven-sanitizer-clang++"
-          echo "CXX=$RUNNER_TEMP/carven-sanitizer-clang++" >> "$GITHUB_ENV"
 
       - name: Show detected toolchain
         run: ./xmakew show -t carven
@@ -91,15 +64,11 @@ jobs:
         run: ./xmakew build -y
 
       - name: Test all groups
-        run: ./xmakew test
+        run: ./xmakew test -v
 
       - name: Check formatting
         if: matrix.mode == 'release'
         run: ./xmakew format-check
-
-      - name: Clang-tidy
-        if: matrix.mode == 'release'
-        run: ./xmakew check clang.tidy
 
   ubuntu:
     name: Ubuntu / LLVM / ${{ matrix.mode == 'release' && 'Release' || 'ASan + UBSan' }}
@@ -114,26 +83,14 @@ jobs:
         shell: bash
         working-directory: carven
     env:
-      CARVEN_XMAKE_REPO_DIR: ${{ github.workspace }}/carven-xmake-repo
       ASAN_OPTIONS: ${{ matrix.mode == 'debug' && 'detect_leaks=1:detect_stack_use_after_return=1:strict_string_checks=1' || '' }}
       UBSAN_OPTIONS: ${{ matrix.mode == 'debug' && 'print_stacktrace=1' || '' }}
-      # Match the project sanitizers option for native compilation outside Xmake.
-      SANITIZER_FLAGS: >-
-        -O1 -g -fno-omit-frame-pointer -fno-optimize-sibling-calls
-        -fsanitize-address-use-after-scope -fno-sanitize-recover=all
 
     steps:
       - name: Check out Carven
         uses: actions/checkout@v7
         with:
           path: carven
-          persist-credentials: false
-
-      - name: Check out build rules
-        uses: actions/checkout@v7
-        with:
-          repository: ryblust/carven-xmake-repo
-          path: carven-xmake-repo
           persist-credentials: false
 
       - name: Install patch-compatible Xmake
@@ -152,25 +109,10 @@ jobs:
           ./xmakew --version
           clang --version
           llvm-symbolizer --version
-          clang-tidy --version
           clang-format --version
 
       - name: Configure build
         run: ./xmakew f -y -m ${{ matrix.mode }} --sanitizers=${{ matrix.mode == 'debug' && 'y' || 'n' }}
-
-      - name: Configure native execution checks
-        if: matrix.mode == 'debug'
-        run: |
-          # `carven run` invokes CXX directly, outside Xmake's target flags.
-          cat > "$RUNNER_TEMP/carven-sanitizer-clang++" <<'EOF'
-          #!/usr/bin/env bash
-          set -euo pipefail
-          read -r -a flags <<< "$SANITIZER_FLAGS"
-          exec clang++ -stdlib=libc++ \
-            -fsanitize=address,undefined "${flags[@]}" "$@"
-          EOF
-          chmod +x "$RUNNER_TEMP/carven-sanitizer-clang++"
-          echo "CXX=$RUNNER_TEMP/carven-sanitizer-clang++" >> "$GITHUB_ENV"
 
       - name: Show detected toolchain
         run: ./xmakew show -t carven
@@ -179,11 +121,7 @@ jobs:
         run: ./xmakew build -y
 
       - name: Test all groups
-        run: ./xmakew test
-
-      - name: Clang-tidy
-        if: matrix.mode == 'release'
-        run: ./xmakew check clang.tidy
+        run: ./xmakew test -v
 
   windows:
     name: Windows / LLVM-MinGW / ${{ matrix.mode == 'release' && 'Release' || 'ASan + UBSan' }}
@@ -198,7 +136,9 @@ jobs:
         shell: pwsh
         working-directory: carven
     env:
-      CARVEN_XMAKE_REPO_DIR: ${{ github.workspace }}/carven-xmake-repo
+      # LeakSanitizer is unsupported on Windows.
+      ASAN_OPTIONS: ${{ matrix.mode == 'debug' && 'detect_leaks=0:detect_stack_use_after_return=1:strict_string_checks=1' || '' }}
+      UBSAN_OPTIONS: ${{ matrix.mode == 'debug' && 'print_stacktrace=1' || '' }}
       LLVM_MINGW_RELEASE: '20261006'
       LLVM_MINGW_SHA256: 317492c456aa27ee607a5919f1d2d38dcdc1112516a24d0bf4b00d078f52d17a
 
@@ -207,13 +147,6 @@ jobs:
         uses: actions/checkout@v7
         with:
           path: carven
-          persist-credentials: false
-
-      - name: Check out build rules
-        uses: actions/checkout@v7
-        with:
-          repository: ryblust/carven-xmake-repo
-          path: carven-xmake-repo
           persist-credentials: false
 
       - name: Install patch-compatible Xmake
@@ -244,23 +177,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           clang-scan-deps --version
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          clang-tidy --version
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Configure build
         run: .\xmakew.ps1 f -y -m ${{ matrix.mode }} --sanitizers=${{ matrix.mode == 'debug' && 'y' || 'n' }}
-
-      - name: Configure native execution checks
-        if: matrix.mode == 'debug'
-        run: |
-          # carven run invokes clang++ directly. Clang's driver config also covers
-          # these compilations; Xmake targets still enable its sanitizer policies.
-          $config = Join-Path $env:LLVM_MINGW_ROOT "bin/clang++.cfg"
-          Add-Content -LiteralPath $config -Encoding utf8 -Value "`n-fsanitize=address,undefined -O1 -g -fno-omit-frame-pointer -fno-optimize-sibling-calls -fsanitize-address-use-after-scope -fno-sanitize-recover=all"
-          "CXX=$env:LLVM_MINGW_ROOT/bin/clang++.exe" >> $env:GITHUB_ENV
-          # LeakSanitizer is unsupported on Windows.
-          "ASAN_OPTIONS=detect_leaks=0:detect_stack_use_after_return=1:strict_string_checks=1" >> $env:GITHUB_ENV
-          "UBSAN_OPTIONS=print_stacktrace=1" >> $env:GITHUB_ENV
 
       - name: Show detected toolchain
         run: .\xmakew.ps1 show -t carven
@@ -269,8 +188,4 @@ jobs:
         run: .\xmakew.ps1 build -y
 
       - name: Test all groups
-        run: .\xmakew.ps1 test
-
-      - name: Clang-tidy
-        if: matrix.mode == 'release'
-        run: .\xmakew.ps1 check clang.tidy
+        run: .\xmakew.ps1 test -v

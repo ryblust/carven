@@ -301,6 +301,9 @@ implementation details.
 
 `call/passing.hpp` supplies native parameter and transfer support;
 `execution/entry.hpp` supplies process arguments and entry failure reporting.
+On Windows, it reads the CRT's wide argument vector and converts arguments to
+UTF-8 before passing them to Carven. On POSIX, arguments passed to Carven must
+already be valid UTF-8; invalid text violates the runtime contract and traps.
 `diagnostics/trap.hpp` supplies source-positioned termination for violated runtime
 checks.
 `testing/testing.hpp` supplies inline-test execution contexts, failure records,
