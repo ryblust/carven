@@ -2,6 +2,6 @@ import std::simd.scan using { one_of, count_where };
 
 private const selected = one_of([0, 9, 34, 47, 65, 97, 127, 128, 200, 255]);
 
-export(cpp) fn scan_kernel(bytes: [u8], start: usize) -> usize {
+export(cpp) fn scan_kernel(bytes: [u8]) -> usize {
     return count_where(bytes, selected);
 }

@@ -76,6 +76,14 @@ including internal NUL. Fixed arrays and structs become typed initializers of
 their completed children. These value initializers establish no source address
 identity and do not extend temporary backing lifetimes.
 
+Fixed-array initializers omit the longest suffix whose completed values exactly
+match C++ value-initialization. The element type and full extent remain explicit;
+an entirely eligible array uses an empty initializer. The eligibility check follows
+scalar bits and the selected aggregate representations, including nested arrays
+and records. Floating negative zero, non-default values, and text or collection
+backing retain explicit reconstruction. A lowering-local `ConstantID` cache reuses
+eligibility results for repeated nested values.
+
 `SliceConstant` instead requests persistent backing for its completed elements.
 `backend.lowering.constant` reconstructs completed values. Each `ModuleLowering`
 owns one `ConstantStorage` within its artifact. Storage records which canonical
@@ -89,7 +97,7 @@ the same representation. Elements are reconstructed from their canonical constan
 preserving the slice's element type. Private type definitions precede slice backing,
 followed by function bodies; dependencies request complete element definitions for
 that storage. Target variable declarations participate in ordinary traversal,
-verification, dependency collection, and emission. The runtime slice supplies the
+dependency collection, and emission. The runtime slice supplies the
 read-only access and bounds operations.
 
 `const` blocks execute and pass semantic validation before generation.

@@ -8,6 +8,7 @@ Follow the lessons in order, from a first program through imports, types,
 functions, and their bodies. Each snippet is a separate example, with declarations
 before their uses.
 
+- [Prepare the compiler](#prepare-the-compiler)
 - [A first program](#a-first-program)
 - [Modules](#modules)
 - [Records and arrays](#records-and-arrays)
@@ -25,9 +26,59 @@ before their uses.
 - [Compile-time execution](#compile-time-execution)
 - [Structural printing and assertion explanations](#structural-printing-and-assertion-explanations)
 
+## Prepare the compiler
+
+Use `carven` with its matching Crafts resources. An installed toolchain places
+the executable in `<prefix>/bin/` and its resources in `<prefix>/crafts/carven/`.
+Keep development executables in their source checkout so they can locate its
+`crafts/carven/`.
+
+To build from source, prepare Git, Xmake 3.1.1, and LLVM/Clang with libc++ and
+C++26 support; LLVM 23 is the validated version. On Windows, use LLVM-MinGW and
+add its `bin` directory to `PATH`. Clone the repository and build the compiler:
+
+```sh
+git clone https://github.com/ryblust/carven.git
+cd carven
+./xmakew build
+./xmakew show -t carven
+```
+
+In Windows PowerShell, use `.\xmakew.ps1` instead of `./xmakew`. The `show`
+command reports `targetfile`; its containing directory is
+`build/<platform>/<arch>/<mode>/` by default.
+
+Add the directory containing `carven` (`carven.exe` on Windows) to `PATH`.
+Replace the example path with that directory's absolute path.
+
+On macOS and Linux:
+
+```sh
+export PATH="/absolute/path/to/compiler-directory:$PATH"
+```
+
+In Windows PowerShell:
+
+```powershell
+$env:Path = "C:\path\to\compiler-directory;$env:Path"
+```
+
+These changes apply to the current terminal. To keep them for future terminals,
+add the directory in your shell startup configuration or Windows user `Path`.
+Check that the command is available:
+
+```sh
+carven --version
+```
+
+Native execution requires a C++20 compiler, SDK, and linker in the environment.
+`CXX` selects the compiler, defaulting to `clang++`. Interpretation and semantic
+checking do not require native compilation.
+
 ## A first program
 
-Save this program as `main.cv`:
+Choose a directory for your program, change to it in the same terminal, and
+save this as `main.cv`:
 
 ```carven
 fn add(left: i32, right: i32) -> i32 => left + right;
@@ -44,21 +95,18 @@ The top-level statements form an implicit program entry, and `answer` is local
 to that entry. You can instead put those statements inside an explicit `fn main()`;
 a compilation may have only one entry.
 
-From the repository root:
+Run from the same directory:
 
 ```sh
-./xmakew build
-./xmakew run carven main.cv
-./xmakew run carven interpret main.cv
-./xmakew run carven compile --stdout main.cv
+carven main.cv
+carven interpret main.cv
+carven compile --stdout main.cv
 ```
 
 The first execution command compiles and runs a native program using the C++ toolchain.
 The second interprets the same source using the supported semantic subset. Both
 print `42`. The third prints generated C++ and artifact headings for inspection.
 Use `carven interpret --trace main.cv` to observe statement locations and calls.
-In Windows PowerShell, use `.\xmakew.ps1`. Native execution supports POSIX and
-Windows process environments.
 
 Imports form the start of a source file. Types and constants normally precede
 functions that use them; helper functions precede their callers. Carven also
@@ -81,7 +129,7 @@ println(answer());
 ```
 
 Supply both files to the compiler, for example
-`./xmakew run carven compile --stdout main.cv math.cv`. Application files are
+`carven compile --stdout main.cv math.cv`. Application files are
 explicit inputs. The commands also collect all `.cv` and `.cpp` files under the
 toolchain's `crafts/carven/` and the working directory's `crafts/`. Imports resolve
 against that source batch and the compiler-provided standard modules.

@@ -242,11 +242,11 @@ auto OwnershipBodyAnalyzer::append_failures(
     ConstructionFailureRef failures,
     const OwnershipState& state,
     const OwnershipRelationships& value,
-    std::optional<GenericFailureMask> retained
+    const GenericFailureMask* retained
 ) const noexcept -> void {
     auto mask = analysis.model.failure_support(failures);
     if (retained) {
-        mask = intersect_failure_masks(std::move(mask), std::move(*retained));
+        mask = intersect_failure_masks(mask, *retained);
     }
     auto named = std::vector<TypeID>();
     for (const auto type : analysis.model.failure_known_members(failures)) {
@@ -255,7 +255,7 @@ auto OwnershipBodyAnalyzer::append_failures(
             named.push_back(type);
         }
     }
-    mask = residual_failure_mask(std::move(mask), std::move(named));
+    mask = residual_failure_mask(mask, std::move(named));
     if (mask.complemented || !mask.members.empty()) {
         flow.exits.push_back({
             OwnershipFailure {
@@ -1086,7 +1086,7 @@ auto OwnershipBodyAnalyzer::call_body(
                     }
                 } else {
                     const auto& symbolic = std::get<AnalysisSymbolicFailure>(answer.failure->value);
-                    append_failures(result, *actual_failures, returned, value, symbolic.mask);
+                    append_failures(result, *actual_failures, returned, value, &symbolic.mask);
                 }
             } else {
                 result.exits.push_back(

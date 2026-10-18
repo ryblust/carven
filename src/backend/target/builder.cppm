@@ -7,7 +7,6 @@ import :backend.target.item;
 import :backend.target.stmt;
 import :backend.target.type;
 import :backend.target.unit;
-import :backend.target.verify;
 import std;
 
 class TargetUnitBuilder final {

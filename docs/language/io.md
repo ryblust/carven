@@ -168,9 +168,10 @@ Catch `IOError(error)` and match these cases to recover. Byte reads cannot fail
 with `.InvalidUTF8`; chunk reads cannot fail with `.InputTooLarge`. Printing
 retains its `void` contract and non-throwing failure behavior described above.
 
-All handles share one process input cursor and buffer. Started requests are served
-in FIFO registration order. Prefetched bytes remain available across read modes.
-Cancellation removes its request and preserves buffered incomplete input. A limit
+Handles within one runtime instance share an input cursor and buffer. Started
+requests are served in FIFO registration order. Prefetched bytes remain available
+across read modes. Cancellation removes its request and preserves buffered
+incomplete input. A limit
 failure preserves input so the caller may retry with a larger limit or recover
 with raw chunk reads. Buffering may prefetch one native block beyond the selected
 limit before rejecting it.

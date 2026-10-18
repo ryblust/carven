@@ -283,7 +283,7 @@ inline auto Driver::dispatch_one() noexcept -> bool {
     if (first == nullptr) {
         return false;
     }
-    auto* node = first;
+    const auto* node = first;
     first = node->next;
     if (first == nullptr) {
         last = nullptr;
@@ -563,7 +563,7 @@ public:
         template<typename Promise>
         auto await_suspend(std::coroutine_handle<Promise> handle) noexcept
             -> std::coroutine_handle<> {
-            auto& caller = handle.promise().state;
+            const auto& caller = handle.promise().state;
             auto& state = frame.promise().state;
             state.wait(handle);
             state.bind(*caller.task);
@@ -606,7 +606,7 @@ public:
 
     template<typename Promise>
     auto await_suspend(std::coroutine_handle<Promise> handle) noexcept -> void {
-        auto& state = handle.promise().state;
+        const auto& state = handle.promise().state;
         resume = detail::resume_node(handle, *state.task);
         state.task->driver->enqueue(resume);
     }
@@ -643,7 +643,7 @@ inline auto drive_root(
         driver.attach(*source);
     }
     auto task = TaskContext {.driver = &driver, .parent = nullptr, .requested = false};
-    auto frame = operation.release();
+    const auto frame = operation.release();
     auto& state = frame.promise().state;
     state.bind(task);
     auto startup = detail::resume_node(frame, task);

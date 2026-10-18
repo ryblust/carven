@@ -242,7 +242,6 @@ auto compose(Inputs... inputs) noexcept -> AsyncOperation<Result, Failures...> {
         auto active = std::array<bool, count>();
         active.fill(true);
         auto remaining = count;
-        auto cancelled = false;
         auto fallback = std::optional<std::size_t>();
         auto output = std::optional<Output>();
         while (remaining != 0) {
@@ -270,11 +269,10 @@ auto compose(Inputs... inputs) noexcept -> AsyncOperation<Result, Failures...> {
                     output.emplace(slots.template failure<Output>(selected.head, 0));
                     break;
                 }
-                if (state == detail::CandidateState::Cancelled) {
-                    if (!cancelled) {
-                        cancelled = true;
-                        slots.cancel_active(active, 0);
-                    }
+                if (state == detail::CandidateState::Cancelled && !output) {
+                    // Cancellation owns no source payload; a later failure can replace it.
+                    output.emplace(Output::cancelled());
+                    slots.cancel_active(active, 0);
                 }
             } else {
                 if (state == detail::CandidateState::Success) {
@@ -304,11 +302,9 @@ auto compose(Inputs... inputs) noexcept -> AsyncOperation<Result, Failures...> {
             if (cancel_requested()) {
                 output.emplace(Output::cancelled());
             } else if constexpr (Policy == CompositionPolicy::WhenAll) {
-                output.emplace(
-                    cancelled
-                        ? Output::cancelled()
-                        : Output::success_from([&]() noexcept -> Result { return slots.product(); })
-                );
+                output.emplace(Output::success_from([&]() noexcept -> Result {
+                    return slots.product();
+                }));
             } else {
                 output.emplace(
                     fallback ? slots.template failure<Output>(*fallback, 0) : Output::cancelled()

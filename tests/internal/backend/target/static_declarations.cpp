@@ -1,5 +1,6 @@
 module carven:test.internal.backend.target.static_declarations;
 
+import :backend.target.builder;
 import :backend.target.decl;
 import :backend.target.dependencies;
 import :backend.target.expr;
@@ -11,7 +12,6 @@ import :backend.target.symbol;
 import :backend.target.type;
 import :backend.target.unit;
 import :test.harness.framework;
-import :test.internal.backend.target.fixture;
 import std;
 
 namespace {
@@ -32,17 +32,21 @@ const TestSuite suite([] static noexcept {
                 ),
             };
             for (const auto& [symbol, header, group] : symbols) {
-                const auto owner = TargetTestingFixture::unit_identity();
+                auto builder = TargetUnitBuilder();
                 constexpr auto types = std::array {TargetType {
                     .value =
                         TargetIntrinsicType {.symbol = TargetSymbol::Auto, .type_argument_ids = {}},
                     .const_qualified = false,
                 }};
+                const auto type = builder.intern_type({
+                    .value = std::get<TargetIntrinsicType>(types.front().value),
+                    .const_qualified = false,
+                });
                 auto body = std::vector<TargetItem>();
                 body.push_back({
                     .value = TargetDecl {TargetVariableDecl {
                         .name = TargetIdentifier::from_spelling("empty"),
-                        .type = TargetTestingFixture::type_id(owner, 0),
+                        .type = type,
                         .initializer =
                             TargetExpr {.value = TargetIntrinsicNameExpr {.symbol = symbol}},
                         .inline_specifier = true,
@@ -54,7 +58,8 @@ const TestSuite suite([] static noexcept {
                 });
                 const auto sections =
                     TargetUnitSections {.preamble = {}, .body = std::move(body), .epilogue = {}};
-                const auto dependencies = collect_target_dependencies(owner, types, sections);
+                const auto dependencies =
+                    collect_target_dependencies(builder.identity(), types, sections);
                 if (!(expect(dependencies.size() == 1uz).note("header: ", header))) {
                     return;
                 }

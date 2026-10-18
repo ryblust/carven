@@ -95,8 +95,11 @@ object-list ordering consistent between equivalent inputs.
 After prerequisites finish, each BMI and object job compares source, header,
 scan-record and imported BMI contents, compiler identity, flags, and output
 contents with its dependency record. Archive and link jobs compare their recorded inputs,
-tool identity, flags, and output contents. Records are saved after successful
-execution. Content fingerprints are cached within the current invocation.
+tool identity, flags, and output contents. Their final output fingerprint is saved
+after all `after_link` jobs succeed, including native symbol extraction and stripping.
+The dependency record retains the link event's timestamp so completing its metadata
+does not trigger postprocessing again. BMI and object records are saved after their
+own successful execution. Content fingerprints are cached within the current invocation.
 
 These checks detect changes to tracked file contents even when timestamps are
 preserved, and rebuild missing or modified outputs. A timestamp change alone
@@ -128,6 +131,16 @@ Use the repository wrapper for local build commands:
 Without `-t`, project exports include all targets, including those with
 `set_default(false)`. Use `-t <target>` to select the exported target.
 
+`./xmakew check clang.tidy` selects C-family sources from the compilation database.
+This includes ordinary module implementations emitted through custom build commands.
+Each file is submitted once; clang-tidy processes every compilation configuration
+recorded for it. Named targets select their declared source files from the same
+database, without adding dependency targets. Explicit `--files` patterns retain
+their selection and share the same file deduplication. File identities use
+normalized absolute paths and the file
+system's case sensitivity. Profiles with no named tidy checks are accepted; compiler
+diagnostics still apply, including for SDK sources outside the project's profile.
+
 On Windows, use `.\xmakew.ps1` with the same arguments. The project selects
 LLVM-MinGW and shared libc++ for the default Windows platform. Add the
 LLVM-MinGW installation's `bin` directory to PATH so Xmake can discover it;
@@ -154,12 +167,19 @@ The patch targets Xmake `v3.1.1+20260827`; CI pins Xmake 3.1.1 on every platform
 The wrapper creates an overlay of the installed Xmake program directory under
 the platform temporary directory and selects it through `XMAKE_PROGRAM_DIR`.
 Its cache key includes the program directory, Xmake version, patched Lua files,
-and patch contents. A patch
-application failure stops the wrapper.
+patch contents, and wrapper contents. Before publishing a new overlay, the wrapper
+checks that Xmake actually selects it. Installations that ignore
+`XMAKE_PROGRAM_DIR`, including self-contained bundles, cannot use this pipeline.
+A patch application or overlay selection failure stops the wrapper. Reusing a
+cached overlay does not repeat the selection check.
 
 The overlay uses GNU-driver sanitizer linking for LLVM-MinGW on Windows.
 Other Windows toolchains use Xmake's MD/MT runtime handling. The project enables
 sanitizers through Xmake policies.
+
+LTO configuration reads the target policy, which already resolves the project
+default. An explicit target `false` therefore disables LTO even when the project
+enables it.
 
 The POSIX wrapper attempts an APFS clone on macOS or a reflink on Linux, with a
 regular copy as fallback. Windows uses `robocopy`. Each wrapper prepares a

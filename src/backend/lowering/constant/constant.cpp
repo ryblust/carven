@@ -211,15 +211,78 @@ namespace {
 
 enum class ConstantOwnership { Owned, Retained };
 
-auto constant_initializer(
-    ModuleLowering& context,
+class ConstantLowerer final {
+public:
+    explicit ConstantLowerer(ModuleLowering& context) noexcept;
+    auto initializer(
+        ConstantID id,
+        ConstantLiteralContext literal,
+        ConstantOwnership ownership
+    ) noexcept -> TargetExpr;
+
+private:
+    auto matches_value_initialization(ConstantID id) noexcept -> bool;
+
+    ModuleLowering& context;
+    std::map<ConstantID, bool> value_initializations;
+};
+
+ConstantLowerer::ConstantLowerer(ModuleLowering& context) noexcept
+    : context(context) {}
+
+auto ConstantLowerer::matches_value_initialization(ConstantID id) noexcept -> bool {
+    if (const auto found = value_initializations.find(id); found != value_initializations.end()) {
+        return found->second;
+    }
+    const auto& fact = context.semantic().constants().constant(id);
+    const auto matches = fact.value.visit([&](const auto& value) noexcept -> bool {
+        using Value = std::remove_cvref_t<decltype(value)>;
+        if constexpr (std::same_as<Value, VoidConstant>
+                      || std::same_as<Value, NullPointerConstant>) {
+            return true;
+        } else if constexpr (std::same_as<Value, IntegerConstant>) {
+            return value.magnitude() == 0u;
+        } else if constexpr (std::same_as<Value, BooleanConstant>) {
+            return !value.value;
+        } else if constexpr (std::same_as<Value, CharacterConstant>) {
+            return value.scalar == U'\0';
+        } else if constexpr (std::same_as<Value, F32Constant>) {
+            return std::bit_cast<std::uint32_t>(value.value) == 0u;
+        } else if constexpr (std::same_as<Value, F64Constant>) {
+            return std::bit_cast<std::uint64_t>(value.value) == 0u;
+        } else if constexpr (std::same_as<Value, SIMDConstant>) {
+            return std::ranges::all_of(value.lanes, [](auto bits) static noexcept {
+                return bits == 0u;
+            });
+        } else if constexpr (std::same_as<Value, NumericEnumConstant>) {
+            return value.value.magnitude() == 0u;
+        } else if constexpr (std::same_as<Value, RangeConstant>) {
+            return value.begin.magnitude() == 0u && value.end.magnitude() == 0u && !value.inclusive;
+        } else if constexpr (std::same_as<Value, StructConstant>
+                             || std::same_as<Value, ArrayConstant>
+                             || std::same_as<Value, TupleConstant>) {
+            return std::ranges::all_of(
+                *constant_children(fact.value),
+                [&](ConstantID child) noexcept { return matches_value_initialization(child); }
+            );
+        } else {
+            // Native values and retained text or collection backing require their
+            // explicit reconstruction, even when their logical contents are empty.
+            return false;
+        }
+    });
+    value_initializations.emplace(id, matches);
+    return matches;
+}
+
+auto ConstantLowerer::initializer(
     ConstantID id,
     ConstantLiteralContext literal,
     ConstantOwnership ownership
 ) noexcept -> TargetExpr {
     const auto& fact = context.semantic().constants().constant(id);
     const auto child = [&](ConstantID value) noexcept {
-        return constant_initializer(context, value, ConstantLiteralContext::TargetTyped, ownership);
+        return initializer(value, ConstantLiteralContext::TargetTyped, ownership);
     };
     return fact.value.visit(
         Overloaded {
@@ -445,10 +508,15 @@ auto constant_initializer(
                 if (array == nullptr) {
                     invariant_violation("array constant has a non-array canonical type");
                 }
+                auto retained = value.elements.size();
+                while (retained != 0uz
+                       && matches_value_initialization(value.elements[retained - 1uz])) {
+                    --retained;
+                }
                 auto elements = std::vector<TargetExpr>();
-                elements.reserve(value.elements.size());
-                for (const auto element : value.elements) {
-                    elements.push_back(child(element));
+                elements.reserve(retained);
+                for (auto index = 0uz; index < retained; ++index) {
+                    elements.push_back(child(value.elements[index]));
                 }
                 return {
                     .value = TargetArrayExpr {
@@ -468,12 +536,9 @@ auto constant_initializer(
                         auto elements = std::vector<TargetExpr>();
                         elements.reserve(value.elements.size());
                         for (const auto element : value.elements) {
-                            elements.push_back(constant_initializer(
-                                context,
-                                element,
-                                ConstantLiteralContext::Exact,
-                                ownership
-                            ));
+                            elements.push_back(
+                                initializer(element, ConstantLiteralContext::Exact, ownership)
+                            );
                         }
                         return TargetExpr {
                             .value = TargetConstructionExpr {
@@ -496,8 +561,7 @@ auto constant_initializer(
                     auto elements = std::vector<TargetExpr>();
                     elements.reserve(value.elements.size());
                     for (const auto child : value.elements) {
-                        elements.push_back(constant_initializer(
-                            context,
+                        elements.push_back(initializer(
                             child,
                             ConstantLiteralContext::TargetTyped,
                             ConstantOwnership::Retained
@@ -542,7 +606,7 @@ auto constant_expression(
     ConstantID id,
     ConstantLiteralContext literal
 ) noexcept -> TargetExpr {
-    return constant_initializer(context, id, literal, ConstantOwnership::Owned);
+    return ConstantLowerer(context).initializer(id, literal, ConstantOwnership::Owned);
 }
 
 auto constant_reference(ModuleLowering& context, ConstantID id) noexcept -> TargetExpr {
@@ -551,8 +615,7 @@ auto constant_reference(ModuleLowering& context, ConstantID id) noexcept -> Targ
     }
     auto stored = context.constant_storage().find(id, ConstantStorageRole::Object);
     if (!stored) {
-        auto initializer = constant_initializer(
-            context,
+        auto initializer = ConstantLowerer(context).initializer(
             id,
             ConstantLiteralContext::TargetTyped,
             ConstantOwnership::Retained

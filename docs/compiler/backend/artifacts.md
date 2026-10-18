@@ -1,7 +1,7 @@
 # C++ artifacts
 
 This reference defines artifact planning, target syntax construction,
-dependencies, verification, and emission.
+dependencies, and emission.
 
 ## Names and interfaces
 
@@ -163,7 +163,7 @@ explicit `std::remove_cvref_t`; it is selected before placement.
 
 ## Target syntax and emission
 
-Target-unit construction owns syntax, dependencies, verification, and emission.
+Target-unit construction owns syntax, dependencies, and emission.
 
 Generated references to standard-library, runtime, and resolved global symbols
 use leading `::` so enclosing declarations cannot redirect lookup. Namespace
@@ -172,7 +172,8 @@ source fragments retain author-specified lookup.
 
 Expressions, statements, and items are move-only recursive values.
 `TargetBlockStmt` always denotes an actual C++ block; plain sequences are
-composed before publication. Only types are interned. A construction-time index
+composed before publication. `TargetIfStmt` owns one condition, its body, and an
+optional alternative; chained choices nest this same form. Only types are interned. A construction-time index
 selects candidates for structural equality; type storage and IDs retain insertion
 order. Target type IDs belong to one unit. Source attribution and function forms
 use exact variants.
@@ -180,21 +181,22 @@ use exact variants.
 `TargetTemplateNameExpr` represents a template-id naming a function or variable,
 including an explicit empty argument list. `TargetCallExpr` contains its callee
 and runtime arguments. Function-template calls compose these nodes; variable
-templates use the name expression directly. Traversal, verification, dependency
+templates use the name expression directly. Traversal, dependency
 collection, and rendering consume the same argument representation. Entity
 classification reads the primary expression through `template_primary_expression`.
 
 Type construction accepts only children already present in the same unit;
-append-only insertion establishes acyclicity. Finishing validates occurrence type
-references and local control transfers.
+append-only insertion establishes acyclicity. Type and local queries check unit
+identity and bounds. Dependency collection checks referenced types and requires
+every pending realization exit to be resolved before publication.
 Realization preserves evaluation order and lifetimes through operand use, frame
-ownership, result destinations, and failure dispatch. Target verification checks
-syntax structure; C++ checks overload and constructor feasibility.
+ownership, result destinations, and failure dispatch. C++ compilation checks
+native declarations, control flow, coroutine syntax, overloads, and construction.
 Owned syntax nodes define occurrence identity. `TreeValue` uses an explicit work
 stack to clear descendants, including partially moved trees, statement bodies,
 and namespace items. Child cleanup also bounds the stack depth of variant
 replacement. Traversal preserves scope order through enter/leave events.
-Dependency collection visits the verified tree and referenced types to
+Dependency collection visits the completed tree and referenced types to
 derive standard and runtime header requirements. Target nodes identify their
 native facilities; shared symbol metadata supplies their C++ spelling and optional
 header provider. Async coroutine nodes and runtime symbols use this same query.

@@ -13,6 +13,8 @@ import std;
 // Consume requires transferable owned storage when realization saves a value.
 // ProjectionPlace forwards the consumer access through a field or element projection.
 // WritePlace requires mutable access; merely locating an object does not.
+// ConversionSource retains backing with its original native cv/ref capability.
+// The checked Read conversion, rather than storage retention, selects its access.
 // NativeTake additionally preserves the C++ query contract T&&, including for
 // trivial values whose Carven transfer policy otherwise observes const T&.
 enum class PreparedUse {
@@ -23,6 +25,7 @@ enum class PreparedUse {
     ProjectionPlace,
     WritePlace,
     ConstPlace,
+    ConversionSource,
     Consume,
     NativeTake
 };

@@ -52,20 +52,41 @@ and adopt Carven incrementally within existing C++ projects.
 > break existing code. Use the compiler, documentation, and examples from the
 > same revision.
 
-## Build and run
+## Run a program
 
-Carven uses LLVM/Clang and libc++ across platforms. Building the compiler requires
-[Xmake](https://xmake.io/) and a toolchain with C++26 support; LLVM 23 is the
-validated version. Generated programs and support headers use C++20.
+Use `carven` with its matching Crafts resources. An installed toolchain places
+the executable in `<prefix>/bin/` and its resources in `<prefix>/crafts/carven/`.
+Keep development executables in their source checkout so they can locate its
+`crafts/carven/`. For a source build, see [Development](#development).
 
-On Windows, use [LLVM-MinGW](https://github.com/mstorsjo/llvm-mingw). Add the LLVM
-toolchain's `bin` directory to `PATH` so Xmake can discover the compiler and build
-tools.
+Add the directory containing `carven` (`carven.exe` on Windows) to `PATH`.
+Replace the example path with that directory's absolute path.
 
-Use `./xmakew` on POSIX systems or `.\xmakew.ps1` in Windows PowerShell for
-repository commands.
+On macOS and Linux:
 
-Save this as `main.cv` in the repository root:
+```sh
+export PATH="/absolute/path/to/compiler-directory:$PATH"
+```
+
+In Windows PowerShell:
+
+```powershell
+$env:Path = "C:\path\to\compiler-directory;$env:Path"
+```
+
+These changes apply to the current terminal. To keep them for future terminals,
+add the directory in your shell startup configuration or Windows user `Path`.
+Check that the command is available:
+
+```sh
+carven --version
+```
+
+Native execution requires a C++20 compiler, SDK, and linker in the environment.
+`CXX` selects the compiler, defaulting to `clang++`. Interpretation and semantic
+checking do not require native compilation.
+
+Save this as `main.cv` in your working directory:
 
 ```cv
 const fn twice(value: i32) -> i32 => value * 2;
@@ -78,59 +99,70 @@ const answer = twice(21);
 println(answer);
 ```
 
-From the repository root, build the compiler and run the example:
+Run the program from that directory:
 
 ```shell
-./xmakew build
-./xmakew run carven main.cv
+carven main.cv
 ```
 
 It prints `42`. `answer` is computed during compilation. Bare source invocation
 compiles and runs a native program using a native C++ toolchain.
 
-Run the same file's tests through native or interpreted execution:
+Run the same file's tests natively:
 
 ```shell
-./xmakew run carven --tests main.cv
-./xmakew run carven interpret --tests main.cv
+carven --tests main.cv
 ```
 
-With `--tests`, the driver runs the tests instead of the program entry and
-reports their results. Compile-time execution and
-`const test` still run during analysis. Add `--timings` to see time spent in each
-command stage.
+With `--tests`, the driver runs the tests instead of the program entry.
+Compile-time execution and `const test` still run during analysis.
+Add `--timings` to see time spent in each command stage.
 
 Use `check` for semantic checks and compile-time execution, `interpret` to run
 the supported subset without native compilation, or `compile` to inspect or
 retain C++ artifacts:
 
 ```shell
-./xmakew run carven check main.cv
-./xmakew run carven interpret main.cv
-./xmakew run carven compile --stdout main.cv
+carven check main.cv
+carven interpret main.cv
+carven compile --stdout main.cv
 ```
 
-The [audio mixer](examples/audio_mixer/README.md) uses the same mixing function in
-compile-time tests and native execution. `compile --stdout`
-displays generated artifacts; `compile -o <dir>` writes them below the selected
-directory. With no destination option, `compile` writes below the current directory.
-The [CLI reference](docs/toolchain/cli.md) defines execution limits and supported platforms.
-
-`check`, `compile`, direct execution, and `interpret` all collect sources from
-the toolchain's `crafts/carven/` and the working directory's `crafts/`. Application
-sources outside those roots remain explicit, for example
-`carven main.cv helpers.cv`. `CXX` selects the native compiler, defaulting to
-`clang++`. See [source collection](docs/toolchain/cli.md#source-collection) for the collected
-roots and toolchain layout, and [native execution](docs/toolchain/cli.md#native-execution)
-for process behavior.
+`compile --stdout` displays generated C++; `compile -o <dir>` writes the artifacts
+to a directory. Commands collect installed and project `crafts/` sources
+automatically. Name other application files explicitly.
+Direct execution uses `CXX`, defaulting to `clang++`;
+arguments after `--` are passed to the program.
 
 ## C++ project integration
 
-Carven runs as a source-generation step in a native C++ build. The maintained
-Xmake package and rule live in the
-[Carven Xmake Repository](https://github.com/ryblust/carven-xmake-repo). Other
-build systems can invoke Carven on a source batch, compile the generated C++,
-and link it with their native providers.
+For a project build, put the same `main.cv` in a new directory and add this
+`xmake.lua`. Use Xmake 3.1.1 or later and a C++20-capable toolchain:
+
+```lua
+add_repositories("carven-xmake-repo https://github.com/ryblust/carven-xmake-repo.git")
+add_requires("carven")
+
+target("app")
+    set_kind("binary")
+    add_rules("@carven/carven")
+    add_files("main.cv")
+```
+
+```shell
+xmake build
+xmake run app
+xmake test
+```
+
+`xmake run app` prints `42`; `xmake test` builds and runs the `twice` test from
+`main.cv`.
+
+The package installs the compiler. The rule runs Carven analysis and C++ generation,
+sharing semantic results and generated C++ for the full installed standard library
+within the configured project. It registers the sources on your target; Xmake
+manages native compilation, linking, and incremental builds. Add your C++ sources,
+include directories, and library dependencies with ordinary Xmake settings.
 
 ### Compile generated C++ directly
 
@@ -140,7 +172,8 @@ link the generated `.cpp` files and native providers with a C++20 or newer
 toolchain. Pass the generated output directory and the Carven `crafts/` directory
 as C++ include roots.
 
-Using the same `main.cv` from above, with an installed `carven` on `PATH`, run:
+From your program directory, compile and run the same `main.cv`. Replace
+`/path/to/carven/crafts` below with the toolchain's Crafts directory:
 
 ```shell
 carven compile -o out main.cv
@@ -149,28 +182,27 @@ clang++ -std=c++20 -Iout -I/path/to/carven/crafts \
 ./out/main
 ```
 
-Replace `/path/to/carven/crafts` with the installed directory beside the
-toolchain's `bin/`, or use this repository's `crafts/` with the locally built
-compiler. From the repository root, build the same file with the local compiler:
+To run its tests, generate with `--tests` and compile both the module and the
+generated test entry. Test mode replaces the program entry:
 
 ```shell
-./xmakew run carven compile -o out/manual main.cv
-clang++ -std=c++20 -Iout/manual -Icrafts \
-    out/manual/main.cpp -o out/manual/main
-./out/manual/main
+carven compile --tests -o out/tests main.cv
+clang++ -std=c++20 -Iout/tests -I/path/to/carven/crafts \
+    out/tests/main.cpp out/tests/carven/generated/carven-test-main.cpp \
+    -o out/tests/main-tests
+./out/tests/main-tests
 ```
 
-This example uses header-only runtime support, so only `main.cpp` needs to be
-compiled. Programs using other modules or native APIs must include the
-generated implementations and native providers required by those dependencies.
+The installed toolchain places `crafts/` beside `bin/`. Use that directory as
+the include root, or the compiler checkout's `crafts/` for a development build.
+
+This example uses header-only runtime support. Programs using other modules or
+native APIs must include the generated implementations and native providers
+required by those dependencies.
 
 Name imported application `.cv` files outside Crafts roots in the Carven
 invocation. Supply any native `.cpp` files, include directories, and libraries
 to the C++ toolchain.
-The maintained Xmake rule discovers `.cv` and `.cpp` sources and adds include
-roots for the toolchain and project `crafts/` directories; native library
-dependencies remain ordinary build configuration. See the
-[CLI reference](docs/toolchain/cli.md) for source paths and generated artifact destinations.
 
 ## Documentation
 
@@ -193,12 +225,26 @@ toolchain, and development documentation.
 
 ## Development
 
-The default build selects the compiler. Build it before running the test suite:
+To build Carven from source, clone this repository. Building the compiler requires
+Git, [Xmake](https://xmake.io/), and LLVM/Clang with libc++ and C++26 support;
+LLVM 23 is the validated version. On Windows, use
+[LLVM-MinGW](https://github.com/mstorsjo/llvm-mingw) and add its `bin` directory to
+`PATH` so Xmake can discover the build tools. Generated programs use C++20.
+
+Run repository build and test commands from the checkout root through `./xmakew`,
+or `.\xmakew.ps1` in Windows PowerShell. The default build selects the compiler.
+Build it before running the test suite:
 
 ```shell
 ./xmakew build
 ./xmakew test
 ```
+
+The compiler is written to `build/<platform>/<arch>/<mode>/` by default.
+Run `./xmakew show -t carven` (`.\xmakew.ps1 show -t carven` on Windows) to find
+the `targetfile` for your configuration. Add its containing directory to `PATH`
+as shown in [Run a program](#run-a-program). Keep the executable in the checkout
+so it can locate the matching Crafts resources.
 
 Format the repository's C++ and Carven sources, or check their formatting:
 

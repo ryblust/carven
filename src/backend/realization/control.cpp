@@ -23,13 +23,15 @@ namespace {
 
 // Selects between one branch and its alternative; emission spells a nested
 // conditional alternative as `else if`.
-auto conditional(TargetIfBranch branch, std::vector<TargetStmt> alternative) noexcept
-    -> TargetStmt {
-    auto branches = std::vector<TargetIfBranch>();
-    branches.push_back(std::move(branch));
+auto conditional(
+    TargetExpr condition,
+    std::vector<TargetStmt> body,
+    std::vector<TargetStmt> alternative
+) noexcept -> TargetStmt {
     return generated_statement(
         TargetIfStmt {
-            .branches = std::move(branches),
+            .condition = std::move(condition),
+            .body = std::move(body),
             .else_body = alternative.empty() ? std::nullopt : std::optional(std::move(alternative))
         }
     );
@@ -66,20 +68,18 @@ BodyRealizer::FailureSiteQuery::FailureSiteQuery(std::span<FailureEdge> edges) n
 }
 
 auto BodyRealizer::FailureSiteQuery::enter_scope(TargetTraversalScope scope) noexcept -> bool {
-    if (scope.kind == TargetTraversalScopeKind::Loop) {
+    if (scope == TargetTraversalScope::Loop) {
         ++loop_depth;
-    } else if (scope.kind == TargetTraversalScopeKind::Callable
-               || scope.kind == TargetTraversalScopeKind::CoroutineCallable) {
+    } else if (scope == TargetTraversalScope::Callable) {
         ++callable_depth;
     }
     return true;
 }
 
 auto BodyRealizer::FailureSiteQuery::leave_scope(TargetTraversalScope scope) noexcept -> bool {
-    if (scope.kind == TargetTraversalScopeKind::Loop) {
+    if (scope == TargetTraversalScope::Loop) {
         --loop_depth;
-    } else if (scope.kind == TargetTraversalScopeKind::Callable
-               || scope.kind == TargetTraversalScopeKind::CoroutineCallable) {
+    } else if (scope == TargetTraversalScope::Callable) {
         --callable_depth;
     }
     return true;
@@ -87,7 +87,7 @@ auto BodyRealizer::FailureSiteQuery::leave_scope(TargetTraversalScope scope) noe
 
 auto BodyRealizer::FailureSiteQuery::enter_statement(TargetStmt& statement) noexcept -> bool {
     const auto* jump = std::get_if<TargetGotoStmt>(&statement.value);
-    if (jump == nullptr || jump->role != TargetJumpRole::FailureTransfer) {
+    if (jump == nullptr) {
         return true;
     }
     const auto edge = index.find(jump->label.spelling());
@@ -153,22 +153,16 @@ auto BodyRealizer::guarded_region(
     }
     auto selected = (co_await region(source, result));
     if (!returns_result(result) && selected.continues()) {
-        selected.terminate(
-            generated_statement(
-                TargetGotoStmt {.label = done.label, .role = TargetJumpRole::RegionExit}
-            ),
-            done.target
-        );
+        selected.terminate(generated_statement(TargetGotoStmt {.label = done.label}), done.target);
     }
     if (!known_predicate(test).has_value()) {
-        auto branches = std::vector<TargetIfBranch>();
         guarded.record_exits(selected.exits());
-        branches.push_back(
-            {.condition = predicate_expression(std::move(*test)),
-             .body = std::move(selected).finish()}
-        );
         guarded.emit(generated_statement(
-            TargetIfStmt {.branches = std::move(branches), .else_body = std::nullopt}
+            TargetIfStmt {
+                .condition = predicate_expression(std::move(*test)),
+                .body = std::move(selected).finish(),
+                .else_body = std::nullopt,
+            }
         ));
     } else {
         guarded.append(std::move(selected));
@@ -215,8 +209,8 @@ auto BodyRealizer::lower_if(
         statements.record_exits(alternative.exits());
         statements.emit(
             conditional(
-                {.condition = predicate_expression(std::move(*test)),
-                 .body = std::move(selected).finish()},
+                predicate_expression(std::move(*test)),
+                std::move(selected).finish(),
                 std::move(alternative).finish()
             ),
             continues
@@ -354,8 +348,8 @@ auto BodyRealizer::lower_match(
                 arms.record_exits(alternative.exits());
                 arms.emit(
                     conditional(
-                        {.condition = predicate_expression(std::move(*predicate)),
-                         .body = std::move(selected).finish()},
+                        predicate_expression(std::move(*predicate)),
+                        std::move(selected).finish(),
                         std::move(alternative).finish()
                     ),
                     continues
@@ -391,7 +385,7 @@ auto BodyRealizer::lower_match(
     }
     destination.scope(std::move(scope));
     if (destination.exits().contains(done.target)) {
-        destination.resume(done.label, TargetJumpRole::RegionExit, done.target);
+        destination.resume(done.label, done.target);
     }
     co_return {};
 }
@@ -421,9 +415,7 @@ auto BodyRealizer::lower_try(
     current_failure = outer;
     if (!returns_result(result) && protected_body.continues()) {
         protected_body.terminate(
-            generated_statement(
-                TargetGotoStmt {.label = done.label, .role = TargetJumpRole::RegionExit}
-            ),
+            generated_statement(TargetGotoStmt {.label = done.label}),
             done.target
         );
     }
@@ -521,7 +513,7 @@ auto BodyRealizer::lower_try(
                     TargetBlockStmt {.statements = std::move(transfer).finish()};
             }
             destination.scope(std::move(protected_body));
-            destination.resume(relay.label, TargetJumpRole::FailureTransfer, receiver.target);
+            destination.resume(relay.label, receiver.target);
             destination.append((co_await failure_handler(
                 value,
                 slot,
@@ -533,7 +525,7 @@ auto BodyRealizer::lower_try(
         }
     }
     if (destination.exits().contains(done.target)) {
-        destination.resume(done.label, TargetJumpRole::RegionExit, done.target);
+        destination.resume(done.label, done.target);
     }
     co_return {};
 }

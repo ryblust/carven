@@ -27,30 +27,24 @@ auto argument(const char* name) noexcept -> std::size_t {
 auto main() -> int {
     const auto length = argument("CARVEN_SIMD_BENCH_LENGTH");
     const auto iterations = argument("CARVEN_SIMD_BENCH_ITERATIONS");
-    const auto distribution = std::string_view(std::getenv("CARVEN_SIMD_BENCH_DISTRIBUTION"));
     auto membership = std::array<bool, 256> {};
 #if CARVEN_SIMD_BENCH_DIGITS
     for (auto value = 48; value <= 57; ++value) {
         membership[value] = true;
     }
-    constexpr auto member = std::uint8_t {53};
-    constexpr auto other = std::uint8_t {88};
 #elif CARVEN_SIMD_BENCH_FIELD
     membership.fill(true);
     for (const auto value : {10, 13, 34, 44}) {
         membership[value] = false;
     }
-    constexpr auto other = std::uint8_t {44};
 #else
     for (const auto value : {0, 9, 34, 47, 65, 97, 127, 128, 200, 255}) {
         membership[value] = true;
     }
-    constexpr auto member = std::uint8_t {200};
-    constexpr auto other = std::uint8_t {88};
 #endif
     // One byte of leading backing keeps every tested view unaligned.
     auto backing = std::vector<std::uint8_t>(length + 1);
-    auto input = std::span(backing).subspan(1);
+    const auto input = std::span(backing).subspan(1);
 #if CARVEN_SIMD_BENCH_COUNT
     auto state = std::uint32_t {1729};
     for (auto& byte : input) {
@@ -59,24 +53,30 @@ auto main() -> int {
     }
 #else
 #if CARVEN_SIMD_BENCH_FIELD
-    constexpr auto terminal = other;
-#elif CARVEN_SIMD_BENCH_FIND
+    constexpr auto terminal = std::uint8_t {44};
+    constexpr auto field = std::string_view("customer-2026@example.org");
+    for (auto index = std::size_t {0}; index < length; ++index) {
+        input[index] = static_cast<std::uint8_t>(field[index % field.size()]);
+    }
+#else
+#if CARVEN_SIMD_BENCH_DIGITS
+    constexpr auto member = std::uint8_t {53};
+#else
+    constexpr auto member = std::uint8_t {200};
+#endif
+    constexpr auto other = std::uint8_t {88};
+#if CARVEN_SIMD_BENCH_FIND
     constexpr auto ordinary = other;
     constexpr auto terminal = member;
 #else
     constexpr auto ordinary = member;
     constexpr auto terminal = other;
 #endif
-#if CARVEN_SIMD_BENCH_FIELD
-    constexpr auto field = std::string_view("customer-2026@example.org");
-    for (auto index = std::size_t {0}; index < length; ++index) {
-        input[index] = static_cast<std::uint8_t>(field[index % field.size()]);
-    }
-#else
     for (auto& byte : input) {
         byte = ordinary;
     }
 #endif
+    const auto distribution = std::string_view(std::getenv("CARVEN_SIMD_BENCH_DISTRIBUTION"));
     if (distribution == "early") {
         input[1] = terminal;
     }
@@ -85,14 +85,14 @@ auto main() -> int {
     }
 #endif
     const auto bytes = simd_benchmark::Bytes(input);
-    // Search starts at one, exercising absolute positions and another alignment.
-    constexpr auto start = std::size_t {1};
     auto expected = std::size_t {0};
 #if CARVEN_SIMD_BENCH_COUNT
     for (const auto byte : input) {
         expected += membership[byte];
     }
 #else
+    // Search starts at one, exercising absolute positions and another alignment.
+    constexpr auto start = std::size_t {1};
     expected = length;
     for (auto index = start; index < length; ++index) {
 #if CARVEN_SIMD_BENCH_FIND
@@ -111,13 +111,20 @@ auto main() -> int {
 #else
     constexpr auto kernel = &simd_benchmark::scan;
 #endif
-    if (kernel(bytes, start) != expected) {
+    const auto invoke = [&]() noexcept {
+#if CARVEN_SIMD_BENCH_COUNT
+        return kernel(bytes);
+#else
+        return kernel(bytes, start);
+#endif
+    };
+    if (invoke() != expected) {
         return 2;
     }
     auto checksum = std::uint64_t {0};
     const auto begin = std::chrono::steady_clock::now();
     for (auto iteration = std::size_t {0}; iteration < iterations; ++iteration) {
-        checksum += kernel(bytes, start);
+        checksum += invoke();
     }
     const auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(
                              std::chrono::steady_clock::now() - begin

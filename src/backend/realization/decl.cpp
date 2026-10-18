@@ -77,10 +77,8 @@ struct UnusedDeclarations final {
                 finish(value.body);
             } else if constexpr (std::same_as<Value, TargetBlockStmt>) {
                 finish(value.statements);
-            } else if constexpr (std::same_as<Value, TargetIfStmt>) {
-                for (auto& branch : value.branches) {
-                    finish(branch.body);
-                }
+            }
+            if constexpr (std::same_as<Value, TargetIfStmt>) {
                 if (value.else_body) {
                     finish(*value.else_body);
                 }
@@ -187,11 +185,8 @@ auto structure_exit(
     for (auto index = exit; index-- > 0uz;) {
         auto& statement = statements[index];
         auto* conditional = std::get_if<TargetIfStmt>(&statement.value);
-        if (conditional != nullptr
-            && conditional->branches.size() == 1uz
-            && !conditional->else_body
-            && !conditional->branches.front().body.empty()) {
-            auto& branch = conditional->branches.front();
+        if (conditional != nullptr && !conditional->else_body && !conditional->body.empty()) {
+            auto& branch = *conditional;
             const auto* jump = std::get_if<TargetGotoStmt>(&branch.body.back().value);
             if (jump != nullptr && jump->label == label) {
                 branch.body.pop_back();
@@ -282,10 +277,8 @@ struct ExitStructuring final {
                 list(value.body);
             } else if constexpr (std::same_as<Value, TargetBlockStmt>) {
                 list(value.statements);
-            } else if constexpr (std::same_as<Value, TargetIfStmt>) {
-                for (auto& branch : value.branches) {
-                    list(branch.body);
-                }
+            }
+            if constexpr (std::same_as<Value, TargetIfStmt>) {
                 if (value.else_body) {
                     list(*value.else_body);
                 }

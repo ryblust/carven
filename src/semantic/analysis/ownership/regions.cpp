@@ -93,6 +93,11 @@ auto OwnershipRegionIndex::matches(
     const OwnershipPlace& right,
     OwnershipRegionRelation relation
 ) const noexcept -> bool {
+    // Equal terminal lengths require the base words to end at the same length.
+    // Wildcard compatibility remains a possible relation, not object identity.
+    if (relation == OwnershipRegionRelation::Alias && left.path.size() == right.path.size()) {
+        return overlaps(left.path, right.path) && equal_paths(left.object, right.object);
+    }
     const auto key = std::tuple(left, right, relation);
     const auto [found, inserted] = results.try_emplace(key);
     if (inserted) {
@@ -110,11 +115,6 @@ auto OwnershipRegionIndex::query(
     const auto ancestor = relation == OwnershipRegionRelation::Ancestor
         || relation == OwnershipRegionRelation::StrictAncestor;
     const auto strict = relation == OwnershipRegionRelation::StrictAncestor;
-    // Equal terminal lengths require the base words to end at the same length.
-    // Wildcard compatibility remains a possible relation, not object identity.
-    if (equal && left.path.size() == right.path.size()) {
-        return overlaps(left.path, right.path) && equal_paths(left.object, right.object);
-    }
     const auto size = transitions.size();
     const auto& left_reach = reaches(left.object);
     const auto& right_reach = reaches(right.object);

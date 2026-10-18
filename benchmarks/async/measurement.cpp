@@ -122,7 +122,7 @@ auto allocate(std::size_t bytes, std::size_t alignment) noexcept -> void* {
     return reinterpret_cast<void*>(address);
 }
 
-auto release(void* pointer) noexcept -> void {
+auto release(const void* pointer) noexcept -> void {
     if (pointer == nullptr) {
         return;
     }
@@ -182,6 +182,8 @@ auto operator new[](std::size_t bytes, std::align_val_t alignment, const std::no
     return allocate(bytes, static_cast<std::size_t>(alignment));
 }
 
+// Standard replacement deallocation functions require a void* parameter.
+// NOLINTBEGIN(misc-const-correctness)
 auto operator delete(void* pointer) noexcept -> void {
     release(pointer);
 }
@@ -229,6 +231,8 @@ auto operator delete(void* pointer, std::align_val_t, const std::nothrow_t&) noe
 auto operator delete[](void* pointer, std::align_val_t, const std::nothrow_t&) noexcept -> void {
     release(pointer);
 }
+
+// NOLINTEND(misc-const-correctness)
 #endif
 
 namespace async_benchmark {

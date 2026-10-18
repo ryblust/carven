@@ -156,11 +156,7 @@ auto BodyRealizer::finish() noexcept -> LoweredBody {
     if (local_result_exit && statements.exits().contains(local_result_exit->exit.target)) {
         auto local = LoweringStmtBuilder();
         local.scope(std::move(statements));
-        local.resume(
-            local_result_exit->exit.label,
-            TargetJumpRole::RegionExit,
-            local_result_exit->exit.target
-        );
+        local.resume(local_result_exit->exit.label, local_result_exit->exit.target);
         statements = std::move(local);
     }
     const auto continues = statements.continues();

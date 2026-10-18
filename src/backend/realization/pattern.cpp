@@ -77,10 +77,12 @@ auto PatternRealizer::branch(
     LoweringStmtBuilder& destination
 ) noexcept -> void {
     destination.record_exits(selected.exits());
-    auto branches = std::vector<TargetIfBranch>();
-    branches.push_back({.condition = std::move(condition), .body = std::move(selected).finish()});
     destination.emit(generated_statement(
-        TargetIfStmt {.branches = std::move(branches), .else_body = std::nullopt}
+        TargetIfStmt {
+            .condition = std::move(condition),
+            .body = std::move(selected).finish(),
+            .else_body = std::nullopt
+        }
     ));
 }
 

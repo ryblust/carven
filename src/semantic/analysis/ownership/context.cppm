@@ -734,7 +734,7 @@ private:
         ConstructionFailureRef failures,
         const OwnershipState& state,
         const OwnershipRelationships& value = {},
-        std::optional<GenericFailureMask> retained = std::nullopt
+        const GenericFailureMask* retained = nullptr
     ) const noexcept -> void;
 
     auto bind_pattern(

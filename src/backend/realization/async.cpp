@@ -230,7 +230,7 @@ auto BodyRealizer::ExpressionBuilder::complete_awaited(
     if (automatic) {
         statements.declare(
             TargetVariableStmt {
-                .binding = TargetVariableBinding::MutableValue,
+                .binding = TargetVariableBinding::ConstValue,
                 .maybe_unused = false,
                 .local = completion,
                 .type = type,
@@ -271,13 +271,12 @@ auto BodyRealizer::ExpressionBuilder::complete_awaited(
         auto cancelled = LoweringStmtBuilder();
         owner.emit_cancelled(cancelled);
         statements.record_exits(cancelled.exits());
-        auto cancelled_branches = std::vector<TargetIfBranch>();
-        cancelled_branches.push_back(
-            {.condition = call_member(access(), "is_cancelled", {}),
-             .body = std::move(cancelled).finish()}
-        );
         statements.emit(generated_statement(
-            TargetIfStmt {.branches = std::move(cancelled_branches), .else_body = std::nullopt}
+            TargetIfStmt {
+                .condition = call_member(access(), "is_cancelled", {}),
+                .body = std::move(cancelled).finish(),
+                .else_body = std::nullopt
+            }
         ));
     }
     auto success = call_member(access(), "success_if", {});
@@ -294,16 +293,15 @@ auto BodyRealizer::ExpressionBuilder::complete_awaited(
             failure
         );
         statements.record_exits(failure.exits());
-        auto branches = std::vector<TargetIfBranch>();
-        branches.push_back(
-            {.condition = prefix_expression(
-                 TargetPrefixOperator::LogicalNot,
-                 call_member(access(), "success_if", {})
-             ),
-             .body = std::move(failure).finish()}
-        );
         statements.emit(generated_statement(
-            TargetIfStmt {.branches = std::move(branches), .else_body = std::nullopt}
+            TargetIfStmt {
+                .condition = prefix_expression(
+                    TargetPrefixOperator::LogicalNot,
+                    call_member(access(), "success_if", {})
+                ),
+                .body = std::move(failure).finish(),
+                .else_body = std::nullopt
+            }
         ));
     }
     if (const auto* builtin = std::get_if<BuiltinTypeValue>(
@@ -324,20 +322,20 @@ auto BodyRealizer::ExpressionBuilder::complete_awaited(
     fragment.awaited_carrier =
         AwaitedCarrier {.local = completion, .deferred = !automatic, .operation = operation};
     if (project_success && !owner.context.is_void(operation_type->success)) {
+        const auto constant = value_binding(use) == TargetVariableBinding::ConstValue
+            || (use == PreparedUse::Consume && scalar(operation_type->success));
+        if (!constant) {
+            owner.mutable_owners.insert(completion);
+        }
         const auto projection = owner.fresh_local(TargetTemporaryNameKind::SuccessProjection);
         statements.declare(
             TargetVariableStmt {
                 .binding = TargetVariableBinding::ConstValue,
                 .maybe_unused = false,
                 .local = projection,
-                .type = owner.context.pointer_type(owner.context.intrinsic_type(
-                    TargetSymbol::Auto,
-                    use == PreparedUse::ReadArgument
-                        || use == PreparedUse::ConstPlace
-                        || use == PreparedUse::ReadPointer
-                        || use == PreparedUse::OperandValue
-                        || (use == PreparedUse::Consume && scalar(operation_type->success))
-                )),
+                .type = owner.context.pointer_type(
+                    owner.context.intrinsic_type(TargetSymbol::Auto, constant)
+                ),
                 .initializer = std::move(success),
             },
             false
@@ -517,9 +515,7 @@ auto BodyRealizer::emit_tail_await(
     // The same receiver works in source loop headers, steps, and bodies;
     // lowering order does not determine the eventual native loop nesting.
     destination.terminate(
-        generated_statement(
-            TargetGotoStmt {.label = tail_loop->next_label, .role = TargetJumpRole::ForLoopContinue}
-        ),
+        generated_statement(TargetGotoStmt {.label = tail_loop->next_label}),
         tail_loop->next
     );
     co_return {};
@@ -556,7 +552,7 @@ auto BodyRealizer::wrap_tail_loop(LoweringStmtBuilder statements) noexcept -> Lo
     auto iteration = LoweringStmtBuilder();
     iteration.scope(std::move(body));
     if (iteration.exits().contains(tail_loop->next)) {
-        iteration.resume(tail_loop->next_label, TargetJumpRole::ForLoopContinue, tail_loop->next);
+        iteration.resume(tail_loop->next_label, tail_loop->next);
     }
     outer.record_exits(iteration.exits());
     outer.emit(

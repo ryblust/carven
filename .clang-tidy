@@ -61,13 +61,16 @@ ImplementationFileExtensions:
   - 'cpp'
   - 'cppm'
   - 'cxx'
-HeaderFilterRegex: '.*[/\\](src|tests|crafts)[/\\].*|.*[/\\]build[/\\]\.gens[/\\].*'
+HeaderFilterRegex: '.*[/\\](src|tests|crafts)[/\\].*|.*[/\\]\.gens[/\\].*'
 FormatStyle: none
 SystemHeaders: false
 CheckOptions:
   misc-const-correctness.AnalyzeAutoVariables: true
   misc-const-correctness.AnalyzeLambdas: true
   misc-const-correctness.AnalyzeParameters: true
+  # Child construction publishes its stable storage to the scope and scheduler.
+  # They mutate it through escaped aliases until close, even without direct uses.
+  misc-const-correctness.AllowedTypes: '^::carven::runtime::execution::Child(<.*>)?$'
   # Check pointee constness without requiring top-level const on borrowed pointers.
   misc-const-correctness.WarnPointersAsPointers: true
   misc-const-correctness.WarnPointersAsValues: false

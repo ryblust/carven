@@ -109,9 +109,11 @@ source order.
 
 Project linkage identity combines the generation destination, canonical module
 path, and test generation mode. Generated interface paths carry the same linkage
-domain as their declarations. Each native target owns its generation destination;
-changing its source membership does not change that destination. Installed
-standard-library modules retain their compiler-defined linkage identity.
+domain as their declarations. Each application target owns its application
+generation destination; changing its source membership does not change that
+destination. Installed standard-library modules retain their compiler-defined
+linkage identity; the Xmake rule shares their generated text in a separate
+destination.
 
 Public `export(cpp)` names belong to the program-wide `carven::api` namespace.
 Give separately linked public modules distinct canonical paths. Reuse one library
@@ -212,14 +214,26 @@ Configure native providers through ordinary target settings and dependencies.
 Xmake owns target dependencies, native configuration, preparation order, header
 scanning, compilation, linking, and concurrency. The Carven rule supplies generated
 sources and preserves the native settings attached to their originating `.cv`
-files. Standard-library archives contain standard implementations and native
-support. Application dependencies belong to consumer targets.
+files. The rule processes the full installed standard library and registers its
+generated implementations and installed native support sources on each consumer
+target. Xmake compiles these sources with that target's native configuration and
+manages incremental builds. Reuse of native objects and other native artifacts
+follows Xmake's mechanisms and their requirements.
 
 Identical source batches share analysis and publish only semantics and discovery
-facts. Each target generates its C++ and selected entry from the retained program
-in its own linkage domain. Standard-library C++ has a fixed linkage identity and
-is generated once for the native archive configurations that consume it. Analysis with
-host input, clock sampling, or waiting runs again on the next build request.
+facts. Each application target generates its C++ and selected entry from the
+retained program in its own linkage domain. Within one configured Xmake project,
+targets using the same Carven compiler and installed sources share standard-library
+analysis results and generated C++ text. The standard library keeps its fixed
+generated symbol identity across those targets. Analysis with host input, clock
+sampling, or waiting runs again on the next build request.
+
+Use ordinary Xmake targets, source lists, and dependencies to model component
+boundaries and definition ownership. Standard-library source registration is per
+consumer; text sharing does not deduplicate native definitions at link time.
+Components exchanging generated types must use compatible native ABI settings.
+Runtime state sharing follows C++ definition and platform symbol-binding rules;
+separately linked libraries are not guaranteed to share one runtime instance.
 
 Generate into staging, publish only after a successful compiler invocation, and
 preserve timestamps for unchanged output bytes. Xmake dependency records track
@@ -319,8 +333,9 @@ backend. All backends implement the same logical lane operations.
 
 Consumers select target instruction flags. An x86 consumer enables AVX2 with
 `-mavx2`, `/arch:AVX2`, or Xmake's `add_vectorexts("avx2")`.
-`CARVEN_SIMD_FORCE_PORTABLE` selects the portable backend. Translation units using
-SIMD or runtime text support must select the same backend.
+`CARVEN_SIMD_FORCE_PORTABLE` selects the portable backend. Translation units
+sharing SIMD or runtime text types and inline definitions must select the same
+backend. Independent programs can select different backends.
 
 Runtime vector and mask types live in backend-specific inline namespaces within
 `carven::runtime::simd`. Their type identities can expose backend mismatches in

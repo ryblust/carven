@@ -20,10 +20,11 @@ another edit. No-change samples reuse the built target. Preparation, restoration
 timestamp waits, observation snapshots and executable validation are outside the
 measured interval.
 
-The target uses C++20 with optimization disabled. Standard-library analysis and native
-producers are shared through the main build graph. Stage timings distinguish
-semantic analysis from C++ generation; `--timings` prints stage details for the
-sample nearest the wall-time median.
+The target uses C++20 with optimization disabled. Standard-library analysis and
+generated C++ text are shared through the main build graph. The target compiles
+the standard-library sources with its own native configuration. Stage timings
+distinguish semantic analysis from C++ generation; `--timings` prints stage details
+for the sample nearest the wall-time median.
 
 Reports count generated artifact additions, byte changes and removals; unchanged
 bytes with changed timestamps; and new or timestamp-changed native objects.

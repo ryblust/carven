@@ -149,17 +149,13 @@ auto TargetRenderer::render_statement_node(const TargetStmt& statement) noexcept
                 return concat({render_identifier(value.label), text(":;")});
             },
             [&](const TargetIfStmt& value) noexcept {
-                auto result = std::vector<LayoutNodeID> {};
-                for (auto index = 0uz; index < value.branches.size(); ++index) {
-                    const auto& branch = value.branches[index];
-                    const auto condition = std::array {render_expression(branch.condition)};
-                    result.push_back(concat(
-                        {text(index == 0 ? "if " : "else if "),
-                         delimited_list(condition, "(", ")"),
-                         text(" "),
-                         render_statement_block(branch.body)}
-                    ));
-                }
+                const auto condition = std::array {render_expression(value.condition)};
+                auto result = concat(
+                    {text("if "),
+                     delimited_list(condition, "(", ")"),
+                     text(" "),
+                     render_statement_block(value.body)}
+                );
                 if (value.else_body.has_value()) {
                     // A generated alternative holding only a conditional is spelled
                     // `else if`, which C++ defines as that same block.
@@ -169,13 +165,14 @@ auto TargetRenderer::render_statement_node(const TargetStmt& statement) noexcept
                         && std::holds_alternative<TargetGeneratedExpansionAttribution>(
                                              alternative.front().attribution
                         );
-                    result.push_back(concat(
-                        {text("else "),
+                    result = concat(
+                        {result,
+                         text(" else "),
                          chained ? render_statement(alternative.front())
                                  : render_statement_block(alternative)}
-                    ));
+                    );
                 }
-                return builder.join(result, text(" "));
+                return result;
             },
             [&](const TargetWhileStmt& value) noexcept {
                 auto body = std::vector<LayoutNodeID> {};

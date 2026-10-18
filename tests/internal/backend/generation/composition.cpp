@@ -207,12 +207,12 @@ const TestSuite suite([] static noexcept {
             auto selected = LoweringStmtBuilder {};
             selected.terminate(return_statement(), exit);
             parent.record_exits(selected.exits());
-            auto branches = std::vector<TargetIfBranch>();
-            branches.push_back(
-                {.condition = bool_expression(true), .body = std::move(selected).finish()}
-            );
             parent.emit(target_lowering_statement(
-                TargetIfStmt {.branches = std::move(branches), .else_body = std::nullopt}
+                TargetIfStmt {
+                    .condition = bool_expression(true),
+                    .body = std::move(selected).finish(),
+                    .else_body = std::nullopt
+                }
             ));
         };
         branch(early);
@@ -248,12 +248,12 @@ const TestSuite suite([] static noexcept {
         auto early_branch = LoweringStmtBuilder {};
         early_branch.terminate(return_statement(), early);
         parent.record_exits(early_branch.exits());
-        auto branches = std::vector<TargetIfBranch>();
-        branches.push_back(
-            {.condition = bool_expression(true), .body = std::move(early_branch).finish()}
-        );
         parent.emit(target_lowering_statement(
-            TargetIfStmt {.branches = std::move(branches), .else_body = std::nullopt}
+            TargetIfStmt {
+                .condition = bool_expression(true),
+                .body = std::move(early_branch).finish(),
+                .else_body = std::nullopt
+            }
         ));
         parent.declare(boolean_variable(target, "later"), true);
         parent.terminate(return_statement(), late);
@@ -286,7 +286,7 @@ const TestSuite suite([] static noexcept {
         auto sequence = LoweringStmtBuilder {};
         sequence.terminate(return_statement(), first);
         expect(!(sequence.consume_exit(second)));
-        sequence.resume(TargetIdentifier::from_spelling("done"), TargetJumpRole::RegionExit, first);
+        sequence.resume(TargetIdentifier::from_spelling("done"), first);
         expect(sequence.continues());
         expect(sequence.exits().entries.empty());
     };
@@ -297,24 +297,22 @@ const TestSuite suite([] static noexcept {
             constexpr auto yield =
                 LoweringExitTarget {.kind = LoweringExitKind::Value, .identity = 1};
             const auto selection = [&](LoweringRegionDelivery delivery) noexcept -> TargetExpr {
-                auto branches = std::vector<TargetIfBranch>();
-                branches.push_back(
-                    {.condition = bool_expression(true),
-                     .body = returned(
-                         {.value = TargetLiteralExpr {
-                              .value = TargetIntegerLiteral {
-                                  .negative = false,
-                                  .magnitude = 1u,
-                                  .suffix = TargetIntegerSuffix::None
-                              }
-                          }}
-                     )}
-                );
                 auto sequence = LoweringStmtBuilder {};
                 sequence.terminate(
                     target_lowering_statement(
                         TargetIfStmt {
-                            .branches = std::move(branches),
+                            .condition = bool_expression(true),
+                            .body = returned(
+                                {.value =
+                                     TargetLiteralExpr {
+                                         .value =
+                                             TargetIntegerLiteral {
+                                                 .negative = false,
+                                                 .magnitude = 1u,
+                                                 .suffix = TargetIntegerSuffix::None
+                                             }
+                                     }}
+                            ),
                             .else_body = returned(bool_expression(false))
                         }
                     ),

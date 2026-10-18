@@ -281,7 +281,7 @@ auto OwnershipBodyAnalyzer::attempt(const SemTry& value, OwnershipState state) n
                         handled.push_back(type);
                     }
                 }
-                mask = residual_failure_mask(std::move(mask), std::move(handled));
+                mask = residual_failure_mask(mask, std::move(handled));
                 if (mask.complemented || !mask.members.empty()) {
                     rejected.push_back({
                         OwnershipFailure {
@@ -390,10 +390,8 @@ auto OwnershipBodyAnalyzer::attempt(const SemTry& value, OwnershipState state) n
             }
         } else {
             auto& symbolic = std::get<AnalysisSymbolicFailure>(payload.type.value);
-            symbolic.mask = intersect_failure_masks(
-                std::move(symbolic.mask),
-                analysis.model.failure_support(residual)
-            );
+            symbolic.mask =
+                intersect_failure_masks(symbolic.mask, analysis.model.failure_support(residual));
             symbolic.source = residual;
             if (symbolic.mask.complemented || !symbolic.mask.members.empty()) {
                 result.exits.push_back(std::move(exit));

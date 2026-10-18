@@ -412,7 +412,6 @@ private:
     struct LoopContinuation final {
         std::optional<TargetIdentifier> step;
         std::optional<TargetIdentifier> break_label;
-        TargetJumpRole jump_role;
         bool expanded;
         LoweringExitTarget target;
         LoweringExitTarget break_target;

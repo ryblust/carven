@@ -299,11 +299,7 @@ auto lower_cpp_export_facade(ModuleLowering& context, FunctionID function) noexc
                 false,
                 TypeNameScope::Global
             ),
-            .form =
-                TargetFreeFunctionDefinition {
-                    .execution = TargetCallableExecution::Ordinary,
-                    .body = std::move(body)
-                },
+            .form = TargetFreeFunctionDefinition {.body = std::move(body)},
             .constexpr_specifier = false,
             .static_specifier = false,
             .inline_specifier = false,
@@ -646,13 +642,12 @@ auto lower_entry_wrapper(ModuleLowering& context, FunctionID function_id) noexce
                     )
                 }
             ));
-            auto branches = std::vector<TargetIfBranch>();
-            branches.push_back(
-                {.condition = call_member(name_expression(outcome), "is_cancelled", {}),
-                 .body = std::move(report)}
-            );
             body.push_back(generated_statement(
-                TargetIfStmt {.branches = std::move(branches), .else_body = std::nullopt}
+                TargetIfStmt {
+                    .condition = call_member(name_expression(outcome), "is_cancelled", {}),
+                    .body = std::move(report),
+                    .else_body = std::nullopt
+                }
             ));
         }
         status = TargetExpr {

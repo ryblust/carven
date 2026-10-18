@@ -42,8 +42,8 @@ spellings and header providers for emission and dependency collection.
 Target locals and parameters use unit-owned `TargetLocalID` identities. Their
 spellings live in the target unit and are only resolved for emission and name
 allocation. `TargetLocalExpr` refers to those identities; symbolic, member, and
-capture-field names remain distinct. Sealing rejects foreign, undeclared,
-out-of-scope, and multiply declared local identities.
+capture-field names remain distinct. Local queries check unit identity and bounds;
+native compilation checks the emitted declarations and scopes.
 
 Function-body completion derives parameter retention, local unused attributes,
 and owner mutability from identity-based uses in the retained target tree,
@@ -63,12 +63,15 @@ storage producers can establish its absence from the selected representation.
 
 Realization records mutable owner access required by emitted Write operands and
 transfers. Function-body completion uses these retained demands to select const or
-mutable storage for directly initialized local owners. Deferred initialization
+mutable storage for directly initialized local owners and outcome carriers.
+Success and failure payload transfers, completion adoption, and retained success
+bindings register access at their consuming operation. Carriers used only for
+observation, including cancellation checks, remain const. Deferred initialization
 uses mutable result storage.
 
-Hidden owners of newly produced values retain mutable backing so later delivery
-can preserve the original conversion capabilities. Read consumption applies const
-access; value snapshots of named storage retain their selected parameter policy.
+Hidden owners use their prepared operand demand to select mutable or const
+backing. Ordinary Read and operand observations require no mutable owner. Value
+snapshots of named storage retain their selected parameter policy.
 Reference, Read-parameter, and exact native-query storage retain the qualification
 selected by their types. Consumer access remains independent of the local
 declaration.
@@ -94,15 +97,18 @@ barrier; `ReadBorrow` preserves delegated native observation. Required stable
 storage uses `ConstPlace`. For native query results, `ReadArgumentStorage<Query>`
 applies ReadArg to reference results at the argument evaluation barrier and owns
 value results. Implicit native conversions in Read position retain complete source
-backing through `ConstPlace`. `ReadConversionStorage<Parameter, Source>` selects
+backing through `ConversionSource`. `ReadConversionStorage<Parameter, Source>` selects
 storage: standard storage-compatible reference conversions preserve identity;
 value parameters and conversions requiring a new object own their converted
 value. Explicit casts and owning consumers use ordinary value construction.
 The original native query supplies delivery category
 for a fresh source; named storage always supplies a const lvalue. Compatible
 storage uses const access even for a fresh source, while a new target
-retains an original rvalue conversion capability. Hidden native backing preserves
-its query qualification; Read qualification applies at consumption.
+retains an original rvalue conversion capability. Directly initialized read-only
+backing with a delegated native type uses `std::add_const_t` to qualify owned
+values without changing reference alternatives.
+`ConversionSource` retains its original cv/ref capability until conversion;
+the resulting Read access is selected independently of that backing.
 Only a native producer's own query determines its result category. A conversion
 target may reuse another expression's query type; constructing that target still
 produces an owned normalized value. Materialization, anchoring, and Read conversion
@@ -532,8 +538,7 @@ needs no branches.
 The wrapper's result storage undergoes ordinary scope cleanup.
 
 A local label realizes an exit for which C++ has no suitable structured form.
-Labels carry a control purpose and must respect initialization barriers. The
-label remains local to the source control construct it implements. Region exits
+The label remains local to the source control construct it implements. Region exits
 record use when emitting a jump. Only their owning construct can restore an
 entry.
 
@@ -566,8 +571,8 @@ and binding cleanup at its lexical boundary.
 
 Suspending operands execute in their owning coroutine. Preparation records
 coroutine-context requirements so expression factories cannot capture an await or
-coroutine exit. Target verification checks this boundary and distinguishes ordinary
-returns from coroutine returns. Direct awaits of `yield_once` and
+coroutine exit. Emitted `co_await` and `co_return` operations establish C++
+coroutine bodies. Direct awaits of `yield_once` and
 `cancel_point` use runtime awaitables; stored operations keep their ordinary
 cold representation.
 

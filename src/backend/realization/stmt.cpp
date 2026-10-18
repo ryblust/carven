@@ -46,12 +46,7 @@ auto BodyRealizer::emit_return(
             );
         }
         destination.terminate(
-            generated_statement(
-                TargetGotoStmt {
-                    .label = local_result_exit->exit.label,
-                    .role = TargetJumpRole::RegionExit
-                }
-            ),
+            generated_statement(TargetGotoStmt {.label = local_result_exit->exit.label}),
             local_result_exit->exit.target
         );
         return;
@@ -175,9 +170,7 @@ auto BodyRealizer::deliver_failure(
             target_expressions(std::move(value))
         )));
         emit_async_exit(
-            generated_statement(
-                TargetGotoStmt {.label = relay->label, .role = TargetJumpRole::FailureTransfer}
-            ),
+            generated_statement(TargetGotoStmt {.label = relay->label}),
             relay->target,
             relay->closing_scopes,
             true,
@@ -255,12 +248,7 @@ auto BodyRealizer::register_failure(
          .closing_scopes = async_closing_locals(receiver.retained_async_scopes)}
     );
     // This registered identity is completed before the protected region leaves lowering.
-    destination.terminate(
-        generated_statement(
-            TargetGotoStmt {.label = label, .role = TargetJumpRole::FailureTransfer}
-        ),
-        receiver.target
-    );
+    destination.terminate(generated_statement(TargetGotoStmt {.label = label}), receiver.target);
 }
 
 auto BodyRealizer::failure_contains(const FailureSource& source, TypeID type) const noexcept
@@ -328,9 +316,7 @@ auto BodyRealizer::dispatch_failure(
         }
     }
     if (!candidates.empty()) {
-        if (const auto* value = std::get_if<ValueFailureSource>(&source)) {
-            mutable_owners.insert(value->storage);
-        }
+        source.visit([&](const auto& value) noexcept { mutable_owners.insert(value.storage); });
     }
     for (const auto type : candidates) {
         const auto projection = fresh_local(TargetTemporaryNameKind::FailureProjection);
@@ -355,12 +341,12 @@ auto BodyRealizer::dispatch_failure(
             return transfers;
         }
         transfers.record_exits(transfer.exits());
-        auto branches = std::vector<TargetIfBranch>();
-        branches.push_back(
-            {.condition = name_expression(projection), .body = std::move(transfer).finish()}
-        );
         transfers.emit(generated_statement(
-            TargetIfStmt {.branches = std::move(branches), .else_body = std::nullopt}
+            TargetIfStmt {
+                .condition = name_expression(projection),
+                .body = std::move(transfer).finish(),
+                .else_body = std::nullopt
+            }
         ));
     }
     transfers.terminate(
@@ -530,9 +516,7 @@ auto BodyRealizer::statement(const SemanticStatement& source) noexcept
                     }
                     if (loop.break_label) {
                         emit_async_exit(
-                            generated_statement(
-                                TargetGotoStmt {.label = *loop.break_label, .role = loop.jump_role}
-                            ),
+                            generated_statement(TargetGotoStmt {.label = *loop.break_label}),
                             loop.break_target,
                             closing_scopes,
                             false,
@@ -553,9 +537,7 @@ auto BodyRealizer::statement(const SemanticStatement& source) noexcept
                     }
                     if (loop.step) {
                         emit_async_exit(
-                            generated_statement(
-                                TargetGotoStmt {.label = *loop.step, .role = loop.jump_role}
-                            ),
+                            generated_statement(TargetGotoStmt {.label = *loop.step}),
                             loop.target,
                             closing_scopes,
                             false,
@@ -672,7 +654,9 @@ auto BodyRealizer::statement(const SemanticStatement& source) noexcept
                 if (!destination.continues()) {
                     co_return {};
                 }
-                mutable_owners.emplace(binding_locals.at(value.owner));
+                if (!value.bindings.empty()) {
+                    mutable_owners.emplace(binding_locals.at(value.owner));
+                }
                 for (const auto& binding : value.bindings) {
                     auto selected = binding_expression(value.owner);
                     for (const auto index : binding.path) {

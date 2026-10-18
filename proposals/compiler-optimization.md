@@ -223,11 +223,15 @@ Generation-only consumers retain the executable program. Artifact directories
 carry these results across processes; generation from a retained program repeats
 neither source analysis nor static execution.
 
-Xmake shares standard-library analysis and baseline generation across native
-configurations, selects native archives by compilation settings, and shares
-analysis for identical source batches. Ordinary and test generation consume the
-same checked program. Targets with their own source preparation retain separate
-batches. Build integration owns dependency freshness and staged publication.
+Within one configured project, Xmake integration shares analysis for identical
+source batches. Targets using the same Carven compiler and installed sources share
+standard-library analysis results and generated C++ text. The standard library is
+processed in full; its generated implementations and native support sources are
+registered on each consumer target. Xmake manages native compilation, linking,
+incremental builds, and native artifact reuse through its own mechanisms. Ordinary
+and test generation consume the same checked program. Targets with their own
+source preparation retain separate batches. Build integration owns dependency
+freshness and staged publication.
 
 Analysis records observed host input, time, or waiting as noncacheable; build
 integration repeats that producer. Producer roots execute during producer

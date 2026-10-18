@@ -7,6 +7,72 @@ const array_nested = [
     [3u8, 4u8]
 ];
 
+struct ArrayZeroCell {
+    number: i32,
+    flag: bool,
+    scalar: char,
+    pair: (u16, f64),
+    pointer: ptr<i32>,
+}
+
+enum ArrayChoice: u8 {
+    Other = 7,
+    Zero = 0,
+}
+
+const array_zero_rows = [[0i32; 4]; 3];
+
+const array_sparse_rows = [
+    [1, 0, 0, 0],
+    [0; 4],
+    [0; 4]
+];
+
+const array_zero_cells = [ArrayZeroCell {}; 2];
+const array_zero_choices = [ArrayChoice::Zero; 2];
+const array_empty_choices: [ArrayChoice; 0] = [];
+const array_zero_vectors = [u8x16::splat(0); 2];
+const array_signed_zeros = [0.0f64, -0.0f64, 0.0f64];
+const array_narrow_signed_zeros = [0.0f32, -0.0f32, 0.0f32];
+
+test "Const arrays: typed zero aggregates and sparse values retain independent storage" {
+    var rows = array_zero_rows;
+    let snapshot = rows;
+    rows[1][2] = 7;
+    check(rows[1][2] == 7);
+    check(rows[0][2] == 0);
+    check(snapshot[1][2] == 0);
+    check(array_zero_rows[1][2] == 0);
+    let sparse = array_sparse_rows;
+    check(sparse[0] == [1, 0, 0, 0]);
+    check(sparse[1] == [0; 4]);
+    check(sparse[2] == [0; 4]);
+    let cells = array_zero_cells;
+    check(cells[1].number == 0);
+    check(!cells[1].flag);
+    check(cells[1].scalar == '\0');
+    check(cells[1].pair == (0u16, 0.0f64));
+    check(cells[1].pointer == nullptr);
+    let choices = array_zero_choices;
+    check(choices[1] == ArrayChoice::Zero);
+    check(choices[1] != ArrayChoice::Other);
+    let empty: [ArrayChoice; 0] = array_empty_choices;
+    check(empty.is_empty());
+    let vectors = array_zero_vectors;
+    check(vectors[1].lane(15) == 0u8);
+}
+
+test "Const arrays: reconstruction preserves both signs of floating zero" {
+    let wide = array_signed_zeros;
+    let narrow = array_narrow_signed_zeros;
+    check(1.0f64 / wide[0] > 0.0f64);
+    check(1.0f64 / wide[1] < 0.0f64);
+    check(1.0f64 / wide[2] > 0.0f64);
+    check(1.0f32 / narrow[0] > 0.0f32);
+    check(1.0f32 / narrow[1] < 0.0f32);
+    check(1.0f32 / narrow[2] > 0.0f32);
+}
+
 const fn array_squares(offset: i32) -> [i32; 4] {
     var values = [0, 0, 0, 0];
     for index in 0..4 {

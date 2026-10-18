@@ -119,7 +119,7 @@ auto display_statements(
     } else if (const auto* enumeration = std::get_if<EnumTypeValue>(&canonical)) {
         const auto& declaration =
             context.semantic().declarations().enumeration(enumeration->enumeration);
-        auto branches = std::vector<TargetIfBranch>();
+        auto selections = std::vector<TargetStmt>();
         for (auto index = 0uz; index < declaration.cases.size(); ++index) {
             const auto id = declaration.cases[index];
             const auto& item = context.semantic().declarations().enum_case(id);
@@ -170,20 +170,21 @@ auto display_statements(
                 }
             }
             if (condition) {
-                branches.push_back({
-                    .condition = std::move(*condition),
-                    .body = std::exchange(body, {}),
-                });
+                // Each case completes this void emitter; choices need no nesting.
+                body.push_back(generated_statement(TargetReturnStmt {.expression = std::nullopt}));
+                selections.push_back(generated_statement(
+                    TargetIfStmt {
+                        .condition = std::move(*condition),
+                        .body = std::exchange(body, {}),
+                        .else_body = std::nullopt,
+                    }
+                ));
             }
         }
-        if (!branches.empty()) {
-            auto selection = TargetIfStmt {
-                .branches = std::move(branches),
-                .else_body = std::move(body),
-            };
-            body.clear();
-            body.push_back(generated_statement(std::move(selection)));
-        } else if (std::holds_alternative<NumericEnumRepresentation>(declaration.representation)) {
+        selections.append_range(body | std::views::as_rvalue);
+        body = std::move(selections);
+        if (declaration.cases.size() < 2uz
+            && std::holds_alternative<NumericEnumRepresentation>(declaration.representation)) {
             body.push_back(
                 generated_statement(TargetDiscardStmt {.expression = name_expression(value)})
             );
@@ -192,18 +193,14 @@ auto display_statements(
     auto result = std::vector<TargetStmt>();
     auto limit_body = std::vector<TargetStmt>();
     limit_body.push_back(generated_statement(TargetReturnStmt {.expression = std::nullopt}));
-    auto limit_branches = std::vector<TargetIfBranch>();
-    limit_branches.push_back({
-        .condition = call_member(
-            name_expression(writer),
-            "truncate_at_limit",
-            target_expressions(name_expression(depth))
-        ),
-        .body = std::move(limit_body),
-    });
     result.push_back(generated_statement(
         TargetIfStmt {
-            .branches = std::move(limit_branches),
+            .condition = call_member(
+                name_expression(writer),
+                "truncate_at_limit",
+                target_expressions(name_expression(depth))
+            ),
+            .body = std::move(limit_body),
             .else_body = std::nullopt,
         }
     ));

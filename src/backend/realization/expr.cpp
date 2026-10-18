@@ -129,6 +129,7 @@ auto BodyRealizer::ExpressionBuilder::finish_expression(
                 )}
             );
         }
+        owner.mutable_owners.insert(fragment.awaited_carrier->local);
         auto carrier = name_expression(fragment.awaited_carrier->local);
         if (fragment.awaited_carrier->deferred) {
             carrier = dereference_expression(std::move(carrier));
@@ -224,6 +225,7 @@ auto BodyRealizer::ExpressionBuilder::initialize_expression(
         owner.delayed_bindings.emplace(binding, storage);
         owner.success_bindings.insert(binding);
         owner.declare_deferred(storage, true, destination, true);
+        owner.mutable_owners.insert(carrier.local);
         auto access = name_expression(carrier.local);
         if (carrier.deferred) {
             access = dereference_expression(std::move(access));

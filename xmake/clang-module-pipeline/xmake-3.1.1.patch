@@ -1,6 +1,6 @@
 --- /dev/null
 +++ b/modules/private/action/build/content_depend.lua
-@@ -0,0 +1,75 @@
+@@ -0,0 +1,92 @@
 +-- Track input and output contents in dependency records.
 +import("core.project.depend")
 +
@@ -70,11 +70,28 @@
 +        return false
 +    end
 +    opt.changed = true
-+    -- Save dependency records only after the callback succeeds.
-+    return depend.on_changed(function ()
++    local record = {}
++    -- Publishing the link inputs notifies native after_link jobs that the
++    -- linker ran. Its output is incomplete until those jobs have succeeded.
++    depend.on_changed(function ()
 +        callback()
-+        return {outputhash = fingerprint(opt.output, true)}
++        if not opt.defer_output then
++            record.outputhash = fingerprint(opt.output, true)
++        end
++        return record
 +    end, opt)
++    if opt.defer_output and not opt.dryrun then
++        local linktime = os.mtime(opt.dependfile)
++        return function ()
++            record.outputhash = fingerprint(opt.output, true)
++            -- Complete the same record without announcing another link event.
++            -- Stage the metadata so a failed finalization leaves no valid hash.
++            local pending = opt.dependfile .. ".tmp"
++            depend.save(record, pending)
++            os.touch(pending, {mtime = linktime})
++            os.mv(pending, opt.dependfile)
++        end
++    end
 +end
 --- a/modules/private/action/build/object.lua
 +++ b/modules/private/action/build/object.lua
@@ -135,19 +152,53 @@
      local depvalues = {linkinst:program(), linkflags}
 -    depend.on_changed(function ()
 +    local on_changed = content_depend.enabled(target) and content_depend.run or depend.on_changed
-+    on_changed(function ()
++    local complete = on_changed(function ()
          local filename = target:filename()
          if target:is_static() then
              progress.show(opt.progress, "${color.build.target}archiving.$(mode) %s", filename)
-@@ -55,7 +57,7 @@
+@@ -55,10 +57,11 @@
          if not dryrun then
              assert(linkinst:link(objectfiles, targetfile, {linkflags = linkflags}))
          end
 -    end, {dependfile = target:dependfile(),
-+    end, {dependfile = target:dependfile(), output = target:targetfile(),
++    end, {dependfile = target:dependfile(), output = target:targetfile(), defer_output = true,
            lastmtime = os.mtime(target:targetfile()),
            changed = target:is_rebuilt() or option.get("linkonly"),
            values = depvalues, files = depfiles, dryrun = dryrun})
++    target:data_set("cxx.modules.link_completion", complete)
+ end
+
+ -- link object files to the target file
+--- a/modules/private/action/build/target.lua
++++ b/modules/private/action/build/target.lua
+@@ -29,6 +29,7 @@
+ import("private.utils.batchcmds")
+ import("private.utils.rule", {alias = "rule_utils"})
+ import("utils.progress", {alias = "progress_utils"})
++import("private.action.build.content_depend", {alias = "content_depend"})
+
+ -- clean target for rebuilding
+ function _clean_target(target)
+@@ -724,7 +725,18 @@
+     if not with_stages or with_stages:has("after") then
+         group_after = add_targetjobs_with_stage(jobgraph, target, "after", opt)
+     end
+-    jobgraph:add_orders(group_before, group, group_after)
++    local finalizer
++    if content_depend.enabled(target) then
++        finalizer = target:fullname() .. "/finalize_link"
++        jobgraph:add(finalizer, function ()
++            local complete = target:data("cxx.modules.link_completion")
++            if complete then
++                complete()
++                target:data_set("cxx.modules.link_completion", nil)
++            end
++        end)
++    end
++    jobgraph:add_orders(group_before, group, group_after, finalizer)
+ end
+
+ -- get link depfiles
 --- a/rules/c++/modules/builder.lua
 +++ b/rules/c++/modules/builder.lua
 @@ -20,6 +20,7 @@
@@ -1148,3 +1199,144 @@
          assert(target:has_runtime("MD", "MT"), "clang asan only support MD/MT runtime on windows")
          if target:has_tool("cxx", "clang", "clangxx") then
              if target:has_runtime("MT") then
+--- a/rules/c++/config/optimization.lua
++++ b/rules/c++/config/optimization.lua
+@@ -20,7 +20,6 @@
+
+ -- imports
+ import("core.tool.compiler")
+-import("core.project.project")
+
+ -- add lto optimization
+ function _add_lto_optimization(target, sourcekind)
+@@ -105,7 +104,7 @@
+ -- main entry
+ function main(target, sourcekind)
+     -- handle lto optimization
+-    if target:policy("build.optimization.lto") or project.policy("build.optimization.lto") then
++    if target:policy("build.optimization.lto") then
+         _add_lto_optimization(target, sourcekind)
+     end
+ end
+--- a/modules/private/check/checkers/clang/tidy.lua
++++ b/modules/private/check/checkers/clang/tidy.lua
+@@ -19,9 +19,11 @@
+ --
+
+ -- imports
++import("core.base.json")
+ import("core.base.option")
+ import("core.base.task")
+ import("core.base.semver")
++import("core.language.language")
+ import("core.project.config")
+ import("core.project.project")
+ import("lib.detect.find_tool")
+@@ -72,17 +74,53 @@
+     os.execv(clang_tidy, argv, {stdout = path.join(projectdir, ".clang-tidy"), curdir = projectdir})
+ end
+
+--- add sourcefiles in target
+-function _add_target_files(sourcefiles, target)
+-    for _, sourcebatch in pairs(target:sourcebatches()) do
+-        -- we can only use rulename to filter them because sourcekind may be bound to multiple rules
+-        local rulename = sourcebatch.rulename
+-        if rulename == "c.build" or rulename == "c++.build"
+-            or rulename == "objc.build" or rulename == "objc++.build"
+-            or rulename == "cuda.build" or rulename == "c++.build.modules" then
+-            table.join2(sourcefiles, sourcebatch.sourcefiles)
+-        end
+-    end
++-- Select files once; clang-tidy reads all configurations for each file from the database.
++function _get_sourcefiles(opt)
++    local sourcefiles = {}
++    local seen = {}
++    local case_sensitive = os.fscase()
++    local function filekey(sourcefile)
++        return case_sensitive and sourcefile or sourcefile:lower()
++    end
++    local function add(sourcefile)
++        sourcefile = path.normalize(path.absolute(sourcefile))
++        local key = filekey(sourcefile)
++        if not seen[key] then
++            seen[key] = true
++            table.insert(sourcefiles, sourcefile)
++        end
++    end
++    if opt.files then
++        for _, file in ipairs(path.splitenv(opt.files)) do
++            for _, sourcefile in ipairs(os.files(file)) do
++                add(sourcefile)
++            end
++        end
++    else
++        local selected
++        if opt.targets then
++            selected = {}
++            for _, targetname in ipairs(opt.targets) do
++                local target = assert(project.target(targetname), "unknown target(%s)", targetname)
++                for _, sourcefile in ipairs(target:sourcefiles()) do
++                    sourcefile = path.normalize(path.absolute(sourcefile, project.directory()))
++                    selected[filekey(sourcefile)] = true
++                end
++            end
++        end
++        local sourcekinds = {cc = true, cxx = true, mm = true, mxx = true, cu = true}
++        for _, command in ipairs(json.loadfile(opt.compdbfile)) do
++            local sourcefile = path.normalize(path.absolute(command.file, command.directory))
++            if not selected or selected[filekey(sourcefile)] then
++                local sourcekind = try {function () return language.sourcekind_of(sourcefile) end}
++                if sourcekinds[sourcekind] then
++                    add(sourcefile)
++                end
++            end
++        end
++    end
++    table.sort(sourcefiles)
++    return sourcefiles
+ end
+
+ -- get clang-tidy
+@@ -194,7 +232,8 @@
+ function _check_sourcefiles(clang_tidy, sourcefiles, opt)
+     opt = opt or {}
+     local projectdir = project.directory()
+-    local argv = {}
++    -- A per-file profile may enable only compiler diagnostics, without named tidy checks.
++    local argv = {"--allow-no-checks"}
+     if opt.checks then
+         table.insert(argv, "--checks=" .. opt.checks)
+     end
+@@ -257,31 +296,8 @@
+         option.set("diagnosis", true)
+     end
+
+-    -- get sourcefiles
+-    local sourcefiles = {}
+-    if opt.files then
+-        local files = path.splitenv(opt.files)
+-        for _, file in ipairs(files) do
+-            for _, filepath in ipairs(os.files(file)) do
+-                table.insert(sourcefiles, filepath)
+-            end
+-        end
+-    else
+-        local targetnames = opt.targets
+-        if targetnames then
+-            for _, targetname in ipairs(targetnames) do
+-                local target = assert(project.target(targetname), "unknown target(%s)", targetname)
+-                _add_target_files(sourcefiles, target)
+-            end
+-        else
+-            for _, target in ipairs(project.ordertargets()) do
+-                _add_target_files(sourcefiles, target)
+-            end
+-        end
+-    end
+-
+     -- check files
+-    _check_sourcefiles(clang_tidy, sourcefiles, opt)
++    _check_sourcefiles(clang_tidy, _get_sourcefiles(opt), opt)
+
+     -- restore option context
+     option.restore()

@@ -337,7 +337,7 @@ auto ProgramDraft::append_body_callable(ConstructionCallableContract contract) n
 
 auto ProgramDraft::complete_callable(CallableID id, CallableImplementation implementation) noexcept
     -> void {
-    storage.declarations.complete_callable(id, implementation);
+    storage.declarations.complete_callable(id, std::move(implementation));
 }
 
 auto ProgramDraft::callable_implementation_copy(CallableID id) const noexcept

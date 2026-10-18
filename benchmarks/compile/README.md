@@ -5,6 +5,11 @@ Module batches emit independent source files. Structured cases exercise call
 chains, shared types, matching, constant execution, ownership and expression flow.
 The CLI loads each workload together with its installed Standard Crafts.
 
+`zero_array_*` and `sparse_array_*` retain nested frozen arrays at increasing
+extents. Stage timings and generated artifact byte counts expose constant
+execution cost and initializer growth. Native compilation remains a separate
+measurement.
+
 `--command=compile` is the default. Every case starts a new compiler process and
 writes generated C++ into a fresh directory for each warmup and measured sample.
 Timing includes process startup, source loading, parsing, complete semantic

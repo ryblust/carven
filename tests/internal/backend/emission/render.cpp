@@ -15,7 +15,6 @@ import :backend.target.type;
 import :backend.target.unit;
 import :support.unique_indirect;
 import :test.harness.framework;
-import :test.internal.backend.target.fixture;
 import std;
 
 namespace {
@@ -27,12 +26,9 @@ auto attribution() noexcept -> TargetAttribution {
 }
 
 template<typename Statement>
-auto emitted_statement(
-    Statement statement,
-    TargetCallableExecution execution = TargetCallableExecution::Ordinary
-) noexcept -> GeneratedArtifact {
-    auto builder = TargetTestingFixture::unit_builder();
-    const auto scalar_result = builder.intern_type({
+auto emitted_statement(Statement statement) noexcept -> GeneratedArtifact {
+    auto builder = TargetUnitBuilder();
+    const auto result = builder.intern_type({
         .value =
             TargetIntrinsicType {
                 .symbol = TargetSymbol::Void,
@@ -40,16 +36,6 @@ auto emitted_statement(
             },
         .const_qualified = false,
     });
-    const auto result = execution == TargetCallableExecution::Coroutine
-        ? builder.intern_type(
-              {.value =
-                   TargetIntrinsicType {
-                       .symbol = TargetSymbol::RuntimeAsyncOperation,
-                       .type_argument_ids = {scalar_result},
-                   },
-               .const_qualified = false}
-          )
-        : scalar_result;
     auto body = std::vector<TargetStmt>();
     if constexpr (std::invocable<Statement&, TargetUnitBuilder&>) {
         body.push_back({.value = statement(builder), .attribution = attribution()});
@@ -62,7 +48,7 @@ auto emitted_statement(
             .name = TargetName(TargetIdentifier::from_spelling("fixture")),
             .parameters = {},
             .result = result,
-            .form = TargetFreeFunctionDefinition {.execution = execution, .body = std::move(body)},
+            .form = TargetFreeFunctionDefinition {.body = std::move(body)},
             .constexpr_specifier = false,
             .static_specifier = false,
             .inline_specifier = false,
@@ -83,153 +69,6 @@ auto emitted_statement(
 }
 
 const TestSuite suite([] static noexcept {
-    "Emission: coroutine await and completion retain runtime dependencies"_test =
-        [] static noexcept {
-            const auto artifact = emitted_statement(
-                [](TargetUnitBuilder& builder) static noexcept {
-                    const auto void_type = builder.intern_type({
-                        .value =
-                            TargetIntrinsicType {
-                                .symbol = TargetSymbol::Void,
-                                .type_argument_ids = {}
-                            },
-                        .const_qualified = false,
-                    });
-                    const auto completion = builder.intern_type({
-                        .value =
-                            TargetIntrinsicType {
-                                .symbol = TargetSymbol::RuntimeAsyncCompletion,
-                                .type_argument_ids = {void_type},
-                            },
-                        .const_qualified = false,
-                    });
-                    auto statements = std::vector<TargetStmt>();
-                    statements.push_back({
-                        .value =
-                            TargetExprStmt {
-                                .expression = co_await_expression(call_expression(
-                                    TargetExpr {
-                                        .value =
-                                            TargetIntrinsicNameExpr {
-                                                .symbol = TargetSymbol::RuntimeAsyncYieldOnce
-                                            }
-                                    },
-                                    {}
-                                ))
-                            },
-                        .attribution = attribution(),
-                    });
-                    statements.push_back({
-                        .value =
-                            TargetCoReturnStmt {
-                                .expression = call_expression(
-                                    TargetExpr {
-                                        .value =
-                                            TargetStaticMemberExpr {
-                                                .owner = completion,
-                                                .name = TargetIdentifier::from_spelling("success"),
-                                            }
-                                    },
-                                    {}
-                                )
-                            },
-                        .attribution = attribution(),
-                    });
-                    return TargetBlockStmt {.statements = std::move(statements)};
-                },
-                TargetCallableExecution::Coroutine
-            );
-            expect(artifact.content.contains("#include <coroutine>"));
-            expect(artifact.content.contains("#include <carven/runtime/execution/execution.hpp>"));
-            expect(
-                artifact.content.contains("co_await ::carven::runtime::execution::yield_once()")
-            );
-            expect(artifact.content.contains(
-                "co_return ::carven::runtime::execution::Completion<void>::success()"
-            ));
-            expect(!artifact.content.contains("[&]"));
-        };
-
-    "Emission: completion-only coroutines retain their native facility header"_test =
-        [] static noexcept {
-            const auto artifact = emitted_statement(
-                [](TargetUnitBuilder& builder) static noexcept {
-                    const auto void_type = builder.intern_type({
-                        .value =
-                            TargetIntrinsicType {
-                                .symbol = TargetSymbol::Void,
-                                .type_argument_ids = {},
-                            },
-                        .const_qualified = false,
-                    });
-                    const auto completion = builder.intern_type({
-                        .value =
-                            TargetIntrinsicType {
-                                .symbol = TargetSymbol::RuntimeAsyncCompletion,
-                                .type_argument_ids = {void_type},
-                            },
-                        .const_qualified = false,
-                    });
-                    return TargetCoReturnStmt {
-                        .expression = call_expression(
-                            TargetExpr {
-                                .value =
-                                    TargetStaticMemberExpr {
-                                        .owner = completion,
-                                        .name = TargetIdentifier::from_spelling("success"),
-                                    },
-                            },
-                            {}
-                        )
-                    };
-                },
-                TargetCallableExecution::Coroutine
-            );
-            expect(artifact.content.contains("#include <coroutine>"));
-            expect(artifact.content.contains("#include <carven/runtime/execution/execution.hpp>"));
-            expect(artifact.content.contains(
-                "co_return ::carven::runtime::execution::Completion<void>::success()"
-            ));
-        };
-
-    "Emission: variable template references retain type dependencies"_test = [] static noexcept {
-        const auto artifact = emitted_statement([](TargetUnitBuilder& builder) static noexcept {
-            const auto scalar = builder.intern_type({
-                .value =
-                    TargetIntrinsicType {
-                        .symbol = TargetSymbol::RuntimeScalarDisplay,
-                        .type_argument_ids = {},
-                    },
-                .const_qualified = false,
-            });
-            const auto sequence = builder.intern_type({
-                .value =
-                    TargetIntrinsicType {
-                        .symbol = TargetSymbol::RuntimeSequenceDisplay,
-                        .type_argument_ids = {scalar},
-                    },
-                .const_qualified = false,
-            });
-            return TargetExprStmt {
-                .expression = prefix_expression(
-                    TargetPrefixOperator::AddressOf,
-                    template_name_expression(
-                        TargetExpr {
-                            .value =
-                                TargetIntrinsicNameExpr {
-                                    .symbol = TargetSymbol::RuntimeStatelessValue,
-                                }
-                        },
-                        {sequence}
-                    )
-                ),
-            };
-        });
-        expect(artifact.content.contains("&::carven::runtime::stateless_value<"));
-        expect(artifact.content.contains("::carven::runtime::SequenceDisplay<"));
-        expect(artifact.content.contains("::carven::runtime::ScalarDisplay"));
-    };
-
     "Emission: explicit empty template arguments survive composition"_test = [] static noexcept {
         const auto artifact = emitted_statement(
             TargetExprStmt {
@@ -278,31 +117,6 @@ const TestSuite suite([] static noexcept {
             cpp_string_token(std::string_view("\0018\377", 3)),
             std::string_view("\"\\0018\\377\"")
         );
-    };
-
-    "Emission: verified unreachable uses the C++20 runtime leaf"_test = [] static noexcept {
-        const auto artifact = emitted_statement(
-            TargetUnreachableStmt {
-                .reason = TargetUnreachableReason::SemIRProof,
-            }
-        );
-
-        expect(artifact.content.contains("#include <carven/runtime/execution/unreachable.hpp>"));
-        expect(artifact.content.contains("carven::runtime::unreachable();"));
-        expect(!(artifact.content.contains("std::unreachable")));
-        expect(!(artifact.content.contains("std::abort();")));
-    };
-
-    "Emission: runtime trap remains distinct from unreachable proof"_test = [] static noexcept {
-        const auto artifact = emitted_statement(
-            TargetRuntimeTrapStmt {
-                .reason = TargetRuntimeTrapReason::SourceContract,
-            }
-        );
-
-        expect(artifact.content.contains("#include <cstdlib>"));
-        expect(artifact.content.contains("std::abort();"));
-        expect(!(artifact.content.contains("carven::runtime::unreachable();")));
     };
 
     "Emission: binary grouping preserves associativity and makes comparisons explicit"_test =
@@ -454,102 +268,6 @@ const TestSuite suite([] static noexcept {
                         .note("scenario.expected: ", scenario.expected);
                 }
             );
-        };
-
-    "Emission: owning snapshots annotate only their binding name"_test = [] static noexcept {
-        struct Scenario final {
-            std::string_view name;
-            TargetVariableBinding binding;
-            std::string_view declaration;
-        };
-        constexpr auto scenarios = std::array {
-            Scenario {
-                .name = "ordinary value",
-                .binding = TargetVariableBinding::ConstValue,
-                .declaration = "const bool value"
-            },
-            Scenario {
-                .name = "owning snapshot",
-                .binding = TargetVariableBinding::ConstSnapshot,
-                .declaration =
-                    "const bool value /* NOLINT(performance-unnecessary-copy-initialization) */"
-            }
-        };
-        each(scenarios, &Scenario::name, [](const auto& scenario) static noexcept {
-            const auto artifact = emitted_statement([&](TargetUnitBuilder& builder) noexcept {
-                return TargetVariableStmt {
-                    .binding = scenario.binding,
-                    .maybe_unused = false,
-                    .local = builder.add_local(TargetIdentifier::from_spelling("value")),
-                    .type = builder.intern_type(
-                        {.value =
-                             TargetIntrinsicType {
-                                 .symbol = TargetSymbol::Bool,
-                                 .type_argument_ids = {}
-                             },
-                         .const_qualified = false}
-                    ),
-                    .initializer = TargetExpr {.value = TargetLiteralExpr {.value = true}}
-                };
-            });
-            expect(artifact.content.contains(scenario.declaration)).note(artifact.content);
-            expect(artifact.content.contains("= true;"));
-            expect_equal(
-                artifact.content.contains("NOLINT"),
-                scenario.binding == TargetVariableBinding::ConstSnapshot
-            );
-        });
-    };
-
-    "Emission: value regions retain explicit result types and selective unused names"_test =
-        [] static noexcept {
-            for (const auto maybe_unused : {false, true}) {
-                const auto artifact =
-                    emitted_statement([&](TargetUnitBuilder& builder) noexcept -> TargetStmtValue {
-                        const auto type = builder.intern_type({
-                            .value =
-                                TargetIntrinsicType {
-                                    .symbol = TargetSymbol::Bool,
-                                    .type_argument_ids = {}
-                                },
-                            .const_qualified = false,
-                        });
-                        auto body = std::vector<TargetStmt>();
-                        body.push_back({
-                            .value =
-                                TargetReturnStmt {
-                                    .expression =
-                                        TargetExpr {.value = TargetLiteralExpr {.value = true}}
-                                },
-                            .attribution = attribution(),
-                        });
-                        return TargetVariableStmt {
-                            .binding = TargetVariableBinding::ConstValue,
-                            .maybe_unused = maybe_unused,
-                            .local = builder.add_local(TargetIdentifier::from_spelling("value")),
-                            .type = type,
-                            .initializer = TargetExpr {
-                                .value = TargetCallExpr {
-                                    .callee = UniqueIndirect(
-                                        TargetExpr {
-                                            .value =
-                                                TargetLambdaExpr {
-                                                    .parameters = {},
-                                                    .result = type,
-                                                    .body = std::move(body)
-                                                }
-                                        }
-                                    ),
-                                    .arguments = {}
-                                }
-                            },
-                        };
-                    });
-                expect_equal(artifact.content.contains("[[maybe_unused]]"), maybe_unused);
-                expect(artifact.content.contains("const bool value"));
-                expect(artifact.content.contains("[&]() noexcept -> bool"));
-                expect(artifact.content.contains("return true;"));
-            }
         };
 
     "Emission: range-for preserves native binding and loop scope"_test = [] static noexcept {

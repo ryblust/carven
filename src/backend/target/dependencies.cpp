@@ -98,6 +98,9 @@ auto TargetDependencyCollector::enter_expression(
 }
 
 auto TargetDependencyCollector::enter_statement(const TargetStmt& statement) noexcept -> bool {
+    if (std::holds_alternative<TargetPendingExitStmt>(statement.value)) {
+        invariant_violation("unresolved exit reached target publication");
+    }
     statement.value.visit([&](const auto& node) noexcept {
         if (const auto symbol = target_node_symbol(node)) {
             visit_symbol(*symbol);

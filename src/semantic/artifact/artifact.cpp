@@ -57,7 +57,7 @@ struct SemIRProgramArtifactState final {
 };
 
 SemIRProgram::SemIRProgram(SemIRProgramArtifactState state) noexcept
-    : program_identity(std::move(state.program_identity)),
+    : program_identity(state.program_identity),
       compilation_provenance(std::move(state.compilation_provenance)),
       type_store(std::move(state.type_store)),
       constant_store(std::move(state.constant_store)),
@@ -773,9 +773,9 @@ public:
         return ImmutableBodyTable<Value, ID>(owner, std::move(rows));
     }
 
-    static auto source_snapshot(SourceID id, std::shared_ptr<const SourceDocument> input) noexcept
+    static auto source_snapshot(SourceID id, const SourceDocument& input) noexcept
         -> ProgramSourceSnapshot {
-        auto result = ProgramSourceSnapshot(input->sources(), input->source().source_id);
+        auto result = ProgramSourceSnapshot(input.sources(), input.source().source_id);
         result.source_manager_id = id;
         return result;
     }
@@ -1521,11 +1521,11 @@ struct BinaryCodec<ProgramSourceSnapshot> {
         if (!text) {
             return std::unexpected(std::move(text.error()));
         }
-        auto document = SourceDocument::create(std::move(*origin), std::move(*text));
+        const auto document = SourceDocument::create(std::move(*origin), std::move(*text));
         if (!document) {
             return reader.fail("invalid source snapshot in semantic artifact");
         }
-        return SemanticArtifactAccess::source_snapshot(*id, std::move(*document));
+        return SemanticArtifactAccess::source_snapshot(*id, **document);
     }
 };
 

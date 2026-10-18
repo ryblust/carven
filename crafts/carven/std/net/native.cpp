@@ -268,7 +268,7 @@ auto Network::wait_ready(std::optional<std::int64_t> deadline) noexcept -> void 
 #else
     auto descriptors = std::vector<pollfd>();
 #endif
-    for (auto* request = first; request != nullptr; request = request->next) {
+    for (const auto* request = first; request != nullptr; request = request->next) {
         descriptors.push_back(
             {.fd = request->connection.socket,
              .events = static_cast<short>(request->writing ? POLLOUT : POLLIN),
@@ -324,7 +324,7 @@ auto read(const View& view, std::size_t limit) noexcept -> async::AsyncOperation
     }
     // The caller's limit is an upper bound, not a mandatory allocation size.
     const auto capacity = std::min(limit, std::size_t(64 * 1024));
-    auto buffer = std::make_unique_for_overwrite<std::uint8_t[]>(capacity);
+    const auto buffer = std::make_unique_for_overwrite<std::uint8_t[]>(capacity);
     auto result =
         co_await view.connection->read(std::as_writable_bytes(std::span(buffer.get(), capacity)));
     if (result.is_cancelled()) {

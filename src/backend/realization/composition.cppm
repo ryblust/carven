@@ -191,8 +191,7 @@ public:
         }
     ) noexcept -> void;
 
-    auto resume(TargetIdentifier label, TargetJumpRole role, LoweringExitTarget target) noexcept
-        -> void;
+    auto resume(TargetIdentifier label, LoweringExitTarget target) noexcept -> void;
 
     template<typename T>
     auto complete(std::optional<T> value) && noexcept -> Lowered<T> {

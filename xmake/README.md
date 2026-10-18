@@ -20,10 +20,12 @@ failures fail the command.
 
 ## Generated-code analysis profile
 
-The root build copies `.clang-tidy` into each target's generated directory and
-`generated.clang-tidy` into its `rules/` subdirectory. The latter inherits the
-parent configuration and adjusts parameter, borrow, and embedded-NUL checks
-for generated C++.
+The root build copies `xmake/generated.clang-tidy` as `.clang-tidy` into the actual
+Carven output directory of each consumer and the shared standard-library generator.
+It copies the base `.clang-tidy` into the parent directory so custom output
+directories, including those outside the project, inherit the same base checks.
+The generated profile applies to the Carven output subtree and adjusts parameter,
+borrow, and embedded-NUL checks for generated C++.
 
 ## Module build support
 
@@ -88,19 +90,23 @@ Xmake's test job limit controls their concurrency.
 
 ## Generation
 
-Use one shared analysis target per semantic input set and one standard-library
-static archive per native compilation context. Analysis targets publish retained
-semantics and manifests. Standard-library archives consume one shared C++ generation
-target and the installed native support. Consumer targets own their sources,
-entries, native settings, and business dependencies.
+Use one shared analysis target per semantic input set. Keep the full installed
+standard library in analysis and C++ generation. Within one configured project,
+targets using the same Carven compiler and installed sources share standard-library
+analysis and generated C++ text. The rule registers all standard-library
+implementations and installed native support sources on each consumer target.
+Xmake compiles them with that target's native settings, dependencies,
+and separate object directory. Native incremental builds and artifact reuse follow
+Xmake's mechanisms. Model component boundaries, definition ownership, and compatible
+native configurations through ordinary Xmake targets and dependencies.
 
 Identical semantic inputs identify one batch and its output directory. Consumers
 reuse that batch independently of target names and configuration order. Each
-consumer generates C++ from the retained program into its own stable directory.
-The directory identifies its native linkage domain; generated interface paths
-carry that domain. Declare shared analysis and consumer generation as Xmake
-preparation jobs. Connect each job to its input producers and finish generation before native
-scanning. Preserve per-file native settings.
+consumer generates application C++ from the retained program into its own stable
+directory. The directory identifies its application linkage domain; generated
+interface paths carry that domain. Declare shared analysis and consumer generation
+as Xmake preparation jobs. Connect each job to its input producers and finish
+generation before native scanning. Preserve per-file native settings.
 
 During test configuration, collect the selected automatic suites and prepare their
 semantic producers together through Xmake's job graph. Register only nonempty

@@ -22,8 +22,11 @@ $sourceVersion = $sourceInfo[1]
 $patchedPaths = @(
     "modules/private/action/build/object.lua"
     "modules/private/action/build/link_objects.lua"
+    "modules/private/action/build/target.lua"
+    "modules/private/check/checkers/clang/tidy.lua"
     "modules/private/utils/toolchain.lua"
     "plugins/project/utils/target_cmds.lua"
+    "rules/c++/config/optimization.lua"
     "rules/c++/modules/clang/builder.lua"
     "rules/c++/modules/clang/scanner.lua"
     "rules/c++/modules/builder.lua"
@@ -38,6 +41,7 @@ foreach ($relativePath in $patchedPaths) {
     $keyParts += (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash
 }
 $keyParts += (Get-FileHash -LiteralPath $patchFile -Algorithm SHA256).Hash
+$keyParts += (Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash
 $sha256 = [System.Security.Cryptography.SHA256]::Create()
 try {
     $keyBytes = [System.Text.Encoding]::UTF8.GetBytes(($keyParts -join "`n"))
@@ -69,6 +73,21 @@ try {
         & $git -C $staging apply --ignore-space-change $patchFile
         if ($LASTEXITCODE -ne 0) {
             throw "The module-pipeline patch does not match the installed Xmake program files: $sourceProgramDir. Run the same command with xmake to use the stock pipeline."
+        }
+
+        $previousProgramDir = $env:XMAKE_PROGRAM_DIR
+        $previousProfile = $env:XMAKE_PROFILE
+        try {
+            $env:XMAKE_PROGRAM_DIR = $staging
+            $env:XMAKE_PROFILE = $null
+            & $baseXmake lua -c 'assert(path.normalize(os.programdir()):lower() == path.normalize(os.getenv([[XMAKE_PROGRAM_DIR]])):lower(), [[The installed Xmake ignores XMAKE_PROGRAM_DIR; install a standard Xmake release to use the module pipeline.]])'
+            if ($LASTEXITCODE -ne 0) {
+                throw "Failed to activate the Xmake module-pipeline overlay."
+            }
+        }
+        finally {
+            $env:XMAKE_PROGRAM_DIR = $previousProgramDir
+            $env:XMAKE_PROFILE = $previousProfile
         }
 
         try {

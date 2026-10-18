@@ -37,7 +37,7 @@ auto BodyRealizer::ExpressionBuilder::complete_call(
     if (automatic) {
         statements.declare(
             TargetVariableStmt {
-                .binding = TargetVariableBinding::MutableValue,
+                .binding = TargetVariableBinding::ConstValue,
                 .maybe_unused = false,
                 .local = outcome,
                 .type = storage.value_type,
@@ -56,6 +56,7 @@ auto BodyRealizer::ExpressionBuilder::complete_call(
     if (propagate_outcome) {
         // Keep the original carrier and operand cleanup owners. Runtime uses
         // the same payload transfer policy as projection followed by return.
+        owner.mutable_owners.insert(outcome);
         complete(
             fragment,
             call_member(
@@ -85,29 +86,30 @@ auto BodyRealizer::ExpressionBuilder::complete_call(
         auto exit = LoweringStmtBuilder();
         owner.emit_test_exit(exit);
         statements.record_exits(exit.exits());
-        auto branches = std::vector<TargetIfBranch>();
-        branches.push_back({.condition = std::move(stopped), .body = std::move(exit).finish()});
         statements.emit(generated_statement(
-            TargetIfStmt {.branches = std::move(branches), .else_body = std::nullopt}
+            TargetIfStmt {
+                .condition = std::move(stopped),
+                .body = std::move(exit).finish(),
+                .else_body = std::nullopt
+            }
         ));
     }
     auto success = call_member(std::move(access), "success_if", {});
     if (project_success) {
+        const auto constant = value_binding(use) == TargetVariableBinding::ConstValue
+            || (use == PreparedUse::Consume && scalar(source(fragment).operation.type.resolved()));
+        if (!constant) {
+            owner.mutable_owners.insert(outcome);
+        }
         const auto name = owner.fresh_local(TargetTemporaryNameKind::SuccessProjection);
         statements.declare(
             TargetVariableStmt {
                 .binding = TargetVariableBinding::ConstValue,
                 .maybe_unused = false,
                 .local = name,
-                .type = owner.context.pointer_type(owner.context.intrinsic_type(
-                    TargetSymbol::Auto,
-                    use == PreparedUse::ReadArgument
-                        || use == PreparedUse::ConstPlace
-                        || use == PreparedUse::ReadPointer
-                        || use == PreparedUse::OperandValue
-                        || (use == PreparedUse::Consume
-                            && scalar(source(fragment).operation.type.resolved()))
-                )),
+                .type = owner.context.pointer_type(
+                    owner.context.intrinsic_type(TargetSymbol::Auto, constant)
+                ),
                 .initializer = std::move(success)
             },
             false
@@ -129,12 +131,11 @@ auto BodyRealizer::ExpressionBuilder::complete_call(
         failure
     );
     statements.record_exits(failure.exits());
-    auto branches = std::vector<TargetIfBranch>();
-    branches.push_back(
-        {.condition = prefix_expression(TargetPrefixOperator::LogicalNot, std::move(success)),
-         .body = std::move(failure).finish()}
-    );
     statements.emit(generated_statement(
-        TargetIfStmt {.branches = std::move(branches), .else_body = std::nullopt}
+        TargetIfStmt {
+            .condition = prefix_expression(TargetPrefixOperator::LogicalNot, std::move(success)),
+            .body = std::move(failure).finish(),
+            .else_body = std::nullopt
+        }
     ));
 }

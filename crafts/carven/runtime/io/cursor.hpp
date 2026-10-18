@@ -52,7 +52,8 @@ struct ReadError final {
 
 using ReadyResult = std::variant<ByteView, ReadError>;
 
-// One process cursor retains incomplete records, EOF, and system failures.
+// One cursor per runtime instance retains incomplete records, EOF, and system
+// failures.
 // Readiness borrows bytes; cancellation belongs to the consuming scheduler.
 class Cursor final {
     std::vector<std::uint8_t> pending;
@@ -93,11 +94,10 @@ public:
             return ReadError {.code = error, .limited = false};
         }
         if (request.mode == ReadMode::Chunk) {
-            auto available = pending.size();
 #if defined(_WIN32)
-            if (console_lines && !ended) {
-                available = console_committed;
-            }
+            const auto available = console_lines && !ended ? console_committed : pending.size();
+#else
+            const auto available = pending.size();
 #endif
             if (available != 0) {
                 return view(std::min(request.limit, available));
@@ -166,7 +166,7 @@ public:
             if (count == 0 || record.EventType != KEY_EVENT || !record.Event.KeyEvent.bKeyDown) {
                 return;
             }
-            auto character = record.Event.KeyEvent.uChar.UnicodeChar;
+            const auto character = record.Event.KeyEvent.uChar.UnicodeChar;
             if (character == 0) {
                 return;
             }

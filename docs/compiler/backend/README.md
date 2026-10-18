@@ -41,8 +41,8 @@ composes completed operands; `writer` handles repeated format operands.
 complete fallible calls. Semantic publication supplies source legality and
 lifetime contracts; native compilation checks delegated C++ operations.
 
-`TargetUnitBuilder::finish` verifies the target tree, collects header
-requirements, and plans directives from artifact references and ordered native
+`TargetUnitBuilder::finish` collects header requirements and plans directives
+from artifact references and ordered native
 imports. Runtime symbols, including async facilities, use shared header-provider
 metadata. Rendering serializes the finished tree and directives. Filesystem output
 and native compilation consume the resulting artifacts separately.
@@ -96,5 +96,5 @@ and checks at their owning boundaries. Aggregate changes must preserve initializ
 sequencing and partial-object cleanup. Text and reports use ordinary preparation,
 storage, and delivery contracts.
 
-Validate target structure and source behavior separately. Include lifetime and
-observation cases when a change affects storage or sequencing.
+Validate generated behavior through native compilation and execution. Include
+lifetime and observation cases when a change affects storage or sequencing.

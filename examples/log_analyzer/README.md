@@ -4,9 +4,12 @@ Analyze `LEVEL milliseconds message` records and print a JSON report. The bundle
 input includes a malformed latency, a credential, and slow warning/error records.
 One bad record increments `rejected` without discarding the rest of the input.
 
+With `carven` on `PATH` and a C++20 toolchain available, run from this
+example's directory:
+
 ```sh
-./xmakew run carven-example-log-analyzer
-./xmakew run -q carven-example-log-analyzer --stdin < application.log
+carven main.cv analysis.cv
+carven main.cv analysis.cv -- --stdin < application.log
 ```
 
 The default output is:

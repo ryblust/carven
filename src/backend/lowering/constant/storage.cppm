@@ -13,7 +13,7 @@ enum class ConstantStorageRole { Elements, Object };
 // Content-named backing storage belongs to one target scope within an artifact.
 class ConstantStorage final {
 public:
-    ConstantStorage(const TargetNamePlan& names, TargetName scope) noexcept;
+    ConstantStorage(const TargetNamePlan& names, const TargetName& scope) noexcept;
     ConstantStorage(const ConstantStorage&) = delete;
     ConstantStorage(ConstantStorage&&) = default;
     auto operator=(const ConstantStorage&) -> ConstantStorage& = delete;

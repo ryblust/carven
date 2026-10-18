@@ -163,7 +163,8 @@ public:
     template<Integer Index>
     constexpr auto remove(Index index, SourceSite site) noexcept -> Element {
         const auto offset = checked_index_offset(index, size(), site);
-        auto result = std::move(writable()[offset]);
+        // The returned owner needs implicit move when Element is move-only.
+        auto result = std::move(writable()[offset]); // NOLINT(misc-const-correctness)
         for (auto next = offset + 1; next < tagged_length; ++next) {
             writable()[next - 1] = std::move(writable()[next]);
         }

@@ -56,9 +56,7 @@ auto BodyRealizer::realize_async_exits(std::vector<TargetStmt>& statements) noex
             return;
         }
         exit.label = names.fresh(TargetTemporaryNameKind::Region);
-        output.push_back(generated_statement(
-            TargetGotoStmt {.label = *exit.label, .role = TargetJumpRole::RegionExit}
-        ));
+        output.push_back(generated_statement(TargetGotoStmt {.label = *exit.label}));
         pending.push_back(std::move(exit));
     };
     const auto realize =
@@ -87,11 +85,7 @@ auto BodyRealizer::realize_async_exits(std::vector<TargetStmt>& statements) noex
                     if constexpr (std::same_as<Value, TargetBlockStmt>) {
                         incoming = co_await self(value.statements);
                     } else if constexpr (std::same_as<Value, TargetIfStmt>) {
-                        for (auto& branch : value.branches) {
-                            incoming.append_range(
-                                (co_await self(branch.body)) | std::views::as_rvalue
-                            );
-                        }
+                        incoming = co_await self(value.body);
                         if (value.else_body) {
                             incoming.append_range(
                                 (co_await self(*value.else_body)) | std::views::as_rvalue
@@ -120,19 +114,13 @@ auto BodyRealizer::realize_async_exits(std::vector<TargetStmt>& statements) noex
                 }
                 if (!done) {
                     done = names.fresh(TargetTemporaryNameKind::Region);
-                    output.push_back(generated_statement(
-                        TargetGotoStmt {.label = *done, .role = TargetJumpRole::RegionExit}
-                    ));
+                    output.push_back(generated_statement(TargetGotoStmt {.label = *done}));
                 }
-                output.push_back(generated_statement(
-                    TargetLabelStmt {.label = *exit.label, .role = TargetJumpRole::RegionExit}
-                ));
+                output.push_back(generated_statement(TargetLabelStmt {.label = *exit.label}));
                 expand(std::move(exit), locals, output, pending);
             }
             if (done) {
-                output.push_back(generated_statement(
-                    TargetLabelStmt {.label = *done, .role = TargetJumpRole::RegionExit}
-                ));
+                output.push_back(generated_statement(TargetLabelStmt {.label = *done}));
             }
         }
         source = std::move(output);

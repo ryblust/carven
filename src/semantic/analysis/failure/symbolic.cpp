@@ -143,12 +143,14 @@ auto normal_subset(
 
 } // namespace
 
-auto intersect_failure_masks(GenericFailureMask left, GenericFailureMask right) noexcept
-    -> GenericFailureMask {
+auto intersect_failure_masks(
+    const GenericFailureMask& left,
+    const GenericFailureMask& right
+) noexcept -> GenericFailureMask {
     return intersect_masks(left, right);
 }
 
-auto residual_failure_mask(GenericFailureMask source, std::vector<TypeID> excluded) noexcept
+auto residual_failure_mask(const GenericFailureMask& source, std::vector<TypeID> excluded) noexcept
     -> GenericFailureMask {
     std::ranges::sort(excluded);
     excluded.erase(std::ranges::unique(excluded).begin(), excluded.end());

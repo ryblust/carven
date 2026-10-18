@@ -36,8 +36,11 @@ source_key=$(
         hash_sha256 \
             "$source_program_dir/modules/private/action/build/object.lua" \
             "$source_program_dir/modules/private/action/build/link_objects.lua" \
+            "$source_program_dir/modules/private/action/build/target.lua" \
+            "$source_program_dir/modules/private/check/checkers/clang/tidy.lua" \
             "$source_program_dir/modules/private/utils/toolchain.lua" \
             "$source_program_dir/plugins/project/utils/target_cmds.lua" \
+            "$source_program_dir/rules/c++/config/optimization.lua" \
             "$source_program_dir/rules/c++/modules/clang/builder.lua" \
             "$source_program_dir/rules/c++/modules/clang/scanner.lua" \
             "$source_program_dir/rules/c++/modules/builder.lua" \
@@ -45,7 +48,8 @@ source_key=$(
             "$source_program_dir/rules/c++/modules/scanner.lua" \
             "$source_program_dir/rules/c++/modules/support.lua" \
             "$source_program_dir/rules/c++/modules/xmake.lua" \
-            "$patch_file"
+            "$patch_file" \
+            "$script_dir/xmake"
     } | hash_sha256 | awk '{print $1}'
 )
 overlay="$cache_parent/$source_key"
@@ -104,6 +108,9 @@ if [ ! -f "$overlay/core/_xmake_main.lua" ]; then
             printf '%s\n' "Run the same command with xmake to use the stock pipeline." >&2
             exit 1
         fi
+        XMAKE_PROGRAM_DIR="$staging" XMAKE_PROFILE= "$base_xmake" lua -c '
+            assert(path.normalize(os.programdir()) == path.normalize(os.getenv("XMAKE_PROGRAM_DIR")),
+                "The installed Xmake ignores XMAKE_PROGRAM_DIR; install a standard Xmake release to use the module pipeline.")'
         # A previous interrupted overlay may exist without its main script.
         # Remove it before publishing, since mv would otherwise nest staging in it.
         if [ -e "$overlay" ]; then

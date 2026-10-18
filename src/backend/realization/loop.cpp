@@ -98,7 +98,6 @@ auto BodyRealizer::lower_loop(const SemLoop& value, LoweringStmtBuilder& destina
     const auto continuation = LoopContinuation {
         .step = step_label,
         .break_label = std::nullopt,
-        .jump_role = TargetJumpRole::ForLoopContinue,
         .expanded = false,
         .target = exit_target(LoweringExitKind::Continue),
         .break_target = exit_target(LoweringExitKind::Break),
@@ -130,16 +129,15 @@ auto BodyRealizer::lower_loop(const SemLoop& value, LoweringStmtBuilder& destina
     } else if (conditional) {
         auto exit_body = LoweringStmtBuilder();
         exit_body.terminate(generated_statement(TargetBreakStmt {}), continuation.break_target);
-        auto branches = std::vector<TargetIfBranch>();
-        branches.push_back(
-            {.condition = prefix_expression(
-                 TargetPrefixOperator::LogicalNot,
-                 predicate_expression(std::move(*condition))
-             ),
-             .body = std::move(exit_body).finish()}
-        );
         iteration.emit(generated_statement(
-            TargetIfStmt {.branches = std::move(branches), .else_body = std::nullopt}
+            TargetIfStmt {
+                .condition = prefix_expression(
+                    TargetPrefixOperator::LogicalNot,
+                    predicate_expression(std::move(*condition))
+                ),
+                .body = std::move(exit_body).finish(),
+                .else_body = std::nullopt
+            }
         ));
     }
     if (step.has_value()) {
@@ -148,7 +146,7 @@ auto BodyRealizer::lower_loop(const SemLoop& value, LoweringStmtBuilder& destina
         iteration.append(std::move(body_statements));
     }
     if (continued && step.has_value()) {
-        iteration.resume(*step, TargetJumpRole::ForLoopContinue, continuation.target);
+        iteration.resume(*step, continuation.target);
     }
     iteration.append(std::move(steps));
     static_cast<void>(iteration.consume_exit(continuation.target));
@@ -279,7 +277,6 @@ auto BodyRealizer::lower_range(const SemRangeLoop& value, LoweringStmtBuilder& d
     const auto continuation = LoopContinuation {
         .step = std::nullopt,
         .break_label = std::nullopt,
-        .jump_role = TargetJumpRole::ForLoopContinue,
         .expanded = false,
         .target = exit_target(LoweringExitKind::Continue),
         .break_target = exit_target(LoweringExitKind::Break),
@@ -382,7 +379,6 @@ auto BodyRealizer::lower_expanded_loop(
         const auto continuation = LoopContinuation {
             .step = std::nullopt,
             .break_label = break_label,
-            .jump_role = TargetJumpRole::RegionExit,
             .expanded = true,
             .target = exit_target(LoweringExitKind::Continue),
             .break_target = break_target,
@@ -398,12 +394,12 @@ auto BodyRealizer::lower_expanded_loop(
         auto iteration = LoweringStmtBuilder();
         iteration.scope(std::move(body));
         if (continued) {
-            iteration.resume(*step, TargetJumpRole::RegionExit, continuation.target);
+            iteration.resume(*step, continuation.target);
         }
         expanded.append(std::move(iteration));
     }
     if (expanded.exits().contains(break_target)) {
-        expanded.resume(*break_label, TargetJumpRole::RegionExit, break_target);
+        expanded.resume(*break_label, break_target);
     }
     destination.scope(std::move(expanded));
     co_return {};

@@ -17,8 +17,9 @@ namespace carven::runtime::io::detail {
 
 using ReadResult = Tuple<Vector<std::uint8_t>, bool, std::int32_t, bool>;
 
-// One process input queue owns prefetch and incomplete records. Cold operations
-// do not touch it. Cancellation unlinks only the request, retaining unread bytes.
+// The runtime instance's input queue owns prefetch and incomplete records. Cold
+// operations do not touch it. Cancellation unlinks only the request, retaining
+// unread bytes.
 class Queue final : public runtime::execution::EventSource {
     using Completion = runtime::execution::Completion<ReadResult>;
 

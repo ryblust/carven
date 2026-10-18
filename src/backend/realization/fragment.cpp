@@ -595,17 +595,17 @@ auto BodyRealizer::ExpressionBuilder::build(
             test = prefix_expression(TargetPrefixOperator::LogicalNot, std::move(test));
         }
         statements.record_exits(selected.statements.exits());
-        auto branches = std::vector<TargetIfBranch>();
-        branches.push_back(
-            {.condition = std::move(test), .body = std::move(selected.statements).finish()}
-        );
         auto skipped = std::optional<std::vector<TargetStmt>>();
         if (observed && logic->operation == ShortCircuitOperator::And) {
             skipped.emplace();
             skipped->push_back(discard_statement(observe(false, std::nullopt)));
         }
         statements.emit(generated_statement(
-            TargetIfStmt {.branches = std::move(branches), .else_body = std::move(skipped)}
+            TargetIfStmt {
+                .condition = std::move(test),
+                .body = std::move(selected.statements).finish(),
+                .else_body = std::move(skipped)
+            }
         ));
         if (name) {
             complete(fragment, Saved {.local = *name, .kind = SavedKind::Value});
@@ -619,11 +619,13 @@ auto BodyRealizer::ExpressionBuilder::build(
         : nullptr;
     const auto read_conversion = conversion != nullptr
         && !conversion->explicit_cast
-        && (result_use == PreparedUse::ReadArgument || result_use == PreparedUse::ConstPlace);
+        && (result_use == PreparedUse::ReadArgument
+            || result_use == PreparedUse::ConstPlace
+            || result_use == PreparedUse::ConversionSource);
     if (read_conversion) {
         // Conversion into an owning value and binding a Read parameter are
         // different consumers of the same checked native conversion.
-        inputs.front().use = PreparedUse::ConstPlace;
+        inputs.front().use = PreparedUse::ConversionSource;
     }
     for (auto& input : inputs) {
         if (input.use == PreparedUse::ProjectionPlace) {
@@ -896,7 +898,7 @@ auto BodyRealizer::ExpressionBuilder::build(
                      AccessMode::Read,
                      value.operation.type.resolved(),
                      TypeNameScope::Module,
-                     result_use == PreparedUse::ConstPlace
+                     result_use != PreparedUse::ReadArgument
                  ),
                  read_conversion_query(native_conversion->operands.front().expression)},
                 std::move(operands)

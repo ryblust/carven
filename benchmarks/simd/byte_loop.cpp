@@ -28,14 +28,16 @@ auto matches(std::uint8_t value) noexcept -> bool {
 
 } // namespace
 
-auto scan(Bytes bytes, std::size_t start) noexcept -> std::size_t {
 #if CARVEN_SIMD_BENCH_COUNT
+auto scan(Bytes bytes) noexcept -> std::size_t {
     auto count = std::size_t {0};
     for (const auto value : bytes) {
         count += matches(value);
     }
     return count;
+}
 #else
+auto scan(Bytes bytes, std::size_t start) noexcept -> std::size_t {
     for (auto index = start; index < bytes.size(); ++index) {
 #if CARVEN_SIMD_BENCH_FIND
         if (matches(bytes.data()[index])) {
@@ -46,7 +48,7 @@ auto scan(Bytes bytes, std::size_t start) noexcept -> std::size_t {
         }
     }
     return bytes.size();
-#endif
 }
+#endif
 
 } // namespace simd_benchmark

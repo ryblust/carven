@@ -244,21 +244,21 @@ lookup(Value<TableBytes> table, Value<IndexBytes> indices) noexcept -> Value<Ind
             return _mm256_shuffle_epi8(_mm256_broadcastsi128_si256(part), indices);
         }
     };
-    const auto low = [&]() noexcept {
+    const auto selected = [&]() noexcept {
         if constexpr (TableBytes == 16) {
-            return table;
+            return shuffle(table);
         } else {
-            return _mm256_castsi256_si128(table);
+            const auto upper = equal_bytes<IndexBytes>(
+                bit_and<IndexBytes>(indices, splat_bytes<IndexBytes>(16)),
+                splat_bytes<IndexBytes>(16)
+            );
+            return select<IndexBytes>(
+                upper,
+                shuffle(_mm256_extracti128_si256(table, 1)),
+                shuffle(_mm256_castsi256_si128(table))
+            );
         }
     }();
-    auto selected = shuffle(low);
-    if constexpr (TableBytes == 32) {
-        const auto upper = equal_bytes<IndexBytes>(
-            bit_and<IndexBytes>(indices, splat_bytes<IndexBytes>(16)),
-            splat_bytes<IndexBytes>(16)
-        );
-        selected = select<IndexBytes>(upper, shuffle(_mm256_extracti128_si256(table, 1)), selected);
-    }
     const auto valid = equal_bytes<IndexBytes>(
         bit_and<IndexBytes>(
             indices,

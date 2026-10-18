@@ -138,7 +138,7 @@ auto lower_cpp_provider_header(
         const auto& callable = semantic.declarations().callable(function.callable);
         const auto& signature = semantic.callable_signatures().signature(callable.signature);
         auto aliases = std::vector<TargetItem>();
-        const auto alias = [&](std::string name, TargetTypeID type) noexcept {
+        const auto alias = [&](std::string_view name, TargetTypeID type) noexcept {
             aliases.push_back(target_lowering_item(
                 TargetDecl {TargetTypeAlias {
                     .name = TargetIdentifier::from_spelling(name),

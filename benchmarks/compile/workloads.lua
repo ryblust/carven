@@ -83,6 +83,28 @@ function cases()
                 .. table.concat(arms, " ") .. " }; }\n"})
     end
     group = "Constants"
+    for _, count in ipairs({16, 256, 4096}) do
+        for _, sparse in ipairs({false, true}) do
+            table.insert(cases, {
+                group = group,
+                id = (sparse and "sparse_array_" or "zero_array_") .. count,
+                label = sparse and "Sparse frozen array" or "Zero frozen array",
+                size = count .. " rows x 8 elements",
+                source = string.format([[private const fn make_rows() -> [[i32; 8]; %d] {
+    var rows = [[0i32; 8]; %d];
+    %s
+    return rows;
+}
+private const rows = make_rows();
+fn snapshot() -> [[i32; 8]; %d] => rows;
+fn read(row: usize, column: usize) -> i32 {
+    let values = snapshot();
+    return values[row][column];
+}
+]], count, count, sparse and "rows[0][0] = 1;" or "", count),
+            })
+        end
+    end
     do
         local count = 256
         for _, distinct in ipairs({false, true}) do

@@ -144,7 +144,7 @@ inline auto ChildScope::CloseAwaiter::await_suspend(std::coroutine_handle<Promis
     detail::require_protocol(&activation == scope->owner && scope->phase == Phase::Open);
     scope->phase = Phase::Closing;
     if (policy == ClosingPolicy::RequestCancelAndClose) {
-        for (auto* child = scope->children; child != nullptr; child = child->next) {
+        for (const auto* child = scope->children; child != nullptr; child = child->next) {
             if (child->frame != nullptr) {
                 child->operation->task->request_cancel();
             }

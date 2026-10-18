@@ -7,7 +7,7 @@ import :backend.target.decl;
 import :support.invariant;
 import std;
 
-ConstantStorage::ConstantStorage(const TargetNamePlan& names, TargetName scope) noexcept
+ConstantStorage::ConstantStorage(const TargetNamePlan& names, const TargetName& scope) noexcept
     : target_names(names),
       scope(
           TargetName::globally_qualified(

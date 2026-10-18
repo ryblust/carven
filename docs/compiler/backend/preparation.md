@@ -51,7 +51,9 @@ source constant admission remains separate.
 ## Async preparation
 
 `BodyPreparation` records coroutine-context requirements and indexes lexical
-children by lifetime. Await, escaping completion, and child closure require the
+children by lifetime in one traversal. Entry visits record children in source
+order; exit visits summarize their enclosing operations and regions. Await,
+escaping completion, and child closure require the
 owning coroutine even when their value is discarded.
 
 `PreparedAwaitProducer` borrows an eligible producer body and an optional

@@ -5,6 +5,9 @@ and process behavior.
 
 ## Invocation
 
+The examples assume `carven` is on `PATH`. Relative source paths use the current
+directory; see [Source inputs](#source-inputs) for module-path rules.
+
 ```text
 carven [--tests] [--timings] <source-file>... [-- <arguments>...]
 carven compile [options...] [<input>...]

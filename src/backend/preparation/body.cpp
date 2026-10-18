@@ -153,7 +153,20 @@ auto stable_binding(
 
 template<typename Operation>
 struct PreparationVisitor final {
+    const SemIRBody& metadata;
+    std::map<LifetimeRegionID, std::vector<LocalBindingID>>& children;
     const Operation& operation;
+
+    template<typename Node>
+    auto operator()(const Node& source) const noexcept -> void {
+        if constexpr (std::same_as<Node, SemanticStatement>) {
+            if (source.reachable) {
+                if (const auto* child = std::get_if<SemAsyncLet>(&source.value)) {
+                    children[metadata.binding(child->child).lifetime].push_back(child->child);
+                }
+            }
+        }
+    }
 
     template<typename Node>
     auto leave(const Node& source) const noexcept -> void {
@@ -173,17 +186,6 @@ BodyPreparation::BodyPreparation(const SemIRProgram& semantic, BodyID body) noex
                 .signature(semantic.declarations().callable(*callable).signature)
                 .execution
             == CallableExecutionKind::Async;
-    const auto index_children = [&](const auto& node) noexcept {
-        using Node = std::remove_cvref_t<decltype(node)>;
-        if constexpr (std::same_as<Node, SemanticStatement>) {
-            if (node.reachable) {
-                if (const auto* child = std::get_if<SemAsyncLet>(&node.value)) {
-                    child_bindings[metadata.binding(child->child).lifetime].push_back(child->child);
-                }
-            }
-        }
-    };
-    visit_semantic_nodes(metadata.region(), index_children);
     auto statement_contexts = std::unordered_map<const SemanticStatement*, bool>();
     const auto child_context = [&](const auto& node) noexcept -> bool {
         using Node = std::remove_cvref_t<decltype(node)>;
@@ -264,7 +266,11 @@ BodyPreparation::BodyPreparation(const SemIRProgram& semantic, BodyID body) noex
             }
         }
     };
-    const auto visitor = PreparationVisitor {.operation = prepare};
+    const auto visitor = PreparationVisitor {
+        .metadata = metadata,
+        .children = child_bindings,
+        .operation = prepare,
+    };
     visit_semantic_nodes(metadata.region(), visitor);
 }
 

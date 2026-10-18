@@ -37,9 +37,11 @@ struct GenericFailureMask final {
     auto operator<=>(const GenericFailureMask&) const noexcept = default;
 };
 
-auto intersect_failure_masks(GenericFailureMask left, GenericFailureMask right) noexcept
-    -> GenericFailureMask;
-auto residual_failure_mask(GenericFailureMask source, std::vector<TypeID> excluded) noexcept
+auto intersect_failure_masks(
+    const GenericFailureMask& left,
+    const GenericFailureMask& right
+) noexcept -> GenericFailureMask;
+auto residual_failure_mask(const GenericFailureMask& source, std::vector<TypeID> excluded) noexcept
     -> GenericFailureMask;
 auto failure_mask_contains(const GenericFailureMask& mask, TypeID member) noexcept -> bool;
 

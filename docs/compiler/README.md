@@ -183,7 +183,7 @@ failure terms and solved sets, and control-flow completion distinct.
 Standard-library analysis retains completed construction and catalog rows in a
 separate owner before consumption, then delivers them only after these gates pass.
 Backend preparation consumes published facts; realization checks exit receivers,
-and target verification checks the completed C++ representation.
+and native compilation checks the completed C++ representation.
 
 ## Craft boundary
 

@@ -108,14 +108,14 @@ auto BodyRealizer::lower_report(
             return;
         }
         destination.record_exits(report.exits());
-        auto branches = std::vector<TargetIfBranch>();
-        branches.push_back(
-            {.condition = std::move(*should_report), .body = std::move(report).finish()}
-        );
         destination.emit(source_statement(
             context.semantic(),
             origin,
-            TargetIfStmt {.branches = std::move(branches), .else_body = std::nullopt}
+            TargetIfStmt {
+                .condition = std::move(*should_report),
+                .body = std::move(report).finish(),
+                .else_body = std::nullopt
+            }
         ));
     };
     if (value.message) {

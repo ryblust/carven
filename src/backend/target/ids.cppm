@@ -5,7 +5,6 @@ import std;
 
 class TargetPlan;
 class PlannedCompilation;
-class TargetTestingFixture;
 class TargetUnitBuilder;
 
 class TargetPlanIdentity final {
@@ -23,7 +22,6 @@ private:
     std::uint64_t identity_value;
 
     friend class TargetPlan;
-    friend class TargetTestingFixture;
 };
 
 template<typename Value, typename ID>
@@ -126,7 +124,6 @@ private:
     friend class TargetPlanTableBuilder;
     template<typename Value, typename ID>
     friend class TargetPlanTableEntries;
-    friend class TargetTestingFixture;
 };
 
 struct TargetArtifactIDTag final {};
@@ -146,7 +143,6 @@ private:
     std::uint64_t identity_value;
 
     friend class TargetUnitBuilder;
-    friend class TargetTestingFixture;
 };
 
 template<typename Tag>
@@ -167,7 +163,6 @@ private:
     std::uint32_t row_index;
 
     friend class TargetUnitBuilder;
-    friend class TargetTestingFixture;
 };
 
 struct TargetTypeIDTag final {};

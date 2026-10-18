@@ -21,11 +21,18 @@ and `duplicates` counts repeated records within or across the streams. The uniqu
 count is `records.size()` in C++. The report remains valid after the streams
 are destroyed.
 
+This example builds a C++ application. The repository build requires Xmake 3.1.1
+and LLVM/Clang with libc++ and C++26 support; LLVM 23 is the validated version.
+On Windows, use LLVM-MinGW with its `bin` directory on `PATH`.
+From the Carven checkout root, run:
+
 ```sh
 ./xmakew build
 ./xmakew build carven-example-stream-collector
 ./xmakew run carven-example-stream-collector
 ```
+
+Use `.\xmakew.ps1` in Windows PowerShell.
 
 Output:
 

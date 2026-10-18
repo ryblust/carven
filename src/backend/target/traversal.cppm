@@ -9,18 +9,12 @@ import :backend.target.unit;
 import :support.visit;
 import std;
 
-enum class TargetTraversalScopeKind {
+enum class TargetTraversalScope {
     Namespace,
     Callable,
-    CoroutineCallable,
     Block,
     ConditionalBranch,
     Loop,
-};
-
-struct TargetTraversalScope final {
-    TargetTraversalScopeKind kind;
-    bool initialization_barrier;
 };
 
 enum class TargetExpressionRole { Operand, MutationTarget };
@@ -235,27 +229,17 @@ template<typename Visitor, typename Range>
 auto traverse_target_callable_body(
     Range& statements,
     Visitor& visitor,
-    std::span<const TargetParameter> parameters = {},
-    TargetCallableExecution execution = TargetCallableExecution::Ordinary
+    std::span<const TargetParameter> parameters = {}
 ) noexcept -> bool {
-    return with_target_scope(
-        visitor,
-        TargetTraversalScope {
-            .kind = execution == TargetCallableExecution::Coroutine
-                ? TargetTraversalScopeKind::CoroutineCallable
-                : TargetTraversalScopeKind::Callable,
-            .initialization_barrier = false,
-        },
-        [&]() noexcept {
-            for (const auto& parameter : parameters) {
-                if (parameter.local.has_value()
-                    && !visit_target_local_parameter(visitor, *parameter.local)) {
-                    return false;
-                }
+    return with_target_scope(visitor, TargetTraversalScope::Callable, [&]() noexcept {
+        for (const auto& parameter : parameters) {
+            if (parameter.local.has_value()
+                && !visit_target_local_parameter(visitor, *parameter.local)) {
+                return false;
             }
-            return traverse_target_statements(statements, visitor);
         }
-    );
+        return traverse_target_statements(statements, visitor);
+    });
 }
 
 template<typename Visitor, typename Node>
@@ -362,18 +346,14 @@ auto traverse_target_expression_impl(
                            }
                        )
                     && visit_target_type(visitor, value.result)
-                    && with_target_scope(
-                           visitor,
-                           {TargetTraversalScopeKind::Callable, false},
-                           [&]() noexcept {
-                               for (const auto& parameter : value.parameters) {
-                                   if (!visit_target_local_parameter(visitor, parameter.local)) {
-                                       return false;
-                                   }
+                    && with_target_scope(visitor, TargetTraversalScope::Callable, [&]() noexcept {
+                           for (const auto& parameter : value.parameters) {
+                               if (!visit_target_local_parameter(visitor, parameter.local)) {
+                                   return false;
                                }
-                               return traverse_target_statements(value.body, visitor);
                            }
-                    );
+                           return traverse_target_statements(value.body, visitor);
+                       });
             },
         }
     );
@@ -434,14 +414,9 @@ auto traverse_target_statement_impl(Node& statement, Visitor& visitor) noexcept 
                     && traverse_target_expression(value.initializer, visitor);
             },
             [&](TargetTraversalNode<Node, TargetBlockStmt>& value) noexcept {
-                return with_target_scope(
-                    visitor,
-                    TargetTraversalScope {
-                        .kind = TargetTraversalScopeKind::Block,
-                        .initialization_barrier = false,
-                    },
-                    [&]() noexcept { return traverse_target_statements(value.statements, visitor); }
-                );
+                return with_target_scope(visitor, TargetTraversalScope::Block, [&]() noexcept {
+                    return traverse_target_statements(value.statements, visitor);
+                });
             },
             [&](TargetTraversalNode<Node, TargetAssignmentStmt>& value) noexcept {
                 return traverse_target_expression(
@@ -466,28 +441,18 @@ auto traverse_target_statement_impl(Node& statement, Visitor& visitor) noexcept 
             [](TargetTraversalNode<Node, TargetGotoStmt>&) static noexcept { return true; },
             [](TargetTraversalNode<Node, TargetLabelStmt>&) static noexcept { return true; },
             [&](TargetTraversalNode<Node, TargetIfStmt>& value) noexcept {
-                for (auto& branch : value.branches) {
-                    if (!traverse_target_expression(branch.condition, visitor)
-                        || !with_target_scope(
-                            visitor,
-                            TargetTraversalScope {
-                                .kind = TargetTraversalScopeKind::ConditionalBranch,
-                                .initialization_barrier = false,
-                            },
-                            [&]() noexcept {
-                                return traverse_target_statements(branch.body, visitor);
-                            }
-                        )) {
-                        return false;
-                    }
+                if (!traverse_target_expression(value.condition, visitor)
+                    || !with_target_scope(
+                        visitor,
+                        TargetTraversalScope::ConditionalBranch,
+                        [&]() noexcept { return traverse_target_statements(value.body, visitor); }
+                    )) {
+                    return false;
                 }
                 return !value.else_body.has_value()
                     || with_target_scope(
                         visitor,
-                        TargetTraversalScope {
-                            .kind = TargetTraversalScopeKind::ConditionalBranch,
-                            .initialization_barrier = false,
-                        },
+                        TargetTraversalScope::ConditionalBranch,
                         [&]() noexcept {
                             return traverse_target_statements(*value.else_body, visitor);
                         }
@@ -495,62 +460,39 @@ auto traverse_target_statement_impl(Node& statement, Visitor& visitor) noexcept 
             },
             [&](TargetTraversalNode<Node, TargetWhileStmt>& value) noexcept {
                 return traverse_target_expression(value.condition, visitor)
-                    && with_target_scope(
-                           visitor,
-                           TargetTraversalScope {
-                               .kind = TargetTraversalScopeKind::Loop,
-                               .initialization_barrier = false,
-                           },
-                           [&]() noexcept {
-                               return traverse_target_statements(value.body, visitor);
-                           }
-                    );
+                    && with_target_scope(visitor, TargetTraversalScope::Loop, [&]() noexcept {
+                           return traverse_target_statements(value.body, visitor);
+                       });
             },
             [&](TargetTraversalNode<Node, TargetRangeForStmt>& value) noexcept {
                 return visit_target_type(visitor, value.type)
                     && traverse_target_expression(value.range, visitor)
-                    && with_target_scope(
-                           visitor,
-                           TargetTraversalScope {
-                               .kind = TargetTraversalScopeKind::Loop,
-                               .initialization_barrier = true,
-                           },
-                           [&]() noexcept {
-                               return visit_target_variable(visitor, value)
-                                   && traverse_target_statements(value.body, visitor);
-                           }
-                    );
+                    && with_target_scope(visitor, TargetTraversalScope::Loop, [&]() noexcept {
+                           return visit_target_variable(visitor, value)
+                               && traverse_target_statements(value.body, visitor);
+                       });
             },
             [&](TargetTraversalNode<Node, TargetForStmt>& value) noexcept {
-                const auto initialized = value.initializer.has_value()
-                    && std::holds_alternative<TargetVariableStmt>(value.initializer->value);
-                return with_target_scope(
-                    visitor,
-                    TargetTraversalScope {
-                        .kind = TargetTraversalScopeKind::Loop,
-                        .initialization_barrier = initialized,
-                    },
-                    [&]() noexcept {
-                        if (value.initializer.has_value()
-                            && !value.initializer->value.visit([&](auto& clause) noexcept {
-                                   return traverse_target_for_clause(clause, visitor);
-                               })) {
-                            return false;
-                        }
-                        if (value.condition.has_value()
-                            && !traverse_target_expression(*value.condition, visitor)) {
-                            return false;
-                        }
-                        for (auto& step : value.steps) {
-                            if (!step.value.visit([&](auto& clause) noexcept {
-                                    return traverse_target_for_clause(clause, visitor);
-                                })) {
-                                return false;
-                            }
-                        }
-                        return traverse_target_statements(value.body, visitor);
+                return with_target_scope(visitor, TargetTraversalScope::Loop, [&]() noexcept {
+                    if (value.initializer.has_value()
+                        && !value.initializer->value.visit([&](auto& clause) noexcept {
+                               return traverse_target_for_clause(clause, visitor);
+                           })) {
+                        return false;
                     }
-                );
+                    if (value.condition.has_value()
+                        && !traverse_target_expression(*value.condition, visitor)) {
+                        return false;
+                    }
+                    for (auto& step : value.steps) {
+                        if (!step.value.visit([&](auto& clause) noexcept {
+                                return traverse_target_for_clause(clause, visitor);
+                            })) {
+                            return false;
+                        }
+                    }
+                    return traverse_target_statements(value.body, visitor);
+                });
             },
         }
     );
@@ -649,12 +591,7 @@ auto traverse_target_declaration(const TargetDecl& declaration, Visitor& visitor
                 }
                 const auto* definition = std::get_if<TargetFreeFunctionDefinition>(&value.form);
                 return definition == nullptr
-                    || traverse_target_callable_body(
-                           definition->body,
-                           visitor,
-                           value.parameters,
-                           definition->execution
-                    );
+                    || traverse_target_callable_body(definition->body, visitor, value.parameters);
             },
             [&](const TargetVariableDecl& value) noexcept {
                 return visit_target_type(visitor, value.type)
@@ -717,16 +654,9 @@ auto traverse_target_item_impl(const TargetItem& item, Visitor& visitor) noexcep
                 return traverse_target_declaration(declaration, visitor);
             },
             [&](const TargetNamespace& target_namespace) noexcept {
-                return with_target_scope(
-                    visitor,
-                    TargetTraversalScope {
-                        .kind = TargetTraversalScopeKind::Namespace,
-                        .initialization_barrier = false,
-                    },
-                    [&]() noexcept {
-                        return traverse_target_items(target_namespace.items, visitor);
-                    }
-                );
+                return with_target_scope(visitor, TargetTraversalScope::Namespace, [&]() noexcept {
+                    return traverse_target_items(target_namespace.items, visitor);
+                });
             },
             [](const TargetUsing&) static noexcept { return true; },
             [](const TargetRawFragment&) static noexcept { return true; },

@@ -4,20 +4,18 @@
 requires valid syntax; it does not resolve imports, type-check programs, or
 execute `const fn` calls or tests.
 
-## Build and use
+## Use
 
-From the repository root:
+With `carven-format` on `PATH`, run these commands from your project directory:
 
 ```sh
-./xmakew build carven-format
-./xmakew test -g format
-./xmakew run carven-format input.cv
-./xmakew run carven-format check src examples
-./xmakew run carven-format write src examples
-./xmakew run carven-format help check
+carven-format input.cv
+carven-format check src
+carven-format write src
+carven-format help check
 ```
 
-Use `.\xmakew.ps1` on Windows. The executable accepts:
+The executable accepts:
 
 | Command | Behavior |
 | --- | --- |
@@ -97,6 +95,15 @@ Width counts UTF-8 bytes, so non-ASCII text may wrap early. Indivisible tokens,
 comments, C++ fragments, and type-argument lists may exceed the target.
 
 ## Tests
+
+For a source build, run from the Carven checkout root:
+
+```sh
+./xmakew build carven-format
+./xmakew test -g format
+```
+
+Use `.\xmakew.ps1` on Windows.
 
 The `format` group covers:
 

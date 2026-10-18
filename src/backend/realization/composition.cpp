@@ -168,18 +168,15 @@ auto LoweringStmtBuilder::scope(LoweringStmtBuilder source, TargetAttribution at
     );
 }
 
-auto LoweringStmtBuilder::resume(
-    TargetIdentifier label,
-    TargetJumpRole role,
-    LoweringExitTarget target
-) noexcept -> void {
+auto LoweringStmtBuilder::resume(TargetIdentifier label, LoweringExitTarget target) noexcept
+    -> void {
     if (!consume_exit(target)) {
         invariant_violation("continuation does not own a pending exit");
     }
     lowered.normal = LoweringCompleted {};
     emit(
         TargetStmt {
-            .value = TargetLabelStmt {.label = std::move(label), .role = role},
+            .value = TargetLabelStmt {.label = std::move(label)},
             .attribution = TargetGeneratedExpansionAttribution {
                 .reason = TargetExpansionReason::LoweringSupport
             }
@@ -242,17 +239,14 @@ auto LoweringStmtBuilder::result_region(
         auto* conditional = statements.size() == 1uz
             ? std::get_if<TargetIfStmt>(&statements.front().value)
             : nullptr;
-        if (conditional != nullptr
-            && conditional->branches.size() == 1uz
-            && conditional->else_body) {
-            auto* selected = returned(conditional->branches.front().body);
+        if (conditional != nullptr && conditional->else_body) {
+            auto* selected = returned(conditional->body);
             auto* alternative = returned(*conditional->else_body);
             if (selected != nullptr && alternative != nullptr) {
                 return deliver(
                     TargetExpr {
                         .value = TargetConditionalExpr {
-                            .condition =
-                                UniqueIndirect(std::move(conditional->branches.front().condition)),
+                            .condition = UniqueIndirect(std::move(conditional->condition)),
                             .true_value = UniqueIndirect(arm(*selected)),
                             .false_value = UniqueIndirect(arm(*alternative)),
                         }

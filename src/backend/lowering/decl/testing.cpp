@@ -66,7 +66,6 @@ auto lower_test(ModuleLowering& context, TestID id) noexcept -> TargetItem {
             .result = context.intrinsic_type(TargetSymbol::Void),
             .form =
                 TargetFreeFunctionDefinition {
-                    .execution = TargetCallableExecution::Ordinary,
                     .body = std::move(lowered.statements),
                 },
             .constexpr_specifier = false,
@@ -123,11 +122,7 @@ auto lower_module_test_runner(ModuleLowering& context, std::span<const TestID> t
                  .default_value = std::nullopt}
             ),
             .result = context.intrinsic_type(TargetSymbol::Void),
-            .form =
-                TargetFreeFunctionDefinition {
-                    .execution = TargetCallableExecution::Ordinary,
-                    .body = std::move(body)
-                },
+            .form = TargetFreeFunctionDefinition {.body = std::move(body)},
             .constexpr_specifier = false,
             .static_specifier = false,
             .inline_specifier = false,
@@ -165,11 +160,7 @@ auto lower_process_entry(
             .name = TargetName {process_entry_identifier()},
             .parameters = std::move(parameters),
             .result = context.intrinsic_type(TargetSymbol::Int),
-            .form =
-                TargetFreeFunctionDefinition {
-                    .execution = TargetCallableExecution::Ordinary,
-                    .body = std::move(body)
-                },
+            .form = TargetFreeFunctionDefinition {.body = std::move(body)},
             .constexpr_specifier = false,
             .static_specifier = false,
             .inline_specifier = false,
@@ -254,11 +245,7 @@ auto lower_test_runner_header(
                 .default_value = intrinsic_expression(TargetSymbol::StdNullptr),
             }),
             .result = context.intrinsic_type(TargetSymbol::Int),
-            .form =
-                TargetFreeFunctionDefinition {
-                    .execution = TargetCallableExecution::Ordinary,
-                    .body = std::move(body)
-                },
+            .form = TargetFreeFunctionDefinition {.body = std::move(body)},
             .constexpr_specifier = false,
             .static_specifier = true,
             .inline_specifier = false,

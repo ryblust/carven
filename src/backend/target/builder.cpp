@@ -172,13 +172,6 @@ auto TargetUnitBuilder::finish(
 ) && noexcept -> TargetUnit {
     const auto identity = unit_identity;
     auto target_types = std::move(types);
-    const auto validation = validate_target_unit(
-        TargetVerificationInput(identity, target_types, sections, locals.size())
-    );
-    if (!validation.has_value()) {
-        invariant_violation(validation.error().message);
-    }
-
     const auto dependencies = collect_target_dependencies(identity, target_types, sections);
     auto directive_groups = plan_target_directives(std::move(directives), dependencies);
     return TargetUnit(

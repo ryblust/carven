@@ -219,10 +219,11 @@ auto BodyRealizer::ExpressionBuilder::value_binding(PreparedUse use) noexcept
         case PreparedUse::ReadArgument:
         case PreparedUse::ReadPointer:
         case PreparedUse::OperandValue:
-        case PreparedUse::ConstPlace:   return TargetVariableBinding::ConstValue;
+        case PreparedUse::ConstPlace:       return TargetVariableBinding::ConstValue;
         case PreparedUse::WritePlace:
+        case PreparedUse::ConversionSource:
         case PreparedUse::Consume:
-        case PreparedUse::NativeTake:   return TargetVariableBinding::MutableValue;
+        case PreparedUse::NativeTake:       return TargetVariableBinding::MutableValue;
         case PreparedUse::ProjectionPlace:
             invariant_violation("projection access was not resolved before storage");
     }
@@ -249,7 +250,9 @@ auto BodyRealizer::ExpressionBuilder::anchor(
     }
     if (std::holds_alternative<SemBinding>(value.operation.value)
         && stable_place(value.operation)
-        && (use == PreparedUse::WritePlace || use == PreparedUse::ConstPlace)) {
+        && (use == PreparedUse::WritePlace
+            || use == PreparedUse::ConstPlace
+            || use == PreparedUse::ConversionSource)) {
         return;
     }
     const auto name = owner.fresh_local(TargetTemporaryNameKind::Owner);
@@ -257,6 +260,7 @@ auto BodyRealizer::ExpressionBuilder::anchor(
         && scalar(value.operation.type.resolved())
         && use != PreparedUse::WritePlace
         && use != PreparedUse::ConstPlace
+        && use != PreparedUse::ConversionSource
         && std::holds_alternative<BuiltinTypeValue>(
             owner.context.semantic().types().type(value.operation.type.resolved()).value
         )) {
@@ -278,7 +282,9 @@ auto BodyRealizer::ExpressionBuilder::anchor(
     // native T&/const T&, moves T&&, and directly constructs a prvalue.
     const auto place =
         (value.operation.category == SemanticValueCategory::Place || names_storage(value))
-        && (use == PreparedUse::WritePlace || use == PreparedUse::ConstPlace);
+        && (use == PreparedUse::WritePlace
+            || use == PreparedUse::ConstPlace
+            || use == PreparedUse::ConversionSource);
     // Read describes the consumer, not ownership of a newly produced value.
     // A factory cannot extend a prvalue lifetime by returning const T&.
     const auto read = (use == PreparedUse::ReadBorrow || use == PreparedUse::ReadArgument)
@@ -294,7 +300,7 @@ auto BodyRealizer::ExpressionBuilder::anchor(
                 .read_borrows_storage();
     const auto type = place ? owner.context.reference_type(
                                   owner.context.lower_type(value.operation.type.resolved()),
-                                  use == PreparedUse::ConstPlace
+                                  use != PreparedUse::WritePlace
                                       || value.operation.category != SemanticValueCategory::Place
                               )
         : read && !read_value
@@ -341,7 +347,9 @@ auto BodyRealizer::ExpressionBuilder::anchor(
         : nullptr;
     const auto read_conversion = conversion != nullptr
         && !conversion->explicit_cast
-        && (use == PreparedUse::ReadArgument || use == PreparedUse::ConstPlace);
+        && (use == PreparedUse::ReadArgument
+            || use == PreparedUse::ConstPlace
+            || use == PreparedUse::ConversionSource);
     if (read_conversion) {
         storage_type = owner.context.target().intern_type(
             {.value =
@@ -352,7 +360,7 @@ auto BodyRealizer::ExpressionBuilder::anchor(
                               AccessMode::Read,
                               value.operation.type.resolved(),
                               TypeNameScope::Module,
-                              use == PreparedUse::ConstPlace
+                              use != PreparedUse::ReadArgument
                           ),
                           owner.context.reference_type(
                               owner.context.lower_type(native_conversion->operands.front()
@@ -375,18 +383,26 @@ auto BodyRealizer::ExpressionBuilder::anchor(
         ? emit(fragment, use)
         : raw(fragment);
     if (fragment.local_storage) {
-        // Exact queries and borrowed references carry qualification in their
-        // type. Keyword const cannot qualify an opaque reference alias.
-        const auto access_in_type = exact_call
-            || place
-            || (read && !read_value)
-            || (native_call && use == PreparedUse::ReadArgument)
-            || read_conversion;
+        const auto delegated_storage =
+            exact_call || (native_call && use == PreparedUse::ReadArgument) || read_conversion;
+        const auto binding = value_binding(use);
+        // An opaque query may denote a reference. Qualify its owned value
+        // alternative without changing any reference or conversion capability.
+        if (delegated_storage && binding == TargetVariableBinding::ConstValue) {
+            storage_type = owner.context.target().intern_type({
+                .value =
+                    TargetIntrinsicType {
+                        .symbol = TargetSymbol::StdAddConst,
+                        .type_argument_ids = {storage_type},
+                    },
+                .const_qualified = false,
+            });
+        }
         fragment.statements.declare(
             TargetVariableStmt {
-                .binding = (access_in_type || (!place && !read))
+                .binding = delegated_storage || place || (read && !read_value)
                     ? TargetVariableBinding::MutableValue
-                    : value_binding(use),
+                    : binding,
                 .maybe_unused = false,
                 .local = name,
                 .type = storage_type,

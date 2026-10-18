@@ -111,12 +111,6 @@ struct TargetRuntimeTrapStmt final {
     }
 };
 
-enum class TargetJumpRole {
-    RegionExit,
-    FailureTransfer,
-    ForLoopContinue,
-};
-
 // Realization resolves this transfer before sealing the native target unit.
 struct TargetPendingExitStmt final {
     std::size_t identity;
@@ -124,21 +118,15 @@ struct TargetPendingExitStmt final {
 
 struct TargetGotoStmt final {
     TargetIdentifier label;
-    TargetJumpRole role;
 };
 
 struct TargetLabelStmt final {
     TargetIdentifier label;
-    TargetJumpRole role;
-};
-
-struct TargetIfBranch final {
-    TargetExpr condition;
-    std::vector<TargetStmt> body;
 };
 
 struct TargetIfStmt final {
-    std::vector<TargetIfBranch> branches;
+    TargetExpr condition;
+    std::vector<TargetStmt> body;
     std::optional<std::vector<TargetStmt>> else_body;
 };
 

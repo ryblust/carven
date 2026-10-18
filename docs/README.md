@@ -26,9 +26,10 @@ references define source rules.
   development guidance and factual descriptions for language and implementation
   contracts. Omit design defenses, comparisons with removed behavior, and promises
   about future features or compatibility.
-- Give each document a reader task. Keep rules in their owning reference and topic
-  explanations self-contained. Put navigation in indexes; repeat only context needed
-  to apply the local contract.
+- Keep each document self-contained for its reader task. State the prerequisites,
+  commands, and rules needed for that task locally. Repeat necessary context briefly
+  instead of requiring another document. Keep navigation in indexes; use
+  cross-document references only when essential.
 - Open with a brief statement of the document's scope. Put rules in their owning
   sections. Use tables for mappings, comparisons, and command reference; state
   prerequisites and execution order explicitly.
@@ -43,6 +44,8 @@ references define source rules.
   that distinguish choices. Move misplaced rules to their owning reference; remove
   duplicate explanations.
 - Present teaching examples in dependency order, with commands and expected
-  results where useful.
+  results where useful. Use `carven` and `carven-format` directly in user
+  instructions. State prerequisites and working directories where needed;
+  keep repository wrappers in development procedures.
 - Keep runnable examples and reference snippets aligned with current language
   and standard APIs. Use the simplest supported form that expresses their purpose.

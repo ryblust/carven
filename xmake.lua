@@ -57,11 +57,18 @@ add_requires("carven-xmake-repo@carven", {
 })
 
 rule("generated-clang-tidy")
-    on_config(function (target)
-        os.cp(path.join(os.projectdir(), ".clang-tidy"),
-              path.join(target:autogendir(), ".clang-tidy"))
-        os.cp(path.join(os.projectdir(), "xmake", "generated.clang-tidy"),
-              path.join(target:autogendir(), "rules", ".clang-tidy"))
+    after_config(function (target)
+        if not target:rule("@carven/carven") then return end
+        local roots = table.join(table.wrap(target:data("carven.generated_root")),
+            table.wrap(target:data("carven.standard_root")))
+        for _, root in ipairs(table.unique(roots)) do
+            -- Keep the base profile adjacent so custom output directories also
+            -- inherit it, without applying generated-code exceptions to siblings.
+            os.cp(path.join(os.projectdir(), ".clang-tidy"),
+                  path.join(path.directory(root), ".clang-tidy"), {copy_if_different = true})
+            os.cp(path.join(os.projectdir(), "xmake", "generated.clang-tidy"),
+                  path.join(root, ".clang-tidy"), {copy_if_different = true})
+        end
     end)
 rule_end()
 
