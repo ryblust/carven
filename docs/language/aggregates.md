@@ -56,6 +56,12 @@ Write preserves the original updatable place. Take consumes the complete owner.
 Explicit arguments still require matching access markers. An instance operation
 cannot be selected as a standalone value.
 
+An operation inherits its class's type and failure-set parameters. It may declare
+additional parameters, inferred from explicit arguments or supplied after its
+name, such as `value.forward<U>(...)`. Generic bodies are checked once against
+those parameters. A concrete associated operation without additional parameters
+can be selected as an ordinary callable value.
+
 In-body representation construction supplies every field explicitly; an empty
 class permits `ClassName {}` within its body. There is no automatic default or
 implicit factory invocation, including through a containing struct or nonempty
@@ -81,8 +87,8 @@ patterns, nested class declarations, and C++ import/export methods are invalid.
 
 A construction can omit its type when the expression already has a known
 expected type: `return { value: 1 };` in a function returning a record is checked
-as construction of that record. Named fields and empty initialization are
-supported; positional construction retains its explicit type. Empty initialization
+as construction of that record. Named fields, the trailing `...` default marker,
+and empty initialization are supported; positional construction retains its explicit type. Empty initialization
 follows the [default-initialization rules](#structures-and-arrays), including
 in-class construction of an empty class. Contextual construction checks class
 representation access, fields, ownership, borrowing, and static-execution admission.
@@ -108,8 +114,13 @@ be a contextual construction.
 A structure is a nominal product with ordered, uniquely named fields. Field
 access selects by name. Positional construction maps supplied values to fields
 in declaration order; named construction maps each initializer to its declared
-field. Nonempty construction requires every field exactly once. Supplied
-expressions execute once in source order. An empty `T {}` requests default
+field. Positional construction and named construction without a default marker
+require every field exactly once. A trailing `...` in a named initializer list
+requests type default initialization for every omitted field, regardless of its
+position in the declaration. Only omitted fields need a default. The marker is
+last and appears at most once; it has no following comma. Supplied expressions
+execute once in source order, followed by omitted fields in declaration order.
+An empty `T {}` requests default
 initialization of the whole value, with fields initialized in declaration order.
 Duplicate, unknown, extra, or incompatible initializers are invalid.
 
@@ -118,6 +129,8 @@ struct Config { attempts: i32, enabled: bool, label: String }
 let empty = Config {};                    // 0, false, empty String
 let named = Config { attempts: 3, enabled: true, label: {} };
 let positional = Config { 3, true, String {} };
+let partial = Config { enabled: true, ... }; // attempts: 0, label: empty String
+let contextual: Config = { enabled: true, ... };
 ```
 
 Default initialization is a type operation with these values:
@@ -296,6 +309,7 @@ slices require `Vector<T>::from_slice(values)` to copy their elements into an ow
 | `v.capacity()` | Read; capacity in elements |
 | `v.reserve(minimum: usize)` | Write; ensure minimum total capacity, preserving contents |
 | `v.push(value)` / `v.push(&&value)` | Write; copy or transfer an element into the end |
+| `v.append(values: [T])` | Write; append independent copies of the slice's elements in order |
 | `v.remove(index)` | Write; return the removed owner and preserve remaining order |
 | `v.clear()` | Write; destroy all elements and retain capacity |
 | `v.slice()` | Read; borrowed `[T]` |
@@ -315,20 +329,30 @@ reserved capacity would avoid reallocation. Read and Write iteration retain the
 owner and prohibit structural mutation; Write iteration can update elements.
 Taking an indexed element is invalid; `remove` extracts it without leaving a hole.
 An admitted self-element push copies the argument before modifying storage.
+`append` borrows its input for the call and leaves it unchanged. Empty input
+leaves the vector unchanged. The input cannot borrow the receiving vector's storage.
 
-Elements require Carven-defined owning value semantics. Borrowed text, slices,
-callable values and views, external C++ values, async operations, and products
-containing them are invalid elements. Raw pointers keep their ordinary target
-contracts. `Vector<bool>` uses ordinary elements and supports `[bool]` views.
-There is no raw pointer extraction or uninitialized-storage API.
+Elements retain their ordinary source or native value semantics. Named native
+C++ element types use C++ construction, copying, movement, and destruction;
+the native compiler checks those operations when required. Their hidden storage
+and lifetime relationships remain the native provider's responsibility. Copying
+a native object reference copies its registration identity rather than its target.
+Borrowed text, slices, callable values and views, async operations, and products
+containing them are invalid elements. Native expression-query types require an
+explicit named storage type. Raw pointers keep their ordinary target contracts.
+`Vector<bool>` uses ordinary elements and supports `[bool]` views. There is no raw
+pointer extraction or uninitialized-storage API.
 
-Logical construction, copying, transfer, mutation, extraction, and slicing work
-in native, interpreted, and constant execution, including capacity queries,
+For source elements, construction, copying, transfer, mutation, extraction,
+and slicing work in native, interpreted, and constant execution, including capacity queries,
 reservation, and capacity construction. Completed constants preserve Vector
 ownership, element types, contents, and capacity. A slice retained at initializer
 completion has immutable static backing; ordinary runtime slices still borrow.
-Copying a retained Vector creates independent owned contents before mutation.
-Execution limits bound aggregate storage, reserved capacity, and work.
+Copying a retained Vector creates independent element storage before mutation.
+Native execution supports the declared native element operations. Interpretation
+requires supported element values and explicit host contracts for native leaves.
+Registered native leaves cannot be retained in constants. Execution limits bound
+aggregate storage, reserved capacity, and work.
 
 ## Enums
 
@@ -343,7 +367,10 @@ facts and may be cast to integers; integer-to-enum conversion is unavailable.
 If any case declares positional payload types, the enum has the payload
 profile. It may mix payload and nullary cases, but cannot declare an underlying
 type, numeric initializer, or integer cast. It has no default value. A payload
-case is a first-class constructor function; a nullary case is a value.
+case can be selected as a constructor function with Read parameters when its
+payload values support copying; a nullary case is a value. Direct construction
+uses ordinary value construction: a complete Take can supply a payload whose
+Copy capability is unavailable.
 
 Contextual `.Case(arguments)` and `.Case` forms require an expected enum type
 that identifies the owner. Such context may come from a typed binding, return,

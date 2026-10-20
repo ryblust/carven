@@ -145,7 +145,7 @@ auto finish_unused_declarations(
         if (found != declarations.initializers.end()
             && unused.insert(local).second
             && candidates.at(local) == UnusedInitializer::Omit
-            && !traverse_target_expression(*found->second, uses)) {
+            && !traverse_target_expression(*found->second, uses, TargetExpressionRole::Operand)) {
             invariant_violation("initializer reference traversal did not complete");
         }
     }

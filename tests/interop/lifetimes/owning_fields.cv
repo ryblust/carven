@@ -3,14 +3,9 @@ import "lifetimes/tail_outcomes.hpp" using tail_outcome_probe::{
     CopyOnly,
     reset,
     move_count,
-};
+}
 
-import "lifetimes/owning_fields.hpp" using owning_field_probe::{
-    Resource,
-    count,
-    evaluated,
-    calls,
-};
+import "lifetimes/owning_fields.hpp" using owning_field_probe::{ Resource, count, evaluated, calls }
 
 private struct Pair {
     selected: Resource,

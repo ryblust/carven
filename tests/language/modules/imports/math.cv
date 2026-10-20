@@ -1,1 +1,1 @@
-export fn answer() -> i32 => 42;
+fn answer() -> i32 => 42;

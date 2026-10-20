@@ -36,6 +36,11 @@ const TestSuite suite([] static noexcept {
              .source = "struct Pair { first: i32, second: i32 } const value = Pair { second: 1 };",
              .code = DiagnosticCode::TypeConstructArity,
              .primary_text = "second: 1"},
+            {.name = "marked omitted enum still requires an explicit case",
+             .source =
+                 "enum Choice { Item } struct Holder { choice: Choice, number: i32 } fn f() { let value = Holder { number: 1, ... }; }",
+             .code = DiagnosticCode::TypeDefaultInitialization,
+             .primary_text = "..."},
             {.name = "default pointer does not prove nonnull",
              .source =
                  "struct Holder { pointer: ptr<i32> } fn f() { let value = Holder {}; println(*value.pointer); }",

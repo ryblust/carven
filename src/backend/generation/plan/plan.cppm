@@ -112,7 +112,7 @@ public:
     auto display_identifier(TypeID type) const noexcept -> const TargetIdentifier&;
     auto constant_identifier(ConstantID constant) const noexcept -> const TargetIdentifier&;
 
-    auto module_support_name(ModuleID module, const TargetIdentifier& identifier) const noexcept
+    auto module_support_name(ModuleID module_id, const TargetIdentifier& identifier) const noexcept
         -> TargetName;
 
 private:
@@ -183,6 +183,8 @@ struct TargetInterfaceArtifact final {
     std::vector<TargetArtifactID> predecessor_artifacts;
     std::vector<TargetInterfaceForwardDeclaration> forward_declarations;
     std::vector<TargetInterfaceDeclaration> declarations;
+    std::vector<NominalDeclarationRef> host_nominals;
+    std::vector<FunctionID> native_providers;
 };
 
 struct TargetCppAPIHeaderArtifact final {
@@ -225,12 +227,16 @@ using TargetArtifactPlan = std::variant<
 
 auto artifact_logical_path(const TargetArtifactPlan& artifact) noexcept -> std::string_view;
 auto artifact_role(const TargetArtifactPlan& artifact) noexcept -> GeneratedArtifactRole;
+
 auto artifact_source_mapping(const TargetArtifactPlan& artifact) noexcept
     -> ArtifactSourceMappingPolicy;
+
 auto artifact_associated_header(const TargetArtifactPlan& artifact) noexcept
     -> std::optional<TargetArtifactID>;
+
 auto artifact_dependencies(const TargetArtifactPlan& artifact) noexcept
     -> std::vector<TargetArtifactID>;
+
 auto verify_target_artifact_logical_paths(std::span<const std::string> logical_paths) noexcept
     -> void;
 

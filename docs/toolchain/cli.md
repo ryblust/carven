@@ -6,17 +6,19 @@ and process behavior.
 ## Invocation
 
 The examples assume `carven` is on `PATH`. Relative source paths use the current
-directory; see [Source inputs](#source-inputs) for module-path rules.
+directory. Source paths determine their module identities as described below.
 
 ```text
-carven [--tests] [--timings] <source-file>... [-- <arguments>...]
+carven build [<source.cv>]
+carven run [<source.cv>|<target>] [-- <arguments>...]
 carven compile [options...] [<input>...]
 carven check [options...] [<input>...]
 carven interpret [--tests] [--timings] [--trace] [--max-steps N] <source-file>... [-- <arguments>...]
 carven dump [tokens|ast] [--timings] <source-file>
 ```
 
-`carven --help`, `carven compile --help`, `carven check --help`,
+`carven --help`, `carven build --help`, `carven run --help`,
+`carven compile --help`, `carven check --help`,
 `carven interpret --help`, and `carven dump --help` print help (`-h` is also
 accepted). Top-level help lists commands; each command has its own usage and
 options. `carven --version` and `carven -V` print `carven v<version>` followed by
@@ -26,33 +28,61 @@ Windows Unicode command-line arguments are converted to UTF-8. On POSIX,
 arguments, including the executable name, must be valid UTF-8. Invalid text is
 an input error. Empty arguments are preserved.
 
+## Project builds
+
+`carven build main.cv` builds a native executable at `build/main` (`build/main.exe`
+on Windows). `carven run main.cv -- arguments...` builds and runs it. An explicit
+`.cv` input selects this single-source plan independently of any project script.
+The output name comes from the source filename without `.cv` and follows the
+standard builder's target-name rules.
+
+Without an explicit `.cv` input, `carven build` and `carven run [target]` execute
+the current directory's `build.cv` as an ordinary top-level program through the
+interpreter. The file is required; commands do not search parent directories.
+A build script can have any filename:
+`carven interpret foo.cv` executes its standard-library build calls directly.
+
+A script calls `std::build.build(plan)` to construct native targets and return
+output records. Under `carven run`, each call also selects and runs an executable
+before returning. Under `carven build` or another host command, such as
+`interpret`, it only builds. Plans describe executable and static-library
+targets, source sets, native compilation and link options, and target dependencies.
+
+The build function selects the single executable output for `carven run`;
+static libraries do not participate in selection. Multiple executable outputs
+require `carven run <target>`. All declared targets build before selection and
+execution. Each call completes before the next script statement. Arguments following `--` pass unchanged, including empty strings and
+shell characters. A failed build or nonzero program exit reports a build error
+and status 1. Source paths without a command are rejected with usage guidance.
+
 ## Source collection
 
-By default, `check`, source compilation, native execution, and `interpret` combine
-explicit application inputs with `.cv` and `.cpp` files collected recursively from the toolchain's
-`crafts/carven/` and the working directory's optional `crafts/`. Other application
-files must be named explicitly. The collector assigns module identities relative
-to each Crafts root, deduplicates files by canonical path, and retains absolute
-physical source paths for diagnostics and generated source mapping. It sorts the
-batch by these paths. Distinct files with conflicting module identities are errors.
-Directory symlinks are not recursively followed.
+`check`, source compilation, and `interpret` analyze the explicitly supplied
+sources and their required modules from the matching toolchain's `crafts/carven/`
+inventory. They read and parse toolchain sources only when the source dependency
+closure reaches them.
+They do not scan the project's `crafts/` directory. The collector deduplicates
+files by canonical path and retains absolute physical source paths for diagnostics
+and generated source mapping. It sorts the batch by these paths. Distinct files
+with conflicting module identities are errors. Directory symlinks are not
+recursively followed when collecting toolchain sources.
 
 The installed layout is `<prefix>/bin/carven` with matching resources in
-`<prefix>/crafts/carven/`. Discovery checks that the `carven` directory exists.
-Development binaries locate Crafts in their containing source checkout, identified
-by `src/carven.cppm`, `xmake.lua`, and `crafts/carven/`. Additional native libraries,
-compiler flags, dependency downloads, and build scheduling belong to an external
-build system.
+`<prefix>/crafts/carven/`. The compiler resolves its real executable path and uses
+the `crafts/` directory beside its binary directory. Missing resources report an
+incomplete installation. Development binaries locate Crafts in their containing
+source checkout, identified by `src/carven.cppm` and `crafts/carven/`. All source
+commands use this resolver.
 
 ### Installed Crafts
 
-The project's `crafts/` directory holds installed source packages. Every `.cv`
-and `.cpp` under the collected roots participates, including files in `examples/`
-and `tests/`. Carven analyzes all `.cv` files, executes their static roots and
-`const test` bodies, and emits runtime tests from owned modules when requested.
-Native execution compiles collected `.cpp` files alongside generated implementations;
-those sources include their headers. Official and third-party Crafts follow the
-same rules.
+The project's `crafts/` directory holds installed source packages. `std::build`
+collects its `.cv` sources for application targets and compiles its `.cpp`
+providers alongside generated implementations. Scripts pass their own project
+Craft dependencies as explicit inputs, like other interpreted programs. These inventories include files in `examples/` and `tests/`.
+Carven analyzes every supplied `.cv` file and its required toolchain dependencies,
+executes their static roots and `const test` bodies, and emits runtime tests from
+explicitly supplied modules when requested.
 
 Package authors or users select sources for the target platform and configuration
 before placing them in `crafts/`. Packaging tools can prepare the same installed
@@ -67,53 +97,36 @@ For custom integration, place external repositories outside the collected roots,
 for example in `thirdparty/`. Supply selected `.cv` files explicitly to Carven.
 Supply C++ sources, include paths, defines, compiler options, and libraries to the
 native build through its ordinary target configuration. Explicit `.cv` inputs
-follow the ordinary module-path rules and are combined with the automatically
-collected Crafts.
+follow the ordinary module-path rules and are combined with the matching
+toolchain sources.
 
 ## Native execution
 
-Carven analyzes all collected modules, generates C++, compiles and links a native
-program, then executes it. Program execution requires one entry point.
-`carven --tests` compiles and runs ordinary runtime tests, requires at least
-one runtime test, and leaves the program entry unexecuted. Static tests run during
-analysis. Failed checks accumulate; `require` and `fail` stop the current test,
-then later tests continue. Assertion failures and runtime traps abort the process.
-Any test failure produces a nonzero exit status.
-Native header lookup includes the generated directory, both Crafts include roots, and the
-working directory. Before `--`, arguments are source paths, `--tests`, or
-`--timings`; arguments after it are passed unchanged to the executable.
-Artifact output and external test-runner options belong to `compile`.
+`carven run` builds through the standard library and executes the native binary.
+One executable entry is required per target. Native headers include generated,
+installed Craft, project Craft, and project roots. The default C++ driver comes
+from `CXX`, otherwise `clang++` on PATH. It is one executable path, not a shell
+command. An unset or empty `CXX` uses the default. Environment values use Unicode
+on Windows and valid UTF-8 on POSIX. The toolchain supplies GCC/Clang-style
+C++20 arguments.
 
-`CXX` selects one compiler executable name or path, defaulting to `clang++`.
-An unset or empty value uses the default. Windows reads `CXX` from the Unicode
-process environment and converts it to UTF-8; invalid POSIX UTF-8 values are
-reported as errors.
-GCC-style drivers use `-std=c++20`; `cl` and `clang-cl` use MSVC-style arguments
-and separate temporary object files. The compiler, SDK, and linker must be
-available in the current environment. POSIX and Windows process adapters invoke
-children directly, inheriting the working directory, environment, and standard
-streams. `CXX` is not split into shell words.
-Windows native execution links Winsock for the installed TCP craft (`ws2_32.lib`
-for MSVC-style drivers and `-lws2_32` otherwise).
-
-Generated files and the executable reside in a unique temporary directory,
-removed when the driver returns after execution or a handled failure. Carven
-returns the native compiler's failure status or the program's exit status. On
-POSIX, termination by signal yields `128 + signal`.
-Native compilation failures identify the failed phase, compiler, and exit status
-after the compiler's own diagnostics.
+Generated code, objects, and dependency records remain in the plan's output
+directory (`build/` by default). Native output paths resolve from that directory;
+absolute output paths are used directly. Child processes inherit the working directory,
+environment and standard streams and are launched without a shell. POSIX signal
+termination returns `128 + signal`. `compile --tests` generates native test
+artifacts for a consumer build; `interpret --tests` runs supported tests directly.
 
 ## Timing reports
 
 `--timings` enables a human-readable report on standard error for `check`,
-`compile`, `interpret`, `dump`, and direct native execution:
+`compile`, `interpret`, and `dump`:
 
 ```shell
 carven check --timings main.cv
 carven compile --timings main.cv -o emit
 carven interpret --timings main.cv
 carven dump --timings main.cv
-carven --timings main.cv -- argument
 ```
 
 The report shows the outcome, total wall-clock duration, and the stages executed,
@@ -122,14 +135,13 @@ or seconds; values below display precision use `<0.1 ms` or `<0.1%`.
 Lexing and parsing accumulate across sources. Semantic analysis includes
 compile-time execution and static tests.
 Checking, compilation, and runtime commands also report source collection.
-Native runs report C++ compilation and linking. Native and interpreted runs label
-their runtime phase `Execution`; `compile` ends with C++ artifact output.
+Interpreted runs label their runtime phase `Execution`; `compile` ends with C++
+artifact output. Build and run do not accept a top-level `--timings` option.
 
 Total time includes pipeline setup, diagnostics and command-resource cleanup.
 Stage percentages use the unrounded durations. Semantic detail intervals are
 included in the semantic total; these nested intervals must not be added to it.
-Failed commands report the stages attempted. Native runs report the program's
-exit code. Invalid command options
+Failed commands report the stages attempted. Invalid command options
 produce diagnostics without a timing report.
 
 Timing reports use stderr and leave program and artifact streams intact.
@@ -139,8 +151,8 @@ are intended for human reading.
 
 ## Checking
 
-`check` collects the fixed Crafts roots and analyzes the resulting source batch
-through the same semantic pipeline as `compile`, including compile-time
+`check` collects the matching toolchain sources and analyzes the resulting source
+batch through the same semantic pipeline as `compile`, including compile-time
 execution and `const test` execution. Ordinary
 functions and runtime tests receive semantic checks without execution. An entry
 point is optional.
@@ -152,7 +164,7 @@ Native overload resolution, template instantiation, and native type properties
 are checked by the C++ compiler.
 
 `check` accepts source inputs or a retained semantic directory. It requires at least
-one input and accepts `--source` mappings, `-o <dir>`, `--timings`, and standalone
+one input and accepts `-o <dir>`, `--timings`, and standalone
 `--help` and `-h`. Invocation, input, and analysis
 errors return status 1; success returns 0, including when warnings are reported.
 Successful checks print `carven: check passed` on stderr. With `--timings`, the
@@ -162,18 +174,20 @@ timing report adds the duration to this success message instead of printing it t
 
 Interpretation executes Carven's semantic operations using runtime arithmetic and
 execution rules. It diagnoses an unsupported operation when execution reaches it.
-Native C++ implementations require native execution.
+Standard capabilities have implementations in the semantic executor. Other
+native C++ implementations require native execution or an explicit hosting binding.
 
 `interpret` collects and analyzes sources normally, including execution of
 `const` initializers, blocks, and tests. It then executes the published program,
 checking operation support after operands complete. Program execution requires
-one entry: top-level executable statements or `main`. Declaration-only and empty
-files remain valid for `check` but supply no entry.
+exactly one entry across its inputs: top-level executable statements or `main`.
+`check` and `compile` can process several modules with independent entries.
+Declaration-only and empty files supply no entry.
 
 Unused functions receive ordinary language checks; only `const fn` declarations
 require executor capability checking before execution. Source functions called
-during static execution must be declared `const fn`. Interpretation writes no C++
-artifacts or native executable.
+during static execution must be declared `const fn`. Interpretation itself emits
+no C++; a program can explicitly call `std::compiler` or `std::build` to create artifacts.
 
 `interpret --tests` selects ordinary runtime tests instead of the program entry.
 It requires at least one runtime test and does not execute top-level statements or
@@ -201,14 +215,16 @@ Ordinary calls perform it during program execution. In one compiler process,
 the input cursor preserves prefetched bytes, EOF, and system errors from static
 roots into subsequent interpretation.
 
-Collected `.cpp` files, C++ header imports, and native source fragments do not
-prevent interpretation. They remain native build inputs; the interpreter does
-not compile or load them. Reached native operations and callable implementations
-outside the supported subset report `CV-INTERPRET-ADMISSION` at the operation.
-C++ global initialization and destruction do not run. Programs that depend on
-those effects require native execution.
-The interpreted entry must take no parameters. Arguments after `--` are ignored
-by such an entry.
+C++ header imports and native source fragments do not prevent interpretation.
+The interpreter does not compile or load native source. Its internal capability
+adapter executes the compiled Standard Craft functions, fields, methods, and conversions.
+Other reached native operations and callable implementations outside the supported
+subset report an execution diagnostic at the operation. Unlinked native providers'
+global initialization and destruction do not run. Programs that depend on those
+effects require native execution.
+The interpreted entry must take no parameters. Arguments after `--` are not
+passed to an entry parameter. `std::process.arguments` queries the interpreter
+host's complete argument list, excluding its executable name.
 
 `--trace` reports executed statement locations and function calls and successful
 returns to stderr, indented by call depth. It describes interpreted execution after
@@ -216,13 +232,15 @@ analysis, not compile-time execution, and does not record every expression or va
 value. Program stderr shares that stream. Combined stdout/stderr display order is
 not a complete execution log.
 
-`--max-steps N` supplies a nonnegative decimal step budget, defaulting to 100,000.
-Steps charge expression evaluation, statements, and loop progress using the shared
-executor; nested calls share the root budget. It does not limit elapsed time,
-input waiting, timer waiting, or blocking output. Existing per-value, call-depth, aggregate, and cumulative text-work
-limits also apply. Each compile-time root keeps its own analysis budget;
-this option changes only interpreted execution, with a fresh budget for each
-runtime test. Repeating `--max-steps`, `--trace`, or `--tests` is an error.
+Ordinary CLI execution has no default cumulative work quota. `--max-steps N`
+sets a nonnegative decimal step budget; zero permits no steps. Steps charge
+expression evaluation, statements, and loop progress using the shared executor;
+nested calls share the root budget. This does not limit elapsed time, input
+waiting, timer waiting, or blocking output. Per-value size, aggregate depth,
+and call-depth limits still apply. Compile-time roots and hosted calls retain
+their own budgets. This option changes only interpreted execution, with a fresh
+budget for each runtime test. Repeating `--max-steps`, `--trace`, or `--tests`
+is an error.
 
 Assertions, test reports, and runtime traps use the runtime report layout with
 source locations and call context. Other execution errors report
@@ -232,12 +250,12 @@ status 1; normal completion follows the entry-result convention.
 
 ## Source inputs
 
-Native execution, `check`, and `interpret` require one or more explicit `.cv`
-inputs. Source compilation requires positional sources or mappings, unless its
+`check` and `interpret` require one or more explicit `.cv` inputs.
+Source compilation requires positional sources, unless its
 input is a retained artifact directory.
 
-Source paths use UTF-8, `/` separators, and a `.cv` extension. Relative paths
-determine module identities after lexical normalization:
+Source paths use UTF-8, `/` separators, and a `.cv` extension. Project-root-relative
+paths determine module identities:
 
 ```text
 src/main.cv       -> src.main
@@ -248,28 +266,22 @@ The project `crafts/` directory is the package root: `json::parser` selects
 `crafts.json.parser`. The reserved `std::` prefix selects the standard-library
 modules of the official `carven` craft, such as `crafts.carven.std.utf`.
 
-Explicit absolute Crafts paths are also accepted. For files collected from a
-known Crafts root, that root determines the module identity independently of the
-installation prefix. Other absolute inputs use the path starting at the first
-`crafts/` component: `/opt/packages/crafts/json/parser.cv` becomes
-`crafts.json.parser`. Explicit aliases of collected files retain their identity.
+Explicit absolute paths to matching toolchain sources are also accepted. The
+known toolchain root determines their module identity independently of the
+installation prefix. Explicit aliases of collected files retain their identity.
 
-Application paths must be relative and stay within the working directory.
-Their hierarchy is normalized lexically. Canonical filesystem paths identify
-duplicate files.
+Application paths may be relative or absolute. Both forms are resolved through
+the filesystem and assigned to their source root. The root-relative path
+determines the module identity. Application sources must resolve within the
+working directory. Canonical filesystem paths identify duplicate files.
 
 Every derived component must match `[A-Za-z_][A-Za-z0-9_]*`; language keywords
 are permitted as module components. Two inputs cannot derive the same canonical
 module path.
 
-`compile` and `check` accept repeatable
-`--source=<canonical-module>=<path.cv>` arguments alongside positional inputs.
-Both commands require at least one positional input or mapping.
-A mapping supplies module identity independently of its physical path, for example
-`--source=app.main=/work/src/main.cv`. Mapped invocations select their complete
-owned input set and load the toolchain sources without discovering project Crafts.
-Identical physical files are deduplicated. Conflicting identities for one file
-and duplicate module identities across different files are rejected.
+`compile`, `check`, and `interpret` use positional inputs to select the complete
+owned source set. Project Crafts needed by that batch must be named explicitly. Module
+identities follow the source paths.
 
 ## Artifact destinations
 
@@ -306,9 +318,10 @@ Each artifact has a heading of this form:
 The headings make this an inspection format. Compile the files written by a
 filesystem destination when building generated C++.
 
-Compilation generates implementations for its owned inputs. Explicit sources and
-project Crafts are owned; automatically loaded toolchain sources are dependencies.
-Supplying an installed source explicitly makes it an owned input for that invocation.
+Source compilation generates implementations for the loaded source closure,
+including required toolchain modules. Explicit inputs select runtime tests and
+`--stdout` output. Supplying an installed source explicitly selects it by the same
+rules.
 
 `compile` also accepts an existing analysis directory. With that input
 alone, it generates C++ from the retained program without parsing or analyzing
@@ -324,11 +337,16 @@ carven compile build/checked --tests -o build/tests
 An artifact directory containing only standard-library sources can accompany new
 source inputs. Its checked definitions supply generic and staged bodies; new
 instances and checks involving consumer types belong to the consuming analysis.
+Those retained modules keep their external implementation ownership when the
+consumer is retained or compiled again. An artifact used alone preserves the
+original program's source roots and implementation ownership.
 The new batch cannot redefine those standard modules. The build system owns
 dependency freshness, including changes to source files and the compiler executable.
 
-`carven/manifest.json` describes the operation's inputs, outputs, ownership,
-runtime-test count, and cacheability. Analysis that observes host input, time, or
+`carven/manifest.json` describes the operation's loaded inputs, outputs,
+runtime-test count, and cacheability. Each input records explicit-root selection
+as `owned`, toolchain identity as `standard`, and implementation ownership outside
+this generation as `external`. Analysis that observes host input, time, or
 waiting reports `cacheable: false`. `--stdout` writes no manifest or semantic IR.
 
 Use staging paths and check the exit status before publishing outputs. Changing
@@ -361,9 +379,10 @@ identity independent of application domains and native build-cache keys.
 Project files are identified by their actual source ownership, including project
 Crafts whose module names begin with `crafts.carven`.
 
-Consumers use checked toolchain definitions or analyze toolchain sources, then
-generate the interfaces and generic instances they require. Explicitly owned
-toolchain sources also generate implementations. Toolchain program entries and
+Consumers use checked toolchain definitions or analyze required toolchain sources.
+Source analysis generates those modules' implementations; checked dependency
+providers supply their own implementations. Both paths generate the interfaces
+and generic instances the consumer requires. Toolchain program entries and
 interfaces merging toolchain and application modules are rejected.
 
 ## Diagnostics and status

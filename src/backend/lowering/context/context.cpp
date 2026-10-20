@@ -67,6 +67,16 @@ auto ArtifactLowering::require_interface(ModuleID provider) noexcept -> void {
     lowering_dependencies.insert(*interface);
 }
 
+auto ArtifactLowering::require_implementation(ModuleID provider) noexcept -> void {
+    const auto* implementation = std::get_if<TargetModuleImplementationArtifact>(&artifact());
+    if (implementation && provider == implementation->schedule.module_id) {
+        return;
+    }
+    const auto& declaration = semantic().declarations().module_decl(provider);
+    const auto& path = semantic().provenance().module_record(declaration.provenance_module).path;
+    link_dependencies.insert(module_implementation_logical_path(path.components()));
+}
+
 auto ArtifactLowering::take_support() noexcept -> std::vector<TargetItem> {
     auto result = std::vector<TargetItem>();
     auto strings = cstrings.take();
@@ -125,7 +135,12 @@ auto ArtifactLowering::finish(TargetUnitSections sections) && noexcept -> Target
         std::vector<TargetArtifactID>(lowering_dependencies.begin(), lowering_dependencies.end());
     auto directives = artifact_directive_inputs(plan(), artifact_id, dependencies);
     lower_cpp_environments(sections, directives);
-    return std::move(target_builder).finish(std::move(sections), std::move(directives));
+    return std::move(target_builder)
+        .finish(
+            std::move(sections),
+            std::move(directives),
+            std::vector<std::string>(link_dependencies.begin(), link_dependencies.end())
+        );
 }
 
 ModuleLowering::ModuleLowering(ArtifactLowering& artifact, ModuleID owner_module_id) noexcept
@@ -171,11 +186,7 @@ auto ModuleLowering::names() const noexcept -> const TargetNamePlan& {
 
 auto ModuleLowering::global_function_name(FunctionID id) noexcept -> TargetName {
     const auto& function = semantic().declarations().function(id);
-    const auto provider = function.module_id;
-    if (provider == module_id) {
-        require_callable(function.callable);
-    }
-    artifact_lowering.require_interface(provider);
+    require_callable_reference(function.callable);
     return names().callable_name(std::nullopt, function.callable);
 }
 
@@ -221,14 +232,7 @@ auto ModuleLowering::callable_expression(CallableID id) noexcept -> TargetExpr {
 }
 
 auto ModuleLowering::callable_name(CallableID id) noexcept -> TargetName {
-    const auto provider = names().callable_owner(id);
-    const auto placement = target_definition_placement(semantic(), id);
-    if (provider == module_id || placement == TargetDefinitionPlacement::Use) {
-        require_callable(id);
-    }
-    if (placement != TargetDefinitionPlacement::Use) {
-        artifact_lowering.require_interface(provider);
-    }
+    require_callable_reference(id);
     // The source callee is resolved already; C++ argument-dependent lookup
     // must not add native overloads with the same spelling.
     return names().callable_name(std::nullopt, id);
@@ -244,6 +248,24 @@ auto ModuleLowering::closure_type_name(CallableID id, TypeNameScope scope) noexc
         scope == TypeNameScope::Module ? std::optional(module_id) : std::nullopt,
         id
     );
+}
+
+auto ModuleLowering::require_callable_reference(CallableID id) noexcept -> void {
+    const auto& implementation = semantic().declarations().callable(id).implementation;
+    if (std::holds_alternative<ProvidedFunctionImplementation>(implementation)) {
+        return;
+    }
+    const auto provider = std::holds_alternative<ClosureBodyImplementation>(implementation)
+        ? names().closure_owner(id)
+        : names().callable_owner(id);
+    const auto placement = target_definition_placement(semantic(), id);
+    if (provider == module_id || placement == TargetDefinitionPlacement::Use) {
+        require_callable(id);
+    }
+    if (placement != TargetDefinitionPlacement::Use) {
+        artifact_lowering.require_interface(provider);
+        artifact_lowering.require_implementation(provider);
+    }
 }
 
 auto ModuleLowering::require_callable(CallableID id) noexcept -> void {

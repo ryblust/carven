@@ -6,50 +6,52 @@ import std;
 
 namespace {
 
-auto symbol_info(
-    std::string_view spelling,
-    std::string_view header = {},
-    TargetHeaderGroup group = TargetHeaderGroup::StandardLibrary
-) noexcept -> TargetSymbolInfo {
+auto standard_symbol_info(std::string_view spelling, std::string_view header = {}) noexcept
+    -> TargetSymbolInfo {
     return {
         .spelling = spelling,
         .header = header.empty()
             ? std::nullopt
-            : std::optional(TargetHeaderProvider {.group = group, .path = header}),
+            : std::optional(
+                  TargetHeaderProvider {.group = TargetHeaderGroup::StandardLibrary, .path = header}
+              ),
     };
 }
 
 auto runtime_symbol_info(std::string_view spelling, std::string_view header) noexcept
     -> TargetSymbolInfo {
-    return symbol_info(spelling, header, TargetHeaderGroup::Runtime);
+    return {
+        .spelling = spelling,
+        .header = TargetHeaderProvider {.group = TargetHeaderGroup::Project, .path = header}
+    };
 }
 
 } // namespace
 
 auto target_symbol_info(TargetSymbol symbol) noexcept -> TargetSymbolInfo {
     switch (symbol) {
-        case TargetSymbol::StdExitFailure: return symbol_info("EXIT_FAILURE", "cstdlib");
-        case TargetSymbol::Auto:           return symbol_info("auto");
-        case TargetSymbol::DecltypeAuto:   return symbol_info("decltype(auto)");
-        case TargetSymbol::Void:           return symbol_info("void");
-        case TargetSymbol::Bool:           return symbol_info("bool");
-        case TargetSymbol::Char:           return symbol_info("char32_t");
-        case TargetSymbol::Int:            return symbol_info("int");
-        case TargetSymbol::CChar:          return symbol_info("char");
-        case TargetSymbol::StdInt8:        return symbol_info("::std::int8_t", "cstdint");
-        case TargetSymbol::StdInt16:       return symbol_info("::std::int16_t", "cstdint");
-        case TargetSymbol::StdInt32:       return symbol_info("::std::int32_t", "cstdint");
-        case TargetSymbol::StdInt64:       return symbol_info("::std::int64_t", "cstdint");
-        case TargetSymbol::StdUInt8:       return symbol_info("::std::uint8_t", "cstdint");
-        case TargetSymbol::StdUInt16:      return symbol_info("::std::uint16_t", "cstdint");
-        case TargetSymbol::StdUInt32:      return symbol_info("::std::uint32_t", "cstdint");
-        case TargetSymbol::StdUInt64:      return symbol_info("::std::uint64_t", "cstdint");
-        case TargetSymbol::StdPtrdiff:     return symbol_info("::std::ptrdiff_t", "cstddef");
-        case TargetSymbol::StdSize:        return symbol_info("::std::size_t", "cstddef");
-        case TargetSymbol::Float:          return symbol_info("float");
-        case TargetSymbol::Double:         return symbol_info("double");
-        case TargetSymbol::CoAwait:        return symbol_info("co_await", "coroutine");
-        case TargetSymbol::CoReturn:       return symbol_info("co_return", "coroutine");
+        case TargetSymbol::StdExitFailure: return standard_symbol_info("EXIT_FAILURE", "cstdlib");
+        case TargetSymbol::Auto:           return standard_symbol_info("auto");
+        case TargetSymbol::DecltypeAuto:   return standard_symbol_info("decltype(auto)");
+        case TargetSymbol::Void:           return standard_symbol_info("void");
+        case TargetSymbol::Bool:           return standard_symbol_info("bool");
+        case TargetSymbol::Char:           return standard_symbol_info("char32_t");
+        case TargetSymbol::Int:            return standard_symbol_info("int");
+        case TargetSymbol::CChar:          return standard_symbol_info("char");
+        case TargetSymbol::StdInt8:        return standard_symbol_info("::std::int8_t", "cstdint");
+        case TargetSymbol::StdInt16:       return standard_symbol_info("::std::int16_t", "cstdint");
+        case TargetSymbol::StdInt32:       return standard_symbol_info("::std::int32_t", "cstdint");
+        case TargetSymbol::StdInt64:       return standard_symbol_info("::std::int64_t", "cstdint");
+        case TargetSymbol::StdUInt8:       return standard_symbol_info("::std::uint8_t", "cstdint");
+        case TargetSymbol::StdUInt16:  return standard_symbol_info("::std::uint16_t", "cstdint");
+        case TargetSymbol::StdUInt32:  return standard_symbol_info("::std::uint32_t", "cstdint");
+        case TargetSymbol::StdUInt64:  return standard_symbol_info("::std::uint64_t", "cstdint");
+        case TargetSymbol::StdPtrdiff: return standard_symbol_info("::std::ptrdiff_t", "cstddef");
+        case TargetSymbol::StdSize:    return standard_symbol_info("::std::size_t", "cstddef");
+        case TargetSymbol::Float:      return standard_symbol_info("float");
+        case TargetSymbol::Double:     return standard_symbol_info("double");
+        case TargetSymbol::CoAwait:    return standard_symbol_info("co_await", "coroutine");
+        case TargetSymbol::CoReturn:   return standard_symbol_info("co_return", "coroutine");
         case TargetSymbol::RuntimeDeferredResult:
             return runtime_symbol_info(
                 "::carven::runtime::DeferredResult",
@@ -102,16 +104,6 @@ auto target_symbol_info(TargetSymbol symbol) noexcept -> TargetSymbolInfo {
                 "::carven::runtime::read_conversion",
                 "carven/runtime/call/passing.hpp"
             );
-        case TargetSymbol::RuntimeNativeTestResult:
-            return runtime_symbol_info(
-                "::carven::runtime::native_test_result",
-                "carven/runtime/testing/testing.hpp"
-            );
-        case TargetSymbol::RuntimeTestStopped:
-            return runtime_symbol_info(
-                "::carven::runtime::TestStopped",
-                "carven/runtime/testing/testing.hpp"
-            );
         case TargetSymbol::RuntimeAssertionFailed:
             return runtime_symbol_info(
                 "::carven::runtime::assertion_failed",
@@ -132,10 +124,10 @@ auto target_symbol_info(TargetSymbol symbol) noexcept -> TargetSymbolInfo {
                 "::carven::runtime::execution::Completion",
                 "carven/runtime/execution/completion.hpp"
             );
-        case TargetSymbol::RuntimeAsyncSuccessBinding:
+        case TargetSymbol::RuntimeSuccessBinding:
             return runtime_symbol_info(
-                "::carven::runtime::execution::SuccessBinding",
-                "carven/runtime/execution/completion.hpp"
+                "::carven::runtime::SuccessBinding",
+                "carven/runtime/value/storage.hpp"
             );
         case TargetSymbol::RuntimeAsyncChild:
             return runtime_symbol_info(
@@ -200,6 +192,16 @@ auto target_symbol_info(TargetSymbol symbol) noexcept -> TargetSymbolInfo {
         case TargetSymbol::RuntimeAsyncCancelRequested:
             return runtime_symbol_info(
                 "::carven::runtime::execution::cancel_requested",
+                "carven/runtime/execution/execution.hpp"
+            );
+        case TargetSymbol::RuntimeAsyncStopRequested:
+            return runtime_symbol_info(
+                "::carven::runtime::execution::stop_requested",
+                "carven/runtime/execution/execution.hpp"
+            );
+        case TargetSymbol::RuntimeAsyncRequestStop:
+            return runtime_symbol_info(
+                "::carven::runtime::execution::request_stop",
                 "carven/runtime/execution/execution.hpp"
             );
         case TargetSymbol::RuntimeAsyncCancelPoint:
@@ -275,6 +277,11 @@ auto target_symbol_info(TargetSymbol symbol) noexcept -> TargetSymbolInfo {
         case TargetSymbol::RuntimeStructuralDisplay:
             return runtime_symbol_info(
                 "::carven::runtime::structural_display",
+                "carven/runtime/display/display.hpp"
+            );
+        case TargetSymbol::RuntimeDisplayText:
+            return runtime_symbol_info(
+                "::carven::runtime::display_text",
                 "carven/runtime/display/display.hpp"
             );
         case TargetSymbol::RuntimePrint:
@@ -520,39 +527,81 @@ auto target_symbol_info(TargetSymbol symbol) noexcept -> TargetSymbolInfo {
                 "::carven::runtime::checked_unicode_scalar",
                 "carven/runtime/text/text.hpp"
             );
+        case TargetSymbol::RuntimeHashValue:
+            return runtime_symbol_info(
+                "::carven::runtime::hash_value",
+                "carven/runtime/collection/hash.hpp"
+            );
         case TargetSymbol::StdRemoveCVRef:
-            return symbol_info("::std::remove_cvref_t", "type_traits");
-        case TargetSymbol::StdAddConst:  return symbol_info("::std::add_const_t", "type_traits");
-        case TargetSymbol::StdTrueType:  return symbol_info("::std::true_type", "type_traits");
-        case TargetSymbol::StdFalseType: return symbol_info("::std::false_type", "type_traits");
+            return standard_symbol_info("::std::remove_cvref_t", "type_traits");
+        case TargetSymbol::StdAddConst:
+            return standard_symbol_info("::std::add_const_t", "type_traits");
+        case TargetSymbol::StdTrueType:
+            return standard_symbol_info("::std::true_type", "type_traits");
+        case TargetSymbol::StdFalseType:
+            return standard_symbol_info("::std::false_type", "type_traits");
         case TargetSymbol::StdTypeIdentity:
-            return symbol_info("::std::type_identity_t", "type_traits");
+            return standard_symbol_info("::std::type_identity_t", "type_traits");
+        case TargetSymbol::StdTypeIdentityTag:
+            return standard_symbol_info("::std::type_identity", "type_traits");
         case TargetSymbol::StdReferenceWrapper:
-            return symbol_info("::std::reference_wrapper", "functional");
-        case TargetSymbol::StdAddressof: return symbol_info("::std::addressof", "memory");
-        case TargetSymbol::StdToArray:   return symbol_info("::std::to_array", "array");
-        case TargetSymbol::StdGetIf:     return symbol_info("::std::get_if", "variant");
-        case TargetSymbol::StdDeclval:   return symbol_info("::std::declval", "utility");
-        case TargetSymbol::StdForward:   return symbol_info("::std::forward", "utility");
-        case TargetSymbol::StdSqrt:      return symbol_info("::std::sqrt", "cmath");
-        case TargetSymbol::StdIsFinite:  return symbol_info("::std::isfinite", "cmath");
-        case TargetSymbol::StdBitCast:   return symbol_info("::std::bit_cast", "bit");
-        case TargetSymbol::StdMove:      return symbol_info("::std::move", "utility");
-        case TargetSymbol::StdAsConst:   return symbol_info("::std::as_const", "utility");
-        case TargetSymbol::StdNullopt:   return symbol_info("::std::nullopt", "optional");
-        case TargetSymbol::StdNullptr:   return symbol_info("nullptr");
+            return standard_symbol_info("::std::reference_wrapper", "functional");
+        case TargetSymbol::StdAddressof: return standard_symbol_info("::std::addressof", "memory");
+        case TargetSymbol::StdToArray:   return standard_symbol_info("::std::to_array", "array");
+        case TargetSymbol::StdGetIf:     return standard_symbol_info("::std::get_if", "variant");
+        case TargetSymbol::StdDeclval:   return standard_symbol_info("::std::declval", "utility");
+        case TargetSymbol::StdForward:   return standard_symbol_info("::std::forward", "utility");
+        case TargetSymbol::StdSqrt:      return standard_symbol_info("::std::sqrt", "cmath");
+        case TargetSymbol::StdIsFinite:  return standard_symbol_info("::std::isfinite", "cmath");
+        case TargetSymbol::StdBitCast:   return standard_symbol_info("::std::bit_cast", "bit");
+        case TargetSymbol::StdMove:      return standard_symbol_info("::std::move", "utility");
+        case TargetSymbol::StdInPlace:   return standard_symbol_info("::std::in_place", "utility");
+        case TargetSymbol::StdAsConst:   return standard_symbol_info("::std::as_const", "utility");
+        case TargetSymbol::StdNullopt:   return standard_symbol_info("::std::nullopt", "optional");
+        case TargetSymbol::StdNullptr:   return standard_symbol_info("nullptr");
         case TargetSymbol::StdInitializerList:
-            return symbol_info("::std::initializer_list", "initializer_list");
-        case TargetSymbol::StdOptional:   return symbol_info("::std::optional", "optional");
-        case TargetSymbol::StdStringView: return symbol_info("::std::string_view", "string_view");
-        case TargetSymbol::StdArray:      return symbol_info("::std::array", "array");
-        case TargetSymbol::StdAbort:      return symbol_info("::std::abort", "cstdlib");
+            return standard_symbol_info("::std::initializer_list", "initializer_list");
+        case TargetSymbol::StdOptional: return standard_symbol_info("::std::optional", "optional");
+        case TargetSymbol::StdStringView:
+            return standard_symbol_info("::std::string_view", "string_view");
+        case TargetSymbol::StdTuple: return standard_symbol_info("::std::tuple", "tuple");
+        case TargetSymbol::StdIntegralConstant:
+            return standard_symbol_info("::std::integral_constant", "type_traits");
+        case TargetSymbol::StdMakeTuple: return standard_symbol_info("::std::make_tuple", "tuple");
+        case TargetSymbol::StdPair:      return standard_symbol_info("::std::pair", "utility");
+        case TargetSymbol::RuntimeParameterAccess:
+            return runtime_symbol_info(
+                "::carven::runtime::hosting::ParameterAccess",
+                "carven/runtime/hosting/service.hpp"
+            );
+        case TargetSymbol::RuntimeParameterRead:
+            return runtime_symbol_info(
+                "::carven::runtime::hosting::ParameterAccess::Read",
+                "carven/runtime/hosting/service.hpp"
+            );
+        case TargetSymbol::RuntimeParameterWrite:
+            return runtime_symbol_info(
+                "::carven::runtime::hosting::ParameterAccess::Write",
+                "carven/runtime/hosting/service.hpp"
+            );
+        case TargetSymbol::RuntimeParameterTake:
+            return runtime_symbol_info(
+                "::carven::runtime::hosting::ParameterAccess::Take",
+                "carven/runtime/hosting/service.hpp"
+            );
+        case TargetSymbol::RuntimeMakeService:
+            return runtime_symbol_info(
+                "::carven::runtime::hosting::make_service",
+                "carven/runtime/hosting/service.hpp"
+            );
+        case TargetSymbol::StdArray: return standard_symbol_info("::std::array", "array");
+        case TargetSymbol::StdAbort: return standard_symbol_info("::std::abort", "cstdlib");
         case TargetSymbol::RuntimeUnreachable:
             return runtime_symbol_info(
                 "::carven::runtime::unreachable",
                 "carven/runtime/execution/unreachable.hpp"
             );
-        case TargetSymbol::StdVariant: return symbol_info("::std::variant", "variant");
+        case TargetSymbol::StdVariant: return standard_symbol_info("::std::variant", "variant");
         case TargetSymbol::TestingContext:
             return runtime_symbol_info(
                 "::carven::runtime::TestContext",

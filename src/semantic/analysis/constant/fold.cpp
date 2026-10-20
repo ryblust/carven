@@ -78,7 +78,7 @@ auto field_constant(
 }
 
 auto element_constant(
-    const ProgramDraft& draft,
+    ProgramDraft& draft,
     std::optional<ConstantID> sequence,
     std::optional<ConstantID> index
 ) noexcept -> std::optional<ConstantID> {
@@ -99,6 +99,15 @@ auto element_constant(
     }
     if (const auto* slice = std::get_if<SliceConstant>(&fact.value)) {
         return select(*slice);
+    }
+    if (const auto* bytes = std::get_if<ByteSequenceConstant>(&fact.value); bytes
+        && position
+        && *position < bytes->bytes.size()
+        && std::holds_alternative<SliceTypeValue>(draft.type_copy(fact.type).value)) {
+        return draft.intern_constant({
+            .type = draft.builtin_type(BuiltinType::U8),
+            .value = IntegerConstant::from_parts(bytes->bytes[*position], false),
+        });
     }
     return std::nullopt;
 }
@@ -197,15 +206,16 @@ auto fold_constant_expression(
         } else if constexpr (std::same_as<Operation, SemStruct>) {
             source.constant = struct_constant(draft, *type, operation);
         } else if constexpr (std::same_as<Operation, SemEnumCase>) {
-            const auto declaration =
-                draft.construction_enum_case_declaration_copy(operation.enum_case);
+            const auto declaration = draft.construction_enum_case_declaration_copy(
+                concrete_enum_case(operation.enum_case)
+            );
             if (declaration.constant) {
                 source.constant = declaration.constant;
             } else if (auto values = children(operation.payload)) {
                 folded = ConstantFact {
                     .type = *type,
                     .value = PayloadEnumConstant {
-                        .enum_case = operation.enum_case,
+                        .enum_case = concrete_enum_case(operation.enum_case),
                         .payload = std::move(*values)
                     },
                 };
@@ -247,12 +257,14 @@ auto fold_constant_expression(
             operation.operation.visit([&](auto& intrinsic) noexcept {
                 using Intrinsic = std::remove_cvref_t<decltype(intrinsic)>;
                 if constexpr (std::same_as<Intrinsic, FloatIntrinsic>) {
-                    auto inputs = std::vector<ConstantFact>();
+                    auto inputs = std::vector<ConstantAtom>();
                     for (const auto& operand : operation.operands) {
                         if (!operand.expression.constant) {
                             return;
                         }
-                        inputs.push_back(draft.constant(*operand.expression.constant));
+                        inputs.push_back(
+                            *constant_atom(draft.constant(*operand.expression.constant))
+                        );
                     }
                     auto evaluated =
                         evaluate_float_intrinsic_constant_value(draft, intrinsic, inputs, *type);
@@ -261,20 +273,54 @@ auto fold_constant_expression(
                         && evaluated.error() == ConstantEvaluationFailure::InvalidClampBounds) {
                         return;
                     }
-                    retain(std::move(evaluated));
+                    retain(std::move(evaluated).transform(constant_fact));
                 } else if constexpr (std::same_as<Intrinsic, TextIntrinsic>) {
-                    retain(
-                        evaluate_text_intrinsic_constant_value(draft, intrinsic, receiver, *type)
-                    );
+                    if (const auto atom = constant_atom(receiver)) {
+                        retain(
+                            evaluate_text_intrinsic_constant_value(draft, intrinsic, *atom, *type)
+                                .transform(constant_fact)
+                        );
+                    }
                 } else if constexpr (std::same_as<Intrinsic, SliceIntrinsicOperation>) {
                     if (intrinsic.intrinsic == SliceIntrinsic::View) {
                         if (const auto* array = std::get_if<ArrayConstant>(&receiver.value)) {
+                            const auto canonical = draft.type_copy(receiver.type);
+                            if (std::get<ArrayTypeValue>(canonical.value).element
+                                == draft.builtin_type(BuiltinType::U8)) {
+                                auto bytes = std::vector<std::uint8_t>();
+                                bytes.reserve(array->elements.size());
+                                for (const auto child : array->elements) {
+                                    bytes.push_back(
+                                        static_cast<std::uint8_t>(
+                                            std::get<IntegerConstant>(draft.constant(child).value)
+                                                .magnitude()
+                                        )
+                                    );
+                                }
+                                folded = ConstantFact {
+                                    .type = *type,
+                                    .value = ByteSequenceConstant {
+                                        .bytes = std::move(bytes),
+                                        .capacity = array->elements.size(),
+                                    },
+                                };
+                                return;
+                            }
                             folded = ConstantFact {
                                 .type = *type,
                                 .value = SliceConstant {.elements = array->elements},
                             };
                         } else if (std::holds_alternative<SliceConstant>(receiver.value)) {
                             folded = receiver;
+                        } else if (const auto* bytes =
+                                       std::get_if<ByteSequenceConstant>(&receiver.value)) {
+                            folded = ConstantFact {
+                                .type = *type,
+                                .value = ByteSequenceConstant {
+                                    .bytes = bytes->bytes,
+                                    .capacity = bytes->bytes.size(),
+                                },
+                            };
                         }
                         return;
                     }

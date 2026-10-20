@@ -42,8 +42,10 @@ class ChildScope final {
     detail::WorkNode* continuation = nullptr;
     enum class Phase { Open, Closing, Closed };
     Phase phase = Phase::Open;
+
     template<typename T, typename... E>
     friend class Child;
+
     template<std::size_t Count>
     friend class WaitReadyAwaiter;
 
@@ -77,8 +79,10 @@ public:
         auto operator=(const CloseAwaiter&) -> CloseAwaiter& = delete;
         auto operator=(CloseAwaiter&&) -> CloseAwaiter& = delete;
         auto await_ready() const noexcept -> bool;
+
         template<typename Promise>
         auto await_suspend(std::coroutine_handle<Promise> handle) noexcept -> void;
+
         auto await_resume() const noexcept -> void;
     };
 
@@ -197,7 +201,7 @@ class Child final {
           task {
               .driver = scope.owner->task->driver,
               .parent = scope.owner->task,
-              .requested = false
+              .request = TaskContext::Request::None
           },
           startup(detail::resume_node(slot.frame, task)) {
         const auto frame = frame_handle();

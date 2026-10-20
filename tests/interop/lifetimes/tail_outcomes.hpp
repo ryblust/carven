@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <string>
@@ -31,6 +32,23 @@ inline auto matches(std::string_view expected) noexcept -> bool {
         return true;
     }
     std::fprintf(stderr, "tail outcome events: %s\n", events.c_str());
+    return false;
+}
+
+// Ignore carrier relocation while checking source-owner cleanup and observation order.
+inline auto matches_value_lifetime(std::string_view expected) noexcept -> bool {
+    auto selected = std::string();
+    for (auto first = std::size_t {0}; first < events.size();) {
+        const auto end = events.find(' ', first);
+        if (events[first] != 'm' && events[first] != 's') {
+            selected.append(events, first, end - first + 1);
+        }
+        first = end + 1;
+    }
+    if (selected == expected) {
+        return true;
+    }
+    std::fprintf(stderr, "tail outcome lifetime events: %s\n", selected.c_str());
     return false;
 }
 

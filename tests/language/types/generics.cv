@@ -35,6 +35,13 @@ private enum NestedChoice<T, U> {
     Many(Vector<T>),
 }
 
+private const fn make_case<T>(&&value: T) -> Maybe<T> => .Some(&&value);
+
+private const fn has_case<T>(value: Maybe<T>) -> bool => match value {
+    .None => false,
+    .Some(_) => true,
+};
+
 private const fn maybe_number(value: Maybe<i32>) -> i32 => match value {
     .None => 0,
     .Some(number) => number,
@@ -55,6 +62,15 @@ const test "Generics: concrete construction and payload matching share static se
     check(maybe_number(Maybe<i32>::Some(box.value)) == 42);
     check(maybe_number(Maybe<i32>::None) == 0);
     check(Maybe<i32>::Some(42) == Maybe<i32>::Some(42));
+    let text: String = "owned";
+    let moved = make_case(&&text);
+    check(has_case(moved));
+    match moved {
+        .None => check(false),
+        .Some(value) => check(value.as_str() == "owned"),
+    }
+    let empty: Maybe<String> = .None;
+    check(!has_case(empty));
 }
 
 test "Generics: owned concrete fields copy and transfer using ordinary value semantics" {

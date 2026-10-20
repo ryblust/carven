@@ -2,6 +2,9 @@ module carven:semantic.analysis.constant.freeze.impl;
 
 import :semantic.analysis.constant.freeze;
 import :semantic.evaluation.limits;
+import :semantic.evaluation.value;
+import :semantic.semir.constant;
+import :semantic.semir.type;
 import std;
 
 namespace {
@@ -12,6 +15,37 @@ auto freeze_value(
     std::size_t depth,
     std::size_t& slots
 ) noexcept -> std::optional<ConstantID> {
+    if (const auto* bytes = std::get_if<ExecutionBytes>(&value)) {
+        const auto* type = std::get_if<TypeID>(&bytes->type);
+        if (!type
+            || bytes->element != draft.builtin_type(BuiltinType::U8)
+            || bytes->bytes.capacity() > maximum_constant_bytes
+            || (!bytes->bytes.empty() && depth >= maximum_constant_aggregate_depth)) {
+            return std::nullopt;
+        }
+        const auto canonical = draft.type_copy(*type);
+        const auto* vector = std::get_if<VectorTypeValue>(&canonical.value);
+        const auto* slice = std::get_if<SliceTypeValue>(&canonical.value);
+        if ((!vector && !slice) || (vector ? vector->element : slice->element) != bytes->element) {
+            return std::nullopt;
+        }
+        return draft.intern_constant({
+            .type = *type,
+            .value = ByteSequenceConstant {
+                .bytes = std::vector(bytes->bytes.begin(), bytes->bytes.end()),
+                .capacity = vector ? bytes->bytes.capacity() : bytes->bytes.size(),
+            },
+        });
+    }
+    if (const auto* constant = std::get_if<ConstantID>(&value)) {
+        const auto& fact = draft.constant(*constant);
+        if (const auto* bytes = std::get_if<ByteSequenceConstant>(&fact.value)) {
+            return bytes->capacity <= maximum_constant_bytes
+                    && (bytes->bytes.empty() || depth < maximum_constant_aggregate_depth)
+                ? std::optional(*constant)
+                : std::nullopt;
+        }
+    }
     if (const auto compound = execution_compound_view(draft, value)) {
         if (depth >= maximum_constant_aggregate_depth
             || compound->size() > maximum_constant_aggregate_elements - slots) {

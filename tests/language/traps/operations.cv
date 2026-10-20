@@ -1,6 +1,6 @@
 import "native.hpp";
 
-private import(cpp) fn invalid_scalar() -> char;
+private import(cpp) fn invalid_scalar() -> char = ::invalid_scalar;
 
 export(cpp) fn divide(value: i32) {
     let _ = 1 / value;

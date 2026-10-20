@@ -1,4 +1,4 @@
-import std::core using { i32 as Count, NumberParseError as InvalidNumber };
+import std::core using { i32 as Count, NumberParseError as InvalidNumber }
 
 const forward_value = forward()?;
 

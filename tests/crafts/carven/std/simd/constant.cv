@@ -5,7 +5,7 @@ import .bytes using {
     verify_ascii_prefix,
     verify_shifts_and_first,
     verify_shift,
-};
+}
 
 import .floats using verify_floats;
 
@@ -15,9 +15,9 @@ import .primitives using {
     verify_lookup_indices,
     verify_mask_counts,
     verify_byte_sums,
-};
+}
 
-import std::simd.scan using { byte_range, match_set, count_where, find_from, prefix_where };
+import std::simd.scan using { byte_range, match_set, count_where, find_from, prefix_where }
 
 const digits = byte_range(0x30, 0x39);
 

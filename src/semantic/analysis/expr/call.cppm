@@ -31,6 +31,14 @@ auto interpret_call(
                std::get_if<ASTGroupExpr>(&site.syntax().expression(callee_id).value)) {
         callee_id = group->expression;
     }
+    const auto* application =
+        std::get_if<ASTTypeApplicationExpr>(&site.syntax().expression(callee_id).value);
+    if (application
+        && std::holds_alternative<ASTMemberExpr>(
+            site.syntax().expression(application->operand_id).value
+        )) {
+        callee_id = application->operand_id;
+    }
     const auto& callee = site.syntax().expression(callee_id);
     if (const auto* contextual = std::get_if<ASTContextualCaseExpr>(&callee.value)) {
         auto type = expected_expression_enum(site, expected, contextual->name_span);
@@ -49,6 +57,13 @@ auto interpret_call(
     }
     if (const auto* member = std::get_if<ASTMemberExpr>(&callee.value)) {
         if (member->op == ASTMemberOperator::Scope) {
+            auto native = site.native_qualified_reference(*member, callee.span);
+            if (!native) {
+                co_return std::unexpected(native.error());
+            }
+            if (*native) {
+                co_return co_await site.call(source, span, std::move(**native));
+            }
             auto type = (co_await site.resolve_type_qualifier(member->operand_id));
             if (!type.has_value()) {
                 co_return std::unexpected(type.error());
@@ -59,6 +74,9 @@ auto interpret_call(
                 );
             }
             if (site.external(**type)) {
+                co_return co_await site.call(source, span);
+            }
+            if (application && !record_shape(site.draft(), **type)) {
                 co_return co_await site.call(source, span);
             }
             if (const auto shape = sequence_shape(site.draft(), **type);
@@ -73,6 +91,20 @@ auto interpret_call(
                     name,
                     source.arguments,
                     span
+                );
+            }
+            if (const auto structure = record_shape(site.draft(), **type)) {
+                co_return co_await site.associated_call(source, *member, structure->owner, span);
+            }
+            if (enum_owner(site.draft(), **type)) {
+                co_return co_await interpret_enum_case(
+                    site,
+                    **type,
+                    site.spelling(member->name_span),
+                    member->name_span,
+                    source.arguments,
+                    span,
+                    true
                 );
             }
             const auto concrete = site.draft().try_canonicalize_declared_type(**type);
@@ -147,9 +179,6 @@ auto interpret_call(
                     span
                 );
             }
-            if (const auto* record = std::get_if<StructTypeValue>(&canonical.value)) {
-                co_return co_await site.associated_call(source, *member, record->structure, span);
-            }
             co_return (co_await interpret_enum_case(
                 site,
                 *concrete,
@@ -163,6 +192,9 @@ auto interpret_call(
         auto operand = (co_await site.read(member->operand_id, std::nullopt));
         if (!operand.has_value()) {
             co_return std::unexpected(operand.error());
+        }
+        if (application) {
+            co_return co_await site.member_call(source, *member, std::move(*operand), span);
         }
         const auto floating = decide_float_method(
             site.draft(),

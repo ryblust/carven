@@ -24,5 +24,6 @@ auto emit(
         .source_mapping = source_mapping,
         .source_path = std::nullopt,
         .content = std::move(content),
+        .link_dependencies = std::ranges::to<std::vector>(unit.link_dependencies()),
     };
 }

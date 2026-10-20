@@ -51,7 +51,8 @@ auto OwnershipBodyAnalyzer::conditional(const SemIf& value, OwnershipState state
         }
         const auto truth = known_boolean(program, branch.condition);
         if (truth != false) {
-            auto selected = co_await region(branch.body, remaining->state, true);
+            auto branch_state = truth == true ? std::move(remaining->state) : remaining->state;
+            auto selected = co_await region(branch.body, std::move(branch_state), true);
             join_normal_ownership(result.normal, std::move(selected.normal));
             append_ownership_exits(result, selected);
         }
@@ -164,7 +165,7 @@ auto OwnershipBodyAnalyzer::pattern_condition(
         join_normal_ownership(destination, source);
     };
     co_return (co_await analyze_pattern_condition(
-        program,
+        analysis.model,
         body,
         id,
         bounds,
@@ -462,8 +463,7 @@ auto OwnershipBodyAnalyzer::loop(const SemLoop& value, OwnershipState state) noe
     if (!result.normal.has_value()) {
         co_return result;
     }
-    const auto entry = std::move(result.normal->state);
-    auto header = entry;
+    auto header = std::move(result.normal->state);
     const auto previous_feedback = feedback_origin;
     feedback_origin = value.body->origin;
     const auto iterate = [&](OwnershipState input) noexcept -> ContinuationTask<OwnershipFlow> {
@@ -608,8 +608,7 @@ auto OwnershipBodyAnalyzer::range(const SemRangeLoop& value, OwnershipState stat
                && !elements.empty()) {
         selected_storage.emplace(*value.binding, elements);
     }
-    const auto entry = std::move(result.normal->state);
-    auto header = entry;
+    auto entry = std::move(result.normal->state);
     const auto previous_feedback = feedback_origin;
     feedback_origin = value.body->origin;
     auto initial_elements = OwnershipRelationships {};
@@ -630,6 +629,7 @@ auto OwnershipBodyAnalyzer::range(const SemRangeLoop& value, OwnershipState stat
         initial_elements =
             project_relationships(result.normal->value, OwnershipProjectionPath {std::nullopt});
     }
+    auto header = std::move(entry);
     const auto iterate = [&](OwnershipState input) noexcept -> ContinuationTask<OwnershipFlow> {
         if (value.binding.has_value() && value.access != AccessMode::Write && !borrowed) {
             auto relationships = elements.empty() ? initial_elements : OwnershipRelationships {};

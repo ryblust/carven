@@ -49,6 +49,14 @@ Explain consequential choices where they are introduced. Label unsettled syntax
 and candidates, including examples. State compatibility requirements only for
 interfaces covered by the design.
 
+Identify builtin contracts, compiler knowledge, Runtime Craft mechanisms, and
+Standard Craft declarations, algorithms, or policy where they affect ownership.
+These responsibilities can contribute to the same API. State which facts need
+public expression and who may supply evidence. Put general mechanisms behind
+the consumers that require them, with the contract supplied by each dependency.
+Separate the first delivery from exploratory extensions and retain the examples
+and decision criteria needed to evaluate those extensions.
+
 ## Decision record
 
 Use stable identifiers for consequential accepted choices. Keep the complete

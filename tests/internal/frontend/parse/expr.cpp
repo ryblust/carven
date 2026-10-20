@@ -451,6 +451,9 @@ const TestSuite suite([] static noexcept {
             expect(!empty.type.has_value());
             expect(std::holds_alternative<std::monostate>(empty.initializer.value));
             check_invalid("fn f() { let value: Pair = { 1, 2 }; }");
+            check_invalid("fn f() { let value = Pair { ..., first: 1 }; }");
+            check_invalid("fn f() { let value = Pair { first: 1, ..., ... }; }");
+            check_invalid("fn f() { let value = Pair { 1, ... }; }");
         };
 
     "Parser expression: type applications preserve callee and associated type arguments"_test =

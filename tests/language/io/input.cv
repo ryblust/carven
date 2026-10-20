@@ -1,15 +1,15 @@
-import std::io using { Read, IOError, stdin as input };
-import std::async using close;
 import .utf_errors using verify_utf_errors;
+import std::async using close;
+import std::io using { ReadResult, IOError, stdin as input }
 import "io/pipe.hpp";
 
-private import(cpp) fn io_test_open_pipe();
-private import(cpp) fn io_test_invalidate_input();
-private import(cpp) fn io_test_write(bytes: [u8]);
-private import(cpp) fn io_test_close_pipe();
-private import(cpp) async fn io_test_wait_consumed();
+private import(cpp) fn io_test_open_pipe() = ::io_test_open_pipe;
+private import(cpp) fn io_test_invalidate_input() = ::io_test_invalidate_input;
+private import(cpp) fn io_test_write(bytes: [u8]) = ::io_test_write;
+private import(cpp) fn io_test_close_pipe() = ::io_test_close_pipe;
+private import(cpp) async fn io_test_wait_consumed() = ::io_test_wait_consumed;
 
-private fn expect_bytes(result: Read<Vector<u8>>, expected: [u8]) {
+private fn expect_bytes(result: ReadResult<Vector<u8>>, expected: [u8]) {
     match result {
         .Data(bytes) => {
             assert(bytes.length() == expected.length());
@@ -21,14 +21,14 @@ private fn expect_bytes(result: Read<Vector<u8>>, expected: [u8]) {
     }
 }
 
-private fn expect_end(result: Read<Vector<u8>>) {
+private fn expect_end(result: ReadResult<Vector<u8>>) {
     match result {
         .End => {},
         .Data(_) => assert(false)
     }
 }
 
-export async fn run_input(&&name: String) throw IOError {
+async fn run_input(&&name: String) throw IOError {
     match name.as_str() {
         "utf-errors" => await verify_utf_errors()?,
         "lines" => {

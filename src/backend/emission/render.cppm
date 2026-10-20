@@ -67,7 +67,7 @@ private:
     auto concat(std::initializer_list<LayoutNodeID> children) noexcept -> LayoutNodeID;
     auto choice(std::initializer_list<LayoutNodeID> alternatives) noexcept -> LayoutNodeID;
 
-    auto stack(std::span<const LayoutNodeID> children, std::size_t blank_lines = 0) noexcept
+    auto stack(std::span<const LayoutNodeID> children, std::size_t blank_lines) noexcept
         -> LayoutNodeID;
 
     auto delimited_sequence(
@@ -113,17 +113,15 @@ private:
         LayoutNodeID name,
         std::span<const TargetParameter> parameters,
         LayoutNodeID result,
-        bool const_qualified = false
+        bool const_qualified
     ) noexcept -> LayoutNodeID;
 
     auto render_trailing_return(LayoutNodeID result, bool const_qualified) noexcept -> LayoutNodeID;
 
-    auto render_type(TargetTypeID id, bool constant = false) noexcept -> LayoutNodeID;
+    auto render_type(TargetTypeID id, bool constant) noexcept -> LayoutNodeID;
 
-    auto render_expression(
-        const TargetExpr& expression,
-        TargetPrecedence parent = TargetPrecedence::Lowest
-    ) noexcept -> LayoutNodeID;
+    auto render_expression(const TargetExpr& expression, TargetPrecedence parent) noexcept
+        -> LayoutNodeID;
 
     auto render_statement(const TargetStmt& statement) noexcept -> LayoutNodeID;
     auto render_for_initializer(const TargetForInitializer& value) noexcept -> LayoutNodeID;

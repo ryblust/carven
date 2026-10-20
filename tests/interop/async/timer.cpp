@@ -84,6 +84,35 @@ auto cold() noexcept -> void {
     balanced(timers);
 }
 
+// Completion is already available, but delivery belongs to the driver's poll.
+class Ready final : public async::EventSource {
+    async::ResumeContinuation continuation;
+
+public:
+    auto await_ready() const noexcept -> bool { return false; }
+
+    template<typename Promise>
+    auto await_suspend(std::coroutine_handle<Promise> handle) noexcept -> void {
+        continuation.bind(handle);
+        continuation.driver().attach(*this);
+    }
+
+    auto await_resume() const noexcept -> async::Completion<void> {
+        return async::Completion<void>::success();
+    }
+
+    auto poll(async::Driver& driver) noexcept -> void override {
+        driver.detach(*this);
+        continuation.enqueue(driver);
+    }
+
+    auto wait(std::optional<std::int64_t>) noexcept -> bool override { return false; }
+};
+
+auto polled() noexcept -> async::AsyncOperation<void> {
+    co_return co_await Ready {};
+}
+
 auto immediate() noexcept -> void {
     for (const auto delay : {0ms, -1ms}) {
         auto timers = TimerQueue();
@@ -95,6 +124,59 @@ auto immediate() noexcept -> void {
         );
         balanced(timers);
     }
+    auto completion = async::drive_root(polled());
+    check(completion.success_if() != nullptr, "ready provider completes without a blocking wait");
+}
+
+class DeadlineCompletion final : public async::EventSource {
+    async::ResumeContinuation continuation;
+    bool ready = false;
+
+public:
+    auto await_ready() const noexcept -> bool { return false; }
+
+    template<typename Promise>
+    auto await_suspend(std::coroutine_handle<Promise> handle) noexcept -> void {
+        continuation.bind(handle);
+        continuation.driver().attach(*this);
+    }
+
+    auto await_resume() const noexcept -> async::Completion<void> {
+        return async::Completion<void>::success();
+    }
+
+    auto poll(async::Driver& driver) noexcept -> void override {
+        if (ready) {
+            driver.detach(*this);
+            continuation.enqueue(driver);
+        }
+    }
+
+    auto wait(std::optional<std::int64_t> deadline) noexcept -> bool override {
+        check(deadline == 0, "root forwards its owner's earlier wait deadline");
+        ready = true;
+        return true;
+    }
+};
+
+auto deadline_completion() noexcept -> async::AsyncOperation<void> {
+    co_return co_await DeadlineCompletion {};
+}
+
+auto external_deadline() noexcept -> void {
+    auto root = async::Root(deadline_completion());
+    auto progress = root.advance();
+    while (progress == async::Progress::Runnable) {
+        progress = root.advance();
+    }
+    check(progress == async::Progress::Waiting, "provider waits for owner observation");
+    check(root.wait(0), "root delegates waiting to its active provider");
+    progress = root.advance();
+    while (progress == async::Progress::Runnable) {
+        progress = root.advance();
+    }
+    check(progress == async::Progress::Complete, "provider completion is dispatched after waiting");
+    check(root.take_completion().success_if() != nullptr, "waiting preserves root completion");
 }
 
 // Delay the first provider poll until the driver is idle. This establishes a
@@ -471,6 +553,7 @@ auto run_timer_cases() noexcept -> void {
     for (const auto& test : {
              std::pair {"cold", cold},
              std::pair {"immediate", immediate},
+             std::pair {"external-deadline", external_deadline},
              std::pair {"future", future},
              std::pair {"siblings", siblings},
              std::pair {"pre-cancel", pre_cancel},

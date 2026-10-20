@@ -47,7 +47,8 @@ auto plan_target_directives(
         ordered.push_back({.header = header, .group = group});
     }
     std::ranges::sort(ordered, [](const auto& left, const auto& right) static noexcept {
-        return left.group == right.group ? left.header < right.header : left.group < right.group;
+        return std::tie(left.group, left.header.path, left.header.delimiter)
+            < std::tie(right.group, right.header.path, right.header.delimiter);
     });
 
     auto result = std::vector<TargetDirectiveGroup>();
@@ -78,8 +79,7 @@ auto plan_target_directives(
         });
     }
     for (const auto group : {
-             TargetHeaderGroup::Runtime,
-             TargetHeaderGroup::Generated,
+             TargetHeaderGroup::Project,
              TargetHeaderGroup::StandardLibrary,
          }) {
         append_requirements(group);

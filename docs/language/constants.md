@@ -237,6 +237,13 @@ or starting the operation performs the read or wait. Cold operations remain loca
 execution values and cannot be frozen as module constants. Results and failures
 follow the ordinary retention and typed failure rules.
 
+Standard filesystem, process, and compiler operations marked `const fn` also
+execute through the compiler host. They observe its working directory and
+environment and perform their effects in the selected stage. Native handles and
+intermediate result objects can remain local to execution; they cannot be frozen
+as constants. Analysis that permits host effects records their execution as
+uncacheable. Type dependency queries reject host observations.
+
 Host effects already completed remain observable after a later static failure.
 Execution budgets bound steps, text, and aggregate work. They do not impose an
 elapsed-time limit on input or waiting. Ordinary runtime calls use the program's
@@ -283,7 +290,7 @@ independent copies, Read and Write iteration, whole-binding Take, and function
 parameters and results.
 Vectors support empty and literal construction, copying from slices, checked
 indexing, Read and Write iteration, independent copies, whole-owner Take, borrowed
-slicing, and `length`, `is_empty`, `push`, `remove`, and `clear`. Removal returns
+slicing, and `length`, `is_empty`, `push`, `append`, `remove`, and `clear`. Removal returns
 the extracted owner. Capacity construction, queries, and reservation are also
 available. Capacity is logical execution state, independent of host allocation.
 Completed vectors preserve contents and capacity; nested String and Vector

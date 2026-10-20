@@ -43,6 +43,10 @@ auto ProgramDraft::check_generic_type_formations(
     std::span<const GenericArgument> arguments,
     ProgramOriginID origin
 ) noexcept -> AnalysisResult<TypeFormationClosure> {
+    auto bounds = check_generic_bounds(definition, arguments, origin);
+    if (!bounds) {
+        return std::unexpected(bounds.error());
+    }
     auto finite = validate_generic_definitions(definition);
     if (!finite) {
         return std::unexpected(finite.error());

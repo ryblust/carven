@@ -1,3 +1,5 @@
+import "bindings/values.hpp";
+import <string>;
 import <vector> using std::vector;
 
 fn create() -> vector<i32> => vector<i32> { 1, 2, 3 };
@@ -37,4 +39,26 @@ fn entries() -> Entries => { values: vector<Entry> { Entry { value: 11 } } };
 test "External owners in structure fields retain Carven template dependencies" {
     let result = entries();
     check(result.values[0].value == 11);
+}
+
+struct NativeValues {
+    texts: Vector<::std::string>,
+    references: Vector<::native_values::Ref>,
+}
+
+export(cpp) fn copy_native_values(values: NativeValues) -> NativeValues => values;
+
+test "Vector native leaves preserve value copies and object identity" {
+    var original = NativeValues {
+        texts: {},
+        references: {}
+    };
+    original.texts.push(::std::string { c"before" });
+    original.references.push(::native_values::reference());
+    let copied = copy_native_values(original);
+    original.texts[0].clear();
+    check(copied.texts[0].size() as usize == 6usize);
+    check(original.texts[0].empty() as bool);
+    check(copied.references[0].same_object(original.references[0]) as bool);
+    check(copied.references[0].alive() as bool);
 }

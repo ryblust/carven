@@ -51,6 +51,13 @@ auto compute_equality_capabilities(
                 for (const auto element : tuple->elements) {
                     depend(element);
                 }
+            } else if (const auto* parameter = std::get_if<GenericTypeParameter>(&expression)) {
+                const auto contract =
+                    draft.generic_declaration_contract_copy(parameter->definition);
+                supported[index] = std::ranges::contains(
+                    contract.parameter_bounds[parameter->index],
+                    BuiltinCapability::Equal
+                );
             } else {
                 supported[index] = std::holds_alternative<GenericPointerType>(expression);
             }
@@ -140,6 +147,49 @@ auto compute_equality_capabilities(
 }
 
 } // namespace
+
+auto type_satisfies_capability(
+    const ProgramDraft& draft,
+    ConstructionTypeRef type,
+    BuiltinCapability capability
+) noexcept -> bool {
+    if (capability == BuiltinCapability::Equal) {
+        return type_supports_equality(draft, type);
+    }
+    type = unwrap_type_alias(draft, type);
+    const auto child = [&](ConstructionTypeRef element) noexcept {
+        return type_satisfies_capability(draft, element, capability);
+    };
+    if (const auto* generic = std::get_if<GenericTypeID>(&type)) {
+        const auto shape = draft.generic_type_copy(*generic);
+        if (const auto* parameter = std::get_if<GenericTypeParameter>(&shape)) {
+            const auto contract = draft.generic_declaration_contract_copy(parameter->definition);
+            return std::ranges::contains(contract.parameter_bounds[parameter->index], capability);
+        }
+        if (const auto* concrete = std::get_if<TypeID>(&shape)) {
+            return child(*concrete);
+        }
+        if (const auto* array = std::get_if<GenericArrayType>(&shape)) {
+            return child(array->element);
+        }
+        if (const auto* tuple = std::get_if<GenericTupleType>(&shape)) {
+            return std::ranges::all_of(tuple->elements, child);
+        }
+        return false;
+    }
+    if (const auto* term = std::get_if<TypeTermID>(&type)) {
+        const auto shape = draft.construction_type_copy(*term);
+        if (const auto* array = std::get_if<ConstructionArrayTypeValue>(&shape.value)) {
+            return child(array->element);
+        }
+        if (const auto* tuple = std::get_if<ConstructionTupleTypeValue>(&shape.value)) {
+            return std::ranges::all_of(tuple->elements, child);
+        }
+        return false;
+    }
+    const auto shape = draft.type_copy(std::get<TypeID>(type));
+    return hash_type_support(shape, child);
+}
 
 auto ProgramDraft::equality_support(std::span<const ConstructionTypeRef> roots) const noexcept
     -> std::vector<bool> {

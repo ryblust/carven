@@ -6,7 +6,8 @@ import "lifetimes/tail_outcomes.hpp" using tail_outcome_probe::{
     Tracked,
     reset,
     matches,
-};
+    matches_value_lifetime,
+}
 
 private struct Failure {}
 
@@ -81,10 +82,10 @@ private fn retained_native_result(reject: bool) {
     }
 }
 
-test "Failure receivers: delivered native success and its source have distinct lifetimes" {
+test "Failure receivers: delivered native success follows its binding lifetime" {
     reset();
     retained_native_result(false);
-    check(matches("G1 c5 m5 s-5 H9 r5 H10 d5 g1 "));
+    check(matches_value_lifetime("G1 c5 H9 r5 H10 d5 g1 "));
 
     reset();
     retained_native_result(true);
@@ -118,11 +119,12 @@ test "Failure receivers: native self addresses distinguish observation from sour
     };
     check(direct);
 
-    let copied = try {
+    let retained = try {
         let value = self_result()?;
-        value.at_construction_address() as bool
+        let copied = value;
+        value.at_construction_address() as bool && !(copied.at_construction_address() as bool)
     } catch {
         Failure(_) => false,
     };
-    check(!copied);
+    check(retained);
 }

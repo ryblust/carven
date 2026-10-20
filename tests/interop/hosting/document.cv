@@ -1,0 +1,14 @@
+private import(cpp) fn read() -> String;
+private import(cpp) fn publish(text: String);
+private import(cpp) async fn fetch(&&text: String) -> String;
+
+fn changed(revision: i32) {
+    let text = read();
+    publish(f"old {revision}: {text}");
+}
+
+async fn refresh() {
+    let text = read();
+    let response = await fetch(&&text);
+    publish(f"old fetch: {response}");
+}

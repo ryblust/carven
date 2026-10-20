@@ -1,18 +1,8 @@
 #pragma once
 
-#include <carven/runtime/display/display.hpp>
-
-#include <cstddef>
 #include <cstdio>
 #include <exception>
-#include <functional>
 #include <string_view>
-#include <type_traits>
-#include <version>
-
-#if defined(__cpp_lib_print) && __cpp_lib_print >= 202207l
-#include <print>
-#endif
 
 namespace carven::runtime {
 
@@ -24,42 +14,12 @@ inline auto print_bytes(std::FILE* stream, std::string_view text) noexcept -> vo
     }
 }
 
-template<typename T>
-auto print_value(std::FILE* stream, const T& value) noexcept -> void {
-#if defined(__cpp_lib_print) && __cpp_lib_print >= 202207l
-    std::print(stream, "{}", carven::runtime::format_argument(value));
-#else
-    if constexpr (std::is_same_v<T, std::string_view>) {
-        print_bytes(stream, value);
-    } else if constexpr (std::is_same_v<T, String>) {
-        print_bytes(stream, value.as_str());
-    } else {
-        print_bytes(stream, std::format("{}", carven::runtime::format_argument(value)));
-    }
-#endif
-}
-
-template<typename T, typename Emit>
-auto print_value(std::FILE* stream, const StructuralDisplay<T, Emit>& value) noexcept -> void {
-    if constexpr (std::is_same_v<T, const char*> || std::is_same_v<T, char*>) {
-        // Top-level text is verbatim and is not bounded by structural display limits.
-        detail::print_value(
-            stream,
-            std::string_view(value.value == nullptr ? "nullptr" : value.value)
-        );
-    } else {
-        auto writer = DisplayWriter();
-        std::invoke(value.emit, writer, value.value, std::size_t {0});
-        detail::print_value(stream, writer.result());
-    }
-}
-
 template<bool Newline, typename First, typename... Rest>
 auto print_values(std::FILE* stream, const First& first, const Rest&... rest) noexcept -> void {
-    detail::print_value(stream, first);
-    ((detail::print_value(stream, std::string_view(" ")), detail::print_value(stream, rest)), ...);
+    detail::print_bytes(stream, first);
+    ((detail::print_bytes(stream, " "), detail::print_bytes(stream, rest)), ...);
     if constexpr (Newline) {
-        detail::print_value(stream, std::string_view("\n"));
+        detail::print_bytes(stream, "\n");
     }
 }
 

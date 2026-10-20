@@ -22,7 +22,7 @@ struct WorkspaceProjectModule final {
 };
 
 struct WorkspaceSemanticInput final {
-    WorkspaceProjectModule module;
+    WorkspaceProjectModule project_module;
     // A missing document remains an explicit input error.
     std::shared_ptr<const SourceDocument> source;
     std::shared_ptr<const ParsedDocument> parsed;

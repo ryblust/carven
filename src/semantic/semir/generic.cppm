@@ -68,6 +68,13 @@ struct GenericOperationType final {
     auto operator<=>(const GenericOperationType&) const noexcept = default;
 };
 
+struct GenericCallableViewType final {
+    std::vector<ConstructionCallableParameter> parameters;
+    ConstructionTypeRef result;
+    ConstructionFailureRef failures;
+    auto operator<=>(const GenericCallableViewType&) const noexcept = default;
+};
+
 struct GenericNominalApplication final {
     GenericDeclarationID definition;
     GenericEnvironment arguments;
@@ -91,6 +98,7 @@ using GenericTypeExpression = std::variant<
     GenericVectorType,
     GenericPointerType,
     GenericOperationType,
+    GenericCallableViewType,
     GenericNominalApplication,
     GenericCppNamedType,
     GenericCppQueryType>;
@@ -114,6 +122,11 @@ auto visit_generic_type_children(const GenericTypeExpression& type, Visitor&& vi
             visitor(shape.target);
         } else if constexpr (std::same_as<Shape, GenericOperationType>) {
             visitor(shape.success);
+        } else if constexpr (std::same_as<Shape, GenericCallableViewType>) {
+            for (const auto& parameter : shape.parameters) {
+                visitor(parameter.type);
+            }
+            visitor(shape.result);
         } else if constexpr (std::same_as<Shape, GenericCppNamedType>) {
             for (const auto argument : shape.arguments) {
                 visitor(argument);
@@ -160,6 +173,8 @@ struct GenericAudienceDependency final {
 };
 
 enum class GenericParameterKind { Type, FailureSet };
+
+enum class BuiltinCapability { Hash, Equal };
 
 template<typename Argument>
 auto generic_argument_kind(const Argument& argument) noexcept -> GenericParameterKind {
@@ -212,6 +227,7 @@ struct GenericDeclarationContract final {
     std::vector<ProgramSpellingID> parameters;
     std::vector<GenericAudienceDependency> audience_dependencies;
     std::vector<GenericParameterKind> parameter_kinds;
+    std::vector<std::vector<BuiltinCapability>> parameter_bounds;
     GenericImplementationDependencies implementation_dependencies;
 };
 

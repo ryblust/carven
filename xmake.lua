@@ -84,6 +84,11 @@ target("carven-modules")
     set_kind("moduleonly")
     add_files("src/**.cppm")
     add_files("src/**.cpp|carven.cpp")
+    add_files("crafts/carven/std/**.cpp")
+    add_includedirs("include", "crafts", {public = true})
+    if is_plat("windows", "mingw") then
+        add_syslinks("ws2_32", {public = true})
+    end
 target_end()
 
 target("carven")

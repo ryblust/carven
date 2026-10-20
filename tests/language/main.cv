@@ -3,9 +3,9 @@ import .async.core using run_core;
 import .io.input using run_input;
 import .time.sleep using run_sleep;
 import .time.timeout using run_timeout;
-import std::time using RangeError;
+import std::time using TimeRangeError;
 
-async fn main(args) -> i32 throw RangeError {
+async fn main(args) -> i32 throw TimeRangeError {
     if !args.is_empty() {
         assert(args.length() == 3);
         try {

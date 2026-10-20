@@ -25,7 +25,7 @@ template<typename Result>
 auto checked_artifacts(Result result, const SourceManager& sources) noexcept
     -> GeneratedArtifactSet {
     require(result.has_value()).note([&] noexcept {
-        return render_diagnostics(result.error(), sources);
+        return render_diagnostics(result.error(), sources, false);
     });
     return std::move(result->value);
 }
@@ -109,8 +109,11 @@ const TestSuite suite([] static noexcept {
     "Compiler manifest: generation ownership is projected for build consumers"_test =
         [] static noexcept {
             constexpr auto inputs = std::array {
-                CompilationManifestInput {.path = "app.cv", .module = "app"},
-                CompilationManifestInput {.path = "/sdk/std.cv", .module = "crafts.carven.std"},
+                CompilationManifestInput {.path = "app.cv", .module_path = "app"},
+                CompilationManifestInput {
+                    .path = "/sdk/std.cv",
+                    .module_path = "crafts.carven.std"
+                },
             };
             constexpr auto owned = std::array {std::string_view("app")};
             constexpr auto standard = std::array {std::string_view("crafts.carven.std")};
@@ -121,12 +124,14 @@ const TestSuite suite([] static noexcept {
                 1uz,
                 false,
                 owned,
+                standard,
                 standard
             );
             expect(manifest.contains("\"cacheable\": false"));
             expect(manifest.contains("\"module\": \"app\", \"owned\": true, \"standard\": false"));
             expect(manifest.contains(
-                "\"module\": \"crafts.carven.std\", \"owned\": false, \"standard\": true"
+                "\"module\": \"crafts.carven.std\", \"owned\": false, \"standard\": true, "
+                "\"external\": true"
             ));
         };
 
@@ -135,7 +140,7 @@ const TestSuite suite([] static noexcept {
             constexpr auto inputs = std::array {
                 CompilationManifestInput {
                     .path = "directory/雪\t\"\\.cv",
-                    .module = "nested.source"
+                    .module_path = "nested.source"
                 },
             };
             const auto manifest = format_compilation_manifest(
@@ -147,9 +152,11 @@ const TestSuite suite([] static noexcept {
                     .source_mapping = ArtifactSourceMappingPolicy::SourceAttributed,
                     .source_path = std::string(inputs.front().path),
                     .content = {},
+                    .link_dependencies = {},
                 }}),
                 0uz,
                 true,
+                {},
                 {},
                 {}
             );
@@ -159,7 +166,7 @@ const TestSuite suite([] static noexcept {
 
     "Compiler generation: source libraries reject invalid selections and declarations"_test =
         [] static noexcept {
-            const auto module = *CanonicalModulePath::from_value("library");
+            const auto module_path = *CanonicalModulePath::from_value("library");
             const auto check = [&](std::string_view source,
                                    std::vector<CanonicalModulePath> modules,
                                    std::string_view error) noexcept {
@@ -167,7 +174,7 @@ const TestSuite suite([] static noexcept {
                 const auto source_id = sources.append_virtual("library.cv", std::string(source));
                 require(source_id.has_value());
                 const auto input =
-                    SourceModuleInput {.source_id = *source_id, .module_path = module};
+                    SourceModuleInput {.source_id = *source_id, .module_path = module_path};
                 const auto semantic = analyze_compilation(
                     std::move(sources),
                     SourceBatch {.modules = std::span(&input, 1)},
@@ -201,8 +208,69 @@ const TestSuite suite([] static noexcept {
                 {*CanonicalModulePath::from_value("absent")},
                 "unknown"
             );
-            check("fn value() -> i32 => 1;", {module, module}, "duplicate");
-            check("fn main() {}", {module}, "entry point");
+            check("fn value() -> i32 => 1;", {module_path, module_path}, "duplicate");
+            check("fn main() {}", {module_path}, "entry point");
+        };
+
+    "Compiler generation: link dependencies follow emitted calls through generic bodies"_test =
+        [] static noexcept {
+            auto sources = SourceManager();
+            auto inputs = std::vector<SourceModuleInput>();
+            const auto add = [&](std::string_view name, std::string source) noexcept {
+                const auto id =
+                    sources.append_virtual(std::format("{}.cv", name), std::move(source));
+                require(id.has_value());
+                inputs.push_back(
+                    {.source_id = *id, .module_path = *CanonicalModulePath::from_value(name)}
+                );
+            };
+            add("app", R"(import adapter using adapt;
+import types using Value;
+fn main() -> i32 => adapt(Value { value: 1 });
+)");
+            add("adapter", R"(import helper using answer;
+fn adapt<T>(value: T) -> i32 => answer();
+)");
+            add("helper", R"(import leaf using value;
+fn answer() -> i32 => value();
+)");
+            add("leaf", "fn value() -> i32 => 7;");
+            add("types", "struct Value { value: i32 } fn unused() => []() => 0;");
+            add("unused", "struct Unused { value: i32 }");
+            const auto artifacts = checked_artifacts(
+                compile(
+                    sources,
+                    SourceBatch {.modules = inputs},
+                    TargetPlanningRequest {
+                        .test_mode = TestGenerationMode::None,
+                        .linkage_domain = *LinkageDomain::explicit_value("test:link-dependencies"),
+                        .library =
+                            SourceLibrary {
+                                .modules =
+                                    {*CanonicalModulePath::from_value("types"),
+                                     *CanonicalModulePath::from_value("unused")},
+                                .linkage_domain = *LinkageDomain::explicit_value("test:library"),
+                                .owned_modules = {},
+                            },
+                    }
+                ),
+                sources
+            );
+            const auto dependencies = [&](std::string_view path) noexcept -> const auto& {
+                const auto found =
+                    std::ranges::find(artifacts.entries(), path, &GeneratedArtifact::logical_path);
+                require(found != artifacts.entries().end());
+                return found->link_dependencies;
+            };
+            expect(dependencies("app.cpp") == std::vector<std::string> {"helper.cpp"});
+            expect(dependencies("helper.cpp") == std::vector<std::string> {"leaf.cpp"});
+            expect(dependencies("leaf.cpp").empty());
+            expect(
+                std::ranges::none_of(artifacts.entries(), [](const auto& artifact) static noexcept {
+                    return artifact.logical_path.ends_with("/unused.hpp")
+                        || artifact.logical_path == "unused.cpp";
+                })
+            );
         };
 
     "Compiler pipeline: composed and staged compilation preserve artifacts and output"_test =
@@ -297,6 +365,7 @@ const TestSuite suite([] static noexcept {
                  std::views::zip(staged->entries(), repeated->entries())) {
                 expect_equal(left.logical_path, right.logical_path);
                 expect_equal(left.content, right.content);
+                expect(left.link_dependencies == right.link_dependencies);
             }
             expect_equal(composed_output, std::string_view("analysis"));
             expect_equal(staged_output, composed_output);
@@ -321,6 +390,7 @@ const TestSuite suite([] static noexcept {
                 expect(left.source_mapping == right.source_mapping);
                 expect_equal(left.source_path, right.source_path);
                 expect_equal(left.content, right.content);
+                expect(left.link_dependencies == right.link_dependencies);
             }
         };
 

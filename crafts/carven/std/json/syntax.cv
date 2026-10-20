@@ -1,6 +1,6 @@
-import .string using { begin_string, next_string_part };
+import .string using { begin_string, next_string_part, read_string_contents }
 import std::json using JSONError;
-import std::simd.scan using { one_of, byte_range, prefix_end };
+import std::simd.scan using { one_of, byte_range, prefix_end }
 
 enum Expectation: u8 {
     ArrayFirst,
@@ -55,7 +55,7 @@ private const fn read_digits(bytes: [u8], &offset: usize) throw JSONError {
     let end = prefix_end(bytes, offset, digits);
     if end == offset {
         throw JSONError {
-            kind:.InvalidNumber,
+            kind: .InvalidNumber,
             offset: offset
         };
     }
@@ -66,7 +66,7 @@ private const fn read_number(bytes: [u8], &offset: usize) throw JSONError {
     if bytes[offset] == 0x2d { offset += 1; }
     if offset == bytes.length() {
         throw JSONError {
-            kind:.InvalidNumber,
+            kind: .InvalidNumber,
             offset: offset
         };
     }
@@ -74,7 +74,7 @@ private const fn read_number(bytes: [u8], &offset: usize) throw JSONError {
         offset += 1;
         if offset < bytes.length() && bytes[offset] >= 0x30 && bytes[offset] <= 0x39 {
             throw JSONError {
-                kind:.InvalidNumber,
+                kind: .InvalidNumber,
                 offset: offset
             };
         }
@@ -98,13 +98,13 @@ private const fn read_literal(bytes: [u8], &offset: usize, const literal: str) t
     for byte in literal.bytes {
         if offset == bytes.length() {
             throw JSONError {
-                kind:.UnexpectedEnd,
+                kind: .UnexpectedEnd,
                 offset: offset
             };
         }
         if bytes[offset] != byte {
             throw JSONError {
-                kind:.UnexpectedByte,
+                kind: .UnexpectedByte,
                 offset: offset
             };
         }
@@ -129,7 +129,7 @@ const fn next_event(bytes: [u8], &state: SyntaxState) -> SyntaxEvent throw JSONE
         if state.depth == 0 && state.root_done {
             if state.offset != bytes.length() {
                 throw JSONError {
-                    kind:.TrailingInput,
+                    kind: .TrailingInput,
                     offset: state.offset
                 };
             }
@@ -137,7 +137,7 @@ const fn next_event(bytes: [u8], &state: SyntaxState) -> SyntaxEvent throw JSONE
         }
         if state.offset == bytes.length() {
             throw JSONError {
-                kind:.UnexpectedEnd,
+                kind: .UnexpectedEnd,
                 offset: state.offset
             };
         }
@@ -158,7 +158,7 @@ const fn next_event(bytes: [u8], &state: SyntaxState) -> SyntaxEvent throw JSONE
                 .ObjectColon => {
                     if byte != 0x3a {
                         throw JSONError {
-                            kind:.UnexpectedByte,
+                            kind: .UnexpectedByte,
                             offset: state.offset
                         };
                     }
@@ -174,7 +174,7 @@ const fn next_event(bytes: [u8], &state: SyntaxState) -> SyntaxEvent throw JSONE
                     }
                     if byte != 0x2c {
                         throw JSONError {
-                            kind:.UnexpectedByte,
+                            kind: .UnexpectedByte,
                             offset: state.offset
                         };
                     }
@@ -201,7 +201,7 @@ const fn next_event(bytes: [u8], &state: SyntaxState) -> SyntaxEvent throw JSONE
                     }
                     if byte != 0x2c {
                         throw JSONError {
-                            kind:.UnexpectedByte,
+                            kind: .UnexpectedByte,
                             offset: state.offset
                         };
                     }
@@ -217,7 +217,7 @@ const fn next_event(bytes: [u8], &state: SyntaxState) -> SyntaxEvent throw JSONE
             0x7b | 0x5b => {
                 if state.depth == state.frames.length() {
                     throw JSONError {
-                        kind:.DepthLimit,
+                        kind: .DepthLimit,
                         offset: state.offset
                     };
                 }
@@ -249,18 +249,25 @@ const fn next_event(bytes: [u8], &state: SyntaxState) -> SyntaxEvent throw JSONE
                 return .Number(start, state.offset);
             },
             _ => throw JSONError {
-                kind:.UnexpectedByte,
+                kind: .UnexpectedByte,
                 offset: state.offset
             },
         }
     }
 }
 
+// StringBegin has consumed the opening quote and selected its parent continuation.
+const fn read_string(bytes: [u8], &state: SyntaxState) -> String throw JSONError {
+    let result = read_string_contents(bytes, &state.offset)?;
+    state.in_string = false;
+    return &&result;
+}
+
 // Runtime number construction shares the document's number grammar.
 const fn validate_number(bytes: [u8]) throw JSONError {
     if bytes.is_empty() {
         throw JSONError {
-            kind:.InvalidNumber,
+            kind: .InvalidNumber,
             offset: 0
         };
     }
@@ -268,7 +275,7 @@ const fn validate_number(bytes: [u8]) throw JSONError {
     read_number(bytes, &offset)?;
     if offset != bytes.length() {
         throw JSONError {
-            kind:.InvalidNumber,
+            kind: .InvalidNumber,
             offset: offset
         };
     }

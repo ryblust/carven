@@ -1,6 +1,7 @@
 module carven:semantic.evaluation.async.impl;
 
 import :semantic.evaluation.executor;
+import :semantic.evaluation.value;
 import :support.invariant;
 import std;
 
@@ -26,8 +27,7 @@ auto SemanticExecutor::stop(ExecutionFailure failure) noexcept -> ExecutionFailu
     return failure;
 }
 
-auto SemanticExecutor::drive(ExecutionTask<ExecutionValue> operation) noexcept
-    -> ExecutionResult<ExecutionValue> {
+auto SemanticExecutor::begin(ExecutionTask<ExecutionValue> operation) noexcept -> void {
     if (!tasks.empty()) {
         invariant_violation("execution root was started more than once");
     }
@@ -43,26 +43,38 @@ auto SemanticExecutor::drive(ExecutionTask<ExecutionValue> operation) noexcept
             .condition_observation = std::nullopt,
         }
     );
-    auto& root = tasks.back();
+    auto& root = tasks.front();
     root.operation.emplace(std::move(operation));
     root.operation->start(root.loop);
     ready.push_back({.task = &root, .continuation = std::exchange(root.loop.next, {})});
-    while (!root.operation->done() && !stopped) {
+}
+
+auto SemanticExecutor::advance(std::size_t quantum) noexcept -> ExecutionProgress {
+    if (tasks.empty() || result_taken) {
+        invariant_violation("execution advanced outside its active root");
+    }
+    auto& root = tasks.front();
+    while (!root.operation->done() && !stopped && quantum != 0uz) {
         poll_cancellation();
         poll_host();
-        if (ready.empty() && wait_host()) {
-            continue;
+        if (!dispatching) {
+            if (ready.empty()) {
+                return ExecutionProgress::Waiting;
+            }
+            const auto work = ready.front();
+            ready.pop_front();
+            current = work.task;
+            current->loop.next = work.continuation;
+            dispatching = true;
         }
-        if (ready.empty()) {
-            invariant_violation("unfinished execution has no runnable task");
-        }
-        const auto work = ready.front();
-        ready.pop_front();
-        current = work.task;
-        current->loop.next = work.continuation;
-        while (current->loop.next && !stopped) {
+        while (current->loop.next && !stopped && quantum != 0uz) {
             current->loop.resume_one();
+            --quantum;
         }
+        if (current->loop.next && !stopped) {
+            break;
+        }
+        dispatching = false;
         if (!stopped && current->operation->done()) {
             const auto& result = current->operation->result();
             if (!result && fatal(result.error())) {
@@ -82,15 +94,85 @@ auto SemanticExecutor::drive(ExecutionTask<ExecutionValue> operation) noexcept
             }
         }
     }
-    current = &root;
+    if (root.operation->done() || stopped) {
+        return ExecutionProgress::Complete;
+    }
+    return dispatching || !ready.empty() ? ExecutionProgress::Runnable : ExecutionProgress::Waiting;
+}
+
+auto SemanticExecutor::cancel() noexcept -> void {
+    if (!tasks.empty() && !result_taken) {
+        request_cancel(tasks.front());
+    }
+}
+
+auto SemanticExecutor::take_result() noexcept -> ExecutionResult<ExecutionValue> {
+    if (tasks.empty() || result_taken || (!stopped && !tasks.front().operation->done())) {
+        invariant_violation("execution result taken before completion or more than once");
+    }
+    current = &tasks.front();
     auto result = stopped ? ExecutionResult<ExecutionValue>(std::unexpected(*stopped))
-                          : root.operation->take_result();
-    // Fatal execution abandons source cleanup; no budget-free source code runs here.
+                          : current->operation->take_result();
+    // Fatal execution abandons source cleanup. Suspended providers detach while
+    // their frame metadata and the execution memory are still alive.
     ready.clear();
     for (auto& task : tasks) {
         task.operation.reset();
     }
+    dispatching = false;
+    result_taken = true;
     return result;
+}
+
+auto SemanticExecutor::run_until_complete(ProgramOriginID origin) noexcept -> void {
+    while (true) {
+        const auto progress = advance(std::numeric_limits<std::size_t>::max());
+        if (progress == ExecutionProgress::Complete) {
+            return;
+        }
+        if (progress == ExecutionProgress::Waiting && !wait_host()) {
+            static_cast<void>(fail(
+                origin,
+                ExecutionReason::Evaluation,
+                "execution is suspended with no source able to make progress"
+            ));
+            return;
+        }
+    }
+}
+
+auto SemanticExecutor::drive(
+    ExecutionTask<ExecutionValue> operation,
+    ProgramOriginID origin
+) noexcept -> ExecutionResult<ExecutionValue> {
+    begin(std::move(operation));
+    run_until_complete(origin);
+    return take_result();
+}
+
+auto SemanticExecutor::root_call(
+    CallableID callable,
+    std::vector<ExecutionOperand> arguments,
+    ProgramOriginID origin
+) noexcept -> ExecutionTask<ExecutionValue> {
+    for (auto& argument : arguments) {
+        if (auto* owned = std::get_if<ExecutionValue>(&argument)) {
+            auto admitted = admit_host_value(std::move(*owned), origin);
+            if (!admitted) {
+                co_return std::unexpected(std::move(admitted.error()));
+            }
+            *owned = std::move(*admitted);
+        }
+    }
+    co_return co_await call(callable, std::move(arguments), origin);
+}
+
+auto SemanticExecutor::begin_call(
+    CallableID callable,
+    std::vector<ExecutionOperand> arguments,
+    ProgramOriginID origin
+) noexcept -> void {
+    begin(root_call(callable, std::move(arguments), origin));
 }
 
 auto SemanticExecutor::invoke(
@@ -98,18 +180,18 @@ auto SemanticExecutor::invoke(
     std::vector<ExecutionOperand> arguments,
     ProgramOriginID origin
 ) noexcept -> ExecutionTask<ExecutionValue> {
-    co_return drive(call(callable, std::move(arguments), origin));
+    co_return drive(root_call(callable, std::move(arguments), origin), origin);
 }
 
 auto SemanticExecutor::evaluate_root(
     const SemanticExpression& source,
     std::optional<ExecutionBody> body
 ) noexcept -> ExecutionTask<ExecutionValue> {
-    co_return drive(root_expression(source, body));
+    co_return drive(root_expression(source, body), source.origin);
 }
 
 auto SemanticExecutor::evaluate_body(ExecutionBody body) noexcept -> ExecutionTask<void> {
-    auto result = drive(root_body(body));
+    auto result = drive(root_body(body), body.region().origin);
     if (!result) {
         co_return std::unexpected(std::move(result.error()));
     }
@@ -121,7 +203,7 @@ auto SemanticExecutor::evaluate_iteration(
     const ExecutionIterationConsumer& consume,
     std::optional<ExecutionBody> body
 ) noexcept -> ExecutionTask<void> {
-    auto result = drive(root_iteration(source, consume, body));
+    auto result = drive(root_iteration(source, consume, body), source.origin);
     if (!result) {
         co_return std::unexpected(std::move(result.error()));
     }
@@ -299,6 +381,18 @@ auto SemanticExecutor::poll_cancellation() noexcept -> void {
 
 auto SemanticExecutor::consume(ExecutionColdOperation operation, ProgramOriginID origin) noexcept
     -> ExecutionTask<ExecutionValue> {
+    if (auto* external =
+            std::get_if<std::unique_ptr<ExecutionExternalOperation>>(&operation.action)) {
+        auto result = co_await ExternalWait(*this, std::move(*external), origin);
+        if (!result) {
+            if (auto* event = std::get_if<ExecutionEvent>(&result.error())) {
+                co_return std::unexpected(halt(std::move(*event)));
+            }
+            auto* failure = std::get_if<ExecutionFailure>(&result.error());
+            co_return std::unexpected(stop(std::move(*failure)));
+        }
+        co_return admit_host_value(std::move(*result), origin);
+    }
     if (const auto* callable = std::get_if<CallableID>(&operation.action)) {
         co_return co_await call(*callable, std::move(operation.arguments), origin);
     }
@@ -374,7 +468,7 @@ auto SemanticExecutor::start_child(
         .task = std::prev(tasks.end()),
     });
     ready.push_back({.task = &task, .continuation = std::exchange(task.loop.next, {})});
-    co_return ExecutionCompletion {.flow = ExecutionFlow::Normal, .value = ExecutionVoid {}};
+    co_return ExecutionCompletion {.flow = ExecutionFlow::Normal, .value = std::nullopt};
 }
 
 auto SemanticExecutor::observe_child(

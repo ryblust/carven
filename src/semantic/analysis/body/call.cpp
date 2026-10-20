@@ -32,6 +32,24 @@ import :support.unique_indirect;
 import :support.visit;
 import std;
 
+namespace {
+
+auto class_arguments(const ProgramDraft& draft, ConstructionStructRef owner) noexcept
+    -> GenericEnvironment {
+    if (const auto* concrete = std::get_if<StructID>(&owner)) {
+        if (const auto instance = draft.generic_nominal_instance_copy(*concrete)) {
+            return generic_environment(instance->arguments);
+        }
+        return {};
+    }
+    return std::get<GenericNominalApplication>(
+               draft.generic_type_copy(std::get<GenericTypeID>(owner))
+    )
+        .arguments;
+}
+
+} // namespace
+
 auto BodyElaborator::callable_contract(ConstructionTypeRef type, Span span) noexcept
     -> AnalysisResult<ConstructionCallableContract> {
     if (auto contract = draft().callable_contract(type)) {
@@ -559,7 +577,7 @@ auto BodyElaborator::call_expression(
 }
 
 auto BodyElaborator::class_operation(
-    StructID owner,
+    ConstructionStructRef owner,
     std::string_view name,
     bool receiver,
     Span span
@@ -577,34 +595,98 @@ auto BodyElaborator::class_operation(
     if (!function) {
         co_return std::unexpected(function.error());
     }
-    auto ready = co_await batch->ensure_function_signature(*function, source_module_id, span);
-    if (!ready) {
-        co_return std::unexpected(ready.error());
+    const auto* symbol = catalog().symbol(*function);
+    auto callable = std::optional<CallableID>();
+    if (const auto* generic = std::get_if<CatalogGenericForm>(&symbol->form)) {
+        auto checked =
+            co_await batch->ensure_generic_function(generic->definition, source_module_id, span);
+        if (!checked) {
+            co_return std::unexpected(checked.error());
+        }
+        auto arguments = class_arguments(draft(), owner);
+        const auto canonical = draft().normalize_generic_environment(arguments, origin(span));
+        if (!canonical) {
+            co_return std::unexpected(fail(
+                span,
+                DiagnosticCode::TypeGenericArguments,
+                "operation reference requires a concrete type environment"
+            ));
+        }
+        auto instance =
+            draft().instantiate_generic_function(generic->definition, *canonical, origin(span));
+        if (!instance) {
+            co_return std::unexpected(instance.error());
+        }
+        callable = *instance;
+        auto ready = co_await batch->requests.ensure_callable(*callable, source_module_id, span);
+        if (!ready) {
+            co_return std::unexpected(ready.error());
+        }
+    } else {
+        const auto id = std::get<CatalogFunctionForm>(symbol->form).function;
+        auto ready = co_await batch->ensure_function_signature(id, source_module_id, span);
+        if (!ready) {
+            co_return std::unexpected(ready.error());
+        }
+        callable = draft().function_declaration_copy(id).callable;
     }
-    const auto declaration = draft().function_declaration_copy(*function);
     auto callee = BuiltExpression {
         .storage = UniqueIndirect {BodyExpressionStorage {
-            active_builder().callable_expression(declaration.callable, origin(span))
+            active_builder().callable_expression(*callable, origin(span))
         }},
         .pending_failures = {},
         .takeable = false,
         .completes = true
     };
-    observe_source(
-        span,
-        catalog().declaration_location(draft(), catalog().function_symbol(*function)),
-        callee.type()
-    );
+    observe_source(span, catalog().declaration_location(draft(), *function), callee.type());
     co_return callee;
 }
 
 auto BodyElaborator::class_call(
     const ASTCallExpr& source,
     const ASTMemberExpr& member,
-    StructID owner,
+    ConstructionStructRef owner,
     std::optional<BuiltExpression> receiver,
     Span span
 ) noexcept -> AnalysisTask<BuiltExpression> {
+    const auto selected = lookup_class_operation(
+        draft(),
+        catalog(),
+        source_module_id,
+        owner,
+        lexical_class,
+        spelling(member.name_span),
+        receiver.has_value(),
+        member.name_span
+    );
+    if (!selected) {
+        co_return std::unexpected(selected.error());
+    }
+    auto callee_id = source.callee;
+    while (const auto* group = std::get_if<ASTGroupExpr>(&ast.expression(callee_id).value)) {
+        callee_id = group->expression;
+    }
+    const auto* application = std::get_if<ASTTypeApplicationExpr>(&ast.expression(callee_id).value);
+    const auto* symbol = catalog().symbol(*selected);
+    if (const auto* generic = std::get_if<CatalogGenericForm>(&symbol->form)) {
+        auto arguments = class_arguments(draft(), owner);
+        co_return co_await generic_call_expression(
+            source,
+            generic->definition,
+            application ? std::span<const ASTGenericArgument>(application->arguments)
+                        : std::span<const ASTGenericArgument>(),
+            span,
+            std::move(arguments),
+            std::move(receiver)
+        );
+    }
+    if (application) {
+        co_return std::unexpected(fail(
+            ast.expression(callee_id).span,
+            DiagnosticCode::TypeGenericArguments,
+            "operation does not declare generic parameters"
+        ));
+    }
     auto callee = (co_await class_operation(
         owner,
         spelling(member.name_span),
@@ -626,7 +708,9 @@ auto BodyElaborator::generic_call_expression(
     const ASTCallExpr& source,
     GenericDeclarationID definition,
     std::span<const ASTGenericArgument> supplied,
-    Span span
+    Span span,
+    GenericEnvironment owner_arguments,
+    std::optional<BuiltExpression> receiver
 ) noexcept -> AnalysisTask<BuiltExpression> {
     auto checked = co_await batch->ensure_generic_function(definition, source_module_id, span);
     if (!checked) {
@@ -634,7 +718,9 @@ auto BodyElaborator::generic_call_expression(
     }
     const auto function =
         std::get<GenericFunctionDefinition>(draft().generic_declaration_copy(definition));
-    if (source.arguments.size() != function.signature.parameters.size()) {
+    const auto receiver_count = receiver.has_value() ? 1uz : 0uz;
+    const auto argument_count = source.arguments.size() + receiver_count;
+    if (argument_count != function.signature.parameters.size()) {
         co_return std::unexpected(fail(
             span,
             DiagnosticCode::TypeCallArity,
@@ -643,19 +729,27 @@ auto BodyElaborator::generic_call_expression(
     }
     const auto count = function.contract.parameters.size();
     auto inferred = std::vector<std::optional<GenericArgument>>(count);
-    auto explicit_environment = GenericEnvironment();
+    const auto owner_count = owner_arguments.size();
+    auto explicit_environment = std::move(owner_arguments);
+    for (auto i = 0uz; i < owner_count; ++i) {
+        inferred[i] = explicit_environment[i];
+    }
     auto explicit_canonical = CanonicalGenericEnvironment();
     if (!supplied.empty()) {
         auto site = BodyExprSite(*this, true);
-        auto resolved =
-            co_await site.resolve_generic_arguments(supplied, function.contract.parameter_kinds);
+        auto resolved = co_await site.resolve_generic_arguments(
+            supplied,
+            std::span(function.contract.parameter_kinds).subspan(owner_count)
+        );
         if (!resolved) {
             co_return std::unexpected(resolved.error());
         }
-        explicit_environment = std::move(*resolved);
+        explicit_environment.append_range(std::move(*resolved));
         for (auto i = 0uz; i < count; ++i) {
             inferred[i] = explicit_environment[i];
         }
+    }
+    if (explicit_environment.size() == count) {
         if (const auto canonical =
                 draft().normalize_generic_environment(explicit_environment, origin(span))) {
             explicit_canonical = *canonical;
@@ -664,19 +758,22 @@ auto BodyElaborator::generic_call_expression(
     auto explicit_effects = draft().make_failure_instantiation(definition, explicit_environment);
     auto built = std::vector<BuiltExpression>();
     auto spans = std::vector<Span>();
-    for (auto i = 0uz; i < source.arguments.size(); ++i) {
-        const auto id = source.arguments[i];
-        const auto operand = call_argument_operand(ast, id);
+    for (auto i = 0uz; i < argument_count; ++i) {
+        const auto receiver_argument = receiver && i == 0uz;
+        const auto id = receiver_argument ? std::optional<ASTExprID>()
+                                          : std::optional(source.arguments[i - receiver_count]);
+        const auto argument_span =
+            id ? ast.expression(*id).span : ast.expression(source.callee).span;
         const auto& parameter = function.signature.parameters[i];
-        if (operand.access != parameter.access) {
+        if (id && call_argument_operand(ast, *id).access != parameter.access) {
             co_return std::unexpected(fail(
-                ast.expression(id).span,
+                argument_span,
                 DiagnosticCode::AccessCallMismatch,
                 "argument access marker differs from the generic parameter"
             ));
         }
         auto expected = std::optional<ConstructionTypeRef>();
-        if (!supplied.empty()) {
+        if (explicit_environment.size() == count) {
             if (explicit_canonical.size() == count) {
                 auto resolved = draft().substitute_function_type(
                     parameter.type,
@@ -700,7 +797,9 @@ auto BodyElaborator::generic_call_expression(
         } else if (std::holds_alternative<TypeID>(parameter.type)) {
             expected = parameter.type;
         }
-        auto value = co_await expression(operand.expression, true, expected);
+        auto value = receiver_argument
+            ? AnalysisResult<BuiltExpression>(std::move(*receiver))
+            : (co_await expression(call_argument_operand(ast, *id).expression, true, expected));
         if (!value) {
             co_return std::unexpected(value.error());
         }
@@ -711,10 +810,10 @@ auto BodyElaborator::generic_call_expression(
                     value->type(),
                     definition,
                     inferred,
-                    origin(ast.expression(id).span)
+                    origin(argument_span)
                 )) {
                 co_return std::unexpected(fail(
-                    ast.expression(id).span,
+                    argument_span,
                     DiagnosticCode::TypeGenericArguments,
                     "call arguments do not determine a consistent generic type environment"
                 ));
@@ -723,13 +822,13 @@ auto BodyElaborator::generic_call_expression(
                    && !std::holds_alternative<GenericTypeID>(parameter.type)
                    && !compatible(value->type(), parameter.type)) {
             co_return std::unexpected(fail(
-                ast.expression(id).span,
+                argument_span,
                 DiagnosticCode::TypeMismatch,
                 "generic call argument differs from its parameter type"
             ));
         }
         built.push_back(std::move(*value));
-        spans.push_back(ast.expression(id).span);
+        spans.push_back(argument_span);
     }
     auto arguments = GenericEnvironment();
     for (const auto& argument : inferred) {

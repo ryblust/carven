@@ -4,12 +4,12 @@ Analyze `LEVEL milliseconds message` records and print a JSON report. The bundle
 input includes a malformed latency, a credential, and slow warning/error records.
 One bad record increments `rejected` without discarding the rest of the input.
 
-With `carven` on `PATH` and a C++20 toolchain available, run from this
-example's directory:
+After building the compiler, run these repository targets from the checkout root:
 
 ```sh
-carven main.cv analysis.cv
-carven main.cv analysis.cv -- --stdin < application.log
+./xmakew build carven-example-log-analyzer
+./xmakew run carven-example-log-analyzer
+./xmakew run carven-example-log-analyzer --stdin < application.log
 ```
 
 The default output is:
@@ -31,14 +31,14 @@ recovery and ordering. The async entry reads raw bytes with
 `await stdin().read_all(16 * 1024 * 1024)?`; validation and recovery apply to each
 record. Command-line arguments are an ordinary `Vector<String>`.
 Field parsing uses borrowed `split_once` results and `u64::parse`; redaction uses
-`SplitCursor` and `starts_with` from the text library, preserving leading,
+`TextSplitCursor` and `starts_with` from the text library, preserving leading,
 trailing, and repeated spaces. `ByteLines` separates records before UTF-8
 validation, so invalid text rejects only its own record.
 
 Record parsing reports one `RecordError` enum, retaining typed numeric, UTF-8,
 and text-processing details. The entry models application failures with
 `AnalyzerError`: input failures retain the standard `IOError` payload, and report
-failures retain `ValueError`. Individual malformed records are counted and
+failures retain `JSONValueError`. Individual malformed records are counted and
 processing continues.
 `--help` prints usage. Unknown options print usage to stderr and fail before
 reading input.

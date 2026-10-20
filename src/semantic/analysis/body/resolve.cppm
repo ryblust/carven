@@ -3,6 +3,7 @@ module carven:semantic.analysis.body.resolve;
 import :semantic.analysis.diagnostics;
 import :semantic.analysis.failure;
 import :semantic.semir.constant;
+import :semantic.semir.decl;
 import :semantic.semir.structured;
 import :semantic.semir.type;
 import :source.provenance;
@@ -12,7 +13,7 @@ auto resolve_body(
     StructuredBodyDraft body,
     const TypeResolution& types,
     const CanonicalTypeStore& canonical_types,
-    const std::vector<bool>& test_stops,
+    const std::vector<CallStopEffect>& call_stops,
     const FailureSolution& failures,
     const FailureSetStore& failure_sets,
     CompilationProvenanceReader provenance,

@@ -1,0 +1,3 @@
+minimum_stock = 20
+include_checks = true
+optimize = true

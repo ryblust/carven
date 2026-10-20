@@ -95,8 +95,8 @@ auto ProgramDraft::syntax_trees() const noexcept -> std::span<const std::optiona
     return syntax_by_module;
 }
 
-auto ProgramDraft::imported(ProgramModuleID module) const noexcept -> bool {
-    return owns(module) && module.index() < imported_module_count;
+auto ProgramDraft::imported(ProgramModuleID module_id) const noexcept -> bool {
+    return owns(module_id) && module_id.index() < imported_module_count;
 }
 
 auto ProgramDraft::imported(BodyID body) const noexcept -> bool {
@@ -149,8 +149,13 @@ auto ProgramDraft::try_canonicalize_declared_type(ConstructionTypeRef type) noex
         const auto* concrete = std::get_if<TypeID>(&shape);
         return concrete ? std::optional(*concrete) : std::nullopt;
     }
+    return try_canonicalize_declared_type(construction_type_copy(std::get<TypeTermID>(type)));
+}
+
+auto ProgramDraft::try_canonicalize_declared_type(const ConstructionType& type) noexcept
+    -> std::optional<TypeID> {
     return ConstructionTypeStore::try_canonicalize_type(
-        construction_type_copy(std::get<TypeTermID>(type)),
+        type,
         storage.types,
         storage.callable_signatures,
         [&](ConstructionTypeRef child) noexcept { return try_canonicalize_declared_type(child); },
@@ -1050,6 +1055,6 @@ auto ProgramDraft::display_names(TypeID type) const noexcept -> ExecutionDisplay
     return result;
 }
 
-auto ProgramDraft::module_source_id(ProgramModuleID module) const noexcept -> SourceID {
-    return provenance_appender.reader().source_manager_id(module_source(module));
+auto ProgramDraft::module_source_id(ProgramModuleID module_id) const noexcept -> SourceID {
+    return provenance_appender.reader().source_manager_id(module_source(module_id));
 }

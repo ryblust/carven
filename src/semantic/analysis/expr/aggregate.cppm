@@ -227,10 +227,8 @@ auto construct_structure_expression(
     }
     const auto structure = record_shape(site.draft(), *resolved);
     if (structure) {
-        if (const auto* concrete = std::get_if<StructID>(&structure->owner)) {
-            if (auto access = site.representation_access(*concrete, span); !access) {
-                co_return std::unexpected(access.error());
-            }
+        if (auto access = site.representation_access(structure->owner, span); !access) {
+            co_return std::unexpected(access.error());
         }
         if (structure->kind == RecordKind::Class
             && structure->fields.empty()
@@ -274,9 +272,12 @@ auto construct_structure_expression(
         if (initializer.name) {
             site.observe_field(field.origin, *initializer.name, field.type);
         }
-        const auto field_span = site.syntax().expression(initializer.expression).span;
-        auto value =
-            (co_await site.read_aggregate_element(initializer.expression, field.type, true));
+        const auto field_span = initializer.expression
+            ? site.syntax().expression(*initializer.expression).span
+            : *std::get<ASTFieldInitializerList>(source.initializer.value).defaults;
+        auto value = initializer.expression
+            ? (co_await site.read_aggregate_element(*initializer.expression, field.type, true))
+            : construct_default_expression(site, field.type, field_span);
         if (!value) {
             co_return std::unexpected(value.error());
         }
@@ -302,8 +303,8 @@ auto construct_structure_expression(
 template<typename Site>
 auto construct_enum_value(
     Site& site,
-    TypeID type,
-    EnumCaseID selected,
+    ConstructionTypeRef type,
+    ConstructionEnumCaseRef selected,
     std::vector<typename Site::Value> arguments,
     std::optional<ConstantID> known,
     Span span

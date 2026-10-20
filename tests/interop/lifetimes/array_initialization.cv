@@ -1,7 +1,7 @@
 import .construction using fixed_plain;
 
-import "lifetimes/owning_fields.hpp" using owning_field_probe::{ Resource, count };
-import "lifetimes/lifetimes.hpp" using lifetime_probe::{ CopyOwner, reset, matches };
+import "lifetimes/owning_fields.hpp" using owning_field_probe::{ Resource, count }
+import "lifetimes/lifetimes.hpp" using lifetime_probe::{ CopyOwner, reset, matches }
 
 private struct InitializationFailure {}
 

@@ -228,5 +228,29 @@ auto ProgramDraft::infer_generic_argument(
             )
             && infer_effect(operation->failures, shape->failures);
     }
+    if (const auto* function = std::get_if<GenericCallableViewType>(&description)) {
+        const auto shape = callable_shape(actual);
+        if (!shape
+            || shape->execution != CallableExecutionKind::Synchronous
+            || shape->parameters.size() != function->parameters.size()) {
+            return false;
+        }
+        for (const auto [expected, supplied] :
+             std::views::zip(function->parameters, shape->parameters)) {
+            if (expected.stage != supplied.stage
+                || expected.access != supplied.access
+                || !infer_generic_argument(
+                    expected.type,
+                    supplied.type,
+                    definition,
+                    inferred,
+                    origin
+                )) {
+                return false;
+            }
+        }
+        return infer_generic_argument(function->result, shape->result, definition, inferred, origin)
+            && infer_effect(function->failures, shape->failures);
+    }
     return false;
 }

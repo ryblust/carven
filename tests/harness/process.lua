@@ -85,6 +85,11 @@ function main(target, opt, case_spec, case_dir)
     local additions, overrides = runenvs.make(target)
     local envs = runenvs.join(additions, overrides)
     for index, step in ipairs(steps) do
+        for filename, content in pairs(step.write_files or {}) do
+            local file_path = path.join(work_dir, filename)
+            os.mkdir(path.directory(file_path))
+            io.writefile(file_path, content, {encoding = "binary"})
+        end
         local stdout_file = path.join(work_dir, ".stdout-" .. index)
         local stderr_file = path.join(work_dir, ".stderr-" .. index)
         local args = table.clone(step.args)
@@ -96,14 +101,17 @@ function main(target, opt, case_spec, case_dir)
             stdin_file = path.join(work_dir, ".stdin-" .. index)
             io.writefile(stdin_file, step.stdin_bytes, {encoding = "binary"})
         end
-        local exit_code, run_error = os.execv(program, args, {
-            try = true, timeout = 30000, curdir = work_dir, envs = envs,
+        local step_program = step.program and path.join(work_dir, step.program) or program
+        local step_envs = table.clone(envs or {})
+        for name, value in pairs(step.envs or {}) do step_envs[name] = value end
+        local exit_code, run_error = os.execv(step_program, args, {
+            try = true, timeout = step.run_timeout or 30000, curdir = work_dir, envs = step_envs,
             stdout = stdout_file, stderr = stderr_file,
             stdin = stdin_file,
         })
         local stdout = normalize_newlines(os.isfile(stdout_file) and io.readfile(stdout_file, {encoding = "binary"}) or "")
         local stderr = normalize_newlines(os.isfile(stderr_file) and io.readfile(stderr_file, {encoding = "binary"}) or "")
-        local prefix = "step " .. index .. " (" .. report.format_command(program, args) .. "): "
+        local prefix = "step " .. index .. " (" .. report.format_command(step_program, args) .. "): "
         for stream, value in pairs({stdout = stdout, stderr = stderr}) do
             if value ~= "" then
                 table.insert(streams[stream], prefix .. value)

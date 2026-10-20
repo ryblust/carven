@@ -27,19 +27,54 @@ auto DeclResolver::resolve_generic_declaration(
     const auto* record = std::get_if<ASTRecordDecl>(&item.value);
     const auto* enumeration = std::get_if<ASTEnumDecl>(&item.value);
     const auto* function = std::get_if<ASTFunctionDecl>(&item.value);
+    auto source_parameters = std::vector<const ASTGenericParameter*>();
+    auto parameters = std::vector<ProgramSpellingID>();
+    auto parameter_names = std::map<std::string, Span, std::less<>>();
+    auto policies = std::vector<GenericParameterKind>();
+    auto bounds = std::vector<std::vector<BuiltinCapability>>();
+    auto owner = std::optional<GenericDeclarationID>();
+    auto owner_parameter_count = 0uz;
+    if (symbol.class_operation) {
+        if (const auto* generic_owner =
+                std::get_if<GenericDeclarationID>(&symbol.class_operation->owner)) {
+            owner = *generic_owner;
+            const auto* owner_symbol = catalog.symbol(catalog.generic_symbol(*owner));
+            auto resolved = co_await resolve(
+                owner_symbol->symbol_id,
+                symbol.module_id,
+                symbol.declaration_span
+            );
+            if (!resolved) {
+                co_return std::unexpected(resolved.error());
+            }
+            auto inherited = draft.generic_declaration_contract_copy(*owner);
+            parameters = std::move(inherited.parameters);
+            policies = std::move(inherited.parameter_kinds);
+            bounds = std::move(inherited.parameter_bounds);
+            for (const auto parameter : parameters) {
+                parameter_names.emplace(
+                    draft.spelling_copy(parameter),
+                    owner_symbol->declaration_span
+                );
+            }
+            owner_parameter_count = parameters.size();
+        }
+    }
     const auto* clause = record ? &record->type_parameters
         : enumeration           ? &enumeration->type_parameters
         : function              ? &function->type_parameters
                                 : nullptr;
-    if (!clause || !*clause) {
+    if (clause && *clause) {
+        for (const auto& parameter : (*clause)->parameters) {
+            source_parameters.push_back(&parameter);
+        }
+    }
+    if (source_parameters.empty() && parameters.empty()) {
         invariant_violation("generic catalog identity does not name parameterized source");
     }
-    auto parameters = std::vector<ProgramSpellingID>();
-    auto parameter_names = std::map<std::string, Span, std::less<>>();
-    auto policies = std::vector<GenericParameterKind>();
-    for (const auto& parameter : (*clause)->parameters) {
+    for (const auto* source_parameter : source_parameters) {
+        const auto& parameter = *source_parameter;
         const auto span = parameter.name_span;
-
         policies.push_back(
             parameter.kind == ASTGenericParameterKind::Type ? GenericParameterKind::Type
                                                             : GenericParameterKind::FailureSet
@@ -77,6 +112,45 @@ auto DeclResolver::resolve_generic_declaration(
         .parameters = parameters,
         .parameter_kinds = policies
     };
+    for (const auto* source_parameter : source_parameters) {
+        const auto& parameter = *source_parameter;
+        const auto span = parameter.name_span;
+        auto requirements = std::vector<BuiltinCapability>();
+        if (parameter.kind == ASTGenericParameterKind::FailureSet && !parameter.bounds.empty()) {
+            co_return std::unexpected(declaration_failure(
+                draft,
+                symbol.module_id,
+                span,
+                DiagnosticCode::TypeGenericDefinition,
+                "capability bounds require an object type parameter"
+            ));
+        }
+        for (const auto bound : parameter.bounds) {
+            auto capability = resolve_source_capability(
+                draft,
+                catalog,
+                import_usage,
+                symbol.module_id,
+                syntax,
+                bound,
+                &context
+            );
+            if (!capability) {
+                co_return std::unexpected(capability.error());
+            }
+            if (std::ranges::contains(requirements, *capability)) {
+                co_return std::unexpected(declaration_failure(
+                    draft,
+                    symbol.module_id,
+                    syntax.type(bound).span,
+                    DiagnosticCode::TypeGenericDefinition,
+                    "capability bound is repeated"
+                ));
+            }
+            requirements.push_back(*capability);
+        }
+        bounds.push_back(std::move(requirements));
+    }
     auto scope = ConstantScope {
         .resolver = *this,
         .module_id = symbol.module_id,
@@ -94,6 +168,7 @@ auto DeclResolver::resolve_generic_declaration(
         .parameters = {},
         .audience_dependencies = {},
         .parameter_kinds = std::move(policies),
+        .parameter_bounds = std::move(bounds),
         .implementation_dependencies =
             GenericImplementationDependencies {.types = {}, .callables = {}, .definitions = {}}
     };
@@ -152,6 +227,19 @@ auto DeclResolver::resolve_generic_declaration(
                             }
                         }
                     },
+                    [&](const GenericCallableViewType& view) noexcept {
+                        for (const auto& parameter : view.parameters) {
+                            self(self, parameter.type, origin);
+                        }
+                        self(self, view.result, origin);
+                        if (const auto* known = std::get_if<FailureSetID>(&view.failures)) {
+                            for (const auto failure : draft.failure_set_copy(*known).members) {
+                                contract.audience_dependencies.push_back(
+                                    {.reference = failure, .origin = origin}
+                                );
+                            }
+                        }
+                    },
                     [&](const GenericCppNamedType& native) noexcept {
                         for (const auto argument : native.arguments) {
                             self(self, argument, origin);
@@ -197,10 +285,18 @@ auto DeclResolver::resolve_generic_declaration(
         return type;
     };
     if (function) {
+        if (function->async_span && symbol.class_operation && symbol.class_operation->receiver) {
+            co_return std::unexpected(declaration_failure(
+                draft,
+                symbol.module_id,
+                *function->async_span,
+                DiagnosticCode::AsyncAdmission,
+                "async fn does not admit class receivers"
+            ));
+        }
         if (function->cpp_export
             || !std::holds_alternative<ASTFunctionBody>(function->implementation)
-            || symbol.class_operation
-            || symbol.name == "main") {
+            || (!symbol.class_operation && symbol.name == "main")) {
             co_return std::unexpected(declaration_failure(
                 draft,
                 symbol.module_id,
@@ -232,6 +328,69 @@ auto DeclResolver::resolve_generic_declaration(
                     parameter.span,
                     DiagnosticCode::NameDuplicateParameter,
                     "a function parameter name is declared more than once"
+                ));
+            }
+            const auto receiver = symbol.class_operation
+                && symbol.class_operation->receiver
+                && parameter_types.empty();
+            if (receiver) {
+                if (parameter.const_span || parameter.type) {
+                    co_return std::unexpected(declaration_failure(
+                        draft,
+                        symbol.module_id,
+                        parameter.span,
+                        DiagnosticCode::TypeParameterAnnotation,
+                        "class receiver requires untyped self, &self, or &&self"
+                    ));
+                }
+                auto type = std::optional<ConstructionTypeRef>();
+                if (owner) {
+                    auto arguments = GenericEnvironment();
+                    for (auto i = 0uz; i < owner_parameter_count; ++i) {
+                        if (contract.parameter_kinds[i] == GenericParameterKind::Type) {
+                            arguments.emplace_back(ConstructionTypeRef(draft.intern_generic_type(
+                                GenericTypeParameter {
+                                    .definition = form.definition,
+                                    .index = static_cast<std::uint32_t>(i)
+                                }
+                            )));
+                        } else {
+                            arguments.emplace_back(
+                                ConstructionFailureRef(draft.add_generic_failure_parameter(
+                                    {form.definition, static_cast<std::uint32_t>(i)}
+                                ))
+                            );
+                        }
+                    }
+                    type = draft.intern_generic_type(
+                        GenericNominalApplication {
+                            .definition = *owner,
+                            .arguments = std::move(arguments)
+                        }
+                    );
+                } else {
+                    type = draft.intern_type(
+                        {.value = StructTypeValue {
+                             .structure = std::get<StructID>(symbol.class_operation->owner)
+                         }}
+                    );
+                }
+                parameter_types.push_back(
+                    {.stage = ParameterStage::Runtime,
+                     .access = semantic_access_mode(parameter.access),
+                     .type = *type}
+                );
+                continue;
+            }
+            if (symbol.class_operation
+                && draft.source_slice_copy(symbol.module_id, binding_target_span(parameter.target))
+                    == "self") {
+                co_return std::unexpected(declaration_failure(
+                    draft,
+                    symbol.module_id,
+                    parameter.span,
+                    DiagnosticCode::TypeParameterAnnotation,
+                    "self must be the first class operation parameter"
                 ));
             }
             if (!parameter.type) {
@@ -334,15 +493,6 @@ auto DeclResolver::resolve_generic_declaration(
         co_return {};
     }
     if (record) {
-        if (!record->operations.empty()) {
-            co_return std::unexpected(declaration_failure(
-                draft,
-                symbol.module_id,
-                syntax.item(record->operations.front()).span,
-                DiagnosticCode::TypeGenericDefinition,
-                "operations on type-parameterized classes are not supported"
-            ));
-        }
         auto fields = std::vector<GenericField>();
         for (const auto& field : record->fields) {
             const auto name = draft.source_slice_copy(symbol.module_id, field.name_span);

@@ -33,11 +33,9 @@ auto BodyBuilder::completion_patterns() const noexcept -> CompletionPatterns {
             [this](PatternID id) noexcept -> std::variant<PatternValue, ElaboratedPatternValue> {
             return pattern_copy(id).value;
         },
-        .single_case =
-            [this](EnumCaseID id) noexcept {
-                const auto owner = draft.construction_enum_case_declaration_copy(id).owner;
-                return draft.enum_cases(owner).size() == 1uz;
-            },
+        .single_case = [this](
+                           ConstructionEnumCaseRef id
+                       ) noexcept { return enum_case_count(draft, id) == 1uz; },
     };
 }
 
@@ -103,6 +101,7 @@ auto BodyBuilder::make_expression(
                              || std::same_as<Operation, SemStruct>
                              || std::same_as<Operation, SemEnumCase>
                              || std::same_as<Operation, SemUnary>
+                             || std::same_as<Operation, SemHash>
                              || std::same_as<Operation, SemBinary>
                              || std::same_as<Operation, SemCast>
                              || std::same_as<Operation, SemDereference>
@@ -177,7 +176,7 @@ auto BodyBuilder::make_expression(
         .origin = origin,
         .constant = constant,
         .failures = BodyFailures(failures),
-        .exits_test = false,
+        .exits_call = false,
         .operation_reachable = true,
         .category = SemanticValueCategory::Value,
         .value = std::move(value),

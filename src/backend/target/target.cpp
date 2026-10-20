@@ -38,6 +38,14 @@ auto TargetUnit::sections() const noexcept -> const TargetUnitSections& {
     return contents.sections;
 }
 
+auto TargetUnit::generated_dependencies() const noexcept -> std::span<const TargetArtifactID> {
+    return contents.generated_dependencies;
+}
+
+auto TargetUnit::link_dependencies() const noexcept -> std::span<const std::string> {
+    return contents.link_dependencies;
+}
+
 auto TargetUnit::local_name(TargetLocalID id) const noexcept -> const TargetIdentifier& {
     if (id.owner() != unit_identity || id.index() >= locals.size()) {
         invariant_violation("target local lookup used a foreign or invalid identity");

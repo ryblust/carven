@@ -11,9 +11,9 @@ naming them.
 | Capability | API |
 | --- | --- |
 | Standard output and error | `print`, `println`, `eprint`, `eprintln` |
-| Asynchronous standard input | `stdin`, `Stdin`, `Read<T>`, `IOError` |
+| Asynchronous standard input | `stdin`, `Stdin`, `ReadResult<T>`, `IOError` |
 | Line boundaries in a complete byte buffer | `ByteLines`, `LineBoundary` |
-| Incremental bounded byte records | `LineFramer`, `FrameError` |
+| Incremental bounded byte records | `LineFramer`, `LineFrameError` |
 
 ## Printing
 
@@ -107,21 +107,21 @@ views. The expected signature fixes the parameter count and types.
 ## Standard input
 
 `stdin()` is available without an import and follows ordinary name lookup.
-Import `Stdin`, `Read`, and `IOError` from `std::io` when naming their types.
-`Stdin`, `Read<T>`, and `IOError` are declared by the standard source module.
+Import `Stdin`, `ReadResult`, and `IOError` from `std::io` when naming their types.
+`Stdin`, `ReadResult<T>`, and `IOError` are declared by the standard source module.
 Construction, copying, matching, ownership, and failure
 handling use ordinary language rules.
 
 `Stdin::new()` and `stdin()` construct equivalent input handles.
-`Read<T>` is a generic enum with `Data(T)` and nullary `End` cases.
+`ReadResult<T>` is a generic enum with `Data(T)` and nullary `End` cases.
 An input handle owns configuration; completed reads own their returned data.
 
 | Operation | Success | Nominal failure |
 | --- | --- | --- |
-| `input.read(max_bytes: usize)` | `Read<Vector<u8>>`: a chunk of at most `max_bytes`, or `.End` | `IOError` |
+| `input.read(max_bytes: usize)` | `ReadResult<Vector<u8>>`: a chunk of at most `max_bytes`, or `.End` | `IOError` |
 | `input.read_all(limit: usize)` | `Vector<u8>` through EOF, including empty input | `IOError` |
 | `input.read_text(limit: usize)` | Owned, validated `String` through EOF | `IOError` |
-| `input.read_line()` | `Read<String>`: an owned line, or `.End` | `IOError` |
+| `input.read_line()` | `ReadResult<String>`: an owned line, or `.End` | `IOError` |
 | `input.with_line_limit(limit: usize)` | A new handle with the selected line content byte limit | None |
 
 Reads return cold operations and run under the same driver,
@@ -205,15 +205,30 @@ to traverse a complete buffer. `LineBoundary::Line(start, end, terminated)` iden
 marks exhaustion. Empty input and a final LF do not create phantom records. Keep
 the same buffer for a traversal.
 
-`LineFramer::new(limit, strip_cr)` owns an unfinished record. `feed(bytes)?` returns
-owning byte vectors for every completed LF record, including empty records. The
-limit counts bytes before LF, including a possible CR. If `strip_cr` is true,
-remove CR immediately before LF from the delivered record. Arbitrary block splits
-are allowed. A bare CR at EOF is content.
+`LineFramer::new(limit, carriage_return: CarriageReturn)` owns an unfinished record.
+`feed(bytes)?` returns owning byte vectors for every completed LF record, including
+empty records. The limit counts bytes before LF, including a possible CR.
+`CarriageReturn::Strip` removes CR immediately before LF from the delivered record;
+`Preserve` retains it. Arbitrary block splits are allowed. A bare CR at EOF is content.
 
-`finish(allow_partial)?` seals the attempt and returns `Read::End` or one remaining
-`Read::Data` record. Disallowing an unfinished record reports `FrameError::Truncated`.
+`finish(incomplete: IncompleteLine)?` seals the attempt and returns `ReadResult::End`
+or one remaining `ReadResult::Data` record. `IncompleteLine::Return` delivers the
+unfinished record; `Reject` reports `LineFrameError::Truncated`.
 An oversized record reports `TooLong(limit)` and seals the attempt; already
 returned records remain independent, while records from the failing feed call
 are not delivered. Further feed or finish calls report `Finished`. A zero limit
 accepts empty LF records. All framing methods also support static execution.
+
+## Asynchronous protocol output
+
+`write_stdout_async(&&bytes)` returns a cold operation that writes every byte to
+stdout or throws `IOError::System(code)`. It retains the owned vector while
+waiting for output readiness, so other tasks continue under pipe backpressure.
+One write may be active at a time; concurrent writes fail with a system busy code.
+Serialize frames with a writer task and a bounded channel.
+
+Cancellation stops the remaining write; a prefix already written stays in the
+stream. The provider temporarily enables nonblocking stdout and restores its
+original flags on completion or cancellation. Do not mix it with buffered printing,
+`write_stdout`, or external writes while active. The current provider supports
+POSIX hosts; other hosts report an unsupported system error.

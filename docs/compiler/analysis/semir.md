@@ -55,7 +55,7 @@ declaration contracts. Native representation selection preserves those
 identities.
 
 `GenericDeclarationContract` retains the generic definition's source identity.
-The standard `Read<T>` enum instantiates through ordinary nominal argument,
+The standard `ReadResult<T>` enum instantiates through ordinary nominal argument,
 canonical instance, visibility, and publication machinery.
 `GenericNominalInstance.origin` records the source use position for instance
 diagnostics. It does not replace the generic definition's declaration identity
@@ -66,7 +66,7 @@ arguments, and concrete callable. Target planning uses these facts for stable
 content names and inline definitions at their uses, including when the source
 template belongs to a fixed source library.
 
-`Duration`, `RangeError`, and `Timeout` retain their standard-source identities
+`Duration`, `TimeRangeError`, and `Timeout` retain their standard-source identities
 when used by duration literals and builtin timeout composition. Builtin
 operations consume completed declarations through shared readers. The backend
 generates their native representations through ordinary source-type realization.
@@ -138,8 +138,8 @@ the selected async operations and child identities.
 result `(usize, bool)`. `SemCloseChild` retains one child identity and has void
 result. Both require execution and may suspend, including when their result is
 discarded. They are direct awaited controls rather than cold producers. Their
-completion is normal; selected child cancellation and failures do not contribute
-to the parent's outward completion facts.
+completion does not propagate selected child cancellation or nominal failures.
+Invocation stopping propagates through both controls.
 
 ## Structured semantics
 
@@ -218,9 +218,10 @@ to canonical types; validation and dependency collection visit the same query
 structure. Published concrete bodies and native lowering use `CppNamedType` and
 `CppQueryType`.
 
-`CppImportImplementation` retains the import origin and its global
-`CppNameReference` target. Analysis resolves explicit bindings or supplies the
-same-named global target before publishing the callable.
+`CppImportImplementation` retains the import origin and an optional global
+`CppNameReference` target. Analysis resolves explicit bindings. An absent target
+identifies a source-owned provider whose native entry is named during generation
+from the canonical source module and function.
 
 ### Formatting facts
 
@@ -252,15 +253,22 @@ and accounts for destination growth.
 
 Builtin names use ordinary lookup. Direct calls publish `SemPrint` or
 `SemReport` expressions; a builtin used as a value materializes a stateless
-callable with its expected signature. Test-stop analysis uses each callable's
+callable with its expected signature. Call-stop analysis uses each callable's
 executable region, collecting direct stops and possible calls and propagating
 effects through reverse call dependencies. Ordinary branches retain their
 structural possibilities; explicit static selection contributes only its selected
-operations. Callable views conservatively admit test stop.
+operations. Every `import(cpp)` contract admits host stops, independently of its
+implementation target and declared failures. Native callback parameters do not
+add test-stop effects: the external implementation must honor the declared
+contract. Calls through Carven callable views conservatively admit test and host
+stops. One solved effect records both causes; test-scope admission checks only the
+test cause.
 Construction and publication use the same structural reachability and pattern
-coverage rules. Body resolution computes `exits_test` for expressions and regions
-from each operation tree and the solved callable effects. Backend consumers read
-these completed effects.
+coverage rules. Body resolution computes `exits_call` for expressions and regions
+from operation trees and solved callable stop effects. The flag conservatively
+marks possible stop propagation, including await, wait, and close. Nominal
+failures, completion cancellation, and coroutine-context requirements are
+determined separately.
 
 Match construction checks coverage over the subject type. Redundant patterns
 are unreachable. Each arm records `pattern_may_reject` for normal pattern
@@ -352,7 +360,7 @@ validation and surface collection, publication discards checked alternatives and
 retains exactly one executable region per body.
 Source templates, static tests, and module static blocks publish no body.
 Their declarations and diagnostic provenance remain available. Removed bodies
-leave vacant IDs; surviving body IDs and local table identities do not change.
+leave vacant IDs; surviving body IDs and local tables retain their owners.
 Declarations and tests clear references to removed bodies.
 
 Residual installation transfers its region and extended local tables together,
@@ -363,6 +371,11 @@ Instances own copies of the source binding, lifetime, and pattern tables.
 Local IDs retain the copied tables' body identity; expanded iterations append
 distinct IDs. Source ownership and nullability checks run before source regions
 are discarded.
+
+Final publication retains runtime inputs, bindings defined or referenced by the
+executable region, and reachable patterns. It compacts these tables in their
+original order and remaps the owned tree to dense local IDs. Input order and
+lifetime identities remain unchanged.
 
 Checked source bodies store local static roots as `SemStaticBinding`, which owns
 its typed initializer at a stable tree edge. The binding records the frozen local
@@ -386,6 +399,11 @@ rejected at residual publication. Runtime initialization remains a separate
 `SemInitialize` operation with an initializer of exactly the binding type.
 Structural traversal includes static initializer roots; ordinary
 evaluation-child traversal excludes them.
+
+Executable publication turns closed computations independent of the execution
+environment into constant operations when their operands are constant and their
+results have no storage identity. Reported conditions retain the operation that
+observes their operands. A known result alone does not remove operand evaluation.
 
 Publication records each source template's callable and type surface after
 validation, together with closure reference order for each callable.

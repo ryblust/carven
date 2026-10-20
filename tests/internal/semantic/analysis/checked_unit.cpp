@@ -21,14 +21,15 @@ namespace {
 
 auto checked_analysis(
     std::string source,
-    std::string_view module,
-    std::optional<CheckedDefinitions> seed = std::nullopt,
-    bool retain_definitions = true
+    std::string_view module_name,
+    std::optional<CheckedDefinitions> seed,
+    bool retain_definitions
 ) noexcept -> CompilationAnalysis {
     auto sources = SourceManager();
-    const auto source_id = sources.append_virtual(std::string(module) + ".cv", std::move(source));
+    const auto source_id =
+        sources.append_virtual(std::string(module_name) + ".cv", std::move(source));
     require(source_id.has_value());
-    auto module_path = CanonicalModulePath::from_value(module);
+    auto module_path = CanonicalModulePath::from_value(module_name);
     require(module_path.has_value());
     const auto inputs = std::array {SourceModuleInput {
         .source_id = *source_id,
@@ -57,7 +58,7 @@ auto captured_output(const CompilationAnalysis& analysis) noexcept -> std::strin
 
 auto take_unit(CompilationAnalysis analysis) noexcept -> CheckedUnit {
     require(analysis.program() != nullptr).note([&]() noexcept {
-        return render_diagnostics(analysis.diagnostics(), analysis.sources());
+        return render_diagnostics(analysis.diagnostics(), analysis.sources(), false);
     });
     auto unit = std::move(analysis).take_checked_unit();
     require(unit.has_value());
@@ -111,10 +112,11 @@ test "library runtime test" { check(seed() == 40); }
 const TestSuite suite([] static noexcept {
     "Checked unit: consumers instantiate retained generic and staged definitions"_test =
         [] static noexcept {
-            const auto library =
-                take_unit(checked_analysis(std::string(library_source), "library"));
+            const auto library = take_unit(
+                checked_analysis(std::string(library_source), "library", std::nullopt, true)
+            );
             constexpr auto ownership = std::array {
-                CompilationModuleOwnership {.owned = true, .standard = false},
+                CompilationModuleOwnership {.owned = true, .standard = false, .external = false},
             };
             const auto encoded = encode_compilation_artifact(library, ownership);
             require(encoded.has_value());
@@ -124,7 +126,7 @@ const TestSuite suite([] static noexcept {
             require(definitions.has_value());
             auto consumer = checked_analysis(
                 R"cv(
-import library using { Box, identity, add, seed };
+import library using { Box, identity, add, seed }
 struct Own { value: i32 }
 const answer = add(2, identity<i32>(&&seed()));
 fn use() -> i64 {
@@ -140,7 +142,7 @@ const { println(answer); }
                 false
             );
             require(consumer.program() != nullptr).note([&]() noexcept {
-                return render_diagnostics(consumer.diagnostics(), consumer.sources());
+                return render_diagnostics(consumer.diagnostics(), consumer.sources(), false);
             });
             expect_equal(integer_constant(*consumer.program(), "answer"), 42ll);
             expect_equal(captured_output(consumer), std::string("42\n"));
@@ -170,58 +172,74 @@ const { println(answer); }
             ));
             const auto consumer = checked_analysis(
                 R"cv(
-import std::time using { Duration, RangeError, sleep };
+import std::time using { Duration, TimeRangeError, sleep }
 const amount: Duration = 2ms;
 const test "checked duration" { check(amount.nanoseconds == 2000000); }
-async fn wait() throw RangeError { await sleep(0ns)?; }
+async fn wait() throw TimeRangeError { await sleep(0ns)?; }
 )cv",
                 "consumer",
-                take_definitions(standard)
+                take_definitions(standard),
+                true
             );
             require(consumer.program() != nullptr).note([&]() noexcept {
-                return render_diagnostics(consumer.diagnostics(), consumer.sources());
+                return render_diagnostics(consumer.diagnostics(), consumer.sources(), false);
             });
             expect(captured_output(consumer).empty());
         };
 
     "Checked unit: imported declarations retain diagnostic source identities"_test =
         [] static noexcept {
-            const auto library =
-                take_unit(checked_analysis("export fn argument(value: i32) {}", "library"));
+            const auto library = take_unit(
+                checked_analysis("export fn argument(value: i32) {}", "library", std::nullopt, true)
+            );
             const auto consumer = checked_analysis(
                 "import library using argument; fn invalid() { argument(); }",
                 "consumer",
-                take_definitions(library)
+                take_definitions(library),
+                true
             );
             expect(consumer.program() == nullptr);
-            const auto rendered = render_diagnostics(consumer.diagnostics(), consumer.sources());
+            const auto rendered =
+                render_diagnostics(consumer.diagnostics(), consumer.sources(), false);
             expect(rendered.contains("consumer.cv"));
             expect(rendered.contains("library.cv"));
         };
 
     "Checked unit: cacheability follows observed host operations"_test = [] static noexcept {
-        const auto pure = take_unit(checked_analysis(
+        constexpr auto declarations = std::to_array<std::string_view>({
             "export const fn sample() -> i64 => monotonic_now();",
-            "crafts.carven.std.time"
-        ));
-        expect(pure.cacheable);
-        const auto observed = take_unit(checked_analysis(
-            "export const fn sample() -> i64 => monotonic_now(); "
-            "const captured = sample(); const { println(\"producer host\"); }",
-            "crafts.carven.std.time"
-        ));
-        expect(!observed.cacheable);
-        auto imported =
-            checked_analysis("const value = 42;", "consumer", take_definitions(observed));
-        expect(captured_output(imported).empty());
-        const auto imported_unit = take_unit(std::move(imported));
-        expect(imported_unit.cacheable);
-        const auto executed = take_unit(checked_analysis(
-            "import std::time using sample; const value = sample();",
-            "consumer",
-            take_definitions(observed)
-        ));
-        expect(!executed.cacheable);
+            "import <carven/std/process/native.hpp> using carven::standard::process; "
+            "export const fn sample() -> i32 => process::parallelism() as i32;",
+        });
+        each(declarations, std::identity {}, [](std::string_view declaration) static noexcept {
+            const auto pure = take_unit(checked_analysis(
+                std::string(declaration),
+                "crafts.carven.std.time",
+                std::nullopt,
+                true
+            ));
+            expect(pure.cacheable);
+            const auto observed = take_unit(checked_analysis(
+                std::string(declaration)
+                    + "const captured = sample(); const { println(\"producer host\"); }",
+                "crafts.carven.std.time",
+                std::nullopt,
+                true
+            ));
+            expect(!observed.cacheable);
+            auto imported =
+                checked_analysis("const value = 42;", "consumer", take_definitions(observed), true);
+            expect(captured_output(imported).empty());
+            const auto imported_unit = take_unit(std::move(imported));
+            expect(imported_unit.cacheable);
+            const auto executed = take_unit(checked_analysis(
+                "import std::time using sample; const value = sample();",
+                "consumer",
+                take_definitions(observed),
+                true
+            ));
+            expect(!executed.cacheable);
+        });
     };
 });
 

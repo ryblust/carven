@@ -62,6 +62,7 @@ enum class TokenKind {
     RightBrace,
     Comma,
     Dot,
+    Ellipsis,
     DotDot,
     DotDotEqual,
     Colon,

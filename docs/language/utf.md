@@ -33,7 +33,7 @@ Use `str::from_utf8` when the caller controls the backing lifetime and a copy is
 unnecessary.
 
 ```carven
-import std::utf using { to_string, UTF8Error };
+import std::utf using { to_string, UTF8Error }
 
 fn example() -> String throw UTF8Error {
     let bytes: [u8; 4] = [0xf0, 0x9f, 0x98, 0x80];
@@ -49,8 +49,9 @@ All operations below are `const fn` and also run at runtime.
 | Operation | Result and ownership |
 | --- | --- |
 | `substring(text, start, end) -> str throw TextError` | Borrow `[start, end)` UTF-8 bytes; both offsets must be scalar boundaries |
-| `starts_with(text, prefix) -> bool` | Compare the prefix without allocation |
-| `split_once(text, separator) -> Split throw TextError` | Borrow `before` and `after`; `found` distinguishes a separator from an absent one |
+| `starts_with(text, prefix) -> bool` | Compare the exact prefix bytes |
+| `ends_with(text, suffix) -> bool` | Compare the exact suffix bytes; an empty suffix always matches |
+| `split_once(text, separator) -> TextSplit throw TextError` | Borrow `before` and `after`; `found` distinguishes a separator from an absent one |
 | `split(text, separator) -> Vector<String> throw TextError` | Independent owning fields, including leading, adjacent, and trailing empty fields |
 | `lines(text) -> Vector<String>` | Independent lines delimited by LF or CRLF, including empty lines; no extra line after a final delimiter |
 
@@ -61,7 +62,7 @@ UTF-8 separator and reports `EmptySeparator` for an empty separator. It performs
 no whitespace normalization. An absent separator returns `found: false`, the
 entire input as `before`, and an empty `after`.
 
-`Split` and substring results borrow the original input, including results
+`TextSplit` and substring results borrow the original input, including results
 returned through helper functions. Their lifetimes and mutations follow ordinary
 ownership checks. `split` and `lines` return owners and copy the fields, so callers
 can retain the collection independently of the input. Empty text yields one empty
@@ -69,7 +70,7 @@ split field and zero lines. A lone CR is content; only CR immediately before LF 
 stripped.
 
 ```carven
-import std::utf using { split_once, TextError };
+import std::utf using { split_once, TextError }
 
 fn setting(text: str) -> String throw TextError {
     let pair = split_once(text, "=")?;
@@ -82,10 +83,12 @@ fn setting(text: str) -> String throw TextError {
 The source functions and methods on this page are `const fn` declarations. They
 share values, failures, and ownership rules across execution stages. Static calls
 use the language's execution budgets and result-retention checks.
+Prefix and suffix comparison share a pure native implementation across static,
+interpreted, and compiled execution.
 Encoded arrays can become frozen constant slices:
 
 ```carven
-import std::utf using { encode_utf8, encoded_bytes, validate_utf8 };
+import std::utf using { encode_utf8, encoded_bytes, validate_utf8 }
 
 const encoded = encode_utf8('😀');
 const bytes = encoded_bytes(encoded);
@@ -129,9 +132,9 @@ input is still permitted.
 
 ## Borrowed splitting cursor
 
-`SplitCursor::new()` creates an offset-only cursor. Call
-`cursor.next(text, separator)?` explicitly; `SplitField::Value(str)` borrows the
-original input, while `SplitField::End` marks exhaustion. Empty input yields one
+`TextSplitCursor::new()` creates an offset-only cursor. Call
+`cursor.next(text, separator)?` explicitly; `TextSplitField::Value(str)` borrows the
+original input, while `TextSplitField::End` marks exhaustion. Empty input yields one
 empty field, and leading, adjacent, and trailing empty fields are preserved.
 Separators may contain multiple UTF-8 bytes; an empty separator reports
 `TextError::EmptySeparator`, including after exhaustion.

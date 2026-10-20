@@ -1,6 +1,7 @@
 module carven:backend.target.unit;
 
 import :backend.target.header;
+import :backend.target.ids;
 import :backend.target.item;
 import :backend.target.origin;
 import std;
@@ -29,6 +30,7 @@ struct TargetDirectiveInputs final {
     bool pragma_once;
     std::vector<TargetHeaderRequirement> requirements;
     std::vector<TargetHeaderOccurrence> native_headers;
+    std::vector<TargetArtifactID> generated_dependencies;
 };
 
 struct TargetUnitSections final {
@@ -40,4 +42,6 @@ struct TargetUnitSections final {
 struct TargetUnitContents final {
     std::vector<TargetDirectiveGroup> directive_groups;
     TargetUnitSections sections;
+    std::vector<TargetArtifactID> generated_dependencies;
+    std::vector<std::string> link_dependencies;
 };

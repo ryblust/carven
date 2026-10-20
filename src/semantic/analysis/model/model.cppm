@@ -3,6 +3,7 @@ module carven:semantic.analysis.model;
 import :semantic.analysis.failure;
 import :semantic.analysis.generics.snapshot;
 import :semantic.semir.contents;
+import :semantic.semir.callable;
 import :semantic.semir.program;
 import :semantic.semir.structured;
 import std;
@@ -43,7 +44,7 @@ using AnalysisTypeShape = std::variant<
     AnalysisPointerType,
     FunctionTypeValue,
     ClosureTypeValue,
-    CallableViewTypeValue,
+    ConstructionCallableViewTypeValue,
     ConstructionOperationTypeValue,
     CppTypeValue,
     GenericTypeParameter,
@@ -90,8 +91,12 @@ public:
     auto body(AnalysisBodyID id) const noexcept -> const AnalysisBodyView&;
     auto shape(ConstructionTypeRef type) const noexcept -> const AnalysisTypeShape&;
     auto concrete_type(ConstructionTypeRef type) const noexcept -> std::optional<TypeID>;
+    auto callable_identity(ConstructionTypeRef type) const noexcept -> std::optional<CallableID>;
     auto contents(ConstructionTypeRef type) const noexcept -> TypeContents;
+    auto callable_adaptation(ConstructionTypeRef from, ConstructionTypeRef to) const noexcept
+        -> CallableAdaptation;
     auto fields(GenericTypeID type) const noexcept -> std::vector<ConstructionTypeRef>;
+    auto enum_case_count(ConstructionEnumCaseRef reference) const noexcept -> std::size_t;
     auto failure_support(ConstructionFailureRef failures) const noexcept -> GenericFailureMask;
 
     auto failure_known_members(ConstructionFailureRef failures) const noexcept

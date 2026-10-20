@@ -404,14 +404,18 @@ auto interpret_binary(
     }
     const auto known = std::optional<ConstantID>();
     auto state = Site::operand_state();
-    auto first = site.consume_read(state, std::move(*left), source.operator_span);
+    auto first = site.consume_read_argument(state, std::move(*left), source.operator_span);
     if (!first) {
         co_return std::unexpected(first.error());
     }
-    auto second = site.consume_read(state, std::move(*right), source.operator_span);
+    auto second = site.consume_read_argument(state, std::move(*right), source.operator_span);
     if (!second) {
         co_return std::unexpected(second.error());
     }
+    // Operators observe values at each operand's evaluation, without constructing
+    // a transferable owner or granting Copy to an unknown operand type.
+    first->category = SemanticValueCategory::Value;
+    second->category = SemanticValueCategory::Value;
     co_return site.finish_constructed(
         type,
         SemBinary {

@@ -17,11 +17,8 @@ public:
     auto indent(FormattingNodeID child) noexcept -> FormattingNodeID;
     auto group(FormattingNodeID child) noexcept -> FormattingNodeID;
 
-    auto render(
-        FormattingNodeID root,
-        std::size_t width = 100,
-        std::size_t indent_width = 4
-    ) const noexcept -> std::string;
+    auto render(FormattingNodeID root, std::size_t width, std::size_t indent_width) const noexcept
+        -> std::string;
 
 private:
     enum class Kind { Text, Verbatim, Concat, Line, HardLine, Indent, Group };

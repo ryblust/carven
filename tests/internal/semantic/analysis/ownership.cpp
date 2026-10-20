@@ -903,7 +903,7 @@ const TestSuite suite([] static noexcept {
                                                                    .bodies = {},
                                                                    .records = {},
                                                                    .enum_payloads = {},
-                                                                   .test_stops = {},
+                                                                   .call_stops = {},
                                                                    .failures = {},
                                                                }
                                                            ))
@@ -939,7 +939,7 @@ const TestSuite suite([] static noexcept {
                                                                        .bodies = {},
                                                                        .records = {},
                                                                        .enum_payloads = {},
-                                                                       .test_stops = {},
+                                                                       .call_stops = {},
                                                                        .failures = {},
                                                                    }
                                                                ))

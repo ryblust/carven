@@ -1,0 +1,35 @@
+import std::async using { first_successful, wait_ready, close }
+
+struct QueryError {
+    code: i32
+}
+
+private import(cpp) async fn query(&&text: String) -> String throw QueryError;
+
+async fn preview(&&text: String) -> String {
+    try {
+        return await preview_checked(&&text)?;
+    } catch {
+        QueryError(error) => { return f"updated unavailable: {error.code}"; },
+    }
+}
+
+async fn preview_checked(&&text: String) -> String throw QueryError {
+    let response = await query(&&text)?;
+    let follow_up = f"updated follow-up: {response}";
+    let final_response = await query(&&follow_up)?;
+    return f"updated: {final_response}";
+}
+
+async fn preview_candidates(&&text: String) -> String throw QueryError {
+    let secondary = f"backup: {text}";
+    let (_, response) = await first_successful(query(&&text), query(&&secondary))?;
+    return response;
+}
+
+async fn preview_child(&&text: String) -> String {
+    async let child = query(&&text);
+    await wait_ready(child);
+    await close(child);
+    return "continued";
+}

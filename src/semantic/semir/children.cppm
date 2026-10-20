@@ -75,7 +75,8 @@ auto visit_semantic_edges(Operation& operation, Visitor visitor) noexcept -> voi
             for (auto& element : value.payload) {
                 child(element);
             }
-        } else if constexpr (std::same_as<std::remove_const_t<Operation>, SemUnary>) {
+        } else if constexpr (std::same_as<std::remove_const_t<Operation>, SemUnary>
+                             || std::same_as<std::remove_const_t<Operation>, SemHash>) {
             auto& value = operation;
             child(value.operand);
         } else if constexpr (std::same_as<std::remove_const_t<Operation>, SemBinary>) {

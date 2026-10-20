@@ -1,1 +1,1 @@
-export fn local_value() -> i32 => 20;
+fn local_value() -> i32 => 20;

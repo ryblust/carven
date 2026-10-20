@@ -52,6 +52,20 @@ const TestSuite suite([] static noexcept {
                     .suffix = TargetIntegerSuffix::None,
                 }}
             },
+            Scenario {
+                .name = "source name argument",
+                .arguments = {TargetStringLiteral {
+                    .bytes = "host.read",
+                    .kind = TargetStringLiteralKind::String
+                }}
+            },
+            Scenario {
+                .name = "distinct source name argument",
+                .arguments = {TargetStringLiteral {
+                    .bytes = "host.write",
+                    .kind = TargetStringLiteralKind::String
+                }}
+            },
             Scenario {.name = "explicit empty arguments", .arguments = {}},
         };
         auto identities = std::vector<TargetTypeID>();

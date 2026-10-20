@@ -123,6 +123,45 @@ auto ProgramDraft::generic_declaration_copy(GenericDeclarationID id) const noexc
     return *storage.generic_definitions[id.index()];
 }
 
+auto ProgramDraft::check_generic_bounds(
+    GenericDeclarationID definition,
+    std::span<const GenericArgument> arguments,
+    ProgramOriginID origin
+) const noexcept -> AnalysisResult<void> {
+    const auto contract = generic_declaration_contract_copy(definition);
+    if (arguments.size() != contract.parameters.size()) {
+        return std::unexpected(
+            diagnostics().error(DiagnosticBuilder(
+                                    DiagnosticCode::TypeGenericArguments,
+                                    "generic argument count differs from its declaration"
+            )
+                                    .primary(source_span(origin))
+                                    .build())
+        );
+    }
+    for (const auto [index, argument] : std::views::enumerate(arguments)) {
+        const auto* type = std::get_if<ConstructionTypeRef>(&argument);
+        for (const auto capability : contract.parameter_bounds[index]) {
+            if (type && type_satisfies_capability(*this, *type, capability)) {
+                continue;
+            }
+            const auto name = capability == BuiltinCapability::Hash ? "Hash" : "Equal";
+            return std::unexpected(
+                diagnostics().error(
+                    DiagnosticBuilder(
+                        DiagnosticCode::TypeGenericArguments,
+                        std::format("generic argument does not satisfy {}", name)
+                    )
+                        .primary(source_span(origin))
+                        .related(source_span(contract.origin), "capability required here")
+                        .build()
+                )
+            );
+        }
+    }
+    return {};
+}
+
 auto ProgramDraft::intern_generic_type(GenericTypeExpression expression) noexcept -> GenericTypeID {
     if (const auto* tuple = std::get_if<GenericTupleType>(&expression);
         tuple && tuple->elements.empty()) {
@@ -163,6 +202,16 @@ auto ProgramDraft::intern_generic_type(GenericTypeExpression expression) noexcep
                 if (operation.failures.visit([](auto id) static noexcept { return id.owner(); })
                     != program_identity) {
                     invariant_violation("generic operation used a foreign failure expression");
+                }
+            },
+            [&](const GenericCallableViewType& view) noexcept {
+                for (const auto& parameter : view.parameters) {
+                    validate_child(parameter.type);
+                }
+                validate_child(view.result);
+                if (view.failures.visit([](auto id) static noexcept { return id.owner(); })
+                    != program_identity) {
+                    invariant_violation("generic callable used a foreign failure expression");
                 }
             },
             [&](const GenericCppNamedType& native) noexcept {
@@ -288,7 +337,12 @@ auto ProgramDraft::substitute_generic_type(
                 }
                 value.result = child(value.result);
                 value.failures = effects->substitute(value.failures);
-                return append_construction_type(std::move(shape));
+                return make_callable_view_type(
+                    *this,
+                    std::move(value.parameters),
+                    value.result,
+                    value.failures
+                );
             }
         });
     }
@@ -323,6 +377,12 @@ auto ProgramDraft::substitute_generic_type(
             child(value.target);
         } else if constexpr (std::same_as<Shape, GenericOperationType>) {
             child(value.success);
+            value.failures = effects->substitute(value.failures);
+        } else if constexpr (std::same_as<Shape, GenericCallableViewType>) {
+            for (auto& parameter : value.parameters) {
+                child(parameter.type);
+            }
+            child(value.result);
             value.failures = effects->substitute(value.failures);
         } else if constexpr (std::same_as<Shape, GenericCppNamedType>) {
             for (auto& argument : value.arguments) {
@@ -470,6 +530,46 @@ auto ProgramDraft::resolve_generic_type(
                         {.value = OperationTypeValue {.success = *success, .failures = *failures}}
                     );
                 },
+                [&](const GenericCallableViewType& view) noexcept -> AnalysisResult<TypeID> {
+                    auto parameters = std::vector<ConstructionCallableParameter>();
+                    for (const auto& parameter : view.parameters) {
+                        auto type = resolve_generic_type(
+                            parameter.type,
+                            definition,
+                            arguments,
+                            origin,
+                            effects
+                        );
+                        if (!type) {
+                            return std::unexpected(type.error());
+                        }
+                        parameters.push_back(
+                            {.stage = parameter.stage, .access = parameter.access, .type = *type}
+                        );
+                    }
+                    auto result =
+                        resolve_generic_type(view.result, definition, arguments, origin, effects);
+                    if (!result) {
+                        return std::unexpected(result.error());
+                    }
+                    const auto changed = effects->substitute(view.failures);
+                    const auto* failures = std::get_if<FailureSetID>(&changed);
+                    if (!failures) {
+                        return std::unexpected(
+                            diagnostics().error(
+                                DiagnosticBuilder(
+                                    DiagnosticCode::TypeGenericArguments,
+                                    "this concrete type boundary requires a determined failure set"
+                                )
+                                    .primary(source_span(origin))
+                                    .build()
+                            )
+                        );
+                    }
+                    return canonicalize_declared_type(
+                        make_callable_view_type(*this, std::move(parameters), *result, *failures)
+                    );
+                },
                 [&](const GenericCppNamedType& native) noexcept -> AnalysisResult<TypeID> {
                     auto types = std::vector<TypeID>();
                     for (const auto argument : native.arguments) {
@@ -581,6 +681,10 @@ auto ProgramDraft::instantiate_generic_nominal(
     }
     const auto source = generic_declaration_copy(definition);
     const auto& contract = generic_contract(source);
+    auto bounds = check_generic_bounds(definition, generic_environment(arguments), origin);
+    if (!bounds) {
+        return std::unexpected(bounds.error());
+    }
     if (std::holds_alternative<GenericFunctionDefinition>(source)) {
         return std::unexpected(
             diagnostics().error(DiagnosticBuilder(

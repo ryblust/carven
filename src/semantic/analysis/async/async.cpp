@@ -64,7 +64,8 @@ auto resolve_async_builtin(
     if (!timeout) {
         co_return std::unexpected(timeout.error());
     }
-    auto range = co_await requests.standard_type(StandardDeclaration::RangeError, requester, span);
+    auto range =
+        co_await requests.standard_type(StandardDeclaration::TimeRangeError, requester, span);
     if (!range) {
         co_return std::unexpected(range.error());
     }
@@ -206,47 +207,47 @@ auto analyze_async_contracts(
                                   .primary(program.provenance().source_span(origin))
                                   .build());
         };
+    const auto rejected = [](ValueAdmission admission, bool allow_dependent) static noexcept {
+        if (admission == ValueAdmission::Dependent && !allow_dependent) {
+            invariant_violation(
+                "concrete async contract retains a dependent admission requirement"
+            );
+        }
+        return admission == ValueAdmission::Rejected;
+    };
+    const auto check_parameter = [&](const auto& parameter,
+                                     ProgramOriginID origin,
+                                     bool allow_dependent) noexcept {
+        if (rejected(
+                parameter.access == AccessMode::Write ? builtin_value(model, parameter.type)
+                                                      : admitted_value(
+                                                            model,
+                                                            parameter.type,
+                                                            parameter.access == AccessMode::Take,
+                                                            parameter.access == AccessMode::Read,
+                                                            parameter.access == AccessMode::Take
+                                                        ),
+                allow_dependent
+            )) {
+            diagnose(
+                origin,
+                DiagnosticCode::AsyncOwnership,
+                "async inputs require value or native borrowed Read, builtin value Write, or referent-free owning Take"
+            );
+        }
+    };
     const auto check_signature = [&](const auto& signature,
                                      ProgramOriginID origin,
                                      bool allow_dependent,
                                      bool entry_arguments) noexcept {
-        const auto rejected = [&](ValueAdmission admission) noexcept {
-            if (admission == ValueAdmission::Dependent && !allow_dependent) {
-                invariant_violation(
-                    "concrete async contract retains a dependent admission requirement"
-                );
-            }
-            return admission == ValueAdmission::Rejected;
-        };
-        for (const auto& parameter : signature.parameters) {
-            if (parameter.stage == ParameterStage::Static) {
-                continue;
-            }
-            // The entry wrapper owns its argument Vector until the root and
-            // children close. Its one compiler-supplied Read parameter borrows
-            // this stable storage; ordinary async parameter admission is unchanged.
-            if (entry_arguments) {
-                continue;
-            }
-            if (rejected(
-                    parameter.access == AccessMode::Write
-                        ? builtin_value(model, parameter.type)
-                        : admitted_value(
-                              model,
-                              parameter.type,
-                              parameter.access == AccessMode::Take,
-                              parameter.access == AccessMode::Read,
-                              parameter.access == AccessMode::Take
-                          )
-                )) {
-                diagnose(
-                    origin,
-                    DiagnosticCode::AsyncOwnership,
-                    "async inputs require value or native borrowed Read, builtin value Write, or referent-free owning Take"
-                );
+        if (!entry_arguments) {
+            for (const auto& parameter : signature.parameters) {
+                if (parameter.stage != ParameterStage::Static) {
+                    check_parameter(parameter, origin, allow_dependent);
+                }
             }
         }
-        if (rejected(admitted_value(model, signature.result, true, true, false))) {
+        if (rejected(admitted_value(model, signature.result, true, true, false), allow_dependent)) {
             diagnose(
                 origin,
                 DiagnosticCode::AsyncOwnership,
@@ -255,7 +256,7 @@ auto analyze_async_contracts(
         }
         const auto failures = ConstructionFailureRef(signature.failures);
         for (const auto type : model.failure_known_members(failures)) {
-            if (rejected(admitted_value(model, type, true, true, false))) {
+            if (rejected(admitted_value(model, type, true, true, false), allow_dependent)) {
                 diagnose(
                     origin,
                     DiagnosticCode::AsyncOwnership,
@@ -295,9 +296,10 @@ auto analyze_async_contracts(
             check_signature(function->signature, function->contract.origin, true, false);
         }
     }
-    for (const auto& [definition, stops] : generics.test_stops) {
+    for (const auto& [definition, stops] : generics.call_stops) {
         const auto& function = std::get<GenericFunctionDefinition>(generics.definition(definition));
-        if (stops && function.signature.execution == CallableExecutionKind::Async) {
+        if (includes_test_stop(stops)
+            && function.signature.execution == CallableExecutionKind::Async) {
             diagnose(
                 function.contract.origin,
                 DiagnosticCode::AsyncAdmission,
@@ -347,6 +349,23 @@ auto analyze_async_contracts(
                             source.origin,
                             DiagnosticCode::AsyncOwnership,
                             "operation-containing storage requires complete Take rather than copying"
+                        );
+                    }
+                    if (const auto* native = std::get_if<SemCppCall>(&source.value);
+                        native && operation(model, source.type.construction())) {
+                        visit_cpp_operands(
+                            *native,
+                            [&](AccessMode access, const SemanticExpression& input) noexcept {
+                                check_parameter(
+                                    ConstructionCallableParameter {
+                                        .stage = ParameterStage::Runtime,
+                                        .access = access,
+                                        .type = input.type.construction()
+                                    },
+                                    input.origin,
+                                    true
+                                );
+                            }
                         );
                     }
                     const auto* call = std::get_if<SemCall>(&source.value);

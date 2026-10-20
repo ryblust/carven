@@ -11,4 +11,5 @@ repository tests.
 | Place tests and validate a change | [Testing](testing.md): suite responsibilities, fixtures, assertions, builds, and static analysis |
 | Evaluate a language or implementation design | [Principles](principles.md): semantic authority, library ownership, native boundaries, safety, performance, and feature admission |
 
-Local task and benchmark procedures live with their Xmake implementations.
+Repository formatting and module-build support live in `xmake/`; benchmark
+workloads and commands live in `benchmarks/`.

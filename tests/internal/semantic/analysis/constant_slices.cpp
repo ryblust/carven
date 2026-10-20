@@ -1,7 +1,9 @@
 module carven:test.internal.semantic.analysis.constant_slices;
 
 import :diagnostics.code;
+import :semantic.evaluation.value;
 import :semantic.semir.constant;
+import :semantic.semir.constant_access;
 import :semantic.semir.program;
 import :semantic.semir.type;
 import :test.harness.diagnostics;
@@ -34,6 +36,7 @@ const TestSuite suite([] static noexcept {
         const skipped = false && (build(8).slice()[0] == 8);
     )");
             auto checked = 0uz;
+            const auto values = PublishedConstantValues(program);
             auto table = std::optional<ConstantID>();
             auto explicit_view = std::optional<ConstantID>();
             for (const auto [id, declaration] : program.declarations().module_constants()) {
@@ -66,8 +69,9 @@ const TestSuite suite([] static noexcept {
                     expect(value->value == (name == "is_empty"));
                     ++checked;
                 } else {
-                    const auto* value = std::get_if<SliceConstant>(&fact.value);
-                    if (!expect(value != nullptr)) {
+                    const auto value =
+                        execution_compound_view(values, ExecutionValue(declaration.value));
+                    if (!expect(value.has_value())) {
                         return;
                     }
                     const auto* type =
@@ -75,11 +79,16 @@ const TestSuite suite([] static noexcept {
                     if (!expect(type != nullptr)) {
                         return;
                     }
-                    for (const auto child : value->elements) {
-                        expect(program.constants().constant(child).type == type->element);
-                    }
+                    value->elements.visit([&](const auto& elements) noexcept {
+                        for (auto index = 0uz; index < elements.size(); ++index) {
+                            expect(
+                                execution_value_type(values, elements[index])
+                                == ConstructionTypeRef(type->element)
+                            );
+                        }
+                    });
                     if (name == "empty" || name == "ending") {
-                        expect(value->elements.empty());
+                        expect(value->size() == 0uz);
                     }
                     if (name == "rows") {
                         const auto* row =

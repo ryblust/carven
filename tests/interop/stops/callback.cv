@@ -1,8 +1,21 @@
-import "native.hpp";
+import(cpp) fn call_guarded() -> i32 throw Failure;
 
-import(cpp) fn call_guarded();
+struct Failure {}
 
-export struct Failure {}
+#[cpp] ---
+#include <carven/api/tests/interop/stops/callback.hpp>
+
+auto native_stop_without_failure() noexcept {
+    return carven::api::tests::interop::stops::callback::stopped_without_failure();
+}
+---
+
+private import(cpp) fn explicit_stop() -> i32 = ::native_stop_without_failure;
+
+export(cpp) fn stopped_without_failure() -> i32 {
+    require(false, "explicit native stop");
+    return 7;
+}
 
 export(cpp) fn guarded(proceed: bool) -> i32 throw Failure {
     require(proceed, "native boundary stop");
@@ -10,10 +23,19 @@ export(cpp) fn guarded(proceed: bool) -> i32 throw Failure {
 }
 
 test "test stop at a native boundary" {
-    call_guarded();
+    try {
+        call_guarded()?;
+    } catch {
+        Failure(_) => {}
+    }
     eprintln("unreachable Carven continuation");
 }
 
+test "test stop at an explicit native boundary without declared failures" {
+    explicit_stop();
+    eprintln("unreachable explicit native continuation");
+}
+
 test "later case" {
-    eprintln("unreachable later test");
+    eprintln("later case completed");
 }

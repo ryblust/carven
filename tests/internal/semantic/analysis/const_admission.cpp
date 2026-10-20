@@ -6,6 +6,7 @@ import :frontend.program.parse;
 import :semantic.analyze;
 import :source.batch;
 import :source.manager;
+import :source.module_path;
 import :source.text;
 import :test.harness.diagnostics;
 import :test.harness.framework;
@@ -15,6 +16,142 @@ import std;
 namespace {
 
 const TestSuite suite([] static noexcept {
+    "Constant native capability: source modules preserve native identity and shared ownership"_test =
+        [] static noexcept {
+            auto sources = SourceManager();
+            const auto application = sources.append_virtual("analysis.cv", R"(
+import provider using close_native;
+import <carven/std/channel/native.hpp> using carven::standard::channel;
+const {
+    let handle = channel::create(1usize);
+    close_native(handle);
+    let pending = channel::receive(handle);
+    let result = await pending;
+    assert(result.end as bool);
+}
+)");
+            const auto provider = sources.append_virtual("provider.cv", R"(
+import <carven/std/channel/native.hpp> using carven::standard::channel;
+export const fn close_native(handle: channel::Handle) { channel::close(handle); }
+)");
+            require(application.has_value() && provider.has_value());
+            const auto inputs = std::array {
+                SourceModuleInput {
+                    .source_id = *application,
+                    .module_path = semantic_test_module_path(),
+                },
+                SourceModuleInput {
+                    .source_id = *provider,
+                    .module_path = *CanonicalModulePath::from_value("provider"),
+                },
+            };
+            auto parsed = parse_program(sources, SourceBatch {.modules = inputs});
+            require(parsed.has_value());
+            const auto analyzed = analyze(std::move(*parsed), HostEffects::Deny);
+            expect(analyzed.has_value());
+        };
+
+    "Constant native capability: execution checks host permission and available progress"_test =
+        [] static noexcept {
+            constexpr auto declaration = std::string_view(R"(
+import <carven/std/channel/native.hpp> using carven::standard::channel;
+import <carven/std/io/native.hpp> using carven::standard::io;
+import <carven/std/process/native.hpp> using carven::standard::process;
+const fn parallelism() -> i32 => process::parallelism() as i32;
+)");
+            const auto check = [&](std::string_view root,
+                                   HostEffects effects,
+                                   std::optional<DiagnosticCode> rejection) noexcept {
+                auto sources = SourceManager();
+                const auto source = sources.append_virtual(
+                    "analysis.cv",
+                    std::string(declaration) + std::string(root)
+                );
+                require(source.has_value());
+                const auto input = SourceModuleInput {
+                    .source_id = *source,
+                    .module_path = semantic_test_module_path(),
+                };
+                auto parsed =
+                    parse_program(sources, SourceBatch {.modules = std::span(&input, 1uz)});
+                require(parsed.has_value());
+                const auto analyzed = analyze(std::move(*parsed), effects);
+                if (!rejection) {
+                    expect(analyzed.has_value());
+                } else if (expect(!analyzed.has_value())) {
+                    expect_diagnostic(analyzed.error(), *rejection);
+                }
+            };
+            check(
+                "const { assert(parallelism() > 0); }",
+                HostEffects::Deny,
+                DiagnosticCode::ConstAdmission
+            );
+            constexpr auto cold_output = std::string_view(
+                "const { let bytes: Vector<u8> = []; "
+                "let pending = io::write_output(&&bytes); "
+            );
+            check(std::string(cold_output) + "}", HostEffects::Deny, std::nullopt);
+            check(
+                std::string(cold_output)
+                    + "assert(parallelism() > 0); assert(await pending == 0); }",
+                HostEffects::Allow,
+                std::nullopt
+            );
+            check(
+                std::string(cold_output) + "assert(await pending == 0); }",
+                HostEffects::Deny,
+                DiagnosticCode::ConstAdmission
+            );
+            check(
+                "const { let empty = channel::create(1usize); "
+                "let pending = channel::receive(empty); "
+                "let result = await pending; }",
+                HostEffects::Allow,
+                DiagnosticCode::ConstEvaluation
+            );
+        };
+
+    "Constant native capability: field and mutation contracts match native calls"_test =
+        [] static noexcept {
+            constexpr auto cases = std::to_array<std::string_view>({
+                "const fn invalid() -> i32 { let result = fs::status(\".\"); "
+                "return result.code() as i32; }",
+                "const fn invalid() -> String { let result = fs::canonical(\".\"); "
+                "return result.take_path() as String; }",
+            });
+            each(cases, std::identity {}, [](std::string_view source) static noexcept {
+                expect_diagnostic(
+                    analyze_test_errors(
+                        "import <carven/std/fs/native.hpp> using carven::standard::fs; "
+                        + std::string(source)
+                    ),
+                    DiagnosticCode::ConstAdmission
+                );
+            });
+        };
+
+    "Constant native capability: explicit operation types preserve the known native contract"_test =
+        [] static noexcept {
+            constexpr auto cases = std::to_array<std::string_view>({
+                "const fn invalid() { let handle = channel::create(1usize); "
+                "let pending: Operation<i32> = channel::receive(handle); }",
+                "struct Failure {} const fn invalid() { let handle = channel::create(1usize); "
+                "let pending: Operation<channel::Result, throw Failure> = channel::receive(handle); }",
+                "const fn invalid() { let pending: Operation<channel::Handle> = channel::create(1usize); }",
+            });
+            each(cases, std::identity {}, [](std::string_view source) static noexcept {
+                expect_diagnostic(
+                    analyze_test_errors(
+                        "import std::async using Operation; "
+                        "import <carven/std/channel/native.hpp> using carven::standard::channel; "
+                        + std::string(source)
+                    ),
+                    DiagnosticCode::TypeMismatch
+                );
+            });
+        };
+
     "Constant function admission: capability diagnostics preserve evaluation order"_test = [] static noexcept {
         struct Scenario final {
             std::string_view name;

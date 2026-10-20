@@ -8,7 +8,7 @@ import "bindings/read_policy.hpp" using read_policy::{
     make_fresh,
     trivial_reference,
     borrowed_reference,
-};
+}
 
 fn trivial_read(value: Trivial, _: i32) -> i32 => value.value;
 

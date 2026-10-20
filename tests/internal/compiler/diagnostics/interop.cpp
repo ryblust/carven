@@ -35,7 +35,7 @@ const TestSuite suite([] static noexcept {
                 .primary_text = "value",
             },
             {
-                .name = "export signatures obey nominal visibility",
+                .name = "C++ interfaces still reject module-private signature types",
                 .source = "private struct Hidden {} export(cpp) fn leak() => Hidden {};",
                 .code = DiagnosticCode::TypeVisibilityLeak,
                 .primary_text = "export(cpp) fn leak() => Hidden {};",
@@ -48,32 +48,55 @@ const TestSuite suite([] static noexcept {
                 .primary_text = "native()",
             },
             {
-                .name = "unrepresentable std provider name",
-                .source = "private import(cpp) fn std() -> i32;",
-                .code = DiagnosticCode::CppIdentifier,
-                .primary_text = "std",
-            },
-            {
                 .name = "unrepresentable explicit C++ target component",
                 .source = "private import(cpp) fn local() -> i32 = ::vendor::class;",
                 .code = DiagnosticCode::CppIdentifier,
                 .primary_text = "class",
             },
-            {
-                .name = "unrepresentable carven provider name",
-                .source = "private import(cpp) fn carven() -> i32;",
-                .code = DiagnosticCode::CppIdentifier,
-                .primary_text = "carven",
-            },
-            {
-                .name = "unrepresentable main provider name",
-                .source = "private import(cpp) fn main() -> i32;",
-                .code = DiagnosticCode::CppIdentifier,
-                .primary_text = "main",
-            },
         });
         check_compiler_errors(cases);
     };
+
+    "Compiler: C++ interfaces do not grant cross-craft source visibility"_test =
+        [] static noexcept {
+            for (const auto modifier : {"export(cpp)", "export"}) {
+                for (const auto caller : {"crafts.demo.consumer", "consumer"}) {
+                    auto sources = SourceManager();
+                    const auto api = *sources.append_virtual(
+                        "api.cv",
+                        std::format("{} fn value() -> i32 => 42;", modifier)
+                    );
+                    const auto consumer = *sources.append_virtual(
+                        "consumer.cv",
+                        "import demo::api using value; fn run() -> i32 => value();"
+                    );
+                    const auto inputs = std::array {
+                        SourceModuleInput {
+                            api,
+                            *CanonicalModulePath::from_value("crafts.demo.api")
+                        },
+                        SourceModuleInput {consumer, *CanonicalModulePath::from_value(caller)},
+                    };
+                    const auto result = compile(
+                        sources,
+                        SourceBatch {.modules = inputs},
+                        TargetPlanningRequest {
+                            .test_mode = TestGenerationMode::None,
+                            .linkage_domain = *LinkageDomain::explicit_value("test:cpp-visibility"),
+                            .library = std::nullopt,
+                        }
+                    );
+                    const auto allowed = std::string_view(modifier) == "export"
+                        || std::string_view(caller) == "crafts.demo.consumer";
+                    if (!expect_equal(result.has_value(), allowed)) {
+                        continue;
+                    }
+                    if (!allowed) {
+                        expect_diagnostic(result.error(), DiagnosticCode::ImportResolution);
+                    }
+                }
+            }
+        };
 
     "Compiler diagnostics: C++ API namespace collisions are Carven-owned"_test =
         [] static noexcept {
@@ -137,6 +160,29 @@ const TestSuite suite([] static noexcept {
                  .source = "import <native> using value; fn f() { const x = value(); }",
                  .code = DiagnosticCode::ConstAdmission,
                  .primary_text = "value()"},
+                {.name = "qualified native call cannot execute during static initialization",
+                 .source = "import <native> using vendor::api; fn f() { const x = api::value(); }",
+                 .code = DiagnosticCode::ConstAdmission,
+                 .primary_text = "api::value()"},
+                {.name = "qualified native spelling must be representable",
+                 .source = "import <native> using vendor::api; fn f() { api::union(); }",
+                 .code = DiagnosticCode::CppIdentifier,
+                 .primary_text = "union"},
+                {.name = "local binding shadows an imported native namespace",
+                 .source =
+                     "import <native> using vendor::api; fn f() { let api = 1; api::value(); }",
+                 .code = DiagnosticCode::TypeMismatch,
+                 .primary_text = "api"},
+                {.name = "local binding shadows a qualified native type application",
+                 .source = "import <native> using vendor::api; "
+                           "fn f() { let api = 1; api::Box<i32>::make(); }",
+                 .code = DiagnosticCode::TypeMismatch,
+                 .primary_text = "api::Box<i32>"},
+                {.name = "Carven types take precedence over opened native namespaces",
+                 .source = "import <native> using vendor::*; "
+                           "class Local {} fn f() { Local::missing(); }",
+                 .code = DiagnosticCode::TypeMemberUnresolved,
+                 .primary_text = "missing"},
                 {.name = "external value cannot create a callable borrow",
                  .source =
                      "import <native> using value; fn f() { let callback: fn() -> i32 = value(); }",
@@ -187,7 +233,7 @@ const TestSuite suite([] static noexcept {
             auto sources = SourceManager();
             const auto provider = *sources.append_virtual(
                 "provider.cv",
-                "import <native> using native::{ external }; import <native> using native::*; fn known() {}"
+                "import <native> using native::{ external } import <native> using native::*; fn known() {}"
             );
             const auto consumer =
                 *sources.append_virtual("consumer.cv", std::string(test.consumer));

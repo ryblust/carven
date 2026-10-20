@@ -151,7 +151,7 @@ auto boolean_expression(PreparedFunction& prepared, const BodyFixture& body) noe
         .origin = prepared.origin,
         .constant = std::nullopt,
         .failures = BodyFailures(body.failures),
-        .exits_test = false,
+        .exits_call = false,
         .operation_reachable = true,
         .category = SemanticValueCategory::Value,
         .value = SemConstant {
@@ -179,7 +179,7 @@ auto finish_body(
                              .result = std::move(result),
                              .result_reachable = result_reachable,
                              .failures = BodyFailures(body.failures),
-                             .exits_test = false,
+                             .exits_call = false,
                          }
                      );
     const auto id = draft.id;
@@ -241,7 +241,7 @@ auto check_residual_construction(ResidualConstructionContract contract) noexcept
                     .result = boolean_expression(prepared, body),
                     .result_reachable = true,
                     .failures = BodyFailures(body.failures),
-                    .exits_test = false,
+                    .exits_call = false,
 
 
                 }
@@ -332,7 +332,7 @@ const TestSuite suite([] static noexcept {
             auto body = body_fixture(prepared);
             auto operation = boolean_expression(prepared, body);
             operation.constant.reset();
-            operation.exits_test = true;
+            operation.exits_call = true;
             operation.value = SemReport {
                 .kind = ReportKind::Fail,
                 .condition = std::nullopt,
@@ -370,7 +370,7 @@ const TestSuite suite([] static noexcept {
             .result = std::nullopt,
             .result_reachable = false,
             .failures = BodyFailures(completed),
-            .exits_test = false,
+            .exits_call = false,
         };
         auto attempt = boolean_expression(prepared, body);
         attempt.failures = BodyFailures(completed);
@@ -389,7 +389,7 @@ const TestSuite suite([] static noexcept {
                                  .result = std::move(attempt),
                                  .result_reachable = true,
                                  .failures = BodyFailures(completed),
-                                 .exits_test = false,
+                                 .exits_call = false,
                              }
                          );
         const auto identity = draft.lifetime_regions.owner();
@@ -404,6 +404,7 @@ const TestSuite suite([] static noexcept {
             .region = std::move(draft.region),
             .residual = std::nullopt,
             .specialized = std::nullopt,
+            .generic_definition = std::nullopt,
         });
         expect(finalized.identity() == identity);
     };

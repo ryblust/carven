@@ -60,7 +60,7 @@ private:
 // The query owns its closures, including closures returned by reader factories.
 struct CompletionPatterns final {
     std::function<std::variant<PatternValue, ElaboratedPatternValue>(PatternID)> read;
-    std::function<bool(EnumCaseID)> single_case;
+    std::function<bool(ConstructionEnumCaseRef)> single_case;
 };
 
 struct PatternCompletion final {

@@ -22,11 +22,14 @@ template<typename T>
 struct Box final {
     T value;
 
+    static auto make(T value) noexcept -> Box { return {std::move(value)}; }
+
     auto read() const noexcept -> const T& { return value; }
 };
 
 template<typename T>
 Box(const T&) -> Box<T>;
+
 template<typename T>
 Box(T&&) -> Box<std::remove_cvref_t<T>>;
 

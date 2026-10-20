@@ -8,7 +8,7 @@ import "lifetimes/lifetimes.hpp" using lifetime_probe::{
     reset,
     matches,
     event,
-};
+}
 
 fn owned_outcome(flag: bool) -> Owner throw Failure {
     if flag { return Owner { 1 }; }

@@ -48,6 +48,7 @@ inline constexpr auto builtin_types = std::array {
     BuiltinType::F32x8,        BuiltinType::Mask8,
 };
 
+auto builtin_name(BuiltinType type) noexcept -> std::string_view;
 auto builtin_is_integer(BuiltinType type) noexcept -> bool;
 auto builtin_is_signed_integer(BuiltinType type) noexcept -> bool;
 auto builtin_is_numeric(BuiltinType type) noexcept -> bool;
@@ -174,12 +175,27 @@ struct CallableSignature final {
 };
 
 using ConstructionStructRef = std::variant<StructID, GenericTypeID>;
+using ConstructionEnumRef = std::variant<EnumID, GenericTypeID>;
+
+struct GenericEnumCaseRef final {
+    GenericTypeID owner;
+    std::uint32_t index;
+    auto operator<=>(const GenericEnumCaseRef&) const noexcept = default;
+};
+
+using ConstructionEnumCaseRef = std::variant<EnumCaseID, GenericEnumCaseRef>;
+
+auto concrete_enum_case(const ConstructionEnumCaseRef& reference) noexcept -> EnumCaseID {
+    return std::get<EnumCaseID>(reference);
+}
+
 using ConstructionFailureRef = std::variant<FailureTermID, FailureSetID, GenericFailureID>;
 
 struct ConstructionCallableParameter final {
     ParameterStage stage;
     AccessMode access;
     ConstructionTypeRef type;
+    auto operator<=>(const ConstructionCallableParameter&) const noexcept = default;
 };
 
 struct ConstructionArrayTypeValue final {
@@ -264,6 +280,7 @@ public:
 
 private:
     friend class SemanticArtifactAccess;
+
     CanonicalTypeStore(
         ImmutableProgramTable<CanonicalType, TypeID> rows,
         std::array<TypeID, builtin_types.size()> builtins
@@ -367,6 +384,7 @@ public:
 
 private:
     friend class SemanticArtifactAccess;
+
     explicit CallableSignatureStore(
         ImmutableProgramTable<CallableSignature, CallableSignatureID> rows
     ) noexcept;

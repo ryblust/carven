@@ -48,6 +48,8 @@ auto generic_implementation_dependencies(
             }
         } else if (const auto* operation = std::get_if<GenericOperationType>(&shape)) {
             collect_failures(operation->failures);
+        } else if (const auto* view = std::get_if<GenericCallableViewType>(&shape)) {
+            collect_failures(view->failures);
         }
         visit_generic_type_children(shape, self);
     };
@@ -123,39 +125,46 @@ auto generic_implementation_dependencies(
 
 } // namespace
 
-auto ProgramDraft::solve_test_stops(
+auto ProgramDraft::solve_call_stops(
     const CanonicalTypeStore& types,
     const TypeResolution& resolved_types,
     const DeclarationStore& declarations,
     const GenericAnalysisSnapshot& generics
-) const noexcept -> TestStopFacts {
+) const noexcept -> CallStopFacts {
     const auto callable_count =
         static_cast<std::size_t>(std::ranges::distance(declarations.callables()));
     const auto count = callable_count + generics.definitions.size();
-    auto stops = std::vector<bool>(count, false);
+    auto stops = std::vector<CallStopEffect>(count, CallStopEffect::None);
     auto callers = std::vector<std::vector<std::size_t>>(count);
     auto pending = std::vector<std::size_t>();
     const auto generic_ordinal = [&](GenericDeclarationID definition) noexcept {
         static_cast<void>(generics.definition(definition));
         return callable_count + definition.index();
     };
-    const auto mark = [&](std::size_t ordinal) noexcept {
-        if (!stops[ordinal]) {
-            stops[ordinal] = true;
+    const auto mark = [&](std::size_t ordinal, CallStopEffect effect) noexcept {
+        const auto combined = combine_call_stops(stops[ordinal], effect);
+        if (stops[ordinal] != combined) {
+            stops[ordinal] = combined;
             pending.push_back(ordinal);
         }
     };
     const auto scan = [&](std::size_t ordinal, const StructuredBodyDraft& body) noexcept {
         using Node = std::
             variant<const SemanticExpression*, const SemanticRegion*, const SemanticStatement*>;
+
         auto nodes = std::vector<Node> {body.residual ? &*body.residual : &body.region};
         const auto observe = [&](const SemanticExpression& expression) noexcept {
             if (!expression.operation_reachable) {
                 return;
             }
+            if (std::holds_alternative<SemAwait>(expression.value)
+                || std::holds_alternative<SemWaitReady>(expression.value)
+                || std::holds_alternative<SemCloseChild>(expression.value)) {
+                mark(ordinal, CallStopEffect::Runtime);
+            }
             if (const auto* report = std::get_if<SemReport>(&expression.value); report != nullptr
                 && (report->kind == ReportKind::Require || report->kind == ReportKind::Fail)) {
-                mark(ordinal);
+                mark(ordinal, CallStopEffect::Test);
             }
             if (const auto* call = std::get_if<SemGenericCall>(&expression.value)) {
                 const auto& target =
@@ -171,9 +180,14 @@ auto ProgramDraft::solve_test_stops(
                 }
                 auto callee_type = call->callee->type.construction();
                 if (const auto* generic = std::get_if<GenericTypeID>(&callee_type)) {
-                    const auto* concrete = std::get_if<TypeID>(&generics.generic_type(*generic));
+                    const auto& shape = generics.generic_type(*generic);
+                    if (std::holds_alternative<GenericCallableViewType>(shape)) {
+                        mark(ordinal, CallStopEffect::TestAndRuntime);
+                        return;
+                    }
+                    const auto* concrete = std::get_if<TypeID>(&shape);
                     if (!concrete) {
-                        invariant_violation("checked indirect call lacks a concrete callable type");
+                        invariant_violation("checked indirect call lacks a callable type");
                     }
                     callee_type = *concrete;
                 }
@@ -183,7 +197,7 @@ auto ProgramDraft::solve_test_stops(
                 } else if (const auto* closure = std::get_if<ClosureTypeValue>(&type)) {
                     callers[closure->callable.index()].push_back(ordinal);
                 } else if (std::holds_alternative<CallableViewTypeValue>(type)) {
-                    mark(ordinal);
+                    mark(ordinal, CallStopEffect::TestAndRuntime);
                 }
             }
         };
@@ -219,6 +233,9 @@ auto ProgramDraft::solve_test_stops(
         }
     };
     for (const auto entry : declarations.callables()) {
+        if (std::holds_alternative<CppImportImplementation>(entry.value.implementation)) {
+            mark(entry.id.index(), CallStopEffect::Runtime);
+        }
         if (const auto body = callable_body_id(entry.value)) {
             scan(entry.id.index(), *storage.bodies[body->index()].definition);
         }
@@ -228,11 +245,11 @@ auto ProgramDraft::solve_test_stops(
     }
     for (auto next = 0uz; next < pending.size(); ++next) {
         for (const auto caller : callers[pending[next]]) {
-            mark(caller);
+            mark(caller, stops[pending[next]]);
         }
     }
-    auto result = TestStopFacts {
-        .callables = std::vector<bool>(
+    auto result = CallStopFacts {
+        .callables = std::vector<CallStopEffect>(
             stops.begin(),
             stops.begin() + static_cast<std::ptrdiff_t>(callable_count)
         ),
@@ -376,16 +393,16 @@ auto ProgramDraft::resolve() && noexcept -> AnalysisResult<ResolvedAnalysisProgr
     auto constants = std::move(input.constants).seal();
     auto failure_sets = std::move(input.failure_sets).seal();
     auto signatures = std::move(input.callable_signatures).seal();
-    auto stop_facts = solve_test_stops(types, resolved_types, declarations, generics);
-    generics.test_stops = std::move(stop_facts.definitions);
-    auto test_stops = std::move(stop_facts.callables);
+    auto stop_facts = solve_call_stops(types, resolved_types, declarations, generics);
+    generics.call_stops = std::move(stop_facts.definitions);
+    auto call_stops = std::move(stop_facts.callables);
     auto bodies = MutableProgramTable<SemIRBody, BodyID>(program_identity);
     for (auto& slot : input.bodies) {
         auto body = resolve_body(
             std::move(*slot.definition),
             resolved_types,
             types,
-            test_stops,
+            call_stops,
             *failure_owner,
             failure_sets,
             provenance_appender.reader(),
@@ -455,7 +472,7 @@ auto ProgramDraft::resolve() && noexcept -> AnalysisResult<ResolvedAnalysisProgr
             std::move(generic_declarations),
             std::move(generic_instances),
             std::move(generic_functions),
-            std::move(test_stops)
+            std::move(call_stops)
         ),
         .generics = std::move(generics)
     };

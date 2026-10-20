@@ -1,11 +1,11 @@
-export struct Entry {
+struct Entry {
     key: i32,
     label: str,
 }
 
-export const records: [Entry] = make_records(4);
-export const empty_records: [Entry] = [];
-export const first_record: Entry = records[0];
+const records: [Entry] = make_records(4);
+const empty_records: [Entry] = [];
+const first_record: Entry = records[0];
 
 const fn make_records(seed: i32) -> [Entry; 2] {
     var rows = [
@@ -16,4 +16,4 @@ const fn make_records(seed: i32) -> [Entry; 2] {
     return rows;
 }
 
-export fn provider_records() -> [Entry] => records;
+fn provider_records() -> [Entry] => records;

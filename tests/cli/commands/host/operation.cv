@@ -1,1 +1,0 @@
-const pending = stdin().read_line();

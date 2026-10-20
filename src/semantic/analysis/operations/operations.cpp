@@ -21,6 +21,12 @@ import :support.invariant;
 import :support.visit;
 import std;
 
+auto type_supports_hash(const CanonicalTypeStore& types, TypeID type) noexcept -> bool {
+    return hash_type_support(types.type(type), [&](TypeID element) noexcept {
+        return type_supports_hash(types, element);
+    });
+}
+
 namespace {
 
 auto builtin_type(const CanonicalTypeStore& types, TypeID type) noexcept
@@ -666,6 +672,41 @@ auto make_operation_type(
     );
 }
 
+auto make_callable_view_type(
+    ProgramDraft& draft,
+    std::vector<ConstructionCallableParameter> parameters,
+    ConstructionTypeRef result,
+    ConstructionFailureRef failures
+) noexcept -> ConstructionTypeRef {
+    auto generic = std::holds_alternative<GenericFailureID>(failures);
+    for (auto& parameter : parameters) {
+        parameter.type = unwrap_type_alias(draft, parameter.type);
+        generic |= std::holds_alternative<GenericTypeID>(parameter.type);
+    }
+    result = unwrap_type_alias(draft, result);
+    generic |= std::holds_alternative<GenericTypeID>(result);
+    if (generic) {
+        return draft.intern_generic_type(
+            GenericCallableViewType {
+                .parameters = std::move(parameters),
+                .result = result,
+                .failures = failures
+            }
+        );
+    }
+    auto pending = ConstructionType {
+        .value = ConstructionCallableViewTypeValue {
+            .parameters = std::move(parameters),
+            .result = result,
+            .failures = failures
+        }
+    };
+    if (const auto concrete = draft.try_canonicalize_declared_type(pending)) {
+        return *concrete;
+    }
+    return draft.append_construction_type(std::move(pending));
+}
+
 auto make_tuple_type(ProgramDraft& draft, std::vector<ConstructionTypeRef> elements) noexcept
     -> ConstructionTypeRef {
     for (auto& element : elements) {
@@ -744,6 +785,9 @@ auto type_contains_callable_view(const ProgramDraft& draft, ConstructionTypeRef 
     }
     if (const auto* generic = std::get_if<GenericTypeID>(&type)) {
         const auto expression = draft.generic_type_copy(*generic);
+        if (std::holds_alternative<GenericCallableViewType>(expression)) {
+            return true;
+        }
         if (const auto* concrete = std::get_if<TypeID>(&expression)) {
             return type_contains_callable_view(draft, ConstructionTypeRef(*concrete));
         }
@@ -1327,6 +1371,8 @@ auto decide_vector_method(
         intrinsic = VectorIntrinsic::IsEmpty;
     } else if (name == "push") {
         intrinsic = VectorIntrinsic::Push;
+    } else if (name == "append") {
+        intrinsic = VectorIntrinsic::Append;
     } else if (name == "remove") {
         intrinsic = VectorIntrinsic::Remove;
     } else if (name == "capacity") {
@@ -1407,9 +1453,14 @@ auto sequence_extent(const ProgramDraft& draft, const SemanticExpression& source
         return shape->extent;
     }
     if (source.constant) {
-        const auto* slice = std::get_if<SliceConstant>(&draft.constant(*source.constant).value);
+        const auto& fact = draft.constant(*source.constant);
+        const auto* slice = std::get_if<SliceConstant>(&fact.value);
         if (slice) {
             return slice->elements.size();
+        }
+        if (const auto* bytes = std::get_if<ByteSequenceConstant>(&fact.value);
+            bytes && std::holds_alternative<SliceTypeValue>(draft.type_copy(fact.type).value)) {
+            return bytes->bytes.size();
         }
     }
     if (const auto* intrinsic = std::get_if<SemIntrinsic>(&source.value)) {

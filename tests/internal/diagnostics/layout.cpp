@@ -35,7 +35,7 @@ const TestSuite suite([] static noexcept {
             );
 
             expect_equal(
-                render_diagnostic(diagnostic, source),
+                render_diagnostic(diagnostic, source, false),
                 std::string_view(
                     R"REPORT(error [CV-LEXICAL]: `main` accepts no parameters or one untyped parameter
  --> app.cv:1:9
@@ -67,7 +67,7 @@ const TestSuite suite([] static noexcept {
             );
 
             expect_equal(
-                render_diagnostic(diagnostic, source),
+                render_diagnostic(diagnostic, source, false),
                 std::string_view(R"REPORT(error [CV-LEXICAL]: expected `)` after function parameters
  --> app.cv:1:9
   |
@@ -97,7 +97,7 @@ const TestSuite suite([] static noexcept {
         );
 
         expect_equal(
-            render_diagnostic(diagnostic, source),
+            render_diagnostic(diagnostic, source, false),
             std::string_view(R"REPORT(error [CV-LEXICAL]: control byte
  --> control.cv:1:2
   |
@@ -132,7 +132,7 @@ const TestSuite suite([] static noexcept {
             );
 
             expect_equal(
-                render_diagnostic(diagnostic, source),
+                render_diagnostic(diagnostic, source, false),
                 std::string_view(R"REPORT(error [CV-LEXICAL]: multi-line example
  --> app.cv:2:7
   |
@@ -163,7 +163,7 @@ const TestSuite suite([] static noexcept {
                     .message = "end",
                 }
             );
-            const auto output = render_diagnostic(diagnostic, source);
+            const auto output = render_diagnostic(diagnostic, source, false);
 
             expect_equal(output, std::string_view(R"REPORT(error [CV-LEXICAL]: two lines
  --> app.cv:1:3
@@ -209,7 +209,7 @@ const TestSuite suite([] static noexcept {
         );
 
         expect_equal(
-            render_diagnostic(diagnostic, source),
+            render_diagnostic(diagnostic, source, false),
             std::string_view(R"REPORT(error [CV-LEXICAL]: `main` is defined more than once
  --> app.cv:5:4
   |
@@ -242,7 +242,7 @@ const TestSuite suite([] static noexcept {
             );
 
             expect_equal(
-                ::render_diagnostic(diagnostic, sources),
+                ::render_diagnostic(diagnostic, sources, false),
                 std::string_view(R"REPORT(error [CV-LEXICAL]: duplicate exported declaration
  --> second.cv:1:11
   |
@@ -285,7 +285,7 @@ const TestSuite suite([] static noexcept {
         );
 
         expect_equal(
-            render_diagnostic(diagnostic, source),
+            render_diagnostic(diagnostic, source, false),
             std::string_view(R"REPORT(error [CV-LEXICAL]: overlap
  --> app.cv:1:2
   |
@@ -317,7 +317,7 @@ const TestSuite suite([] static noexcept {
                 .origin = "wide.cv",
             };
             expect_equal(
-                render_diagnostic(diagnostic, source),
+                render_diagnostic(diagnostic, source, false),
                 std::format(
                     "error [CV-LEXICAL]: wide\n --> wide.cv:1:{}\n  |\n1 | {}\n  | {}^ here\n",
                     start + 1,
@@ -343,7 +343,7 @@ const TestSuite suite([] static noexcept {
                                     .help("declare with 'var'")
                                     .build();
         expect_equal(
-            render_diagnostic(diagnostic, source),
+            render_diagnostic(diagnostic, source, false),
             std::string_view(R"REPORT(error [CV-ACCESS-IMMUTABLE]: read-only
  --> app.cv:1:5
   |
@@ -377,7 +377,7 @@ help: declare with 'var'
                 .origin = "ten.cv",
             };
             expect_equal(
-                render_diagnostic(diagnostic, source),
+                render_diagnostic(diagnostic, source, false),
                 std::string_view(R"REPORT(error [CV-LEXICAL]: line ten
  --> ten.cv:10:1
    |

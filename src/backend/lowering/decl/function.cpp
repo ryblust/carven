@@ -101,18 +101,71 @@ auto lower_cpp_import(
             }
             arguments.push_back(std::move(argument));
         }
-        auto call =
-            call_expression(name_expression(context.cpp_name(provider)), std::move(arguments));
-        if (semantic_signature.execution == CallableExecutionKind::Synchronous
-            && context.plan().failure_abi().members(semantic_signature.failures).empty()
-            && is_char_type(context.semantic(), semantic_signature.result)) {
-            call = call_expression(
-                intrinsic_expression(TargetSymbol::RuntimeCheckedUnicodeScalar),
-                target_expressions(
-                    std::move(call),
-                    source_site_expression(context, function.origin)
+        auto provider_name = provider ? context.cpp_name(*provider)
+                                      : cpp_contract_namespace(context.semantic(), function_id);
+        if (!provider) {
+            provider_name.append(TargetIdentifier::from_spelling("invoke"));
+            provider_name = TargetName::globally_qualified(
+                std::vector<TargetIdentifier>(
+                    provider_name.components().begin(),
+                    provider_name.components().end()
                 )
             );
+        }
+        auto call =
+            call_expression(name_expression(std::move(provider_name)), std::move(arguments));
+        if (provider && semantic_signature.execution == CallableExecutionKind::Synchronous) {
+            const auto result = context.callable_result(function.callable);
+            auto invoke_body = std::vector<TargetStmt>();
+            invoke_body.push_back(
+                generated_statement(TargetReturnStmt {.expression = std::move(call)})
+            );
+            call = call_expression(
+                static_member_expression(result, TargetIdentifier::from_spelling("invoke")),
+                target_expressions(
+                    TargetExpr {
+                        .value = TargetLambdaExpr {
+                            .parameters = {},
+                            .result = context.intrinsic_type(TargetSymbol::Auto, false),
+                            .body = std::move(invoke_body)
+                        }
+                    }
+                )
+            );
+            if (is_char_type(context.semantic(), semantic_signature.result)) {
+                const auto local =
+                    context.target().add_local(names.fresh(TargetTemporaryNameKind::Outcome));
+                body.push_back(generated_statement(
+                    TargetVariableStmt {
+                        .binding = TargetVariableBinding::MutableValue,
+                        .maybe_unused = false,
+                        .local = local,
+                        .type = context.intrinsic_type(TargetSymbol::Auto, false),
+                        .initializer = std::move(call)
+                    }
+                ));
+                auto check_body = std::vector<TargetStmt>();
+                check_body.push_back(discard_statement(call_expression(
+                    intrinsic_expression(TargetSymbol::RuntimeCheckedUnicodeScalar),
+                    target_expressions(
+                        member_expression(
+                            dereference_expression(
+                                call_member(name_expression(local), "success_if", {})
+                            ),
+                            TargetIdentifier::from_spelling("value")
+                        ),
+                        source_site_expression(context, function.origin)
+                    )
+                )));
+                body.push_back(generated_statement(
+                    TargetIfStmt {
+                        .condition = call_member(name_expression(local), "success_if", {}),
+                        .body = std::move(check_body),
+                        .else_body = std::nullopt
+                    }
+                ));
+                call = name_expression(local);
+            }
         }
         body.push_back(generated_statement(TargetReturnStmt {.expression = std::move(call)}));
     }

@@ -81,12 +81,16 @@ auto ExecutionTypeShapes::compute(ConstructionTypeRef type, std::size_t depth) c
                 if (!cases) {
                     return std::nullopt;
                 }
-                auto result = ExecutionTypeShape {.exact = false, .depth = 1uz, .elements = 0uz};
-                for (const auto& item : *cases) {
-                    const auto payload = fields_shape(item.payload_types);
+                auto result = ExecutionTypeShape {.exact = true, .depth = 1uz, .elements = 0uz};
+                for (auto index = 0uz; index < cases->size(); ++index) {
+                    const auto payload = fields_shape((*cases)[index].payload_types);
                     if (!payload) {
                         return std::nullopt;
                     }
+                    result.exact &= payload->exact
+                        && (index == 0uz
+                            || (result.depth == payload->depth
+                                && result.elements == payload->elements));
                     result.depth = std::max(result.depth, payload->depth);
                     result.elements = std::max(result.elements, payload->elements);
                 }
@@ -102,6 +106,7 @@ auto ExecutionTypeShapes::compute(ConstructionTypeRef type, std::size_t depth) c
                                  || std::same_as<Shape, ClosureTypeValue>
                                  || std::same_as<Shape, CallableViewTypeValue>
                                  || std::same_as<Shape, ConstructionCallableViewTypeValue>
+                                 || std::same_as<Shape, GenericCallableViewType>
                                  || std::same_as<Shape, OperationTypeValue>
                                  || std::same_as<Shape, ConstructionOperationTypeValue>
                                  || std::same_as<Shape, GenericOperationType>

@@ -28,7 +28,7 @@ const TestSuite suite([] static noexcept {
                 std::tuple(
                     TargetSymbol::RuntimeSliceView,
                     "carven/runtime/collection/slice.hpp",
-                    TargetHeaderGroup::Runtime
+                    TargetHeaderGroup::Project
                 ),
             };
             for (const auto& [symbol, header, group] : symbols) {

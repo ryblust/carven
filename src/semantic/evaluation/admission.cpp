@@ -1,6 +1,7 @@
 module carven:semantic.evaluation.admission.impl;
 
 import :semantic.evaluation.admission;
+import :semantic.evaluation.standard;
 import std;
 
 auto supported_execution_type(const ExecutionValueAccess& values, ConstructionTypeRef type) noexcept
@@ -49,7 +50,11 @@ auto supported_execution_type(const ExecutionValueAccess& values, ConstructionTy
                     }
                     return true;
                 } else if constexpr (std::same_as<Shape, CppTypeValue>) {
-                    return std::holds_alternative<CppConstCharPointerType>(shape.form);
+                    return std::holds_alternative<CppConstCharPointerType>(shape.form)
+                        || standard_execution_type(values, current);
+                } else if constexpr (std::same_as<Shape, GenericCppNamedType>
+                                     || std::same_as<Shape, GenericCppQueryType>) {
+                    return standard_execution_type(values, current);
                 } else if constexpr (std::same_as<Shape, BuiltinTypeValue>) {
                     return true;
                 } else {
@@ -62,6 +67,7 @@ auto supported_execution_type(const ExecutionValueAccess& values, ConstructionTy
                         || std::same_as<Shape, FunctionTypeValue>
                         || std::same_as<Shape, CallableViewTypeValue>
                         || std::same_as<Shape, ConstructionCallableViewTypeValue>
+                        || std::same_as<Shape, GenericCallableViewType>
                         || std::same_as<Shape, RangeTypeValue>
                         || std::same_as<Shape, OperationTypeValue>
                         || std::same_as<Shape, ConstructionOperationTypeValue>

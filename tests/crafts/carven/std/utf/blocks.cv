@@ -1,5 +1,5 @@
-import std::utf using { UTF8Error, validate_utf8, UTF8Validator };
 import .cases using rejection_cases;
+import std::utf using { UTF8Error, validate_utf8, UTF8Validator }
 
 private fn verify_block_rejections(prefixes: [usize]) -> bool {
     for prefix in prefixes {

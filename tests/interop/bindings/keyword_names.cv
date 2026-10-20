@@ -1,4 +1,4 @@
-import "bindings/keyword_names.hpp" using async::{ create };
+import "bindings/keyword_names.hpp" using async::{ create }
 
 fn keyword_result(value: ::async::match) -> i32 => value.await();
 

@@ -137,7 +137,7 @@ checking validates application arity, parameter-flow growth, and symbolic by-val
 storage cycles, including unused definitions.
 
 `GenericDeclarationContract` retains the generic definition's source identity.
-The standard `Read<T>` enum uses ordinary type-argument resolution and concrete
+The standard `ReadResult<T>` enum uses ordinary type-argument resolution and concrete
 nominal-instance construction.
 
 Instance formation keys an ordinary concrete nominal declaration by its
@@ -165,6 +165,17 @@ A function definition owns rigid type and failure descriptors and one checked
 `StructuredBodyDraft`. Ordinary body construction checks universal operations,
 field access, calls, completion, and static admission against that environment.
 The definition owns a body identity domain separate from concrete bodies.
+
+Enum values and patterns retain either a concrete case identity or a checked
+application and case ordinal. Payload types come from substitution over the enum's
+checked declaration. Coverage uses those finite case shapes before instantiation;
+the instance pass resolves case references alongside ordinary type substitution.
+
+Class operations use this same body model. Their generic environment starts with
+the owner's parameters, followed by the operation's own parameters. Receiver types
+apply the owner to that environment. Lexical representation and private-operation
+access use the class declaration identity for both open and concrete applications.
+Calls fix owner arguments before inferring or supplying operation arguments.
 
 Concrete instance formation reserves a callable before replacing types and
 already bound generic calls in the checked body. It reuses that reservation for
@@ -429,8 +440,12 @@ construction resource budgets.
 
 ## External C++ delegation
 
-Type and value lookup share external name admission, identifier validation and
-import-use recording in semantic name analysis. `CppNameReference`
+Type and expression syntax normalize to `SourceNamePath` in `analysis.names`;
+qualified calls and type applications share the same expression-path traversal.
+`lookup_cpp_name` owns Carven declaration precedence, external name admission,
+explicit selection expansion, identifier validation, and import-use recording.
+Lexical bindings and type parameters remain the responsibility of their scopes.
+No standard-library path participates in these rules. `CppNameReference`
 combines a lookup path with its declaration environment; global paths also
 retain the context module. Explicit import selections end after name resolution
 and import-use diagnostics. Published header dependencies retain namespace openings.

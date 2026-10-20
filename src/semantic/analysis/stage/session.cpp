@@ -9,6 +9,7 @@ import :semantic.analysis.stage.session;
 import :semantic.analysis.stage.specialization;
 import :semantic.evaluation.display;
 import :semantic.evaluation.execution;
+import :semantic.evaluation.standard;
 import :semantic.evaluation.value;
 import :semantic.semir.decl;
 import :semantic.semir.simd;
@@ -54,18 +55,30 @@ public:
         StaticEvaluationPurpose purpose,
         std::optional<ExecutionRoot> root = std::nullopt
     ) noexcept;
+
     auto host_effects_rejection() const noexcept -> std::optional<std::string_view> override;
+
     auto function_for_callable(CallableID callable) const noexcept
         -> std::optional<FunctionID> override;
+
     auto bind_call(
         CallableID callable,
         std::vector<ExecutionOperand>& arguments,
         ExecutionOperandAccess& access,
         ProgramOriginID origin
     ) noexcept -> ContinuationTask<std::expected<CallableID, ExecutionCallFailure>> override;
+
     auto freeze(ExecutionValue value) noexcept -> std::optional<ConstantID> override;
-    auto prepare_call(CallableID callable, ProgramOriginID origin) noexcept
+
+    auto prepare_call(ExecutionCallSite target, ProgramOriginID origin) noexcept
         -> ContinuationTask<std::expected<ExecutionCallTarget, ExecutionCallFailure>> override;
+
+    auto operator()(
+        ExecutionCallSite target,
+        std::span<ExecutionValue> arguments,
+        ProgramOriginID origin
+    ) noexcept -> std::expected<ExecutionHostResult, ExecutionCallFailure>;
+
     auto report(const ExecutionEvent& event) noexcept -> void override;
     auto failure() const noexcept -> std::optional<AnalysisFailure>;
     auto write(ExecutionOutputStream stream, std::string_view bytes) noexcept -> void override;
@@ -91,10 +104,10 @@ StaticExecutionContext::StaticExecutionContext(
 auto StaticExecutionContext::host_effects_rejection() const noexcept
     -> std::optional<std::string_view> {
     if (draft.host_effects() == HostEffects::Deny) {
-        return "this analysis does not permit host input, clock sampling, or waiting";
+        return "this analysis does not permit host effects";
     }
     if (purpose == StaticEvaluationPurpose::ResolveType) {
-        return "a type dependency query cannot observe host state; evaluate the value in an explicit const root first";
+        return "a type dependency query cannot perform host effects; evaluate the value in an explicit const root first";
     }
     draft.record_host_effect();
     return std::nullopt;
@@ -171,8 +184,44 @@ auto StaticExecutionContext::bind_call(
     co_return *instance;
 }
 
-auto StaticExecutionContext::prepare_call(CallableID callable, ProgramOriginID origin) noexcept
+auto StaticExecutionContext::operator()(
+    ExecutionCallSite target,
+    std::span<ExecutionValue> arguments,
+    ProgramOriginID origin
+) noexcept -> std::expected<ExecutionHostResult, ExecutionCallFailure> {
+    auto result = standard_execution_call(
+        draft,
+        *this,
+        *std::get<const SemanticExpression*>(target),
+        arguments,
+        origin
+    );
+    if (result) {
+        return std::move(*result);
+    }
+    return std::unexpected(
+        ExecutionEvent {
+            .origin = origin,
+            .cause =
+                ExecutionIssue {
+                    .reason = ExecutionReason::Admission,
+                    .message = "native C++ operation has no compile-time implementation",
+                    .termination = ExecutionTermination::StopRoot,
+                },
+            .fields = {},
+            .calls = {},
+            .blocks = {},
+        }
+    );
+}
+
+auto StaticExecutionContext::prepare_call(ExecutionCallSite target, ProgramOriginID origin) noexcept
     -> ContinuationTask<std::expected<ExecutionCallTarget, ExecutionCallFailure>> {
+    const auto* callable_target = std::get_if<CallableID>(&target);
+    if (callable_target == nullptr) {
+        co_return ExecutionHostCall {.target = target, .invoke = *this, .asynchronous = false};
+    }
+    const auto callable = *callable_target;
     if (const auto implementation = draft.callable_implementation_copy(callable)) {
         const auto result = [&]() noexcept {
             return std::get<TypeID>(draft.construction_callable_contract_copy(callable).result);

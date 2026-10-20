@@ -5,14 +5,9 @@ import :diagnostics.diagnostic;
 import :semantic.analysis.interop;
 import :semantic.analysis.program;
 import :semantic.semir.decl;
-import :source.cpp.identifier;
 import std;
 
 namespace {
-
-auto is_unrepresentable_cpp_provider_name(std::string_view name) noexcept -> bool {
-    return name == "main" || name == "std" || name == "carven";
-}
 
 struct CppExportPath final {
     std::vector<std::string> path;
@@ -26,45 +21,7 @@ auto is_strict_prefix(
     return prefix.size() < value.size() && std::ranges::equal(prefix, value.first(prefix.size()));
 }
 
-auto source_id(const ProgramDraft& draft, ProgramModuleID module_id) noexcept -> SourceID {
-    return draft.module_source_id(module_id);
-}
-
 } // namespace
-
-auto validate_cpp_provider(
-    ProgramDraft& draft,
-    ProgramModuleID module_id,
-    const ASTFunctionDecl& function
-) noexcept -> AnalysisResult<void> {
-    const auto* imported = std::get_if<ASTCppImportForm>(&function.implementation);
-    if (imported == nullptr || imported->target) {
-        return {};
-    }
-
-    auto failure = std::optional<AnalysisFailure>();
-    const auto diagnose = [&](Span span, std::string message, DiagnosticCode code) noexcept {
-        failure = draft.diagnostics().error(DiagnosticBuilder(code, std::move(message))
-                                                .primary(locate(source_id(draft, module_id), span))
-                                                .build());
-    };
-    const auto name = draft.source_slice_copy(module_id, function.name_span);
-    if (!is_supported_cpp_identifier(name)) {
-        diagnose(
-            function.name_span,
-            "C++ provider name must be a supported C++ identifier",
-            DiagnosticCode::CppIdentifier
-        );
-    } else if (is_unrepresentable_cpp_provider_name(name)) {
-        diagnose(
-            function.name_span,
-            "this name cannot be represented as a global C++ provider",
-            DiagnosticCode::CppIdentifier
-        );
-    }
-    return failure.has_value() ? AnalysisResult<void>(std::unexpected(*failure))
-                               : AnalysisResult<void>();
-}
 
 auto diagnose_cpp_api_surface(ProgramDraft& draft, AnalysisCatalogView catalog) noexcept
     -> AnalysisResult<void> {

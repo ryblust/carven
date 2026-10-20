@@ -1,5 +1,5 @@
-export struct OrderedModel {
+struct OrderedModel {
     value: i32,
 }
 
-export fn ordered_model(value: i32) -> OrderedModel => { value: value };
+fn ordered_model(value: i32) -> OrderedModel => { value: value };

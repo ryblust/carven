@@ -8,7 +8,7 @@ import "lifetimes/lifetimes.hpp" using lifetime_probe::{
     FixedOwner,
     CopyOwner,
     event,
-};
+}
 
 private struct NativeSnapshot {
     text: String,

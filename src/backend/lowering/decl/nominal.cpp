@@ -87,7 +87,8 @@ auto lower_payload_enumeration(ModuleLowering& context, EnumID id) noexcept
         const auto& source = context.semantic().declarations().enum_case(case_id);
         auto payload = std::vector<TargetTypeID>();
         for (const auto type : source.payload_types) {
-            payload.push_back(context.lower_type(type, TypeNameScope::Module));
+            // Case factories introduce member names which can hide module types.
+            payload.push_back(context.lower_type(type, TypeNameScope::Global));
         }
         cases.push_back({
             .id = case_id,
@@ -104,7 +105,7 @@ auto lower_payload_enumeration(ModuleLowering& context, EnumID id) noexcept
         for (auto index = 0uz; index < source.payload_types.size(); ++index) {
             parameters.push_back(
                 {.local = std::nullopt,
-                 .type = context.lower_type(source.payload_types[index], TypeNameScope::Module),
+                 .type = context.lower_type(source.payload_types[index], TypeNameScope::Global),
                  .default_value = std::nullopt}
             );
         }
@@ -246,7 +247,7 @@ auto lower_payload_enumeration(ModuleLowering& context, EnumID id) noexcept
             const auto name = context.target().add_local(enum_payload_field_identifier(index));
             parameters.push_back(
                 {.local = name,
-                 .type = context.lower_type(source.payload_types[index], TypeNameScope::Module),
+                 .type = context.lower_type(source.payload_types[index], TypeNameScope::Global),
                  .default_value = std::nullopt}
             );
             arguments.push_back(transfer_expression(name_expression(name)));

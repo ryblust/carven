@@ -9,7 +9,7 @@ private import(cpp) fn std(value: i32) -> i32 = ::namespaced_provider::invoke;
 private import(cpp) fn generic(value: i32) -> i32 = ::namespaced_provider::identity;
 private import(cpp) fn keyword_target(value: i32) -> i32 = ::namespaced_provider::async;
 private import(cpp) fn static_target() -> i32 = ::namespaced_provider::Operations::value;
-private import(cpp) fn global_target(value: ::namespaced_provider::Value) -> i32;
+private import(cpp) fn global_target(value: ::namespaced_provider::Value) -> i32 = ::global_target;
 
 private fn ordinary(value: ::namespaced_provider::Value) -> i32 => value.number as i32 + 100;
 

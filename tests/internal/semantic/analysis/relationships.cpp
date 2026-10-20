@@ -388,16 +388,34 @@ const TestSuite suite([] static noexcept {
             for (const auto [id, body] : program.bodies().entries()) {
                 static_cast<void>(id);
                 const auto origin = body.region().origin;
-                constexpr auto backing = OwnershipPlace {0uz, {}};
+                constexpr auto backing = OwnershipPlace {.object = 0uz, .path = {}};
                 const auto source = OwnershipRelationships(
                     OwnershipRelationshipRows {
                         .callable_loans =
-                            {{{0uz}, backing, std::nullopt, origin, false},
-                             {{1uz}, backing, std::nullopt, origin, false}},
-                        .captures = {{{0uz}, backing, origin}, {{1uz}, backing, origin}},
+                            {{.holder = {0uz},
+                              .backing = backing,
+                              .callable = std::nullopt,
+                              .origin = origin,
+                              .direct_only = false},
+                             {.holder = {1uz},
+                              .backing = backing,
+                              .callable = std::nullopt,
+                              .origin = origin,
+                              .direct_only = false}},
+                        .captures =
+                            {{.holder = {0uz}, .target = backing, .origin = origin},
+                             {.holder = {1uz}, .target = backing, .origin = origin}},
                         .storage_loans =
-                            {{{0uz}, backing, origin, OwnershipLoanProtection::Contents},
-                             {{1uz}, backing, origin, OwnershipLoanProtection::Contents}},
+                            {{.holder = {0uz},
+                              .backing = backing,
+                              .origin = origin,
+                              .protection = OwnershipLoanProtection::Contents,
+                              .sequence_type = std::nullopt},
+                             {.holder = {1uz},
+                              .backing = backing,
+                              .origin = origin,
+                              .protection = OwnershipLoanProtection::Contents,
+                              .sequence_type = std::nullopt}},
                         .formal_bundles = {}
                     }
                 );
@@ -434,16 +452,34 @@ const TestSuite suite([] static noexcept {
                 return;
             }
             std::ranges::sort(origins);
-            constexpr auto backing = OwnershipPlace {0uz, {}};
+            constexpr auto backing = OwnershipPlace {.object = 0uz, .path = {}};
             auto first = OwnershipRelationships(
                 OwnershipRelationshipRows {
                     .callable_loans =
-                        {{{}, backing, std::nullopt, origins[1], true},
-                         {{}, backing, std::nullopt, origins[0], false}},
-                    .captures = {{{}, backing, origins[1]}, {{}, backing, origins[0]}},
+                        {{.holder = {},
+                          .backing = backing,
+                          .callable = std::nullopt,
+                          .origin = origins[1],
+                          .direct_only = true},
+                         {.holder = {},
+                          .backing = backing,
+                          .callable = std::nullopt,
+                          .origin = origins[0],
+                          .direct_only = false}},
+                    .captures =
+                        {{.holder = {}, .target = backing, .origin = origins[1]},
+                         {.holder = {}, .target = backing, .origin = origins[0]}},
                     .storage_loans =
-                        {{{}, backing, origins[1], OwnershipLoanProtection::Contents},
-                         {{}, backing, origins[0], OwnershipLoanProtection::Contents}},
+                        {{.holder = {},
+                          .backing = backing,
+                          .origin = origins[1],
+                          .protection = OwnershipLoanProtection::Contents,
+                          .sequence_type = std::nullopt},
+                         {.holder = {},
+                          .backing = backing,
+                          .origin = origins[0],
+                          .protection = OwnershipLoanProtection::Contents,
+                          .sequence_type = std::nullopt}},
                     .formal_bundles = {}
                 }
             );

@@ -74,7 +74,9 @@ auto BodyBatchElaborator::build_const_block(
         draft->builtin_type(BuiltinType::Void),
         draft->add_empty_failure_term(),
         true,
-        false
+        false,
+        std::nullopt,
+        true
     );
     elaborator.static_body = true;
     // A block is not a callable: nothing returns from it.
@@ -226,6 +228,8 @@ auto BodyBatchElaborator::run() noexcept -> AnalysisTask<void> {
                 draft->builtin_type(BuiltinType::Void),
                 failures,
                 false,
+                true,
+                std::nullopt,
                 true
             );
             elaborator.static_body = test.is_const;
@@ -592,9 +596,12 @@ auto BodyBatchElaborator::ensure_generic_function(
             .definition = definition,
             .parameters = function.contract.parameters,
             .parameter_kinds = function.contract.parameter_kinds
-        }
+        },
+        true
     );
     elaborator.async_body = source.async_span.has_value();
+    elaborator.lexical_class =
+        symbol.class_operation ? std::optional(symbol.class_operation->owner) : std::nullopt;
     for (auto i = 0uz; i < source.parameters.size(); ++i) {
         auto parameter =
             elaborator.add_parameter(source.parameters[i], function.signature.parameters[i]);

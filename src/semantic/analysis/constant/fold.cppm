@@ -24,7 +24,7 @@ auto field_constant(
 
 // A known position outside the sequence has no value; its runtime check remains.
 auto element_constant(
-    const ProgramDraft& draft,
+    ProgramDraft& draft,
     std::optional<ConstantID> sequence,
     std::optional<ConstantID> index
 ) noexcept -> std::optional<ConstantID>;

@@ -13,7 +13,7 @@ Carven compiles `.cv` source files to C++ using xmake.
   realization, and emission.
 - `docs/development/testing.md`: test responsibilities, evidence,
   fixtures, and validation.
-- `xmake/README.md`: local tasks, module-build support, and benchmarks.
+- `xmake/README.md`: formatting, generated-code analysis, and module-build support.
 
 ## Build and validation
 

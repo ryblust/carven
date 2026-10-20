@@ -110,11 +110,12 @@ public:
         return first != nullptr ? std::optional(first->deadline) : std::nullopt;
     }
 
-    auto wait() noexcept -> bool {
+    auto wait(std::optional<std::int64_t> deadline = std::nullopt) noexcept -> bool {
         if (first == nullptr) {
             return false;
         }
-        clock.wait_until(clock.state, first->deadline);
+        const auto selected = deadline && *deadline < first->deadline ? *deadline : first->deadline;
+        clock.wait_until(clock.state, selected);
         return true;
     }
 };

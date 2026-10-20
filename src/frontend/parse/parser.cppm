@@ -7,6 +7,7 @@ import :frontend.ast.control;
 import :frontend.ast.decl;
 import :frontend.ast.expr;
 import :frontend.ast.ids;
+import :frontend.ast.imports;
 import :frontend.ast.interop;
 import :frontend.ast.literal;
 import :frontend.ast.pattern;
@@ -122,6 +123,7 @@ private:
 
     auto remember_speculative_failure(ParseFailure failure) noexcept -> void;
     static auto join(Span first, Span last) noexcept -> Span;
+    auto parse_import_item(Span name) noexcept -> ASTImportItem;
     auto parse_module_reference() noexcept -> ASTModuleReference;
     auto parse_cpp_header_import() noexcept -> ASTCppHeaderImport;
     auto parse_module_import() noexcept -> ASTModuleImportID;

@@ -6,9 +6,19 @@ import "async/transfer.hpp" using async_transfer::Context;
 #include "async/transfer_provider.hpp"
 ---
 
-import(cpp) async fn transfer_read(context: Context) -> i32 throw IOError;
-import(cpp) async fn transfer_write(context: Context, offset: i32, count: i32) -> i32 throw IOError;
-import(cpp) fn transfer_copy_buffer(writer: Context, reader: Context, count: i32);
+import(cpp) async fn transfer_read(context: Context) -> i32 throw IOError = ::transfer_read;
+
+import(cpp) async fn transfer_write(
+    context: Context,
+    offset: i32,
+    count: i32
+) -> i32 throw IOError = ::transfer_write;
+
+import(cpp) fn transfer_copy_buffer(
+    writer: Context,
+    reader: Context,
+    count: i32
+) = ::transfer_copy_buffer;
 
 export(cpp) async fn copy(reader: Context, writer: Context) -> u64 throw IOError {
     var total: u64 = 0;

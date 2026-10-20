@@ -12,12 +12,12 @@ target("carven-example-hello")
     })
 target_end()
 
-includes("audio_mixer", "log_analyzer", "stream_collector")
+includes("audio_mixer", "log_analyzer", "stream_collector", "runtime")
 
 target("examples")
     set_kind("phony")
     add_deps("carven-example-hello", "carven-example-audio-mixer",
-        "carven-example-log-analyzer", "carven-example-stream-collector")
+        "carven-example-log-analyzer", "carven-example-stream-collector", "carven-example-runtime")
 target_end()
 
 target("carven-example-pipeline")

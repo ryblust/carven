@@ -19,6 +19,7 @@ enum class TargetTypeCompleteness {
 struct TargetReferenceFacts final {
     std::vector<std::flat_map<NominalDeclarationRef, TargetTypeCompleteness>> surface_requirements;
     std::vector<std::flat_set<CallableID>> surface_callables;
+    std::flat_set<NominalDeclarationRef> host_nominals;
 };
 
 auto target_visibility(const SemIRProgram& semantic, DeclarationRef declaration) noexcept

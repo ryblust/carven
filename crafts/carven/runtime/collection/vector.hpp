@@ -17,6 +17,7 @@ template<typename Element>
 class Vector final {
     static constexpr auto retained_bit = std::size_t(1)
         << (std::numeric_limits<std::size_t>::digits - 1);
+
     static constexpr auto length_mask = retained_bit - 1;
 
     const Element* storage = nullptr;
@@ -42,17 +43,15 @@ class Vector final {
         }
     }
 
-    constexpr auto grow() noexcept -> void {
-        if (size() == capacity_value) {
-            constexpr auto maximum = maximum_capacity();
-            if (capacity_value == maximum) {
-                trap("Vector capacity is out of bounds", SourceSite::native());
-            }
-            reserve(
-                capacity_value == 0                ? 1
-                    : capacity_value > maximum / 2 ? maximum
-                                                   : capacity_value * 2
-            );
+    constexpr auto grow(std::size_t count) noexcept -> void {
+        constexpr auto maximum = maximum_capacity();
+        if (count > maximum - size()) {
+            trap("Vector capacity is out of bounds", SourceSite::native());
+        }
+        const auto minimum = size() + count;
+        if (minimum > capacity_value) {
+            const auto expanded = capacity_value > maximum / 2 ? maximum : capacity_value * 2;
+            reserve(minimum > expanded ? minimum : expanded);
         }
     }
 
@@ -95,11 +94,7 @@ public:
 
     static constexpr auto from_slice(Slice<Element> values) noexcept -> Vector {
         auto result = Vector();
-        result.reserve(values.size());
-        for (const auto& value : values) {
-            std::construct_at(result.writable() + result.tagged_length, value);
-            ++result.tagged_length;
-        }
+        result.append(values);
         return result;
     }
 
@@ -148,9 +143,18 @@ public:
     }
 
     constexpr auto push(Element value) noexcept -> void {
-        grow();
+        grow(1);
         std::construct_at(writable() + tagged_length, std::move(value));
         ++tagged_length;
+    }
+
+    // The source must not borrow this vector's storage.
+    constexpr auto append(Slice<Element> values) noexcept -> void {
+        grow(values.size());
+        for (const auto& value : values) {
+            std::construct_at(writable() + tagged_length, value);
+            ++tagged_length;
+        }
     }
 
     constexpr auto clear() noexcept -> void {

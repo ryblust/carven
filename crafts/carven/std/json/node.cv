@@ -1,13 +1,10 @@
+import std::json using JSONValue;
+
 enum Node {
     Null,
     Boolean(bool),
     Number(String),
     Text(String),
-    Array(Vector<Node>),
-    Object(Vector<Member>),
-}
-
-struct Member {
-    key: String,
-    value: Node,
+    Array(Vector<JSONValue>),
+    Object(Vector<(String, JSONValue)>),
 }

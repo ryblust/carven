@@ -319,17 +319,12 @@ auto BodyElaborator::infer_value_type(BuiltExpression& expression, Span span) no
     if (!contract.has_value()) {
         return std::unexpected(contract.error());
     }
-    const auto type = ConstructionTypeRef {
-        draft().append_construction_type(
-            ConstructionType {
-                .value = ConstructionCallableViewTypeValue {
-                    .parameters = contract->parameters,
-                    .result = contract->result,
-                    .failures = contract->failures,
-                },
-            }
-        ),
-    };
+    const auto type = make_callable_view_type(
+        draft(),
+        contract->parameters,
+        contract->result,
+        contract->failures
+    );
     auto coerced = coerce_to(expression, type, span);
     if (!coerced.has_value()) {
         return std::unexpected(coerced.error());

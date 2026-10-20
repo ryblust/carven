@@ -3,6 +3,18 @@ module carven:semantic.evaluation.memory;
 import :semantic.evaluation.value;
 import std;
 
+// Ordinary reads borrow storage; byte elements materialize one scalar for this read.
+class ExecutionRead final {
+public:
+    explicit ExecutionRead(const ExecutionValue& value) noexcept;
+    explicit ExecutionRead(ExecutionValue&& value) noexcept;
+    auto get() const noexcept -> const ExecutionValue&;
+
+private:
+    std::variant<const ExecutionValue*, ExecutionValue> value;
+    friend class ExecutionMemory;
+};
+
 // Owns one execution's addressable objects. Object indices are never reused.
 // Releasing storage invalidates coordinates without keeping the object alive.
 class ExecutionMemory final {
@@ -13,7 +25,7 @@ public:
     auto operator=(const ExecutionMemory&) -> ExecutionMemory& = delete;
     auto operator=(ExecutionMemory&&) -> ExecutionMemory& = delete;
     ~ExecutionMemory() = default;
-    auto create(ExecutionValue value) noexcept -> ExecutionPlace;
+    auto create(ExecutionValue&& value) noexcept -> ExecutionPlace;
 
     // Give a product slot its own logical lifetime without relocating storage.
     auto adopt_projection(ExecutionPlace place) noexcept -> ExecutionPlace;
@@ -24,12 +36,24 @@ public:
     auto release(const ExecutionPlace& place) noexcept -> void;
 
     // Returned borrows end when the object is assigned, released, or memory is destroyed.
+    auto read(const ExecutionPlace& place) const noexcept -> std::optional<ExecutionRead>;
     auto resolve(const ExecutionPlace& place) noexcept -> ExecutionValue*;
     auto resolve(const ExecutionPlace& place) const noexcept -> const ExecutionValue*;
     auto owning_value(const ExecutionPlace& place) const noexcept -> const ExecutionValue*;
-    auto view(const ExecutionSlice& slice) const noexcept -> std::optional<ExecutionSequenceView>;
+
+    // Expands logical projection owners to the coordinates of their backing object.
+    auto storage_place(ExecutionPlace place) const noexcept -> std::optional<ExecutionPlace>;
+
+    auto view(const ExecutionPlace& place, std::size_t offset, std::size_t extent) const noexcept
+        -> std::optional<ExecutionSequenceView>;
+
     auto project(ExecutionPlace place, std::size_t index) noexcept -> std::optional<ExecutionPlace>;
-    auto assign(const ExecutionPlace& place, ExecutionValue value) noexcept -> bool;
+
+    auto assign(
+        const ConstantValueReader& values,
+        const ExecutionPlace& place,
+        ExecutionValue&& value
+    ) noexcept -> bool;
 
     // Derives canonical coordinates from established native layout relations.
     // Missing storage or type facts leave the address relation unknown.
@@ -50,8 +74,6 @@ public:
     ) const noexcept -> std::optional<ExecutionPlace>;
 
 private:
-    auto storage_place(ExecutionPlace place) const noexcept -> std::optional<ExecutionPlace>;
-
     auto address_key_from(
         const ExecutionValueAccess& values,
         const ExecutionPlace& place,
@@ -70,7 +92,6 @@ private:
     struct TextBytes final {
         std::weak_ptr<const ExecutionTextStorage> storage;
         TypeID element;
-        mutable std::map<std::size_t, ExecutionValue> observed;
     };
 
     struct Projection final {

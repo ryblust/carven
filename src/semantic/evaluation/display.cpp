@@ -3,6 +3,7 @@ module carven:semantic.evaluation.display.impl;
 import :semantic.evaluation.display;
 import :semantic.evaluation.executor;
 import :semantic.evaluation.limits;
+import :semantic.evaluation.value;
 import :semantic.format.builtin;
 import std;
 
@@ -304,7 +305,7 @@ auto display_execution_value(
                 auto formatted = format_builtin_value(
                     builtin_format_value(values, constant_fact(*atom)),
                     {},
-                    maximum_constant_text_bytes
+                    maximum_constant_bytes
                 );
                 return formatted ? std::optional(std::move(*formatted)) : std::nullopt;
             }

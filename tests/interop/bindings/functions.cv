@@ -14,9 +14,10 @@ import "bindings/provider.hpp" using native::{
     copies,
     moves,
     reset_owner_counts,
-};
+}
 
 import "bindings/provider.hpp" using plain;
+import "bindings/provider.hpp" using native;
 
 test "C++ calls: arguments preserve evaluation order" {
     reset();
@@ -69,15 +70,16 @@ test "C++ owners: copies moves and destruction preserve lifetime" {
 
 test "C++ calls: selections and callable values preserve their call forms" {
     reset();
-    check((::native::receiver().invoke)(record(2)) == 2);
+    check((native::receiver().invoke)(record(2)) == 2);
     check(observed() == 12);
-    let object = ::native::Receiver {};
+    let object: native::Receiver = native::Receiver {};
     check((object.invoke)(3, 4) == 7);
     check(object.callback(5) == 5);
-    var callback = ::native::callable();
+    var callback = native::callable();
     callback.offset = 1;
     check(callback(6) == 7);
-    check((::native::argument_access)(7) == 1);
+    check((native::argument_access)(7) == 1);
+    check(native::Owner::live == 0);
 }
 
 test "C++ lifetimes: condition temporaries end before the selected branch" {

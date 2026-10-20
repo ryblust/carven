@@ -1,10 +1,4 @@
-import "lifetimes/lifetimes.hpp" using lifetime_probe::{
-    Owner,
-    mark,
-    reset,
-    matches,
-    PatternOwner,
-};
+import "lifetimes/lifetimes.hpp" using lifetime_probe::{ Owner, mark, reset, matches, PatternOwner }
 
 enum Failure {
     Stop,

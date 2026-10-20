@@ -12,7 +12,10 @@ function main(check)
     assert(tool, "clang-format 23 or newer is required; install LLVM 23 or add it to PATH")
 
     local files = {}
-    for _, root in ipairs({"src", "tests", "crafts", "examples", "benchmarks", "tools/format/src", "tools/format/tests", "tools/workspace"}) do
+    for _, root in ipairs({
+        "src", "include", "tests", "crafts", "examples", "benchmarks",
+        "tools/format/src", "tools/format/tests", "tools/workspace",
+    }) do
         for _, extension in ipairs({"cpp", "cppm", "h", "hpp"}) do
             table.join2(files, os.files(path.join(os.projectdir(), root, "**." .. extension)))
         end

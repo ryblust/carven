@@ -117,10 +117,8 @@ auto construct_member_expression(
     const auto type = site.type(receiver);
     const auto structure = record_shape(site.draft(), type);
     if (structure) {
-        if (const auto* concrete = std::get_if<StructID>(&structure->owner)) {
-            if (auto access = site.representation_access(*concrete, source.name_span); !access) {
-                return std::unexpected(access.error());
-            }
+        if (auto access = site.representation_access(structure->owner, source.name_span); !access) {
+            return std::unexpected(access.error());
         }
         const auto& declaration = *structure;
         const auto field =

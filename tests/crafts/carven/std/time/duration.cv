@@ -1,4 +1,11 @@
-import std::time using { Duration, RangeError, nanoseconds, microseconds, milliseconds, seconds };
+import std::time using {
+    Duration,
+    TimeRangeError,
+    nanoseconds,
+    microseconds,
+    milliseconds,
+    seconds,
+}
 
 test "Time: nanoseconds preserve every signed value" {
     const minimum = nanoseconds(-9223372036854775808i64);
@@ -23,7 +30,7 @@ test "Time: unit conversion preserves signs and accepts exact boundaries" {
         check(seconds(9223372036i64)?.nanoseconds == 9223372036000000000i64);
         check(seconds(-9223372036i64)?.nanoseconds == -9223372036000000000i64);
     } catch {
-        RangeError(_) => fail("representable conversions must succeed"),
+        TimeRangeError(_) => fail("representable conversions must succeed"),
     }
 }
 
@@ -32,37 +39,37 @@ test "Time: unit conversion rejects both overflow directions" {
     try {
         let _ = microseconds(9223372036854776i64)?;
     } catch {
-        RangeError(_) => { ++rejected; },
+        TimeRangeError(_) => { ++rejected; },
     }
     try {
         let _ = microseconds(-9223372036854776i64)?;
     } catch {
-        RangeError(_) => { ++rejected; },
+        TimeRangeError(_) => { ++rejected; },
     }
     try {
         let _ = milliseconds(9223372036855i64)?;
     } catch {
-        RangeError(_) => { ++rejected; },
+        TimeRangeError(_) => { ++rejected; },
     }
     try {
         let _ = milliseconds(-9223372036855i64)?;
     } catch {
-        RangeError(_) => { ++rejected; },
+        TimeRangeError(_) => { ++rejected; },
     }
     try {
         let _ = seconds(9223372037i64)?;
     } catch {
-        RangeError(_) => { ++rejected; },
+        TimeRangeError(_) => { ++rejected; },
     }
     try {
         let _ = seconds(-9223372037i64)?;
     } catch {
-        RangeError(_) => { ++rejected; },
+        TimeRangeError(_) => { ++rejected; },
     }
     try {
         let _ = seconds(-9223372036854775808i64)?;
     } catch {
-        RangeError(_) => { ++rejected; },
+        TimeRangeError(_) => { ++rejected; },
     }
     check(rejected == 7);
 }
@@ -74,10 +81,10 @@ const test "Time: source constructors preserve units and failures in static exec
             let _ = seconds(9223372037)?;
             false
         } catch {
-            RangeError(_) => true
+            TimeRangeError(_) => true
         };
         check(rejected);
     } catch {
-        RangeError(_) => fail("representable durations must succeed"),
+        TimeRangeError(_) => fail("representable durations must succeed"),
     }
 }

@@ -23,8 +23,8 @@ struct PreparedAwaitProducer final {
 auto prepare_await_producer(const SemIRProgram& program, const SemanticExpression& source) noexcept
     -> std::optional<PreparedAwaitProducer>;
 
-// Selected occurrences borrow the callable's published body. Scalar iteration
-// storage cannot expose an invocation's address or retain its source cleanup.
+// Selected occurrences borrow the callable's published body. Only scalar
+// invocation storage is reused; body awaits and terminal exits realize normally.
 struct PreparedTailAwaitLoop final {
     std::vector<const SemAwait*> awaits;
 };

@@ -2,7 +2,6 @@
 
 - **Status:** Exploration
 - **Scope:** Closed user-defined semantic hooks for existing operator tokens
-- **Depends on:** Canonical static capability evidence, coherence, and associated-type normalization
 
 ## Summary
 
@@ -65,6 +64,23 @@ C++ export eligibility and concurrency guarantees require separate contracts.
 
 Evaluate the following candidate's identity model before selecting the carrier.
 
+### Ownership and prerequisites
+
+The compiler owns token-to-capability mapping, canonical evidence selection,
+operand/result checking, and publication of the resolved operation. Builtin
+capability identities may live in standard modules. Standard Craft and user
+source supply nominal types and operation bodies. Runtime Craft supplies shared
+native mechanisms only where the selected operations need them.
+
+Select the required evidence and signature contracts with the initial nominal
+examples. Compare closed concrete signatures with signatures exposing generic
+associated projections. Concrete signatures can publish their result type
+directly; symbolic projections require finite normalization before publication.
+Both use the canonical evidence and resolved-call model. A selected slice states
+whether it supports concrete nominal impls, generic impls, and generic-body use,
+with the checking required for each. Public generic extensions are prerequisites
+only where those signatures or uses consume them.
+
 ### Candidate capability carrier
 
 **Maturity:** Exploration.
@@ -89,6 +105,11 @@ impl Mul for Meter {
 The examples use provisional spelling. `Rhs` may be an
 associated type, capability argument, or another bounded static input. Canonical
 evidence must uniquely determine `Output`.
+
+Compare `Vec3 * f32` and `Vec3 * Vec3` in the same compilation. An associated
+`Rhs` fixes one right type per evidence key; supporting both requires the key to
+distinguish those obligations. Select operand identity and output derivation
+together, preserving unique resolution without candidate ranking.
 
 ```text
 parsed operator
@@ -118,7 +139,8 @@ access, `?`, `as`, and access markers remain outside the candidate surface.
 
 **Maturity:** Conditional on selecting the carrier in `OPEN-01`.
 
-Resolve generic-body operators at definition site from declared capabilities:
+For a slice admitting generic-body operators, resolve them at definition site
+from declared capabilities:
 
 ```carven
 fn sum<T: Add>(left: T, right: Add::Rhs<T>) -> Add::Output<T> {
@@ -207,9 +229,11 @@ C++ operators. Operand representation does not initiate further semantic lookup.
 - **Constraints:** Canonical evidence selects one operation and output;
   heterogeneous operands and results are expressible with finite local solving.
 - **Options:** Associated `Rhs` and `Output`; capability arguments with associated
-  output; or another shape satisfying accepted generic rules.
+  output; or closed concrete signatures using the same canonical evidence rules.
 - **Closure condition:** Fix each initial unary/binary signature and demonstrate
-  unique normalization for generic and concrete calls.
+  unique resolution for the selected concrete and generic uses, including two
+  right-operand types for one left type. Identify any symbolic projections and
+  the finite normalization they require.
 
 ### OPEN-05 — Is user-defined equality excluded from the initial operator scope?
 
@@ -252,9 +276,11 @@ C++ operators. Operand representation does not initiate further semantic lookup.
 ## Implementation
 
 Implementation requires closure of `OPEN-01` through `OPEN-06` for the selected
-slice and implemented generic associated-type normalization. Deliver capability
-identities, evidence validation, operator-to-operation resolution, source
-diagnostics, and resolved-operation lowering together.
+slice. Deliver capability identities, evidence validation, operator-to-operation
+resolution, source diagnostics, and resolved-operation lowering together.
+Implement finite associated-type normalization for signatures exposing those
+projections. Select a concrete-only or generic delivery from the nominal examples
+and required source algorithms; each delivery preserves canonical coherence.
 
 Existing tokens require no grammar change. Add representations only for the
 selected operations.
@@ -264,7 +290,9 @@ selected operations.
 Decision experiments and the delivered slice cover:
 
 - same-type operands, heterogeneous right operands, and heterogeneous outputs;
-- definition-site resolution and application-site evidence validation;
+- multiple right-operand types for one left type with unique evidence;
+- definition-site resolution and application-site evidence validation for admitted
+  generic uses;
 - stable rejection of duplicate and overlapping evidence;
 - unchanged excluded equality, short-circuit, assignment, access, and control forms;
 - unchanged precedence and associativity;

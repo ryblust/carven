@@ -1,4 +1,4 @@
-export const fn announce() {
+const fn announce() {
     println("helper call");
 }
 

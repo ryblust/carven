@@ -103,6 +103,7 @@ enum class TargetStringLiteralKind {
 struct TargetStringLiteral final {
     std::string bytes;
     TargetStringLiteralKind kind;
+    auto operator==(const TargetStringLiteral&) const noexcept -> bool = default;
     auto native_symbol() const noexcept -> std::optional<TargetSymbol>;
 };
 
@@ -141,7 +142,8 @@ struct TargetConditionalExpr final {
     UniqueIndirect<TargetExpr> false_value;
 };
 
-using TargetTemplateArgument = std::variant<TargetTypeID, bool, TargetIntegerLiteral>;
+using TargetTemplateArgument =
+    std::variant<TargetTypeID, bool, TargetIntegerLiteral, TargetStringLiteral, TargetName>;
 
 struct TargetTemplateNameExpr final {
     UniqueIndirect<TargetExpr> operand;
@@ -156,7 +158,7 @@ struct TargetCallExpr final {
 struct TargetArrayExpr final {
     TargetTypeID element_type_id;
     UniqueIndirect<TargetExpr> extent;
-    std::vector<TargetExpr> elements;
+    std::variant<std::vector<TargetExpr>, std::vector<std::uint8_t>> elements;
 
     static constexpr auto native_symbol() noexcept -> TargetSymbol {
         return TargetSymbol::StdArray;
@@ -211,6 +213,7 @@ struct TargetLambdaExpr final {
 };
 
 struct TargetExpressionCleanup;
+
 using TargetExprValue = TreeValue<
     TargetExpressionCleanup,
     TargetNameExpr,
@@ -257,6 +260,7 @@ auto template_name_expression(
 // Borrows the primary name of a template-id, or the expression itself.
 // The expression must remain alive and unmodified throughout the borrow.
 auto template_primary_expression(const TargetExpr& expression) noexcept -> const TargetExpr&;
+
 auto template_primary_expression(const TargetExpr&& expression) noexcept
     -> const TargetExpr& = delete;
 

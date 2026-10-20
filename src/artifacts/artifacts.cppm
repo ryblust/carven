@@ -23,6 +23,8 @@ struct GeneratedArtifact final {
     // The source that owns a generated implementation; synthetic artifacts have none.
     std::optional<std::string> source_path;
     std::string content;
+    // Logical implementation paths referenced by emitted code.
+    std::vector<std::string> link_dependencies;
 };
 
 auto validate_artifact_logical_path(std::string_view path) noexcept

@@ -80,12 +80,58 @@ test "Defaults: nested aggregates retain independent initialized storage" {
     value.values[1] = 9;
     check(value.values == [0, 9, 0]);
     let named = Selected {
-        count: 0,
-        choice:.Other
+        choice: .Other,
+        ...
     };
     let positional = Selected { .Other, 0 };
     check(named.choice == positional.choice);
     check(named.count == positional.count);
     check(named.choice == .Other);
     check(named.count == 0);
+    var trace = 0;
+    let ordered = ordered_defaults(&trace);
+    check(trace == 12);
+    check(ordered.small == 1.0f32);
+    check(ordered.number == 2);
+    check(ordered.text.is_empty());
+}
+
+private struct Partial<T> {
+    before: String,
+    value: T,
+    after: [i32; 2],
+}
+
+private const fn partial<T>(&&value: T) -> Partial<T> => {
+    value: &&value,
+    ...
+};
+
+private const fn mark(&trace: i32, digit: i32) -> i32 {
+    trace = trace * 10 + digit;
+    return digit;
+}
+
+private const fn ordered_defaults(&trace: i32) -> Defaults {
+    return Defaults {
+        small: mark(&trace, 1) as f32,
+        number: mark(&trace, 2),
+        ...
+    };
+}
+
+const test "Defaults: marked named fields default the remaining declaration slots" {
+    let value = partial(&&Choice::Item);
+    check(value.value == .Item);
+    check(value.before.is_empty());
+    check(value.after == [0, 0]);
+    var trace = 0;
+    let ordered = ordered_defaults(&trace);
+    check(trace == 12);
+    check(ordered.small == 1.0f32);
+    check(ordered.number == 2);
+    check(ordered.text.is_empty());
+    let empty: Defaults = { ... };
+    check(empty.number == 0);
+    check(empty.text.is_empty());
 }

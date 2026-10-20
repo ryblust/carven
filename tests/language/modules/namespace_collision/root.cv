@@ -1,4 +1,4 @@
-export struct child {
+struct child {
     value: i32,
 }
 

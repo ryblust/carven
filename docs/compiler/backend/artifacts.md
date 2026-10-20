@@ -14,11 +14,16 @@ type definitions reachable through parameters, results, and failures, including
 private types behind slices and pointers. Weak references require publication
 without imposing a C++ layout order. Both purposes use the same type traversal
 and definition-placement requirements. Support headers include those interfaces
-and emit aliases in a callable namespace below the module namespace.
-They contain no external function prototypes and are not automatically included
-by module implementations. Native declarations and calls retain their authored
-header and fragment environments. The manifest records these headers for
-publication and obsolete-artifact removal.
+and emit aliases and typed host contracts in a callable namespace below the
+module namespace. Imports without an explicit target have exact native `invoke`
+declarations in their owning interface; explicit targets retain their authored
+header and fragment environments. API and provider headers publish source
+contracts through the same signature lowering. Contracts include canonical source
+signature identity and native leaf type descriptors. Exported non-generic ordinary
+structs also receive module-level API aliases. Those structs and non-generic
+structs reachable through native boundaries publish their canonical identity and
+ordered field member pointers once in the defining interface. The manifest records
+these headers for publication and obsolete-artifact removal.
 
 `TargetNamePlan` owns linkage-domain namespaces, module names, nominal names,
 callable and closure names, enum payload names, generated test names, query aliases,
@@ -82,6 +87,16 @@ Lowering also records providers of emitted names and types. These transient
 provider sets become header requirements and ordered native imports.
 Implementation artifacts retain their associated interface identity; test entries
 retain their runner header. These relationships identify associated headers.
+References to owner-defined callables also record the logical path of their
+implementation artifact. Calls inside use-placed bodies contribute to the artifact
+that emits those bodies. The generated manifest includes implementation dependencies
+introduced by included headers, so build consumers can select the transitive
+implementation closure without inferring it from type dependencies or scanning
+generated C++.
+Generation starts with owned artifacts and follows the completed units' includes
+to select dependency interfaces. Unused library headers are not materialized or
+listed in the manifest. Explicit standard-library batches own all their modules
+and publish the complete library inventory.
 
 ### Staged bodies
 
@@ -129,7 +144,10 @@ by value; the runtime writer owns the output budget.
 
 Each runtime test becomes a function. Static tests have already executed during
 analysis and receive no target function name or runner entry. Module runners call
-tests in source order; the runner header calls modules in canonical order. The default entry calls
+tests in source order; the runner header calls modules in canonical order.
+Generation selects test modules independently of implementation ownership. An
+omitted test selection covers all owned modules; drivers select their explicit
+source roots. The default entry calls
 that same runner. Default test-entry mode disables the program entry wrapper in
 the module schedule; external-runner mode retains it for the consuming build.
 Explicit C++ fragments preserve their bytes and source order.
@@ -208,8 +226,9 @@ Unused interned types contribute no requirements.
 planned artifact references, and ordered native imports. Header references retain
 their delimiter and path. Automatic requirements merge by exact
 reference; source imports retain their order, repetitions, and attribution.
-Directive planning orders associated headers, source imports, runtime headers,
-generated references, and standard-library headers. The completed unit owns
+Directive planning orders associated headers, source imports, project headers,
+and standard-library headers. Independent project headers share one group sorted
+by path. The completed unit owns
 structured include and pragma-once directives; emission serializes them.
 
 The renderer builds completed layout tables in postorder for expressions,

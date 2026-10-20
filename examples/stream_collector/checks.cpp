@@ -1,6 +1,5 @@
-#include "stream.hpp"
-
 #include <carven/api/examples/stream_collector/workflow.hpp>
+#include "stream.hpp"
 
 #include <array>
 #include <cstddef>
@@ -83,7 +82,13 @@ auto main() -> int {
     };
     for (const auto& input : cases) {
         // Native streams and their line buffers are already destroyed here.
-        const auto report = collect(input);
+        const auto result = collect(input);
+        const auto* success = result.success_if();
+        if (success == nullptr) {
+            std::fprintf(stderr, "stream collection stopped: %s\n", input.name);
+            return 1;
+        }
+        const auto& report = success->value;
         auto records = std::string();
         for (const auto& record : report.records) {
             records.append(record.as_str());

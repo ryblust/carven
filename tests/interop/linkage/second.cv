@@ -1,4 +1,4 @@
-import .common using { Value, make as common_make, value as common_value };
+import .common using { Value, make as common_make, value as common_value }
 
 export(cpp) fn value() -> i32 => common_value();
 

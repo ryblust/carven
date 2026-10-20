@@ -17,8 +17,8 @@ namespace {
 
 auto integer_literal(
     std::uint64_t magnitude,
-    NumericSuffix suffix = NumericSuffix::None,
-    NumericConversion conversion = NumericConversion::Exact
+    NumericSuffix suffix,
+    NumericConversion conversion
 ) noexcept -> ASTLiteral {
     return ASTLiteral {
         .span = Span::at(0u),
@@ -42,8 +42,11 @@ const TestSuite suite([] static noexcept {
             const auto f32 = compilation.builtin_type(BuiltinType::F32);
             const auto f64 = compilation.builtin_type(BuiltinType::F64);
 
-            const auto default_integer =
-                normalize_literal(compilation, integer_literal(42u), LiteralSign::Positive);
+            const auto default_integer = normalize_literal(
+                compilation,
+                integer_literal(42u, NumericSuffix::None, NumericConversion::Exact),
+                LiteralSign::Positive
+            );
             if (!expect(default_integer.has_value())) {
                 return;
             }
@@ -51,7 +54,7 @@ const TestSuite suite([] static noexcept {
 
             const auto contextual = normalize_literal(
                 compilation,
-                integer_literal(42u),
+                integer_literal(42u, NumericSuffix::None, NumericConversion::Exact),
                 LiteralSign::Positive,
                 ConstructionTypeRef {i64}
             );
@@ -63,7 +66,7 @@ const TestSuite suite([] static noexcept {
 
             const auto suffixed = normalize_literal(
                 compilation,
-                integer_literal(42u, NumericSuffix::I32),
+                integer_literal(42u, NumericSuffix::I32, NumericConversion::Exact),
                 LiteralSign::Positive,
                 ConstructionTypeRef {i64}
             );
@@ -74,7 +77,7 @@ const TestSuite suite([] static noexcept {
 
             const auto signed_minimum = normalize_literal(
                 compilation,
-                integer_literal(128u, NumericSuffix::I8),
+                integer_literal(128u, NumericSuffix::I8, NumericConversion::Exact),
                 LiteralSign::Negative,
                 std::nullopt
             );
@@ -85,7 +88,7 @@ const TestSuite suite([] static noexcept {
 
             const auto positive_overflow = normalize_literal(
                 compilation,
-                integer_literal(128u, NumericSuffix::I8),
+                integer_literal(128u, NumericSuffix::I8, NumericConversion::Exact),
                 LiteralSign::Positive
             );
             if (!expect(!(positive_overflow.has_value()))) {

@@ -1,4 +1,4 @@
-import .api using { one, two };
+import .api using { one, two }
 
 struct Pair {
     left: ptr<&i32>,
@@ -10,4 +10,4 @@ enum Result {
     Error,
 }
 
-fn f(&x: Vector<Vector<i32>>, &&y: fn(&i32) -> i32) throw Error {}
+fn f<T: Hash + Equal>(&x: Vector<Vector<i32>>, &&y: fn(&i32) -> i32) throw Error {}

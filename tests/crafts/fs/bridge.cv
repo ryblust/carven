@@ -1,0 +1,109 @@
+import std::channel using ByteChannel;
+
+import std::fs using {
+    FileError,
+    canonical,
+    create_directories,
+    files,
+    join,
+    parent,
+    read_bytes,
+    read_text,
+    remove,
+    resolve,
+    status,
+    write_bytes,
+    write_text,
+}
+
+fn probe(root: String) -> i32 {
+    return try {
+        assert(parent("main.cv").is_empty());
+        assert(parent("build/生成/main.cv") == "build/生成");
+        assert(join("build", "generated/main.cv") == "build/generated/main.cv");
+        create_directories(root)?;
+        match status(root)? {
+            .Directory => {},
+            _ => assert(false),
+        }
+        let missing = f"{root}/missing.txt";
+        assert(resolve(missing)? == join(canonical(root)?, "missing.txt"));
+        match status(missing)? {
+            .Missing => {},
+            _ => assert(false),
+        }
+        let absent = try {
+            let _ = read_bytes(missing)?;
+            false
+        } catch {
+            FileError(error) => match error {
+                .System(_) => true,
+                _ => false,
+            },
+        };
+        assert(absent);
+        let binary = f"{root}/bytes.bin";
+        write_bytes(binary, [0u8, 255u8, 65u8])?;
+        let bytes = read_bytes(binary)?;
+        assert(bytes.length() == 3 && bytes[0] == 0 && bytes[1] == 255 && bytes[2] == 65);
+        let invalid = try {
+            let _ = read_text(binary)?;
+            false
+        } catch {
+            FileError(error) => match error {
+                .InvalidUTF8(_) => true,
+                _ => false,
+            },
+        };
+        assert(invalid);
+        let text = f"{root}/text.txt";
+        write_text(text, "hello, Carven\n")?;
+        assert(read_text(text)? == "hello, Carven\n");
+        match status(text)? {
+            .File => {},
+            _ => assert(false),
+        }
+        let nested = f"{root}/nested";
+        create_directories(nested)?;
+        assert(canonical(f"{nested}/../text.txt")? == canonical(text)?);
+        write_text(f"{nested}/child.txt", "nested")?;
+        let immediate = files(
+            {
+                root: root,
+                recursive: false,
+                excluded_root: ""
+            }
+        )?;
+        assert(immediate.length() == 2);
+        let recursive = files(
+            {
+                root: root,
+                recursive: true,
+                excluded_root: ""
+            }
+        )?;
+        assert(recursive.length() == 3);
+        let selected = files(
+            {
+                root: root,
+                recursive: true,
+                excluded_root: nested
+            }
+        )?;
+        assert(selected.length() == 2 && selected[0] == binary && selected[1] == text);
+        assert(remove(binary)?);
+        assert(!remove(binary)?);
+        0
+    } catch {
+        FileError(_) => -1,
+    };
+}
+
+test "Filesystem: native byte and text operations" {
+    assert(probe("build/test-fs") == 0);
+    let channel = ByteChannel::new(1);
+    channel.close();
+    let bytes: Vector<u8> = [1u8];
+    assert(!channel.try_send(&&bytes));
+    println("fs: bytes, text, path kinds, errors");
+}

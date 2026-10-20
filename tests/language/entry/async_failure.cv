@@ -1,4 +1,4 @@
-import std::async using { cancel_requested, yield_once };
+import std::async using { cancel_requested, yield_once }
 
 private struct Failure {}
 

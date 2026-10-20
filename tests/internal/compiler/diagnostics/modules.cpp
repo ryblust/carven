@@ -22,16 +22,16 @@ const TestSuite suite([] static noexcept {
             auto sources = SourceManager();
             auto inputs = std::vector<SourceModuleInput>();
             for (
-                const auto& [module, text] :
+                const auto& [module_path, text] :
                 std::array<std::pair<std::string_view, std::string_view>, 3> {
-                    {{"first", "export struct Value {}"},
-                     {"second", "export struct Value {}"},
+                    {{"first", "struct Value {}"},
+                     {"second", "struct Value {}"},
                      {"app",
                       "import first using Value as First; import second using Value as Second; fn wrong(value: First) -> Second => value;"}}
                 }) {
                 inputs.push_back(
-                    {*sources.append_virtual(std::string(module) + ".cv", std::string(text)),
-                     *CanonicalModulePath::from_value(module)}
+                    {*sources.append_virtual(std::string(module_path) + ".cv", std::string(text)),
+                     *CanonicalModulePath::from_value(module_path)}
                 );
             }
             const auto result = compile(
@@ -143,9 +143,9 @@ const TestSuite suite([] static noexcept {
         [] static noexcept {
             auto sources = SourceManager();
             const auto first =
-                *sources.append_virtual("first.cv", "export fn value() -> i32 { return 1; }\n");
+                *sources.append_virtual("first.cv", "fn value() -> i32 { return 1; }\n");
             const auto second =
-                *sources.append_virtual("second.cv", "export fn value() -> i32 { return 2; }\n");
+                *sources.append_virtual("second.cv", "fn value() -> i32 { return 2; }\n");
             const auto app = *sources.append_virtual(
                 "app.cv",
                 "import first using value;\n"
@@ -195,60 +195,59 @@ const TestSuite suite([] static noexcept {
             );
         };
 
-    "Compiler diagnostics: entry-point uniqueness spans source modules"_test = [] static noexcept {
-        auto sources = SourceManager();
-        const auto first = *sources.append_virtual("first.cv", "fn main() {}\n");
-        const auto second = *sources.append_virtual("second.cv", "fn main() {}\n");
-        const auto inputs = std::array {
-            SourceModuleInput {
-                .source_id = first,
-                .module_path = *CanonicalModulePath::from_value("first")
-            },
-            SourceModuleInput {
-                .source_id = second,
-                .module_path = *CanonicalModulePath::from_value("second")
-            },
-        };
-
-        const auto result = compile(
-            sources,
-            SourceBatch {.modules = inputs},
-            TargetPlanningRequest {
-                .test_mode = TestGenerationMode::None,
-                .linkage_domain = LinkageDomain::explicit_value("test:modules").value(),
-                .library = std::nullopt,
+    "Compiler: source batches generate independent module entries"_test = [] static noexcept {
+        for (const auto sources_text : std::array {
+                 std::array {"fn main() {}", "fn main() {}"},
+                 std::array {"println(1);", "println(2);"}
+             }) {
+            auto sources = SourceManager();
+            const auto first = *sources.append_virtual("first.cv", sources_text[0]);
+            const auto second = *sources.append_virtual("second.cv", sources_text[1]);
+            const auto inputs = std::array {
+                SourceModuleInput {
+                    .source_id = first,
+                    .module_path = *CanonicalModulePath::from_value("first")
+                },
+                SourceModuleInput {
+                    .source_id = second,
+                    .module_path = *CanonicalModulePath::from_value("second")
+                },
+            };
+            const auto result = compile(
+                sources,
+                SourceBatch {.modules = inputs},
+                TargetPlanningRequest {
+                    .test_mode = TestGenerationMode::None,
+                    .linkage_domain = *LinkageDomain::explicit_value("test:entries"),
+                    .library = std::nullopt,
+                }
+            );
+            if (!expect(result.has_value())) {
+                continue;
             }
-        );
-
-        if (!expect(!result.has_value())) {
-            return;
+            for (const auto name : {std::string_view("first"), std::string_view("second")}) {
+                const auto implementations = result->value.entries();
+                const auto found = std::ranges::find(
+                    implementations,
+                    std::format("{}.cpp", name),
+                    &GeneratedArtifact::logical_path
+                );
+                if (!expect(found != implementations.end())) {
+                    continue;
+                }
+                expect(found->role == GeneratedArtifactRole::ModuleImplementation);
+                expect(found->source_path == std::format("{}.cv", name));
+            }
         }
-        const auto* diagnostic = find_diagnostic(result.error(), DiagnosticCode::EntryDuplicate);
-        if (!expect(diagnostic != nullptr)) {
-            return;
-        }
-        if (!expect(diagnostic->attachment.primary.has_value())) {
-            return;
-        }
-        if (!expect_equal(diagnostic->attachment.related.size(), 1u)) {
-            return;
-        }
-        expect((diagnostic->attachment.primary->span.source_id == second));
-        expect((diagnostic->attachment.related.front().span.source_id == first));
-        expect_equal(sources.slice(diagnostic->attachment.primary->span), std::string_view("main"));
     };
 
     "Compiler diagnostics: recursive storage across modules is diagnosed semantically"_test =
         [] static noexcept {
             auto sources = SourceManager();
-            const auto first = *sources.append_virtual(
-                "a.cv",
-                "import b using B;\nexport struct A { value: B }\n"
-            );
-            const auto second = *sources.append_virtual(
-                "b.cv",
-                "import a using A;\nexport struct B { value: A }\n"
-            );
+            const auto first =
+                *sources.append_virtual("a.cv", "import b using B;\nstruct A { value: B }\n");
+            const auto second =
+                *sources.append_virtual("b.cv", "import a using A;\nstruct B { value: A }\n");
             const auto inputs = std::array {
                 SourceModuleInput {
                     .source_id = first,
@@ -310,48 +309,6 @@ const TestSuite suite([] static noexcept {
                 },
             };
             check_compiler_errors(cases);
-        };
-
-    "Compiler diagnostics: each file's top-level body counts as an entry"_test =
-        [] static noexcept {
-            auto sources = SourceManager();
-            const auto first = *sources.append_virtual("first.cv", "println(1);");
-            const auto second = *sources.append_virtual("second.cv", "println(2);");
-            const auto inputs = std::array {
-                SourceModuleInput {
-                    .source_id = first,
-                    .module_path = *CanonicalModulePath::from_value("first")
-                },
-                SourceModuleInput {
-                    .source_id = second,
-                    .module_path = *CanonicalModulePath::from_value("second")
-                },
-            };
-            const auto result = compile(
-                sources,
-                SourceBatch {.modules = inputs},
-                TargetPlanningRequest {
-                    .test_mode = TestGenerationMode::None,
-                    .linkage_domain = *LinkageDomain::explicit_value("test:top-level"),
-                    .library = std::nullopt,
-                }
-            );
-            if (!expect(!result.has_value())) {
-                return;
-            }
-            const auto* diagnostic =
-                find_diagnostic(result.error(), DiagnosticCode::EntryDuplicate);
-            if (!expect(diagnostic != nullptr)) {
-                return;
-            }
-            if (!expect(diagnostic->attachment.primary.has_value())) {
-                return;
-            }
-            expect((diagnostic->attachment.primary->span.source_id == second));
-            if (!expect_equal(diagnostic->attachment.related.size(), 1uz)) {
-                return;
-            }
-            expect((diagnostic->attachment.related.front().span.source_id == first));
         };
 
     "Compiler: top-level bodies use ordinary callable analysis"_test = [] static noexcept {

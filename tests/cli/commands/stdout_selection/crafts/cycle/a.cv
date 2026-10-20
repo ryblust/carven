@@ -1,7 +1,7 @@
 import cycle::b using BTag;
 
-export struct ATag {}
+struct ATag {}
 
-export struct A {
+struct A {
     value: BTag
 }

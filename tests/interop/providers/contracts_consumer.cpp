@@ -16,29 +16,67 @@ using Failure = decltype(api::make_failure());
 using FailureResult = decltype(api::failure(false));
 
 static_assert(std::is_same_v<decltype(api::text), auto() noexcept -> String>);
-static_assert(std::is_same_v<decltype(api::copy), auto(const String&) noexcept -> String>);
-static_assert(std::is_same_v<decltype(api::replace), auto(String&) noexcept -> void>);
+
+static_assert(std::is_same_v<
+              decltype(api::copy),
+              auto(const String&) noexcept -> carven::runtime::Outcome<String>>);
+
 static_assert(
-    std::is_same_v<decltype(api::take), auto(boundary::Owned) noexcept -> boundary::Owned>
+    std::is_same_v<decltype(api::replace), auto(String&) noexcept -> carven::runtime::Outcome<void>>
 );
-static_assert(std::is_same_v<decltype(api::record), auto(const Record&) noexcept -> Record>);
+
+static_assert(std::is_same_v<
+              decltype(api::take),
+              auto(boundary::Owned) noexcept -> carven::runtime::Outcome<boundary::Owned>>);
+
+static_assert(std::is_same_v<
+              decltype(api::record),
+              auto(const Record&) noexcept -> carven::runtime::Outcome<Record>>);
+
 static_assert(std::is_same_v<decltype(api::guarded_failure(false, true)), FailureResult>);
+
+static_assert(!std::is_constructible_v<
+              carven::runtime::FunctionRef<String(const String&) noexcept>,
+              decltype(&api::copy)>);
+
+template<typename Factory>
+concept VoidImport =
+    requires (Factory factory) { carven::runtime::Outcome<void>::invoke(factory); };
+
+static_assert(VoidImport<decltype([]() noexcept {})>);
+
+static_assert(
+    VoidImport<decltype([]() noexcept { return carven::runtime::Outcome<void>::stopped(); })>
+);
+
+static_assert(
+    !VoidImport<decltype([]() noexcept { return carven::runtime::Outcome<int>::stopped(); })>
+);
+
+static_assert(
+    !VoidImport<decltype([]() noexcept { return carven::runtime::Outcome<void, int>::stopped(); })>
+);
 
 } // namespace
 
 auto contract_consumer() noexcept -> bool {
     auto text = api::text();
-    if (text.as_str() != "owned" || api::copy(text).as_str() != "owned") {
+    const auto copied = api::copy(text);
+    if (text.as_str() != "owned"
+        || !copied.success_if()
+        || copied.success_if()->value.as_str() != "owned") {
         return false;
     }
-    api::replace(text);
-    if (text.as_str() != "replaced") {
+    const auto replaced = api::replace(text);
+    if (!replaced.success_if() || text.as_str() != "replaced") {
         return false;
     }
     auto owner = contract_owner();
     const auto* identity = owner.get();
     const auto moved = api::take(std::move(owner));
-    if (moved.get() != identity || *moved != 42) {
+    if (!moved.success_if()
+        || moved.success_if()->value.get() != identity
+        || *moved.success_if()->value != 42) {
         return false;
     }
     auto moves = std::int32_t {0};
@@ -49,15 +87,19 @@ auto contract_consumer() noexcept -> bool {
         return false;
     }
     auto number = std::int32_t {3};
-    if (api::pointer(&number) != &number || number != 4) {
+    const auto pointer = api::pointer(&number);
+    if (!pointer.success_if() || pointer.success_if()->value != &number || number != 4) {
         return false;
     }
     const auto record = api::record(api::make_record());
-    if (record.count != 9 || record.text.as_str() != "record") {
+    if (!record.success_if()
+        || record.success_if()->value.count != 9
+        || record.success_if()->value.text.as_str() != "record") {
         return false;
     }
     constexpr auto values = std::array<std::int32_t, 2> {4, 8};
-    if (api::array(values) != values || api::view("view") != "view") {
+    const auto array = api::array(values);
+    if (!array.success_if() || array.success_if()->value != values || api::view("view") != "view") {
         return false;
     }
     const auto view = api::slice(carven::runtime::slice(values));
@@ -70,7 +112,8 @@ auto contract_consumer() noexcept -> bool {
     constexpr auto callback = [](std::int32_t value) noexcept {
         return value + 2;
     };
-    if (api::callback(+callback) != 9) {
+    const auto called = api::callback(+callback);
+    if (!called.success_if() || called.success_if()->value != 9) {
         return false;
     }
     auto success = api::failure(false);

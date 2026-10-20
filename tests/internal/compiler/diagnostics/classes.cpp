@@ -14,6 +14,11 @@ const TestSuite suite([] static noexcept {
              .source = "class C { value: i32, } fn read(c: C) -> i32 { return c.value; }",
              .code = DiagnosticCode::AccessClassPrivate,
              .primary_text = "value"},
+            {.name = "generic private field",
+             .source =
+                 "class C<T> { value: T, } fn read<T>(c: C<T>) -> ptr<T> { return addressof(c.value); }",
+             .code = DiagnosticCode::AccessClassPrivate,
+             .primary_text = "value"},
             {.name = "private operation",
              .source =
                  "class C { private fn secret(self) -> i32 { return 1; } } fn read(c: C) -> i32 { return c.secret(); }",

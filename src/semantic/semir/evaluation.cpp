@@ -113,6 +113,7 @@ auto evaluation_rule(const SemIRProgram& semantic, const SemanticExpression& exp
                 return scalar(semantic, value.operand->type.resolved()) ? operands(*value.operand)
                                                                         : required;
             },
+            [&](const SemHash& value) noexcept { return operands(*value.operand); },
             [&](const SemBinary& value) noexcept {
                 if (!scalar(semantic, value.left->type.resolved())
                     || !scalar(semantic, value.right->type.resolved())) {

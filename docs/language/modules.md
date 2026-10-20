@@ -33,6 +33,9 @@ structured references:
 - `.value` starts in the importing module's logical module directory;
 - `json::parser` starts at the external craft `json` and names `crafts.json.parser`.
 
+An import with a `using { ... }` list ends with `}` and has no trailing semicolon.
+Single-name and wildcard imports end with `;`.
+
 A module's logical directory is its canonical path without the final module
 name; removing that name does not change the module domain. The reference
 components after `.` are appended to that directory. For example, `.value` in
@@ -92,6 +95,7 @@ This table lists public compiler-provided exports and default bindings.
 | `std::async` | `Operation`, `cancel_requested`, `cancel_point`, `yield_once`, `wait_ready`, `close`, `when_all`, `when_any`, `first_successful` | None |
 | `std::simd` | `u8x16`, `mask16`, `f32x4`, `mask4`, `u8x32`, `mask32`, `f32x8`, `mask8` | These listed names |
 | `std::time` | `timeout` | None |
+| `std::collections` | `Hash`, `Equal` | These listed names |
 
 Explicit imports of default names use ordinary import usage tracking. Test helpers
 require an active test; `assert` works outside tests.
@@ -138,7 +142,7 @@ depth follows the capability, while implementation files follow their responsibi
 
 ```carven
 import std::core using String as Text;
-import std::async using { Operation, when_all as join };
+import std::async using { Operation, when_all as join }
 import std::simd.bytes using load_block as load_bytes;
 import std::simd.floats using load_block as load_floats;
 ```
@@ -218,6 +222,16 @@ Visibility follows the defining craft, not the spelling used to import it.
 Official standard-library modules belong to the `carven` craft, including those
 selected through `std::`. Ordinary application modules share the unprefixed
 module domain and can import each other's bare declarations.
+
+Use bare declarations for ordinary project APIs shared between source files.
+Use `export` for APIs consumed from another craft. Merely splitting a project into
+modules or selecting an entry through the hosting API does not require `export`.
+`export(cpp)` requests a generated C++ callable interface and retains the same
+Carven audience as a bare function. Its signature types need no cross-craft
+`export` unless a separate Carven declaration exposes them across crafts.
+The two public boundaries use separate declarations; a declaration cannot combine
+`export` with `export(cpp)`. This keeps each outward API explicit while allowing
+both boundaries to reuse ordinary project code.
 
 Every declaration is visible in its defining module. In expressions, `::`
 selects type-associated operations, enum cases, or qualified native names.

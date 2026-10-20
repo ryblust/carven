@@ -161,12 +161,9 @@ private:
     auto separator(Separation value) noexcept -> FormattingNodeID;
     auto needs_separator(std::size_t index) const noexcept -> bool;
     auto gap(std::size_t index, Separation desired, bool closing) noexcept -> FormattingNodeID;
-    auto sequence(
-        std::size_t start,
-        std::size_t end,
-        Separation first,
-        bool inside_group = false
-    ) noexcept -> FormattingNodeID;
+
+    auto sequence(std::size_t start, std::size_t end, Separation first, bool inside_group) noexcept
+        -> FormattingNodeID;
 };
 
 SyntaxFormatter::SyntaxFormatter(
@@ -287,7 +284,7 @@ auto SyntaxFormatter::format() noexcept -> std::string {
         };
 
         auto entries = std::vector<TopLevelEntry>();
-        const auto add = [&](Span span, std::size_t category, bool is_const_test = false) noexcept {
+        const auto add = [&](Span span, std::size_t category, bool is_const_test) noexcept {
             entries.push_back(
                 TopLevelEntry {
                     .first = token_at(span.start()),
@@ -306,18 +303,20 @@ auto SyntaxFormatter::format() noexcept -> std::string {
         }
         if (top_level_body != nullptr) {
             for (const auto id : top_level_body->statements) {
-                add(syntax.statement(id).span, std::variant_size_v<decltype(ASTItem::value)> + 2uz);
+                add(syntax.statement(id).span,
+                    std::variant_size_v<decltype(ASTItem::value)> + 2uz,
+                    false);
             }
         }
         constexpr auto import_category = std::variant_size_v<decltype(ASTItem::value)>;
         for (const auto& item : syntax.module_imports()) {
-            add(item.span, import_category);
+            add(item.span, import_category, false);
         }
         for (const auto& item : syntax.ast_module().cpp_header_imports) {
-            add(item.span, import_category);
+            add(item.span, import_category, false);
         }
         for (const auto& item : syntax.ast_module().cpp_source_fragments) {
-            add(item.form_span, import_category + 1uz);
+            add(item.form_span, import_category + 1uz, false);
         }
         std::ranges::sort(entries, {}, &TopLevelEntry::first);
         for (auto i = 1uz; i < entries.size(); ++i) {
@@ -335,7 +334,8 @@ auto SyntaxFormatter::format() noexcept -> std::string {
 
 auto SyntaxFormatter::render() noexcept -> std::string {
     document = FormattingDocument();
-    auto parts = std::vector<FormattingNodeID> {sequence(0, tokens.size(), Separation::None)};
+    auto parts =
+        std::vector<FormattingNodeID> {sequence(0, tokens.size(), Separation::None, false)};
     parts.push_back(
         gap(tokens.size(), tokens.empty() ? Separation::None : Separation::Hard, false)
     );
@@ -516,6 +516,12 @@ auto SyntaxFormatter::annotate() noexcept -> void {
             || std::holds_alternative<ASTArrayExpr>(element->value)
             || std::holds_alternative<ASTArrayRepeatExpr>(element->value);
     };
+    for (const auto& item : syntax.module_imports()) {
+        separation_before[token_at(item.span.start())] = Separation::Hard;
+    }
+    for (const auto& item : syntax.ast_module().cpp_header_imports) {
+        separation_before[token_at(item.span.start())] = Separation::Hard;
+    }
     for (const auto& fragment : syntax.ast_module().cpp_source_fragments) {
         separation_before[token_at(fragment.form_span.start())] = Separation::Hard;
     }
@@ -700,7 +706,9 @@ auto SyntaxFormatter::annotate() noexcept -> void {
                             const auto nested = std::ranges::size(values) > 1uz
                                 && std::ranges::any_of(values, structured);
                             if constexpr (std::same_as<U, ASTFieldInitializerList>) {
-                                return nested || initializer.fields.size() > 1uz;
+                                return nested
+                                    || initializer.fields.size() + initializer.defaults.has_value()
+                                    > 1uz;
                             } else {
                                 return nested;
                             }
@@ -716,6 +724,10 @@ auto SyntaxFormatter::annotate() noexcept -> void {
                             } else {
                                 for (const auto& field : initializer.fields) {
                                     separation_before[token_at(field.span.start())] =
+                                        Separation::Hard;
+                                }
+                                if (initializer.defaults) {
+                                    separation_before[token_at(initializer.defaults->start())] =
                                         Separation::Hard;
                                 }
                             }
@@ -824,6 +836,9 @@ auto SyntaxFormatter::separation(std::size_t index) const noexcept -> Separation
     if (left == PlusPlus || left == MinusMinus) {
         return Separation::None;
     }
+    if (left == Colon) {
+        return Separation::Space;
+    }
     if (right == Colon
         || right == Dot
         || left == Dot
@@ -833,9 +848,6 @@ auto SyntaxFormatter::separation(std::size_t index) const noexcept -> Separation
         || right == PlusPlus
         || right == MinusMinus) {
         return Separation::None;
-    }
-    if (left == Colon) {
-        return Separation::Space;
     }
     if (prefix_operators[index - 1uz]) {
         return Separation::None;
@@ -976,7 +988,7 @@ auto SyntaxFormatter::sequence(
             auto parts = std::vector<FormattingNodeID> {
                 document.verbatim(source.spelling(tokens[index].span))
             };
-            const auto inner = sequence(index + 1uz, close, boundary);
+            const auto inner = sequence(index + 1uz, close, boundary, false);
             parts.push_back(
                 tokens[index].kind == TokenKind::InterpolationStart ? inner : document.indent(inner)
             );

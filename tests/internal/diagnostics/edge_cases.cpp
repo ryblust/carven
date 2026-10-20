@@ -38,7 +38,8 @@ const TestSuite suite([] static noexcept {
                         .source_id = SourceID::from_index(0),
                         .text = text,
                         .origin = "long.cv",
-                    }
+                    },
+                    false
                 );
                 const auto source_begin = output.find("1 | ");
                 if (!expect_not_equal(source_begin, std::string::npos)) {
@@ -78,7 +79,7 @@ const TestSuite suite([] static noexcept {
         );
 
         expect_equal(
-            render_diagnostic(diagnostic, source),
+            render_diagnostic(diagnostic, source, false),
             std::string_view(R"REPORT(error [CV-LEXICAL]: tab
  --> tab.cv:1:5
   |
@@ -108,7 +109,7 @@ const TestSuite suite([] static noexcept {
             );
 
             expect_equal(
-                render_diagnostic(diagnostic, source),
+                render_diagnostic(diagnostic, source, false),
                 std::string_view(
                     "error [CV-LEXICAL]: UTF-8\n"
                     " --> utf8.cv:1:7\n"
@@ -138,7 +139,8 @@ const TestSuite suite([] static noexcept {
                      .source_id = SourceID::from_index(0),
                      .text = "",
                      .origin = "empty.cv",
-                 }
+                 },
+                 false
              )
              == std::string_view(
                  "error [CV-LEXICAL]: empty\n"
@@ -170,7 +172,8 @@ const TestSuite suite([] static noexcept {
                          .source_id = SourceID::from_index(0),
                          .text = "abc",
                          .origin = "eof.cv",
-                     }
+                     },
+                     false
                  )
                  == std::string_view(R"REPORT(error [CV-LEXICAL]: EOF
  --> eof.cv:1:4
@@ -201,7 +204,8 @@ const TestSuite suite([] static noexcept {
                          .source_id = SourceID::from_index(0),
                          .text = "abc\n",
                          .origin = "eof.cv",
-                     }
+                     },
+                     false
                  )
                  == std::string_view(
                      "error [CV-LEXICAL]: EOF\n"
@@ -253,9 +257,12 @@ const TestSuite suite([] static noexcept {
             .origin = "span.cv",
         };
 
-        expect_equal(render_diagnostic(outside, source), render_diagnostic(eof, source));
         expect_equal(
-            render_diagnostic(partial, source),
+            render_diagnostic(outside, source, false),
+            render_diagnostic(eof, source, false)
+        );
+        expect_equal(
+            render_diagnostic(partial, source, false),
             std::string_view(R"REPORT(error [CV-LEXICAL]: partial
  --> span.cv:1:2
   |
@@ -280,7 +287,7 @@ const TestSuite suite([] static noexcept {
                 }
             );
             expect_equal(
-                render_diagnostic(diagnostic, source),
+                render_diagnostic(diagnostic, source, false),
                 std::string_view(
                     "error [CV-LEXICAL]: range\n --> crlf.cv:1:2\n  |\n1 | a\n  |  ^\n2 | b\n  | ^ end\n"
                 )

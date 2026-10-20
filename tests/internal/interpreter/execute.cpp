@@ -42,7 +42,12 @@ println("after");
                 program,
                 entry(program),
                 write_output,
-                InterpreterOptions {.limits = static_execution_limits(), .trace = {}, .report = {}}
+                InterpreterOptions {
+                    .limits = static_execution_limits(),
+                    .trace = {},
+                    .report = {},
+                    .host_call = {}
+                }
             );
             if (!expect(!result.has_value())) {
                 return;
@@ -71,7 +76,12 @@ println("after");
             program,
             entry(program),
             write_output,
-            InterpreterOptions {.limits = static_execution_limits(), .trace = {}, .report = {}}
+            InterpreterOptions {
+                .limits = static_execution_limits(),
+                .trace = {},
+                .report = {},
+                .host_call = {}
+            }
         );
         expect(result.has_value());
         expect_equal(output, std::string("true 1 false\n"));
@@ -102,7 +112,12 @@ println("after");
                 program,
                 entry(program),
                 write_output,
-                InterpreterOptions {.limits = static_execution_limits(), .trace = {}, .report = {}}
+                InterpreterOptions {
+                    .limits = static_execution_limits(),
+                    .trace = {},
+                    .report = {},
+                    .host_call = {}
+                }
             );
             if (!expect(result.has_value())) {
                 return;
@@ -128,7 +143,12 @@ println("after");
                 program,
                 entry(program),
                 write_output,
-                InterpreterOptions {.limits = static_execution_limits(), .trace = {}, .report = {}}
+                InterpreterOptions {
+                    .limits = static_execution_limits(),
+                    .trace = {},
+                    .report = {},
+                    .host_call = {}
+                }
             );
             if (!expect(result.has_value())) {
                 return;
@@ -155,7 +175,12 @@ println("after");
                 program,
                 entry(program),
                 write_output,
-                InterpreterOptions {.limits = static_execution_limits(), .trace = {}, .report = {}}
+                InterpreterOptions {
+                    .limits = static_execution_limits(),
+                    .trace = {},
+                    .report = {},
+                    .host_call = {}
+                }
             );
             if (!expect(!result.has_value())) {
                 return;
@@ -192,7 +217,12 @@ println("after");
             program,
             entry(program),
             write_output,
-            InterpreterOptions {.limits = static_execution_limits(), .trace = {}, .report = {}}
+            InterpreterOptions {
+                .limits = static_execution_limits(),
+                .trace = {},
+                .report = {},
+                .host_call = {}
+            }
         );
         if (!expect(!result.has_value())) {
             return;
@@ -213,7 +243,12 @@ println("after");
             program,
             entry(program),
             {},
-            InterpreterOptions {.limits = static_execution_limits(), .trace = {}, .report = {}}
+            InterpreterOptions {
+                .limits = static_execution_limits(),
+                .trace = {},
+                .report = {},
+                .host_call = {}
+            }
         );
         if (!expect(!result.has_value())) {
             return;
@@ -259,7 +294,12 @@ println("after");
                 program,
                 entry(program),
                 write_output,
-                InterpreterOptions {.limits = static_execution_limits(), .trace = {}, .report = {}}
+                InterpreterOptions {
+                    .limits = static_execution_limits(),
+                    .trace = {},
+                    .report = {},
+                    .host_call = {}
+                }
             );
             if (!expect(result.has_value())) {
                 return;
@@ -302,7 +342,8 @@ println("after");
                     InterpreterOptions {
                         .limits = static_execution_limits(),
                         .trace = {},
-                        .report = {}
+                        .report = {},
+                        .host_call = {}
                     }
                 );
                 if (!expect(results.has_value())) {
@@ -362,7 +403,12 @@ println("after");
             const auto results = interpret_tests(
                 program,
                 write_output,
-                InterpreterOptions {.limits = static_execution_limits(), .trace = {}, .report = {}}
+                InterpreterOptions {
+                    .limits = static_execution_limits(),
+                    .trace = {},
+                    .report = {},
+                    .host_call = {}
+                }
             );
             if (!expect(results.has_value())) {
                 return;
@@ -400,7 +446,7 @@ println("after");
             const auto results = interpret_tests(
                 program,
                 write_output,
-                InterpreterOptions {.limits = limits, .trace = {}, .report = {}}
+                InterpreterOptions {.limits = limits, .trace = {}, .report = {}, .host_call = {}}
             );
             if (!expect(results.has_value())) {
                 return;
@@ -447,7 +493,8 @@ println("after");
                 InterpreterOptions {
                     .limits = static_execution_limits(),
                     .trace = {},
-                    .report = report_event
+                    .report = report_event,
+                    .host_call = {}
                 }
             );
             if (!expect(result.has_value())) {
@@ -558,7 +605,12 @@ println("after");
             const auto results = interpret_tests(
                 program,
                 write_output,
-                InterpreterOptions {.limits = static_execution_limits(), .trace = {}, .report = {}}
+                InterpreterOptions {
+                    .limits = static_execution_limits(),
+                    .trace = {},
+                    .report = {},
+                    .host_call = {}
+                }
             );
             if (!expect(results.has_value()) || !expect(results->size() == 1)) {
                 return;
@@ -593,7 +645,12 @@ println("after");
                 program,
                 entry(program),
                 write_output,
-                InterpreterOptions {.limits = static_execution_limits(), .trace = {}, .report = {}}
+                InterpreterOptions {
+                    .limits = static_execution_limits(),
+                    .trace = {},
+                    .report = {},
+                    .host_call = {}
+                }
             );
             if (!expect(!result.has_value())) {
                 return;

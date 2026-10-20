@@ -226,7 +226,7 @@ auto TargetRenderer::render_expression_node(const TargetExpr& expression) noexce
                 return concat(
                     {render_expression(*conditional.condition, TargetPrecedence::LogicalOr),
                      text(" ? "),
-                     render_expression(*conditional.true_value),
+                     render_expression(*conditional.true_value, TargetPrecedence::Lowest),
                      text(" : "),
                      render_expression(*conditional.false_value, TargetPrecedence::Conditional)}
                 );
@@ -238,7 +238,13 @@ auto TargetRenderer::render_expression_node(const TargetExpr& expression) noexce
                         if constexpr (std::same_as<
                                           std::remove_cvref_t<decltype(value)>,
                                           TargetTypeID>) {
-                            return render_type(value);
+                            return render_type(value, false);
+                        } else if constexpr (std::same_as<
+                                                 std::remove_cvref_t<decltype(value)>,
+                                                 TargetName>) {
+                            return render_expression_node(
+                                TargetExpr {.value = TargetNameExpr {.name = value}}
+                            );
                         } else {
                             return render_expression_node(
                                 TargetExpr {.value = TargetLiteralExpr {.value = value}}
@@ -254,7 +260,7 @@ auto TargetRenderer::render_expression_node(const TargetExpr& expression) noexce
             [&](const TargetCallExpr& call) noexcept {
                 auto arguments = std::vector<LayoutNodeID> {};
                 for (const auto& argument : call.arguments) {
-                    arguments.push_back(render_expression(argument));
+                    arguments.push_back(render_expression(argument, TargetPrecedence::Lowest));
                 }
                 return concat(
                     {render_expression(*call.callee, TargetPrecedence::Postfix),
@@ -263,13 +269,33 @@ auto TargetRenderer::render_expression_node(const TargetExpr& expression) noexce
             },
             [&](const TargetArrayExpr& array) noexcept {
                 const auto template_values = std::array {
-                    render_type(array.element_type_id),
-                    render_expression(*array.extent)
+                    render_type(array.element_type_id, false),
+                    render_expression(*array.extent, TargetPrecedence::Lowest)
                 };
                 auto values = std::vector<LayoutNodeID> {};
-                for (const auto& element : array.elements) {
-                    values.push_back(render_expression(element));
-                }
+                array.elements.visit([&](const auto& elements) noexcept {
+                    using Elements = std::remove_cvref_t<decltype(elements)>;
+                    if constexpr (std::same_as<Elements, std::vector<TargetExpr>>) {
+                        for (const auto& element : elements) {
+                            values.push_back(render_expression(element, TargetPrecedence::Lowest));
+                        }
+                    } else {
+                        for (auto offset = 0uz; offset < elements.size(); offset += 16uz) {
+                            const auto chunk = std::span(elements).subspan(
+                                offset,
+                                std::min(16uz, elements.size() - offset)
+                            );
+                            auto contents = std::string();
+                            for (const auto byte : chunk) {
+                                if (!contents.empty()) {
+                                    contents += ", ";
+                                }
+                                contents += std::to_string(byte);
+                            }
+                            values.push_back(text(contents));
+                        }
+                    }
+                });
                 return concat(
                     {text(target_symbol_info(array.native_symbol()).spelling),
                      delimited_list(template_values, "<", ">"),
@@ -283,7 +309,9 @@ auto TargetRenderer::render_expression_node(const TargetExpr& expression) noexce
                         [](const std::monostate&) static noexcept {},
                         [&](const std::vector<TargetExpr>& positional) noexcept {
                             for (const auto& element : positional) {
-                                values.push_back(render_expression(element));
+                                values.push_back(
+                                    render_expression(element, TargetPrecedence::Lowest)
+                                );
                             }
                         },
                         [&](const std::vector<TargetFieldInitializer>& fields) noexcept {
@@ -292,16 +320,19 @@ auto TargetRenderer::render_expression_node(const TargetExpr& expression) noexce
                                     {text("."),
                                      render_identifier(field.name),
                                      text(" = "),
-                                     render_expression(*field.value)}
+                                     render_expression(*field.value, TargetPrecedence::Lowest)}
                                 ));
                             }
                         },
                     }
                 );
-                return concat({render_type(construction.type), delimited_list(values, "{", "}")});
+                return concat(
+                    {render_type(construction.type, false), delimited_list(values, "{", "}")}
+                );
             },
             [&](const TargetIndexExpr& index) noexcept {
-                const auto argument = std::array {render_expression(*index.index)};
+                const auto argument =
+                    std::array {render_expression(*index.index, TargetPrecedence::Lowest)};
                 return concat(
                     {render_expression(*index.operand, TargetPrecedence::Postfix),
                      delimited_list(argument, "[", "]")}
@@ -348,7 +379,7 @@ auto TargetRenderer::render_expression_node(const TargetExpr& expression) noexce
                 );
             },
             [&](const TargetStaticMemberExpr& member) noexcept {
-                const auto owner = render_type(member.owner);
+                const auto owner = render_type(member.owner, false);
                 const auto suffix = concat({text("::"), render_identifier(member.name)});
                 return choice(
                     {concat({owner, suffix}),
@@ -358,10 +389,11 @@ auto TargetRenderer::render_expression_node(const TargetExpr& expression) noexce
                 );
             },
             [&](const TargetStaticCastExpr& cast) noexcept {
-                const auto operand = std::array {render_expression(*cast.operand)};
+                const auto operand =
+                    std::array {render_expression(*cast.operand, TargetPrecedence::Lowest)};
                 return concat(
                     {text("static_cast<"),
-                     render_type(cast.type),
+                     render_type(cast.type, false),
                      text(">"),
                      delimited_list(operand, "(", ")")}
                 );
@@ -370,14 +402,16 @@ auto TargetRenderer::render_expression_node(const TargetExpr& expression) noexce
                 auto parameters = std::vector<LayoutNodeID>();
                 for (const auto& parameter : region.parameters) {
                     parameters.push_back(concat(
-                        {render_type(parameter.type), text(" "), render_identifier(parameter.local)}
+                        {render_type(parameter.type, false),
+                         text(" "),
+                         render_identifier(parameter.local)}
                     ));
                 }
                 return concat({
                     text("([&]"),
                     delimited_list(parameters, "(", ")"),
                     text(" noexcept -> "),
-                    render_type(region.result),
+                    render_type(region.result, false),
                     text(" "),
                     render_statement_block(region.body),
                     text(")"),

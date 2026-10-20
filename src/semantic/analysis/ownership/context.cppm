@@ -55,6 +55,8 @@ struct OwnershipStorageLoan final {
     OwnershipPlace backing;
     ProgramOriginID origin;
     OwnershipLoanProtection protection;
+    // Views retain their source sequence type; enum payload paths alone do not identify it.
+    std::optional<ConstructionTypeRef> sequence_type;
 
     auto operator<=>(const OwnershipStorageLoan& other) const noexcept -> std::strong_ordering;
     auto operator==(const OwnershipStorageLoan& other) const noexcept -> bool;
@@ -124,7 +126,7 @@ struct OwnershipFailure final {
     OwnershipRelationships value;
 };
 
-struct OwnershipTestStopped final {};
+struct OwnershipStopped final {};
 
 struct OwnershipCancelled final {};
 
@@ -135,7 +137,7 @@ struct OwnershipContinue final {};
 using OwnershipExitPayload = std::variant<
     OwnershipReturn,
     OwnershipFailure,
-    OwnershipTestStopped,
+    OwnershipStopped,
     OwnershipCancelled,
     OwnershipBreak,
     OwnershipContinue>;
@@ -334,7 +336,7 @@ struct OwnershipWriteEffect final {
 };
 
 struct OwnershipCallCompletion final {
-    bool test_stopped;
+    bool stopped;
     std::optional<AnalysisFailureKey> failure;
     OwnershipState state;
     OwnershipRelationships value;
@@ -382,7 +384,7 @@ struct OwnershipCallQuery final {
     OwnershipCallSummary answer;
     std::flat_set<std::size_t> consumers;
     bool queued;
-    // Reevaluation did not enlarge the candidate answer or its retained topology.
+    // The candidate covers a transfer with unchanged input, topology, and read answers.
     bool evaluation_is_closed;
     std::unique_ptr<OwnershipDiagnosisRecord> diagnosis;
     OwnershipStorageTopology topology;
@@ -448,30 +450,38 @@ auto overlaps(
     std::span<const std::optional<std::uint64_t>> left,
     std::span<const std::optional<std::uint64_t>> right
 ) noexcept -> bool;
+
 auto overlaps(const OwnershipPlace& left, const OwnershipPlace& right) noexcept -> bool;
 
 auto normalize_storage_loans(std::vector<OwnershipStorageLoan>& loans) noexcept -> void;
 auto normalize_relationships(OwnershipRelationships& relationships) noexcept -> void;
+
 auto merge_relationships(
     OwnershipRelationships& destination,
     const OwnershipRelationships& source
 ) noexcept -> void;
+
 auto project_relationships(
     const OwnershipRelationships& source,
     const OwnershipProjectionPath& path
 ) noexcept -> OwnershipRelationships;
+
 auto nest_relationships(OwnershipRelationships source, const OwnershipProjectionPath& path) noexcept
     -> OwnershipRelationships;
+
 auto join_ownership_state(OwnershipState& destination, const OwnershipState& source) noexcept
     -> void;
+
 auto join_normal_ownership(
     std::optional<OwnershipNormal>& destination,
     const std::optional<OwnershipNormal>& source
 ) noexcept -> void;
+
 auto join_normal_ownership(
     std::optional<OwnershipNormal>& destination,
     std::optional<OwnershipNormal>&& source
 ) noexcept -> void;
+
 auto append_ownership_exits(OwnershipFlow& destination, OwnershipFlow& source) noexcept -> void;
 class OwnershipBatchAnalyzer;
 
@@ -707,12 +717,36 @@ private:
         ProgramOriginID origin
     ) noexcept -> OwnershipFlow;
 
+    template<typename Contract>
     auto call_contract(
-        const CallableSignature& contract,
+        const Contract& contract,
         std::span<const OwnershipCallArgument> arguments,
         OwnershipState state,
         ProgramOriginID origin
-    ) noexcept -> OwnershipFlow;
+    ) noexcept -> OwnershipFlow {
+        auto result = OwnershipFlow {
+            .normal =
+                OwnershipNormal {
+                    .state = std::move(state),
+                    .value = opaque_callable_targets(contract.result, origin),
+                    .storage = {}
+                },
+            .exits = {}
+        };
+        for (const auto& [parameter, argument] : std::views::zip(contract.parameters, arguments)) {
+            if (parameter.access != AccessMode::Write) {
+                continue;
+            }
+            if (argument.alias) {
+                check_storage_write(result.normal->state, *argument.alias, origin, false);
+            }
+            for (const auto& target : argument.storage) {
+                check_storage_write(result.normal->state, target, origin, false);
+            }
+        }
+        append_failures(result, contract.failures, result.normal->state);
+        return result;
+    }
 
     auto call_body(
         AnalysisBodyID target,
@@ -845,6 +879,7 @@ private:
     AnalysisDiagnostics diagnostics;
     ReadPassingFacts* passing;
     std::flat_map<AnalysisBodyID, OwnershipBodyFacts> body_facts;
+    // Strongly connected component IDs follow dependency-first order.
     std::flat_map<AnalysisBodyID, std::uint32_t> recursion_components;
     // Complete finite interface descriptors are the authority for Region slots.
     std::
@@ -852,7 +887,7 @@ private:
             region_sites;
     std::vector<std::unique_ptr<OwnershipCallQuery>> queries;
     std::flat_map<AnalysisBodyID, std::vector<std::size_t>> body_queries;
-    std::deque<std::size_t> pending_queries;
+    std::multimap<std::uint32_t, std::size_t> pending_queries;
     std::optional<std::size_t> active_query;
     std::optional<AnalysisFailure> failure;
     std::map<ProgramOriginID, bool> returned_copies;

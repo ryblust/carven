@@ -26,7 +26,7 @@ const TestSuite suite([] static noexcept {
                 std::pair<std::string_view, std::string_view> {
                     "main",
                     "import std::time using timeout;\n\nimport std::time using Duration; "
-                    "import std::time using RangeError; "
+                    "import std::time using TimeRangeError; "
                     "import std::time using Timeout; "
                     "async fn leaf() -> i32 => 7; "
                     "const delay = 1ms; fn run() { let pending = timeout(leaf(), delay); }"
@@ -65,7 +65,7 @@ const TestSuite suite([] static noexcept {
             }
             const auto expected = std::set<std::string_view> {
                 "import std::time using Duration;",
-                "import std::time using RangeError;",
+                "import std::time using TimeRangeError;",
                 "import std::time using Timeout;",
             };
             expect(unused == expected);
@@ -183,7 +183,7 @@ const TestSuite suite([] static noexcept {
             auto sources = SourceManager();
             const auto source_id = *sources.append_virtual(
                 "selection.cv",
-                "import <native> using vendor::{used, unused}; "
+                "import <native> using vendor::{used, unused} "
                 "import <native> using vendor::used; fn f() { used(); }"
             );
             const auto input = SourceModuleInput {

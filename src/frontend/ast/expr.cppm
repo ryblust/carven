@@ -87,6 +87,7 @@ struct ASTFieldInitializer final {
 struct ASTFieldInitializerList final {
     Span span;
     std::vector<ASTFieldInitializer> fields;
+    std::optional<Span> defaults;
 };
 
 struct ASTConstructionInitializer final {

@@ -122,7 +122,7 @@ the object type requires deduction.
 Bindings initialize in their natural scopes. Assignment uses C++ assignment
 and requires an assignable destination. When the realized initializer prefix has
 no outstanding cleanup, its statements precede an ordinary final declaration,
-including when they propagate failures or test stops. This applies independently
+including when they propagate failures or stops. This applies independently
 of the final object's constructor capabilities. Source lifetime and borrowing
 rules remain unchanged; only cleanup-free implementation storage may live longer.
 The proof considers all retained owners and every Outcome alternative. Native
@@ -130,7 +130,7 @@ values, owned storage, and closure owners conservatively require cleanup;
 retained references borrow their backing, whose own obligation remains separate.
 
 A binding initializer without outward
-failure or test exit initializes its final C++ object directly. When it requires
+failure or stop exit initializes its final C++ object directly. When it requires
 local cleanup, a typed factory contains the complete initializer
 and constructs the result before that backing is destroyed. Escaping structured
 initializers deliver directly into their final deferred destination. Delayed
@@ -213,7 +213,7 @@ callable views retain a target description. Neither choice copies capture conten
 Source and full-expression scopes preserve lifetimes.
 
 A published function target lowers to a direct call using its actual failure and
-test-stop contract. The callee's required evaluation precedes its arguments.
+stop contract. The callee's required evaluation precedes its arguments.
 Declaration finalization removes unreferenced scalar and nonowning callable locals
 only when semantic preparation establishes effect-free initialization and their
 types require no cleanup. Remaining target references preserve observable storage.
@@ -360,11 +360,15 @@ An independent condition with outstanding cleanup delivers its Boolean into an
 outer local and closes the evaluation scope before branch execution. A prefix
 without that obligation uses its predicate directly, preserving its preceding
 execution and exits without an additional Boolean local.
-Loops use native conditions when condition evaluation needs no preceding
-statements. Region realization consumes semantic entry reachability before
-implementing statements or tail results. With a direct condition, a single step
-expressible in a C++ for header uses that syntax. A normally completing step region
-whose exits stay local uses an immediately invoked void lambda in the header;
+Region realization consumes semantic entry reachability before implementing
+statements or tail results. A loop body with no normal completion and no loop-local
+break or continue needs no native loop. Initialization and condition prefixes
+precede a conditional body, or a scope when the condition is known true. Condition
+cleanup ends before the body; steps are realized only when the body can reach them.
+Other loops use native conditions when condition evaluation needs no preceding
+statements. With a direct condition, a single step expressible in a C++ for header
+uses that syntax. A normally completing step region whose exits stay local uses
+an immediately invoked void lambda in the header;
 statements retain their full-expression and cleanup scopes. Native `continue` runs
 these steps after body cleanup. Steps with outward exits use the enclosing control
 receivers and a local continue target in the while form.
@@ -389,7 +393,7 @@ Structured values take the most direct C++ form their destination admits:
 3. Region exit labels remain only where C++ has no structured form: failure
    transfer, expanded-loop exits, and match arms that must fall through.
 4. An expression-position value region with statements and no outward failure or
-   test exit becomes a local value lambda, which also keeps a `let` initializer
+   stop exit becomes a local value lambda, which also keeps a `let` initializer
    const. Regions with those exits use deferred initialization.
 
 Function return applies the failure ABI independently of lambda yield. A retained
@@ -398,8 +402,9 @@ constructing success without a payload. Scalar success uses `Outcome::success(va
 Other non-void success uses `Outcome::success_from(factory)`: the factory is
 invoked immediately and exactly once to construct the payload directly. Callable
 adaptation uses the same construction. A factory may return an immovable prvalue.
-Owner transfer, payload extraction, and Outcome widening require the constructors
-used by those operations. Void and discarded regions need no result storage.
+Source-value construction and transfer require their corresponding native
+constructors. Carrier forwarding and Outcome widening hand off existing payload
+ownership. Void and discarded regions need no result storage.
 Loops and handlers receive only exits belonging to their own construct. Loops
 without steps and range traversal use native `continue`. C++ completes iteration
 cleanup before the direct cursor step or range iterator increment.
@@ -497,7 +502,7 @@ payloads across protected-scope cleanup. Its layout stays fixed while catch and
 residual paths narrow the candidate set. Outcome, direct-value, and slot sources
 share typed projection and dispatch. The last candidate of a closed dispatch
 transfers directly after earlier candidates have been excluded. Call dispatch
-follows the success and test-stop checks. Handler patterns and guards retain
+follows the success and stop checks. Handler patterns and guards retain
 their selection.
 
 Native payloads retain transport because copies, moves, addresses, and destruction
@@ -506,26 +511,27 @@ alternative, so native or owning success values also retain the slot. Source
 placement preserves a handler's loop destinations by excluding loops within the
 protected region; a try inside an outer loop resolves within its own region.
 
-Calls that project results check `TestStopped` before success or typed failures.
-Propagation returns through each Carven frame, preserving C++ scope cleanup;
-the test body consumes the exit by returning to its runner. `TestStopped` is
-internal transport and is absent from Carven failure sets.
+Calls that project results check `is_stopped()` before success or typed failures.
+Stopped results return through each Carven frame, preserving C++ scope cleanup.
+Async exits close their child scopes before returning a stopped `Completion`.
+A test body consumes its own fatal report by returning to its runner. Stopping
+is control transport and is absent from Carven failure sets.
 
-A call in function-return position uses `Outcome::propagate() &&` when its
-failure destination is the function exit and its normalized target result type
-equals the enclosing callable's result type, including `TestStopped`. Realization
-retains the call's existing Outcome local or deferred storage, operand sequencing,
-and cleanup frame, then returns `std::move(outcome).propagate()` (dereferencing
-deferred storage where needed). Runtime reconstructs the active alternative
-through the existing payload `transfer` policy. It adds no intermediate carrier
-owner and leaves source-carrier destruction in the caller's scope.
+A synchronous tail call with the same result type, an admitted failure subset,
+and no local failure receiver returns its call expression directly. `Outcome`
+conversion widens a strict failure subset. Success, failure, and stopped states
+pass through ordinary C++ return and scope cleanup. Other calls and awaits retain
+their carrier through the required stop and declared-failure checks. After separate
+propagation, a successful carrier return uses the destination's `adopt_success`;
+lexical initialization uses `runtime::SuccessBinding`. Structured branches receive
+the same initialization destination. Raw values construct directly through a typed
+factory.
 
-This demand applies only to the root call; argument calls retain their own
-success and failure handling. Local handlers, differing carriers, and success
-computation keep ordinary projection and delivery. Keeping the source carrier
-materialized preserves observations of the payload's construction address,
-including for payloads with trivial copy, move, and destruction.
-The transfer policy also preserves native copy and move effects.
+Synchronous and async carrier delivery preserve the same payload ownership.
+The published inline-storage contract selects incidental value transport; other
+payloads keep their independent address. Fresh result delivery does not add a
+source-value copy or move. Named source values continue to obey their ordinary
+access and transfer rules.
 
 ### Process entry and local exits
 
@@ -564,12 +570,17 @@ native storage scopes. Target publication requires every exit to be resolved.
 Await separates success, nominal failure, and cancelled completion. Published
 callable and await facts determine whether to emit cancellation propagation.
 Failure and cancellation transfer precede success projection. Character success
-is validated at consumption, including discarded results. Direct returns can
-adopt the completion carrier. Whole-await initializers use ordinary value delivery
-when type contents prove incidental transport safe. Other initializers use a
-success binding that performs an available source transfer or retains backing
-for an immovable value. Carrier cleanup remains at the full-expression boundary
-and binding cleanup at its lexical boundary.
+is validated at consumption, including discarded results. A tail await with the
+same `Completion` representation and no local failure receiver can move the whole
+carrier after the stop check. Without active child scopes it needs no failure or
+cancellation dispatch; character validation checks only success. With children,
+failure and cancellation request cancellation before closure, while success only
+drains them. Each exit moves the original carrier into pending storage when
+cleanup crosses lexical scopes. Other tail awaits adopt success after their
+required propagation. Initializers use ordinary value delivery when type contents
+prove incidental transport safe. Other initializers use a success
+binding that receives the existing payload owner. Carrier cleanup remains at the
+full-expression boundary and binding cleanup at its lexical boundary.
 
 Suspending operands execute in their owning coroutine. Preparation records
 coroutine-context requirements so expression factories cannot capture an await or
@@ -582,6 +593,8 @@ cold representation.
 candidate awaiter returning `(usize, bool)` metadata; the latter consumes and
 destroys a child completion after cancellation and drain. Their metadata and void
 results need no completion carrier or nominal-failure dispatch.
+An unused metadata local retains initializer evaluation through body local-use
+completion, preserving the await and its following stop check.
 
 The three cold composition policies select runtime `when_all`, `when_any`, or
 `first_successful` with concrete success and failure types. Ordered operands
@@ -597,33 +610,60 @@ immovable payload, and cancellation is checked after observing the candidate and
 before committing its completion.
 
 An exit evaluates its operand before cleanup. Pending storage retains the selected
-completion across lexical exits. Each C++ block closes its children before leaving;
-C++ destroys that block's local storage before an enclosing block's child closure
-can suspend. Exit relays connect only blocks that own asynchronous closure work.
-This ordering applies to completion, failure delivery, break, and continue.
+completion across lexical exits. Children close before their owning scope leaves;
+C++ destroys inner local storage before an enclosing scope's child closure can
+suspend. Blocks and branches with no live local declarations can close visible
+child scopes directly. Exits across storage boundaries or loop bodies retain
+relays as needed. Normal closure removes closed scopes from the active stack
+before checking for a stop; stop propagation closes only the remaining enclosing
+scopes. This ordering applies to completion, failure delivery, break, and continue.
 Continue retains loop-initializer storage; break exits the body before closing the
 initializer's child scope. C++ RAII performs ordinary object destruction.
 
 A fresh direct await may realize its producer inside the caller's coroutine.
-Preparation supplies an eligible scalar producer. Realization checks module
-ownership, active recursive edges, and a shared expansion budget. It borrows the
-published callee body and gives its realizer independent binding, loop, handler,
-and lifetime contexts while sharing target names and the expansion budget.
+Preparation requires scalar Read inputs and scalar or void results, with no
+captures or children. Realization checks
+module ownership, active recursive edges, and a shared expansion budget. It
+borrows the published callee body and gives its realizer independent binding,
+loop, handler, and lifetime contexts while sharing target names and the expansion
+budget.
+Producer awaits retain their suspension and stop checks in the caller's
+coroutine. A producer stop requests global stopping and uses the existing local
+return exit without assigning a result.
+
+Published failure and cancellation capabilities select the result representation.
+Producers with either capability deliver their completion through an existing
+`Completion` carrier and local initialization destination. Other producers use
+scalar or discard delivery. A cancellation request alone does not select a
+completion. Producer-local handlers receive failures before any completion escapes.
+After producer cleanup, the outer await checks stopping before consuming the
+result or delivering a failure to the caller's receiver. Without a local receiver,
+a failure with the same completion representation transfers its carrier directly.
+Other failures use the existing payload dispatch. Failure delivery preserves the
+caller scopes retained by its receiver. Failure and cancellation request
+cancellation only for child scopes crossed by the exit; successful exits close
+crossed scopes without requesting cancellation. A stop raised during closure
+retains priority over the selected completion.
 
 Arguments execute left to right and scalar inputs are snapshotted once. Callee
-returns assign an ordinary scalar result or use the discard destination, then exit
-the callee's native scope. Explicit yields remain suspension points. Character
-results retain the value needed for validation. A callee without normal completion
-has no successor or result read. A transparent synchronous factory maps its input
+returns deliver to the selected result destination, then exit the callee's native
+scope. Tail awaits with the same completion representation can transfer their
+carrier directly to the local destination. Character results retain the value
+needed for validation. A realized producer with no continuing path has no result
+read.
+A transparent synchronous factory maps its input
 snapshots and frozen constants to the same producer path, including unused and
 repeated arguments.
 
-Prepared scalar self tail awaits use a native loop. Mutable iteration slots sit
-outside it; each iteration creates fresh const parameter values. Tail arguments
-finish left to right before any slot changes. The transfer leaves the iteration's
-scope and reaches the outer loop, bypassing enclosing source-loop steps. Ordinary
-returns and yields retain their result and scheduling behavior. Other recursive
-edges use cold operations.
+An eligible self tail await reuses scalar parameter slots in a native loop.
+Actual arguments execute left to right into snapshots before any slot changes.
+The backedge leaves the source scope, skipping enclosing source-loop steps.
+Scalar storage has no observable cleanup or retained address across iterations;
+operand lifetimes that could retain operation frames exclude the transformation.
+Ordinary awaits and checked calls retain their stop and cancellation exits. The
+backedge adds no stop observation: a self await observes completion after the
+recursive invocation. If realization removes every backedge, parameter aliases
+read the original inputs without loop slots.
 
 The private root wrapper drives a zero-argument async main and reports its outcome.
 It emits a cancellation branch only when the published main completion permits it.

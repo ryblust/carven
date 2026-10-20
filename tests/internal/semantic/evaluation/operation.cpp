@@ -224,8 +224,14 @@ const TestSuite suite([] static noexcept {
                     const auto result = evaluate_binary_constant_value(
                         values,
                         scenario.operation,
-                        constant_test_integer_fact(type, scenario.left),
-                        constant_test_integer_fact(type, scenario.right),
+                        ConstantAtom {
+                            .type = type,
+                            .value = IntegerConstant::from_signed(scenario.left)
+                        },
+                        ConstantAtom {
+                            .type = type,
+                            .value = IntegerConstant::from_signed(scenario.right)
+                        },
                         type,
                         IntegerArithmetic::Wrapping
                     );
@@ -239,7 +245,8 @@ const TestSuite suite([] static noexcept {
                 }
             );
             const auto i8 = values.builtin_type(BuiltinType::I8);
-            const auto minimum = constant_test_integer_fact(i8, -128);
+            const auto minimum =
+                ConstantAtom {.type = i8, .value = IntegerConstant::from_signed(-128)};
             const auto negated = evaluate_unary_constant_value(
                 values,
                 UnaryOperator::Negate,
@@ -267,7 +274,7 @@ const TestSuite suite([] static noexcept {
                     values,
                     BinaryOperator::LeftShift,
                     minimum,
-                    constant_test_integer_fact(i8, shift),
+                    ConstantAtom {.type = i8, .value = IntegerConstant::from_signed(shift)},
                     i8,
                     IntegerArithmetic::Wrapping
                 );
@@ -280,7 +287,7 @@ const TestSuite suite([] static noexcept {
                 values,
                 BinaryOperator::Divide,
                 minimum,
-                constant_test_integer_fact(i8, 0),
+                ConstantAtom {.type = i8, .value = IntegerConstant::from_signed(0)},
                 i8,
                 IntegerArithmetic::Wrapping
             );
@@ -297,8 +304,8 @@ const TestSuite suite([] static noexcept {
             const auto boolean = values.builtin_type(BuiltinType::Bool);
             const auto exercise = [&]<typename Floating>(BuiltinType builtin) noexcept {
                 const auto type = values.builtin_type(builtin);
-                const auto left = ConstantFact {.type = type, .value = Floating {.value = 6.0}};
-                const auto right = ConstantFact {.type = type, .value = Floating {.value = 2.0}};
+                const auto left = ConstantAtom {.type = type, .value = Floating {.value = 6.0}};
+                const auto right = ConstantAtom {.type = type, .value = Floating {.value = 2.0}};
                 struct Case final {
                     BinaryOperator operation;
                     double expected;
@@ -334,14 +341,14 @@ const TestSuite suite([] static noexcept {
                         expect(!(fold_binary_constant(
                                      values,
                                      item.operation,
-                                     values.intern_constant(left),
-                                     values.intern_constant(right),
+                                     values.intern_constant(constant_fact(left)),
+                                     values.intern_constant(constant_fact(right)),
                                      type
                         )
                                      .has_value()));
                     }
                 );
-                const auto zero = ConstantFact {.type = type, .value = Floating {.value = 0.0}};
+                const auto zero = ConstantAtom {.type = type, .value = Floating {.value = 0.0}};
                 const auto negative = evaluate_unary_constant_value(
                     values,
                     UnaryOperator::Negate,
@@ -356,7 +363,7 @@ const TestSuite suite([] static noexcept {
                 expect(!(fold_unary_constant(
                              values,
                              UnaryOperator::Negate,
-                             values.intern_constant(zero),
+                             values.intern_constant(constant_fact(zero)),
                              type
                 )
                              .has_value()));

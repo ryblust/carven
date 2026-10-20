@@ -75,7 +75,7 @@ struct SemCallable final {
 };
 
 struct SemEnumConstructor final {
-    EnumCaseID enum_case;
+    ConstructionEnumCaseRef enum_case;
 };
 
 struct SemRange final {
@@ -109,12 +109,16 @@ struct SemStruct final {
 };
 
 struct SemEnumCase final {
-    EnumCaseID enum_case;
+    ConstructionEnumCaseRef enum_case;
     std::vector<SemanticExpression> payload;
 };
 
 struct SemUnary final {
     UnaryOperator operation;
+    OwnedSemanticExpression operand;
+};
+
+struct SemHash final {
     OwnedSemanticExpression operand;
 };
 
@@ -349,6 +353,7 @@ using SemanticExpressionValue = TreeValue<
     SemStruct,
     SemEnumCase,
     SemUnary,
+    SemHash,
     SemBinary,
     SemShortCircuit,
     SemCast,
@@ -390,8 +395,9 @@ struct SemanticExpression final {
     // Known value on normal completion; execution and const admission are separate.
     std::optional<ConstantID> constant;
     BodyFailures failures;
-    // Body completion includes callee effects before publication.
-    bool exits_test;
+    // Evaluation may propagate a stop, including at awaited controls.
+    // Resolution includes operand and solved callee stop effects before publication.
+    bool exits_call;
     // Whether evaluation reaches this operation after its required operands.
     bool operation_reachable;
     SemanticValueCategory category;
@@ -411,7 +417,7 @@ struct SemanticRegion final {
     // Whether control can enter the result expression after preceding statements.
     bool result_reachable;
     BodyFailures failures;
-    bool exits_test;
+    bool exits_call;
 };
 
 struct SemFieldInitializer final {
@@ -680,8 +686,8 @@ struct SemIRBodyData final {
     SemanticRegion region;
     // The region with the static stage applied, when that differs from `region`.
     std::optional<SemanticRegion> residual;
-    // Analysis-only source-body provenance. An instance keeps the copied local
-    // identities; publication clears this link along with source bodies.
+    // Analysis-only source-body provenance. An instance keeps copied local IDs
+    // until publication compacts its executable tables and clears this link.
     std::optional<BodyID> specialized;
     std::optional<GenericDeclarationID> generic_definition;
 };
@@ -711,7 +717,7 @@ public:
 
 private:
     friend class SemanticArtifactAccess;
-    auto publish() noexcept -> void;
+    auto publish(const SemIRProgram& program) noexcept -> void;
     SemIRBodyData data;
 
     friend class SemIRProgram;

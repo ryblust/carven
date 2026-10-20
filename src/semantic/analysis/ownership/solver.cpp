@@ -120,7 +120,7 @@ auto OwnershipBatchAnalyzer::enqueue(std::size_t index) noexcept -> void {
     query.evaluation_is_closed = false;
     if (!query.queued) {
         query.queued = true;
-        pending_queries.push_back(index);
+        pending_queries.emplace(recursion_components.at(query.input.body_id), index);
     }
 }
 
@@ -357,7 +357,7 @@ auto OwnershipBatchAnalyzer::symbolic_input(const AnalysisBodyView& source) cons
             return relationships;
         }
 
-        if (std::holds_alternative<CallableViewTypeValue>(value)) {
+        if (std::holds_alternative<ConstructionCallableViewTypeValue>(value)) {
             relationships.edit().callable_loans.push_back(
                 OwnershipCallableLoan {
                     .holder = {},
@@ -466,7 +466,8 @@ auto OwnershipBatchAnalyzer::symbolic_input(const AnalysisBodyView& source) cons
                     .holder = {},
                     .backing = OwnershipPlace {.object = backing, .path = {}},
                     .origin = origin,
-                    .protection = OwnershipLoanProtection::Contents
+                    .protection = OwnershipLoanProtection::Contents,
+                    .sequence_type = std::nullopt
                 }
             );
         }
@@ -583,7 +584,7 @@ auto OwnershipBatchAnalyzer::join_summary(
     for (const auto& completion : source.completions) {
         const auto found =
             std::ranges::find_if(destination.completions, [&](const auto& previous) noexcept {
-                return previous.test_stopped == completion.test_stopped
+                return previous.stopped == completion.stopped
                     && previous.failure == completion.failure;
             });
         if (found == destination.completions.end()) {
@@ -610,7 +611,7 @@ auto OwnershipBatchAnalyzer::join_summary(
         );
     });
     std::ranges::sort(destination.completions, {}, [](const auto& completion) static noexcept {
-        return std::pair(completion.test_stopped, completion.failure);
+        return std::pair(completion.stopped, completion.failure);
     });
     const auto domain = input_objects + destination.referents.size();
     for (auto& completion : destination.completions) {
@@ -650,11 +651,13 @@ auto OwnershipBatchAnalyzer::run() noexcept -> AnalysisResult<OwnershipAnalysisS
     if (failure.has_value()) {
         return std::unexpected(*failure);
     }
-    // Dependencies are discovered while evaluating structured bodies. Retaining
-    // earlier dependencies is conservative when a call changes its input context.
+    // Components are numbered dependency-first. Finish pending callees before
+    // their readers; equivalent component keys retain FIFO order for recursion.
+    // Dependencies discovered during evaluation remain conservative when a call
+    // changes its input context.
     while (!pending_queries.empty()) {
-        const auto index = pending_queries.front();
-        pending_queries.pop_front();
+        const auto index = pending_queries.begin()->second;
+        pending_queries.erase(pending_queries.begin());
         auto& query = *queries[index];
         query.queued = false;
         if (query.pending_input) {
@@ -664,8 +667,9 @@ auto OwnershipBatchAnalyzer::run() noexcept -> AnalysisResult<OwnershipAnalysisS
         active_query = index;
         ++evaluation_count;
         const auto input_revision = query.input_revision;
+        auto analyzer = OwnershipBodyAnalyzer(*this, query.input, query.topology);
         const auto revision = query.topology.revision;
-        auto result = OwnershipBodyAnalyzer(*this, query.input, query.topology).run();
+        auto result = analyzer.run();
         active_query.reset();
         if (!result.answer.has_value()) {
             // An invalid completion keeps priority over every deferred query.
@@ -676,10 +680,11 @@ auto OwnershipBatchAnalyzer::run() noexcept -> AnalysisResult<OwnershipAnalysisS
         auto joined = query.answer;
         join_summary(joined, *result.answer, query.input.objects.size());
         const auto changed = joined != query.answer;
-        // Like a loop header, a call answer is an inductive upper bound. Test
-        // closure against the candidate that this evaluation actually consumed,
-        // before adding its transfer. Historical alternatives may remain in it.
-        query.evaluation_is_closed = !changed
+        // The joined candidate covers this transfer. Its certificate holds
+        // while the input, topology, and answers read by the transfer stay fixed.
+        // Publishing a changed answer invalidates its readers, including this
+        // query when it read its own answer.
+        query.evaluation_is_closed = !query.queued
             && revision == query.topology.revision
             && input_revision == query.input_revision;
         if (changed) {
@@ -689,8 +694,7 @@ auto OwnershipBatchAnalyzer::run() noexcept -> AnalysisResult<OwnershipAnalysisS
             }
         }
         if (!query.evaluation_is_closed) {
-            // Validate the enlarged candidate even when it has no self-call.
-            // Enqueue also invalidates certificates for changed dependencies.
+            // Input, topology, or a consumed answer changed during evaluation.
             enqueue(index);
         }
     }
@@ -822,7 +826,9 @@ auto OwnershipBatchAnalyzer::run() noexcept -> AnalysisResult<OwnershipAnalysisS
                                std::get_if<ConstructionArrayTypeValue>(&model.shape(to))) {
                         to = element->element;
                     }
-                    if (!std::holds_alternative<CallableViewTypeValue>(model.shape(to))) {
+                    if (!std::holds_alternative<ConstructionCallableViewTypeValue>(
+                            model.shape(to)
+                        )) {
                         return;
                     }
                     const auto target =

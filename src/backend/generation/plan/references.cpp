@@ -13,6 +13,7 @@ enum class ReferencePurpose { Declaration, ProviderAccess };
 struct DeclarationReferenceFacts final {
     std::flat_map<NominalDeclarationRef, TargetTypeCompleteness> requirements;
     std::flat_set<CallableID> callables;
+    std::flat_set<NominalDeclarationRef> host_nominals;
 };
 
 class DeclarationReferenceCollector final {
@@ -22,6 +23,7 @@ public:
         const SemIRProgram& semantic,
         std::optional<ModuleID> surface_module
     ) noexcept;
+
     auto finish() && noexcept -> DeclarationReferenceFacts;
 
 private:
@@ -29,31 +31,37 @@ private:
         NominalDeclarationRef nominal,
         TargetTypeCompleteness completeness
     ) noexcept -> void;
+
     auto collect_failure_set(
         FailureSetID failure_set,
         TargetTypeCompleteness completeness,
-        ReferencePurpose purpose = ReferencePurpose::Declaration
+        ReferencePurpose purpose
     ) noexcept -> void;
+
     auto collect_signature(
         CallableSignatureID signature_id,
-        TargetTypeCompleteness value_completeness = TargetTypeCompleteness::Declaration,
-        ReferencePurpose purpose = ReferencePurpose::Declaration
+        TargetTypeCompleteness value_completeness,
+        ReferencePurpose purpose
     ) noexcept -> void;
+
     auto collect_callable(CallableID callable, ReferencePurpose purpose) noexcept -> void;
+
     auto collect_type(
         TypeID type_id,
         TargetTypeCompleteness completeness,
-        ReferencePurpose purpose = ReferencePurpose::Declaration
+        ReferencePurpose purpose
     ) noexcept -> void;
+
     auto collect_nominal_members(NominalDeclarationRef nominal, ReferencePurpose purpose) noexcept
         -> void;
+
     auto collect_surface(CallableID callable) noexcept -> void;
     auto collect_body_callable(CallableID callable) noexcept -> void;
 
 public:
     auto collect_declaration(DeclarationRef declaration) noexcept -> void;
     auto collect_generic(GenericDeclarationID definition) noexcept -> void;
-    auto collect_provider(FunctionID id) noexcept -> void;
+    auto collect_boundary(FunctionID id) noexcept -> void;
 
 private:
     const SemIRProgram& semantic;
@@ -73,7 +81,7 @@ DeclarationReferenceCollector::DeclarationReferenceCollector(
 ) noexcept
     : semantic(semantic),
       surface_module(surface_module),
-      result {.requirements = {}, .callables = {}} {
+      result {.requirements = {}, .callables = {}, .host_nominals = {}} {
     if (!surface_module) {
         return;
     }
@@ -195,6 +203,11 @@ auto DeclarationReferenceCollector::collect_type(
                 const auto nominal = NominalDeclarationRef {value.structure};
                 require_nominal(nominal, completeness);
                 if (purpose == ReferencePurpose::ProviderAccess) {
+                    if (semantic.declarations().structure(value.structure).kind
+                            == RecordKind::Struct
+                        && semantic.generic_nominal_instance(nominal) == nullptr) {
+                        result.host_nominals.insert(value.structure);
+                    }
                     collect_nominal_members(nominal, purpose);
                 }
             },
@@ -202,6 +215,9 @@ auto DeclarationReferenceCollector::collect_type(
                 const auto nominal = NominalDeclarationRef {value.enumeration};
                 require_nominal(nominal, completeness);
                 if (purpose == ReferencePurpose::ProviderAccess) {
+                    if (semantic.generic_nominal_instance(nominal) == nullptr) {
+                        result.host_nominals.insert(nominal);
+                    }
                     collect_nominal_members(nominal, purpose);
                 }
             },
@@ -298,7 +314,11 @@ auto DeclarationReferenceCollector::collect_surface(CallableID callable) noexcep
     }
     const auto& surface = semantic.callable_surface(callable);
     for (const auto type : surface.types) {
-        collect_type(type, TargetTypeCompleteness::CompleteDefinition);
+        collect_type(
+            type,
+            TargetTypeCompleteness::CompleteDefinition,
+            ReferencePurpose::Declaration
+        );
     }
     for (const auto reference : surface.callables) {
         collect_body_callable(reference);
@@ -313,7 +333,11 @@ auto DeclarationReferenceCollector::collect_generic(GenericDeclarationID definit
     const auto& dependencies =
         semantic.generic_declaration_contract(definition).implementation_dependencies;
     for (const auto type : dependencies.types) {
-        collect_type(type, TargetTypeCompleteness::CompleteDefinition);
+        collect_type(
+            type,
+            TargetTypeCompleteness::CompleteDefinition,
+            ReferencePurpose::Declaration
+        );
     }
     for (const auto callable : dependencies.callables) {
         collect_body_callable(callable);
@@ -323,7 +347,7 @@ auto DeclarationReferenceCollector::collect_generic(GenericDeclarationID definit
     }
 }
 
-auto DeclarationReferenceCollector::collect_provider(FunctionID id) noexcept -> void {
+auto DeclarationReferenceCollector::collect_boundary(FunctionID id) noexcept -> void {
     collect_signature(
         semantic.declarations().callable(semantic.declarations().function(id).callable).signature,
         TargetTypeCompleteness::DeferredCompleteDefinition,
@@ -340,7 +364,8 @@ auto DeclarationReferenceCollector::collect_declaration(DeclarationRef declarati
                 collect_signature(
                     semantic.declarations().callable(function.callable).signature,
                     function.cpp_export_origin ? TargetTypeCompleteness::CompleteDefinition
-                                               : TargetTypeCompleteness::Declaration
+                                               : TargetTypeCompleteness::Declaration,
+                    ReferencePurpose::Declaration
                 );
                 result.callables.insert(function.callable);
                 if (function.module_id == surface_module) {
@@ -358,7 +383,8 @@ auto DeclarationReferenceCollector::collect_declaration(DeclarationRef declarati
                 const auto* slice = std::get_if<SliceTypeValue>(&semantic.types().type(type).value);
                 collect_type(
                     slice ? slice->element : type,
-                    TargetTypeCompleteness::CompleteDefinition
+                    TargetTypeCompleteness::CompleteDefinition,
+                    ReferencePurpose::Declaration
                 );
             },
         }
@@ -413,6 +439,7 @@ auto collect_target_references(
                 surface_declarations.size()
             ),
         .surface_callables = std::vector<std::flat_set<CallableID>>(surface_declarations.size()),
+        .host_nominals = {},
     };
     auto visited = std::vector<bool>(surface_declarations.size());
     for (const auto entry : semantic.declarations().modules()) {
@@ -424,7 +451,13 @@ auto collect_target_references(
         auto collector = DeclarationReferenceCollector(semantic, entry.id);
         for (const auto provider : providers) {
             if (semantic.declarations().function(provider).module_id == entry.id) {
-                collector.collect_provider(provider);
+                collector.collect_boundary(provider);
+            }
+        }
+        for (const auto item : semantic.declarations().module_decl(entry.id).items) {
+            if (const auto* function = std::get_if<FunctionID>(&item); function != nullptr
+                && semantic.declarations().function(*function).cpp_export_origin) {
+                collector.collect_boundary(*function);
             }
         }
         for (const auto declaration : surface_declarations[index]) {
@@ -440,6 +473,7 @@ auto collect_target_references(
         auto facts = std::move(collector).finish();
         result.surface_requirements[index] = std::move(facts.requirements);
         result.surface_callables[index] = std::move(facts.callables);
+        result.host_nominals.insert(facts.host_nominals.begin(), facts.host_nominals.end());
     }
     if (!std::ranges::all_of(visited, std::identity {})) {
         invariant_violation("surface references contain an unknown module row");

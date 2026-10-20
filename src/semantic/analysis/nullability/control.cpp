@@ -268,7 +268,7 @@ auto NullabilityBodyAnalyzer::pattern_condition(
         return expression(bound, std::move(input));
     };
     co_return (co_await analyze_pattern_condition(
-        program,
+        analysis,
         body,
         id,
         bounds,

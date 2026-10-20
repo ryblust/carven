@@ -28,18 +28,33 @@ auto lower_declaration(
 
 auto lower_forward_declarations(ModuleLowering& context, NominalDeclarationRef declaration) noexcept
     -> std::vector<TargetItem>;
+
 auto lower_cpp_export_header_declaration(ModuleLowering& context, FunctionID function) noexcept
     -> TargetItem;
+
 auto lower_cpp_export_facade(ModuleLowering& context, FunctionID function) noexcept -> TargetItem;
+
 auto lower_module_schedule(
     ArtifactLowering& artifact,
     const TargetModuleSchedule& schedule
 ) noexcept -> LoweredModuleSchedule;
+
 auto lower_entry_wrapper(ModuleLowering& context, FunctionID function) noexcept -> TargetItem;
+
 auto lower_test_runner_header(
     ArtifactLowering& context,
     const TargetTestRunnerHeaderArtifact& artifact
 ) noexcept -> TargetUnitSections;
+
 auto lower_test_entry(ArtifactLowering& context) noexcept -> TargetUnitSections;
 auto lower_closure_type(ModuleLowering& context, CallableID callable_id) noexcept -> TargetItem;
 auto lower_closure_body(ModuleLowering& context, CallableID callable_id) noexcept -> TargetItem;
+
+auto lower_host_record(ModuleLowering& context, StructID record) noexcept
+    -> std::vector<TargetItem>;
+
+auto lower_host_enumeration(ModuleLowering& context, EnumID enumeration) noexcept
+    -> std::vector<TargetItem>;
+
+auto lower_native_provider(ModuleLowering& context, FunctionID function) noexcept -> TargetItem;
+auto lower_host_contract(ModuleLowering& context, FunctionID function) noexcept -> TargetItem;

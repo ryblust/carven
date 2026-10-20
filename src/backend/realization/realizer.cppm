@@ -47,11 +47,7 @@ private:
     auto begin_async_region(const SemanticRegion& source, LoweringStmtBuilder& destination) noexcept
         -> void;
 
-    auto close_async_scopes(
-        std::size_t retained,
-        bool cancel,
-        LoweringStmtBuilder& destination
-    ) noexcept -> void;
+    auto end_async_scopes(std::size_t retained, LoweringStmtBuilder& destination) noexcept -> void;
 
     auto close_async_locals(
         std::span<const TargetLocalID> scopes,
@@ -79,6 +75,11 @@ private:
     ) noexcept -> void;
 
     auto realize_async_exits(std::vector<TargetStmt>& statements) noexcept -> void;
+
+    auto resolve_native_continue(
+        std::span<TargetStmt> statements,
+        const TargetIdentifier& label
+    ) noexcept -> void;
 
     struct AsyncExit final {
         std::optional<TargetIdentifier> label;
@@ -113,7 +114,7 @@ private:
         LoweringExitTarget target;
     };
 
-    enum class ResultDemand { Value, DirectReturn, Discard, PropagateOutcome, AdoptSuccess };
+    enum class ResultDemand { Value, DirectReturn, Discard, AdoptSuccess, ForwardResult };
 
     auto expression(
         const SemanticExpression& source,
@@ -242,7 +243,8 @@ private:
         LoweringStmtBuilder& destination
     ) noexcept -> ContinuationTask<std::monostate>;
 
-    auto emit_test_exit(LoweringStmtBuilder& destination) noexcept -> void;
+    auto check_stopped(LoweringStmtBuilder& destination) noexcept -> void;
+    auto emit_stopped(LoweringStmtBuilder& destination) noexcept -> void;
 
     auto emit_return(
         std::optional<TargetExpr> value,

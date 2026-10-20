@@ -1,4 +1,4 @@
-import std::time using { sleep, RangeError };
+import std::time using { sleep, TimeRangeError }
 
 const {
     let _ = stdin().read_line();

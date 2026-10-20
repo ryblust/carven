@@ -95,7 +95,8 @@ auto type_content_mask(const Shape& shape, Members members, Depend depend) noexc
     } else if constexpr (std::same_as<Shape, FunctionTypeValue>) {
         return value_storage_constraint;
     } else if constexpr (std::same_as<Shape, CallableViewTypeValue>
-                         || std::same_as<Shape, ConstructionCallableViewTypeValue>) {
+                         || std::same_as<Shape, ConstructionCallableViewTypeValue>
+                         || std::same_as<Shape, GenericCallableViewType>) {
         return callable_view_content | value_storage_constraint;
     } else if constexpr (std::same_as<Shape, VectorTypeValue>
                          || std::same_as<Shape, GenericVectorType>) {

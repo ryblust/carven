@@ -5,6 +5,26 @@ const async fn rotate(a: i32, b: i32, depth: i32) -> i32 {
     return await rotate(b, a, depth - 1);
 }
 
+async fn ordered(a: i32, b: i32, depth: i32) -> i32 {
+    if depth == 0 { return a * 100 + b; }
+    var trace = 0;
+    return await ordered(
+        if true {
+            trace = 1;
+            b
+        } else {
+            b
+        },
+        if true {
+            trace = trace * 10 + 2;
+            a * 10 + trace
+        } else {
+            a
+        },
+        depth - 1
+    );
+}
+
 async fn nested(depth: i32) -> i32 {
     if depth == 0 { return 7; }
     for var index = 0; index < 1; ++index {
@@ -32,6 +52,7 @@ async fn run_tail() {
     assert(await rotate(1, 2, 7) == rotated);
     let saved = rotate(1, 2, 16384);
     assert(await saved == 12);
+    assert(await ordered(1, 2, 1) == 222);
     assert(await nested(32) == 7);
     assert(await matched(32) == 9);
     assert(await yielding(32) == 7);

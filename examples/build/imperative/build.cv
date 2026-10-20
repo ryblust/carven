@@ -1,0 +1,45 @@
+import std::build using { BuildPlan, build }
+import std::fs using { create_directories, read_text, write_text }
+import std::process using run;
+import std::toml using parse;
+
+let settings = parse(read_text("settings.toml")?)?;
+let minimum_stock = settings.get("minimum_stock")?.as_i64()?;
+let include_checks = settings.get("include_checks")?.as_bool()?;
+
+create_directories("build/generated")?;
+write_text("build/generated/settings.cv", f"const minimum_stock: i64 = {minimum_stock};\n")?;
+
+var compile_flags: Vector<String> = [];
+if settings.get("optimize")?.as_bool()? { compile_flags.push("-O2"); }
+
+var plan = BuildPlan {
+    shared_sources: ["src/catalog.cv", "build/generated/settings.cv"],
+    ...
+};
+
+for (name, source) in [("stock-report", "src/main.cv"), ("inventory-check", "src/check.cv")] {
+    if name == "inventory-check" && !include_checks { continue; }
+    plan.targets.push(
+        {
+            name: name as String,
+            kind: .Executable,
+            sources: [source as String],
+            native: {
+                compile_flags: compile_flags,
+                ...
+            },
+            ...
+        }
+    );
+}
+
+let outputs = build(plan)?;
+
+for output in outputs {
+    println(f"Ready {output.name}: {output.path}");
+    if output.name == "inventory-check" {
+        let status = run(output.path, [])?;
+        assert(status == 0);
+    }
+}

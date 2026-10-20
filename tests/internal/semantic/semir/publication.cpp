@@ -67,7 +67,7 @@ auto make_body_with_closure(
             .result = std::nullopt,
             .result_reachable = false,
             .failures = BodyFailures(program.add_empty_failure_term()),
-            .exits_test = false,
+            .exits_call = false,
 
 
         }

@@ -1,0 +1,3 @@
+import std::process using ProcessGroup;
+
+const group = ProcessGroup::new();

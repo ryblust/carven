@@ -4,13 +4,13 @@ Mix two ten-sample tracks with a compile-time gain preset. Clip the result to
 `[-1, 1]`, then report clipped samples, peak level, and root mean square (RMS).
 Ten samples leave a partial final SIMD block.
 
-With `carven` on `PATH` and a C++20 toolchain available, run from this
-example's directory:
+After building the compiler, run these repository targets from the checkout root:
 
 ```sh
-carven main.cv mix.cv
-carven main.cv mix.cv -- --logs
-carven main.cv mix.cv -- --voice=0.75 --music=0.25
+./xmakew build carven-example-audio-mixer
+./xmakew run carven-example-audio-mixer
+./xmakew run carven-example-audio-mixer --logs
+./xmakew run carven-example-audio-mixer --voice=0.75 --music=0.25
 ```
 
 The default report starts with these levels, followed by the ten mixed samples:

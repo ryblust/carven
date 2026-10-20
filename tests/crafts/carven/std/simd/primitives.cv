@@ -1,5 +1,5 @@
 // Narrow logical types remain usable beside the craft's wider default blocks.
-export const fn verify_narrow_primitives() -> bool {
+const fn verify_narrow_primitives() -> bool {
     let bytes: [u8; 16] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
     let value = u8x16::from_array(bytes);
     assert(value.to_array() == bytes);
@@ -42,7 +42,7 @@ export const fn verify_narrow_primitives() -> bool {
     return true;
 }
 
-export const fn verify_wide_bits_and_lookup() -> bool {
+const fn verify_wide_bits_and_lookup() -> bool {
     let endpoints = mask32::from_bits(0x80000001);
     assert(endpoints.bits() == 0x80000001 && endpoints.count() == 2);
     assert(mask32::prefix(32).bits() == 0xffffffff);
@@ -66,7 +66,7 @@ export const fn verify_wide_bits_and_lookup() -> bool {
     return true;
 }
 
-export const fn verify_lookup_indices() -> bool {
+const fn verify_lookup_indices() -> bool {
     var entries: [u8; 32] = {};
     for index in 0usize..32 {
         entries[index] = (index * 7 + 19) as u8;
@@ -104,7 +104,7 @@ export const fn verify_lookup_indices() -> bool {
     return true;
 }
 
-export const fn verify_mask_counts() -> bool {
+const fn verify_mask_counts() -> bool {
     assert((u8x16::splat(0) == 0).count() == 16);
     assert((u8x16::splat(0) != 0).count() == 0);
     assert((u8x32::splat(0) == 0).count() == 32);
@@ -172,7 +172,7 @@ export const fn verify_mask_counts() -> bool {
     return true;
 }
 
-export const fn verify_byte_sums() -> bool {
+const fn verify_byte_sums() -> bool {
     assert(u8x16::splat(0).sum() == 0);
     assert(u8x16::splat(255).sum() == 4080);
     assert(u8x32::splat(0).sum() == 0);

@@ -37,7 +37,7 @@ auto serialization_program(std::string_view text) noexcept -> SemIRProgram {
         }
     );
     require(analysis.program() != nullptr).note([&]() noexcept {
-        return render_diagnostics(analysis.diagnostics(), analysis.sources());
+        return render_diagnostics(analysis.diagnostics(), analysis.sources(), false);
     });
     auto result = std::move(analysis).take_program();
     require(result.has_value());
@@ -68,6 +68,16 @@ import std::async using yield_once;
 async fn checked() { await cancel_point(); }
 async fn yielding() { await yield_once(); }
 async fn probe() { await yielding(); await checked(); }
+const payload: Vector<u8> = [0, 127, 128, 255];
+const window: [u8] = payload.slice(1, 4);
+fn published_byte(index: usize) -> u8 => window[index];
+fn owned_bytes() -> Vector<u8> => payload;
+const vector = u8x32::splat(255);
+const mask = vector > u8x32::splat(0);
+const floating = f32x8::splat(-0.0f32);
+fn retained_vector() -> u8x32 => vector;
+fn retained_mask() -> mask32 => mask;
+fn retained_floating() -> f32x8 => floating;
 test "runtime" { check(true); }
 )cv");
             const auto unit = CheckedUnit {
@@ -76,7 +86,7 @@ test "runtime" { check(true); }
                 .cacheable = false,
             };
             constexpr auto ownership = std::array {
-                CompilationModuleOwnership {.owned = true, .standard = false},
+                CompilationModuleOwnership {.owned = true, .standard = false, .external = false},
             };
             const auto encoded = encode_compilation_artifact(unit, ownership);
             require(encoded.has_value()).note([&]() noexcept { return encoded.error().message; });
@@ -86,6 +96,7 @@ test "runtime" { check(true); }
             require_equal(artifact->modules.size(), 1uz);
             expect(artifact->modules.front().owned);
             expect(!artifact->modules.front().standard);
+            expect(!artifact->modules.front().external);
             auto restored = decode_semir_program(artifact->program);
             require(restored.has_value()).note([&]() noexcept { return restored.error().message; });
             for (const auto mode :

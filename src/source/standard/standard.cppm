@@ -2,9 +2,11 @@ module carven:source.standard;
 
 import std;
 
-enum class ProvidedModule { Core, Io, Testing, Async, Simd, Time };
+enum class ProvidedModule { Core, Io, Testing, Async, Simd, Time, Collections };
 
 enum class ProvidedExport {
+    Hash,
+    Equal,
     Bool,
     Char,
     Void,
@@ -58,13 +60,13 @@ enum class ProvidedExport {
 
 struct ProvidedExportInfo final {
     ProvidedExport identity;
-    ProvidedModule module;
+    ProvidedModule provider;
     std::string_view name;
     bool default_available;
     bool module_local;
 };
 
-auto provided_module_path(ProvidedModule module) noexcept -> std::string_view;
+auto provided_module_path(ProvidedModule provider) noexcept -> std::string_view;
 auto find_provided_module(std::string_view path) noexcept -> std::optional<ProvidedModule>;
 auto provided_exports() noexcept -> std::span<const ProvidedExportInfo>;
 auto provided_export(ProvidedExport identity) noexcept -> const ProvidedExportInfo&;
@@ -74,7 +76,7 @@ enum class StandardDeclaration {
     CharFromU32,
     TextFromUTF8,
     Duration,
-    RangeError,
+    TimeRangeError,
     Timeout,
     NumberParseError
 };
@@ -84,7 +86,7 @@ enum class StandardDeclarationKind { Function, Struct, Enum };
 struct StandardDeclarationInfo final {
     StandardDeclaration identity;
     StandardDeclarationKind kind;
-    std::string_view module;
+    std::string_view module_path;
     std::string_view name;
     bool default_available;
 };
@@ -104,5 +106,6 @@ struct StandardAssociatedEntry final {
 
 auto standard_associated_receiver(ProvidedExport type) noexcept
     -> std::optional<StandardAssociatedReceiver>;
+
 auto find_standard_associated(StandardAssociatedReceiver receiver, std::string_view name) noexcept
     -> const StandardAssociatedEntry*;

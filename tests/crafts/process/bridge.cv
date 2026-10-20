@@ -1,0 +1,101 @@
+import std::async using { yield_once, close }
+
+import std::process using {
+    Process,
+    ProcessGroup,
+    ProcessError,
+    OperatingSystem,
+    arguments as host_arguments,
+    executable,
+    find_executable,
+    operating_system,
+    environment,
+    run,
+}
+
+fn host_platform() -> OperatingSystem => operating_system();
+
+async fn probe(&&program: String) -> i32 {
+    return try {
+        let arguments = host_arguments()?;
+        assert(arguments.length() == 3);
+        assert(arguments[0] == program && arguments[1].is_empty() && arguments[2] == "我😀");
+        let current = executable()?;
+        assert(!current.is_empty() && find_executable(current)? == current);
+        let path = environment("PATH")?;
+        assert(
+            run(
+                    program,
+                    [
+                        "-c",
+                        "import os,sys; assert os.environ.get('PATH','') == sys.argv[1]; sys.exit(9)",
+                        path
+                    ]
+                )?
+                == 9
+        );
+        let missing = try {
+            run("carven-test-missing-program", [])?;
+            false
+        } catch {
+            ProcessError(error) => match error {
+                .System(code) => code != 0
+            }
+        };
+        assert(missing);
+        let group = ProcessGroup::new();
+        var statuses: Vector<i32> = [3, 7];
+        for status in statuses {
+            group.spawn_inherited(program, ["-c", f"import sys; sys.exit({status})"])?;
+        }
+        while !statuses.is_empty() {
+            let finished = group.wait()?;
+            assert(finished.index < statuses.length());
+            assert(finished.status == statuses.remove(finished.index));
+        }
+        let child = Process::spawn(
+            program,
+            [
+                "-c",
+                "import sys; data=sys.stdin.buffer.read(); sys.stdout.buffer.write(data); sys.stdout.buffer.flush(); sys.exit(7)"
+            ]
+        )?;
+        let alias = child;
+        async let pending = child.read(32);
+        await yield_once();
+        await close(pending);
+        var bytes: Vector<u8> = [0, 255, 10, 128, 65];
+        await child.write_all(&&bytes)?;
+        child.close_input()?;
+        var result: Vector<u8> = [];
+        while {
+            match await child.read(4096)? {
+                .End => break,
+                .Data(data) => { result.append(data); },
+            }
+        }
+        assert(result.length() == 5 && result[0] == 0 && result[1] == 255 && result[3] == 128);
+        let status = await child.wait()?;
+        assert(await alias.wait()? == status);
+        child.close_input()?;
+        // A child can exit before the parent half-closes its stdin.
+        let exited = Process::spawn(program, ["-c", "pass"])?;
+        match await exited.read(1)? {
+            .End => {},
+            .Data(_) => assert(false),
+        }
+        assert(await exited.wait()? == 0);
+        exited.close_input()?;
+        exited.close_input()?;
+        status
+    } catch {
+        ProcessError(_) => -1,
+    };
+}
+
+async fn main(args) {
+    assert(args.length() == 3);
+    let program = args[0] as String;
+    assert(await probe(&&program) == 7);
+    println("process: roundtrip, cancellation, shared handle, exit status");
+}

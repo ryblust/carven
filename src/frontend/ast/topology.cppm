@@ -4,6 +4,7 @@ import :frontend.ast.control;
 import :frontend.ast.decl;
 import :frontend.ast.expr;
 import :frontend.ast.ids;
+import :frontend.ast.imports;
 import :frontend.ast.interop;
 import :frontend.ast.literal;
 import :frontend.ast.pattern;
@@ -76,10 +77,6 @@ private:
     auto visit(const ASTCppUsing& value) noexcept -> void {
         visit_fields(value.span, value.prefix, value.selection);
     }
-
-    auto visit(const ASTCppSingleSelection& value) noexcept -> void { visit(value.name); }
-
-    auto visit(const ASTCppListSelection& value) noexcept -> void { visit(value.names); }
 
     auto visit(const ASTCppNamespaceSelection& value) noexcept -> void { visit(value.star); }
 
@@ -327,7 +324,9 @@ private:
         visit_fields(value.span, value.parameters);
     }
 
-    auto visit(const ASTGenericParameter& value) noexcept -> void { visit_fields(value.name_span); }
+    auto visit(const ASTGenericParameter& value) noexcept -> void {
+        visit_fields(value.name_span, value.bounds);
+    }
 
     auto visit(const ASTEnumDecl& value) noexcept -> void {
         visit_fields(
@@ -425,7 +424,7 @@ private:
     }
 
     auto visit(const ASTFieldInitializerList& value) noexcept -> void {
-        visit_fields(value.span, value.fields);
+        visit_fields(value.span, value.fields, value.defaults);
     }
 
     auto visit(const ASTConstructionInitializer& value) noexcept -> void { visit(value.value); }

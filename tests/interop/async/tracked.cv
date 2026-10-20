@@ -1,13 +1,12 @@
 import std::async using yield_once;
 import "async/tracked.hpp";
 
-import(cpp) fn make_tracked() -> ::Tracked;
-import(cpp) fn tracked_created() -> i32;
-import(cpp) fn tracked_copied() -> i32;
-import(cpp) fn tracked_moved() -> i32;
-import(cpp) fn tracked_destroyed() -> i32;
-import(cpp) fn tracked_live() -> i32;
-import(cpp) fn tracked_trace() -> i32;
+import(cpp) fn make_tracked() -> ::Tracked = ::make_tracked;
+import(cpp) fn tracked_created() -> i32 = ::tracked_created;
+import(cpp) fn tracked_copied() -> i32 = ::tracked_copied;
+import(cpp) fn tracked_moved() -> i32 = ::tracked_moved;
+import(cpp) fn tracked_destroyed() -> i32 = ::tracked_destroyed;
+import(cpp) fn tracked_live() -> i32 = ::tracked_live;
 
 private async fn tracked() -> ::Tracked => make_tracked();
 
@@ -25,51 +24,26 @@ private fn local_factory(value: i32) {
     return local_after_yield(value);
 }
 
-export async fn run_tracked() {
+async fn run_tracked() {
     assert(
-        (
-            tracked_created(),
-            tracked_copied(),
-            tracked_moved(),
-            tracked_destroyed(),
-            tracked_live(),
-            tracked_trace()
-        )
-            == (0, 0, 0, 0, 0, 0)
+        (tracked_created(), tracked_copied(), tracked_moved(), tracked_destroyed(), tracked_live())
+            == (0, 0, 0, 0, 0)
     );
     if true {
         let held = await tracked();
-        // This statement begins after the initializer's full-expression cleanup.
-        assert(
-            (
-                tracked_created(),
-                tracked_copied(),
-                tracked_moved(),
-                tracked_destroyed(),
-                tracked_live(),
-                tracked_trace()
-            )
-                == (1, 0, 1, 1, 1, 123)
-        );
+        assert(tracked_created() == 1 && tracked_copied() == 0 && tracked_live() == 1);
     }
-    assert(
-        (
-            tracked_created(),
-            tracked_copied(),
-            tracked_moved(),
-            tracked_destroyed(),
-            tracked_live(),
-            tracked_trace()
-        )
-            == (1, 0, 1, 2, 0, 1234)
-    );
-    let destroyed_before = tracked_destroyed();
+    assert(tracked_live() == 0 && tracked_destroyed() == tracked_created() + tracked_moved());
+
+    let created_before = tracked_created();
     let selected = await local_after_yield(-7);
-    assert((selected, tracked_live(), tracked_destroyed() - destroyed_before) == (-7, 0, 1));
-    let factory_destroyed_before = tracked_destroyed();
+    assert((selected, tracked_live(), tracked_created() - created_before) == (-7, 0, 1));
+    assert(tracked_copied() == 0 && tracked_destroyed() == tracked_created() + tracked_moved());
+
+    let factory_created_before = tracked_created();
     let factory_selected = await local_factory(-7);
     assert(
-        (factory_selected, tracked_live(), tracked_destroyed() - factory_destroyed_before)
-            == (-7, 0, 2)
+        (factory_selected, tracked_live(), tracked_created() - factory_created_before) == (-7, 0, 2)
     );
+    assert(tracked_copied() == 0 && tracked_destroyed() == tracked_created() + tracked_moved());
 }

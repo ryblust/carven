@@ -64,6 +64,7 @@ public:
         auto attempt() noexcept -> std::optional<Completion>;
         auto suspend() noexcept -> bool;
         auto finish(Completion result) noexcept -> void;
+
         Awaiter(
             const Connection& connection,
             std::span<const std::byte> buffer,
@@ -149,8 +150,10 @@ struct WriteResult final {
 };
 
 auto read(const View& view, std::size_t limit) noexcept -> async::AsyncOperation<ReadResult>;
+
 auto write(const View& view, runtime::Vector<std::uint8_t> bytes, std::size_t offset) noexcept
     -> async::AsyncOperation<WriteResult>;
+
 auto write_all(const View& view, runtime::Vector<std::uint8_t> bytes) noexcept
     -> async::AsyncOperation<WriteResult>;
 

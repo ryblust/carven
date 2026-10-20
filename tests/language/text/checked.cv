@@ -1,4 +1,4 @@
-import std::utf using { UnicodeScalarError, UTF8Error };
+import std::utf using { UnicodeScalarError, UTF8Error }
 
 const test "Checked text: values and failures support static execution" {
     const character = char::from_u32(0x1f600)?;
@@ -34,6 +34,9 @@ test "Checked text: byte contents and error offsets follow the selected slice" {
         check(view.bytes.length() == 4);
         let empty: [u8; 0] = [];
         check(str::from_utf8(empty)?.is_empty());
+        let empty_vector: Vector<u8> = [];
+        let owned = str::from_utf8(empty_vector)? as String;
+        check(owned.is_empty());
     } catch {
         UTF8Error(_) => fail("valid byte views must succeed"),
     }

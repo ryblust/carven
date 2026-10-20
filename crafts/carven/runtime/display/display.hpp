@@ -7,8 +7,10 @@
 #include <concepts>
 #include <cstddef>
 #include <functional>
+#include <string>
 #include <string_view>
 #include <type_traits>
+#include <utility>
 
 namespace carven::runtime {
 
@@ -98,6 +100,8 @@ public:
 
     auto result() const noexcept -> std::string_view { return buffer.result(); }
 
+    auto take() && noexcept -> std::string { return std::move(buffer).take(); }
+
     // Writes the depth marker when this value cannot be expanded.
     auto truncate_at_limit(std::size_t depth) noexcept -> bool {
         if (depth >= depth_limit) {
@@ -157,6 +161,18 @@ template<typename T, typename Emit>
 auto structural_display(const T& value, Emit&& emit) noexcept
     -> StructuralDisplay<T, std::remove_reference_t<Emit>> {
     return {.value = value, .emit = emit};
+}
+
+template<typename T, typename Emit>
+auto display_text(const StructuralDisplay<T, Emit>& value) noexcept {
+    if constexpr (std::is_same_v<T, const char*> || std::is_same_v<T, char*>) {
+        // Top-level text is verbatim and is not bounded by structural display limits.
+        return std::string_view(value.value == nullptr ? "nullptr" : value.value);
+    } else {
+        auto writer = DisplayWriter();
+        std::invoke(value.emit, writer, value.value, std::size_t {0});
+        return std::move(writer).take();
+    }
 }
 
 } // namespace carven::runtime

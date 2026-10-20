@@ -121,17 +121,13 @@ independently. Set the policy to `false` to use transitive BMI checks.
 
 ## Usage
 
-Use the repository wrapper for local build commands:
+Run C++ analysis from the repository root with the repository wrapper:
 
 ```sh
-./xmakew build
-./xmakew project -k compile_commands
+./xmakew check clang.tidy
 ```
 
-Without `-t`, project exports include all targets, including those with
-`set_default(false)`. Use `-t <target>` to select the exported target.
-
-`./xmakew check clang.tidy` selects C-family sources from the compilation database.
+The command generates the compilation database and selects C-family sources from it.
 This includes ordinary module implementations emitted through custom build commands.
 Each file is submitted once; clang-tidy processes every compilation configuration
 recorded for it. Named targets select their declared source files from the same

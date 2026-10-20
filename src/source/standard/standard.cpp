@@ -7,344 +7,358 @@ namespace {
 
 constexpr auto exports = std::array {
     ProvidedExportInfo {
+        .identity = ProvidedExport::Hash,
+        .provider = ProvidedModule::Collections,
+        .name = "Hash",
+        .default_available = true,
+        .module_local = false
+    },
+    ProvidedExportInfo {
+        .identity = ProvidedExport::Equal,
+        .provider = ProvidedModule::Collections,
+        .name = "Equal",
+        .default_available = true,
+        .module_local = false
+    },
+    ProvidedExportInfo {
         .identity = ProvidedExport::Bool,
-        .module = ProvidedModule::Core,
+        .provider = ProvidedModule::Core,
         .name = "bool",
         .default_available = true,
         .module_local = false
     },
     ProvidedExportInfo {
         .identity = ProvidedExport::Char,
-        .module = ProvidedModule::Core,
+        .provider = ProvidedModule::Core,
         .name = "char",
         .default_available = true,
         .module_local = false
     },
     ProvidedExportInfo {
         .identity = ProvidedExport::Void,
-        .module = ProvidedModule::Core,
+        .provider = ProvidedModule::Core,
         .name = "void",
         .default_available = true,
         .module_local = false
     },
     ProvidedExportInfo {
         .identity = ProvidedExport::Str,
-        .module = ProvidedModule::Core,
+        .provider = ProvidedModule::Core,
         .name = "str",
         .default_available = true,
         .module_local = false
     },
     ProvidedExportInfo {
         .identity = ProvidedExport::String,
-        .module = ProvidedModule::Core,
+        .provider = ProvidedModule::Core,
         .name = "String",
         .default_available = true,
         .module_local = false
     },
     ProvidedExportInfo {
         .identity = ProvidedExport::I8,
-        .module = ProvidedModule::Core,
+        .provider = ProvidedModule::Core,
         .name = "i8",
         .default_available = true,
         .module_local = false
     },
     ProvidedExportInfo {
         .identity = ProvidedExport::I16,
-        .module = ProvidedModule::Core,
+        .provider = ProvidedModule::Core,
         .name = "i16",
         .default_available = true,
         .module_local = false
     },
     ProvidedExportInfo {
         .identity = ProvidedExport::I32,
-        .module = ProvidedModule::Core,
+        .provider = ProvidedModule::Core,
         .name = "i32",
         .default_available = true,
         .module_local = false
     },
     ProvidedExportInfo {
         .identity = ProvidedExport::I64,
-        .module = ProvidedModule::Core,
+        .provider = ProvidedModule::Core,
         .name = "i64",
         .default_available = true,
         .module_local = false
     },
     ProvidedExportInfo {
         .identity = ProvidedExport::Isize,
-        .module = ProvidedModule::Core,
+        .provider = ProvidedModule::Core,
         .name = "isize",
         .default_available = true,
         .module_local = false
     },
     ProvidedExportInfo {
         .identity = ProvidedExport::U8,
-        .module = ProvidedModule::Core,
+        .provider = ProvidedModule::Core,
         .name = "u8",
         .default_available = true,
         .module_local = false
     },
     ProvidedExportInfo {
         .identity = ProvidedExport::U16,
-        .module = ProvidedModule::Core,
+        .provider = ProvidedModule::Core,
         .name = "u16",
         .default_available = true,
         .module_local = false
     },
     ProvidedExportInfo {
         .identity = ProvidedExport::U32,
-        .module = ProvidedModule::Core,
+        .provider = ProvidedModule::Core,
         .name = "u32",
         .default_available = true,
         .module_local = false
     },
     ProvidedExportInfo {
         .identity = ProvidedExport::U64,
-        .module = ProvidedModule::Core,
+        .provider = ProvidedModule::Core,
         .name = "u64",
         .default_available = true,
         .module_local = false
     },
     ProvidedExportInfo {
         .identity = ProvidedExport::Usize,
-        .module = ProvidedModule::Core,
+        .provider = ProvidedModule::Core,
         .name = "usize",
         .default_available = true,
         .module_local = false
     },
     ProvidedExportInfo {
         .identity = ProvidedExport::F32,
-        .module = ProvidedModule::Core,
+        .provider = ProvidedModule::Core,
         .name = "f32",
         .default_available = true,
         .module_local = false
     },
     ProvidedExportInfo {
         .identity = ProvidedExport::F64,
-        .module = ProvidedModule::Core,
+        .provider = ProvidedModule::Core,
         .name = "f64",
         .default_available = true,
         .module_local = false
     },
     ProvidedExportInfo {
         .identity = ProvidedExport::Vector,
-        .module = ProvidedModule::Core,
+        .provider = ProvidedModule::Core,
         .name = "Vector",
         .default_available = true,
         .module_local = false
     },
     ProvidedExportInfo {
         .identity = ProvidedExport::Range,
-        .module = ProvidedModule::Core,
+        .provider = ProvidedModule::Core,
         .name = "Range",
         .default_available = true,
         .module_local = false
     },
     ProvidedExportInfo {
         .identity = ProvidedExport::Assert,
-        .module = ProvidedModule::Core,
+        .provider = ProvidedModule::Core,
         .name = "assert",
         .default_available = true,
         .module_local = false
     },
     ProvidedExportInfo {
         .identity = ProvidedExport::Addressof,
-        .module = ProvidedModule::Core,
+        .provider = ProvidedModule::Core,
         .name = "addressof",
         .default_available = true,
         .module_local = false
     },
     ProvidedExportInfo {
         .identity = ProvidedExport::Print,
-        .module = ProvidedModule::Io,
+        .provider = ProvidedModule::Io,
         .name = "print",
         .default_available = true,
         .module_local = false
     },
     ProvidedExportInfo {
         .identity = ProvidedExport::Println,
-        .module = ProvidedModule::Io,
+        .provider = ProvidedModule::Io,
         .name = "println",
         .default_available = true,
         .module_local = false
     },
     ProvidedExportInfo {
         .identity = ProvidedExport::Eprint,
-        .module = ProvidedModule::Io,
+        .provider = ProvidedModule::Io,
         .name = "eprint",
         .default_available = true,
         .module_local = false
     },
     ProvidedExportInfo {
         .identity = ProvidedExport::Eprintln,
-        .module = ProvidedModule::Io,
+        .provider = ProvidedModule::Io,
         .name = "eprintln",
         .default_available = true,
         .module_local = false
     },
     ProvidedExportInfo {
         .identity = ProvidedExport::Check,
-        .module = ProvidedModule::Testing,
+        .provider = ProvidedModule::Testing,
         .name = "check",
         .default_available = true,
         .module_local = false
     },
     ProvidedExportInfo {
         .identity = ProvidedExport::Require,
-        .module = ProvidedModule::Testing,
+        .provider = ProvidedModule::Testing,
         .name = "require",
         .default_available = true,
         .module_local = false
     },
     ProvidedExportInfo {
         .identity = ProvidedExport::Fail,
-        .module = ProvidedModule::Testing,
+        .provider = ProvidedModule::Testing,
         .name = "fail",
         .default_available = true,
         .module_local = false
     },
     ProvidedExportInfo {
         .identity = ProvidedExport::Operation,
-        .module = ProvidedModule::Async,
+        .provider = ProvidedModule::Async,
         .name = "Operation",
         .default_available = false,
         .module_local = false
     },
     ProvidedExportInfo {
         .identity = ProvidedExport::CancelRequested,
-        .module = ProvidedModule::Async,
+        .provider = ProvidedModule::Async,
         .name = "cancel_requested",
         .default_available = false,
         .module_local = false
     },
     ProvidedExportInfo {
         .identity = ProvidedExport::CancelPoint,
-        .module = ProvidedModule::Async,
+        .provider = ProvidedModule::Async,
         .name = "cancel_point",
         .default_available = false,
         .module_local = false
     },
     ProvidedExportInfo {
         .identity = ProvidedExport::YieldOnce,
-        .module = ProvidedModule::Async,
+        .provider = ProvidedModule::Async,
         .name = "yield_once",
         .default_available = false,
         .module_local = false
     },
     ProvidedExportInfo {
         .identity = ProvidedExport::WaitReady,
-        .module = ProvidedModule::Async,
+        .provider = ProvidedModule::Async,
         .name = "wait_ready",
         .default_available = false,
         .module_local = false
     },
     ProvidedExportInfo {
         .identity = ProvidedExport::Close,
-        .module = ProvidedModule::Async,
+        .provider = ProvidedModule::Async,
         .name = "close",
         .default_available = false,
         .module_local = false
     },
     ProvidedExportInfo {
         .identity = ProvidedExport::WhenAll,
-        .module = ProvidedModule::Async,
+        .provider = ProvidedModule::Async,
         .name = "when_all",
         .default_available = false,
         .module_local = false
     },
     ProvidedExportInfo {
         .identity = ProvidedExport::WhenAny,
-        .module = ProvidedModule::Async,
+        .provider = ProvidedModule::Async,
         .name = "when_any",
         .default_available = false,
         .module_local = false
     },
     ProvidedExportInfo {
         .identity = ProvidedExport::FirstSuccessful,
-        .module = ProvidedModule::Async,
+        .provider = ProvidedModule::Async,
         .name = "first_successful",
         .default_available = false,
         .module_local = false
     },
     ProvidedExportInfo {
         .identity = ProvidedExport::U8x16,
-        .module = ProvidedModule::Simd,
+        .provider = ProvidedModule::Simd,
         .name = "u8x16",
         .default_available = true,
         .module_local = false
     },
     ProvidedExportInfo {
         .identity = ProvidedExport::Mask16,
-        .module = ProvidedModule::Simd,
+        .provider = ProvidedModule::Simd,
         .name = "mask16",
         .default_available = true,
         .module_local = false
     },
     ProvidedExportInfo {
         .identity = ProvidedExport::F32x4,
-        .module = ProvidedModule::Simd,
+        .provider = ProvidedModule::Simd,
         .name = "f32x4",
         .default_available = true,
         .module_local = false
     },
     ProvidedExportInfo {
         .identity = ProvidedExport::Mask4,
-        .module = ProvidedModule::Simd,
+        .provider = ProvidedModule::Simd,
         .name = "mask4",
         .default_available = true,
         .module_local = false
     },
     ProvidedExportInfo {
         .identity = ProvidedExport::U8x32,
-        .module = ProvidedModule::Simd,
+        .provider = ProvidedModule::Simd,
         .name = "u8x32",
         .default_available = true,
         .module_local = false
     },
     ProvidedExportInfo {
         .identity = ProvidedExport::Mask32,
-        .module = ProvidedModule::Simd,
+        .provider = ProvidedModule::Simd,
         .name = "mask32",
         .default_available = true,
         .module_local = false
     },
     ProvidedExportInfo {
         .identity = ProvidedExport::F32x8,
-        .module = ProvidedModule::Simd,
+        .provider = ProvidedModule::Simd,
         .name = "f32x8",
         .default_available = true,
         .module_local = false
     },
     ProvidedExportInfo {
         .identity = ProvidedExport::Mask8,
-        .module = ProvidedModule::Simd,
+        .provider = ProvidedModule::Simd,
         .name = "mask8",
         .default_available = true,
         .module_local = false
     },
     ProvidedExportInfo {
         .identity = ProvidedExport::Timeout,
-        .module = ProvidedModule::Time,
+        .provider = ProvidedModule::Time,
         .name = "timeout",
         .default_available = false,
         .module_local = false
     },
     ProvidedExportInfo {
         .identity = ProvidedExport::ReadInput,
-        .module = ProvidedModule::Io,
+        .provider = ProvidedModule::Io,
         .name = "read_input",
         .default_available = false,
         .module_local = true
     },
     ProvidedExportInfo {
         .identity = ProvidedExport::MonotonicNow,
-        .module = ProvidedModule::Time,
+        .provider = ProvidedModule::Time,
         .name = "monotonic_now",
         .default_available = false,
         .module_local = true
     },
     ProvidedExportInfo {
         .identity = ProvidedExport::WaitUntil,
-        .module = ProvidedModule::Time,
+        .provider = ProvidedModule::Time,
         .name = "wait_until",
         .default_available = false,
         .module_local = true
@@ -353,28 +367,30 @@ constexpr auto exports = std::array {
 
 } // namespace
 
-auto provided_module_path(ProvidedModule module) noexcept -> std::string_view {
-    switch (module) {
-        case ProvidedModule::Core:    return "crafts.carven.std.core";
-        case ProvidedModule::Io:      return "crafts.carven.std.io";
-        case ProvidedModule::Testing: return "crafts.carven.std.testing";
-        case ProvidedModule::Async:   return "crafts.carven.std.async";
-        case ProvidedModule::Simd:    return "crafts.carven.std.simd";
-        case ProvidedModule::Time:    return "crafts.carven.std.time";
+auto provided_module_path(ProvidedModule provider) noexcept -> std::string_view {
+    switch (provider) {
+        case ProvidedModule::Core:        return "crafts.carven.std.core";
+        case ProvidedModule::Io:          return "crafts.carven.std.io";
+        case ProvidedModule::Testing:     return "crafts.carven.std.testing";
+        case ProvidedModule::Async:       return "crafts.carven.std.async";
+        case ProvidedModule::Simd:        return "crafts.carven.std.simd";
+        case ProvidedModule::Time:        return "crafts.carven.std.time";
+        case ProvidedModule::Collections: return "crafts.carven.std.collections";
     }
     std::unreachable();
 }
 
 auto find_provided_module(std::string_view path) noexcept -> std::optional<ProvidedModule> {
-    for (const auto module :
+    for (const auto provider :
          {ProvidedModule::Core,
           ProvidedModule::Io,
           ProvidedModule::Testing,
           ProvidedModule::Async,
           ProvidedModule::Simd,
-          ProvidedModule::Time}) {
-        if (provided_module_path(module) == path) {
-            return module;
+          ProvidedModule::Time,
+          ProvidedModule::Collections}) {
+        if (provided_module_path(provider) == path) {
+            return provider;
         }
     }
     return std::nullopt;
@@ -394,49 +410,49 @@ constexpr auto declarations = std::array {
     StandardDeclarationInfo {
         .identity = StandardDeclaration::Stdin,
         .kind = StandardDeclarationKind::Function,
-        .module = "crafts.carven.std.io",
+        .module_path = "crafts.carven.std.io",
         .name = "stdin",
         .default_available = true
     },
     StandardDeclarationInfo {
         .identity = StandardDeclaration::CharFromU32,
         .kind = StandardDeclarationKind::Function,
-        .module = "crafts.carven.std.utf",
+        .module_path = "crafts.carven.std.utf",
         .name = "char_from_u32",
         .default_available = false
     },
     StandardDeclarationInfo {
         .identity = StandardDeclaration::TextFromUTF8,
         .kind = StandardDeclarationKind::Function,
-        .module = "crafts.carven.std.utf",
+        .module_path = "crafts.carven.std.utf",
         .name = "from_utf8",
         .default_available = false
     },
     StandardDeclarationInfo {
         .identity = StandardDeclaration::Duration,
         .kind = StandardDeclarationKind::Struct,
-        .module = "crafts.carven.std.time",
+        .module_path = "crafts.carven.std.time",
         .name = "Duration",
         .default_available = false
     },
     StandardDeclarationInfo {
-        .identity = StandardDeclaration::RangeError,
+        .identity = StandardDeclaration::TimeRangeError,
         .kind = StandardDeclarationKind::Struct,
-        .module = "crafts.carven.std.time",
-        .name = "RangeError",
+        .module_path = "crafts.carven.std.time",
+        .name = "TimeRangeError",
         .default_available = false
     },
     StandardDeclarationInfo {
         .identity = StandardDeclaration::Timeout,
         .kind = StandardDeclarationKind::Struct,
-        .module = "crafts.carven.std.time",
+        .module_path = "crafts.carven.std.time",
         .name = "Timeout",
         .default_available = false
     },
     StandardDeclarationInfo {
         .identity = StandardDeclaration::NumberParseError,
         .kind = StandardDeclarationKind::Enum,
-        .module = "crafts.carven.std.core",
+        .module_path = "crafts.carven.std.core",
         .name = "NumberParseError",
         .default_available = false
     }

@@ -202,7 +202,7 @@ auto build_program(std::string_view module_name) noexcept -> BuiltProgram {
         first_callable,
         CppImportImplementation {
             .form_origin = origin,
-            .target = {
+            .target = CppNameReference {
                 .context_module = module_id,
                 .lookup = CppNameLookup::Global,
                 .components = {"first"}
@@ -213,7 +213,7 @@ auto build_program(std::string_view module_name) noexcept -> BuiltProgram {
         second_callable,
         CppImportImplementation {
             .form_origin = origin,
-            .target = {
+            .target = CppNameReference {
                 .context_module = module_id,
                 .lookup = CppNameLookup::Global,
                 .components = {"second"}

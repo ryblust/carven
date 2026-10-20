@@ -64,9 +64,9 @@ const TestSuite suite([] static noexcept {
             auto builder =
                 begin_semir_test_compilation(sources, diagnostics, "content.query_chain");
             const auto module_origin = make_semir_test_module_origin(builder);
-            const auto module = builder.reserve_module_declaration();
+            const auto module_id = builder.reserve_module_declaration();
             builder.define_declaration(
-                module,
+                module_id,
                 ModuleDeclaration {
                     .provenance_module = module_origin.provenance_module,
                     .origin = module_origin.origin,
@@ -107,9 +107,9 @@ const TestSuite suite([] static noexcept {
                 const auto semantic = analyze_test_program(
                     "export fn tag<T>() -> i32 => 42; fn use() {" + calls + "}"
                 );
-                const auto module =
+                const auto module_id =
                     (*semantic.generic_declaration_contracts().begin()).value.module_id;
-                const auto library = std::flat_set<ModuleID> {module};
+                const auto library = std::flat_set<ModuleID> {module_id};
                 const auto compilation = PlannedCompilation::build(
                     semantic,
                     {.test_mode = TestGenerationMode::None,
@@ -146,7 +146,7 @@ const TestSuite suite([] static noexcept {
         [] static noexcept {
             constexpr auto depth = 12uz;
             auto source = std::string(
-                "import <probe.hpp> using probe::{seed};\nfn grow() { let x0 = seed();\n"
+                "import <probe.hpp> using probe::{seed}\nfn grow() { let x0 = seed();\n"
             );
             for (auto index = 1uz; index <= depth; ++index) {
                 source += std::format("let x{} = x{} + x{};\n", index, index - 1, index - 1);

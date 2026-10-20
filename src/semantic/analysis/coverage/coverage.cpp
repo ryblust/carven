@@ -34,7 +34,7 @@ struct CoverageInterval final {
 
 struct CoverageCase final {
     ConstructionTypeRef type;
-    EnumCaseID enum_case;
+    ConstructionEnumCaseRef enum_case;
     std::vector<CoveragePattern> payload;
 };
 
@@ -242,7 +242,7 @@ auto specialize_interval(std::span<const Row> matrix, std::uint64_t point) noexc
 template<typename Program, typename PatternTable>
 class CoverageAnalyzer final {
 public:
-    CoverageAnalyzer(const Program& source, const PatternTable& patterns) noexcept
+    CoverageAnalyzer(Program& source, const PatternTable& patterns) noexcept
         : program(source),
           patterns(patterns) {}
 
@@ -584,25 +584,19 @@ private:
                     };
                 },
                 [&](const EnumCasePattern& value) -> std::expected<CoveragePattern, std::string> {
-                    const auto* concrete = std::get_if<TypeID>(&expected_type);
-                    if (concrete == nullptr) {
-                        return std::unexpected("case coverage subject is not concrete");
-                    }
-                    const auto canonical = this->type(*concrete);
-                    const auto* nominal = std::get_if<EnumTypeValue>(&canonical.value);
-                    if (nominal == nullptr) {
+                    const auto shape = enumeration_shape(expected_type);
+                    if (!shape) {
                         return std::unexpected("case coverage subject is not an enum");
                     }
-                    if (value.enum_case.owner() != program.identity()) {
-                        return std::unexpected("coverage enum case belongs to another program");
-                    }
-                    const auto member = enum_case(value.enum_case);
-                    if (member.owner != nominal->enumeration
-                        || member.payload_types.size() != value.payload.size()) {
+                    const auto selected =
+                        std::ranges::find(shape->cases, value.enum_case, &EnumCaseShape::reference);
+                    if (selected == shape->cases.end()
+                        || selected->payload_types.size() != value.payload.size()) {
                         return std::unexpected(
                             "case coverage payload does not match its enum member"
                         );
                     }
+                    const auto& member = *selected;
                     auto payload = std::vector<CoveragePattern>();
                     payload.reserve(value.payload.size());
                     for (const auto [child, payload_type] :
@@ -947,7 +941,7 @@ private:
         if (value == nullptr || value->payload.size() != payload.size()) {
             return std::unexpected("enum coverage constructor has the wrong witness arity");
         }
-        const auto enum_case = this->enum_case(value->enum_case);
+        const auto enum_case = this->enum_case(value->type, value->enum_case);
         const auto name = [&]() noexcept -> std::string {
             if constexpr (std::same_as<Program, ProgramDraft>) {
                 return program.spelling_copy(enum_case.name);
@@ -1002,29 +996,62 @@ private:
         };
     }
 
-    auto enum_type(ConstructionTypeRef reference) const noexcept -> std::optional<EnumID> {
-        const auto* concrete = std::get_if<TypeID>(&reference);
-        if (concrete == nullptr) {
-            return std::nullopt;
-        }
-        const auto canonical = type(*concrete);
-        if (const auto* nominal = std::get_if<EnumTypeValue>(&canonical.value)) {
-            return nominal->enumeration;
-        }
-        return std::nullopt;
-    }
-
-    auto enum_cases(EnumID id) const noexcept -> std::span<const EnumCaseID> {
-        if constexpr (std::same_as<PatternTable, MutableBodyTable<ElaboratedPattern, PatternID>>) {
-            return program.enum_cases(id);
+    auto enumeration_shape(ConstructionTypeRef reference) const noexcept
+        -> std::optional<EnumShape> {
+        if constexpr (std::same_as<Program, ProgramDraft>) {
+            return enum_shape(program, reference);
         } else {
-            return program.declarations().enumeration(id).cases;
+            const auto* concrete = std::get_if<TypeID>(&reference);
+            if (!concrete) {
+                return std::nullopt;
+            }
+            const auto canonical = program.types().type(*concrete);
+            const auto* nominal = std::get_if<EnumTypeValue>(&canonical.value);
+            if (!nominal) {
+                return std::nullopt;
+            }
+            const auto& declaration = program.declarations().enumeration(nominal->enumeration);
+            auto cases = std::vector<EnumCaseShape>();
+            for (const auto id : declaration.cases) {
+                const auto& item = program.declarations().enum_case(id);
+                auto payload = std::vector<ConstructionTypeRef>();
+                for (const auto type : item.payload_types) {
+                    payload.emplace_back(type);
+                }
+                cases.push_back(
+                    {.reference = id,
+                     .name = item.name,
+                     .payload_types = std::move(payload),
+                     .constant = item.constant}
+                );
+            }
+            return EnumShape {.owner = nominal->enumeration, .cases = std::move(cases)};
         }
     }
 
-    auto case_constructor(ConstructionTypeRef type, EnumCaseID id) noexcept
+    auto enum_type(ConstructionTypeRef reference) const noexcept
+        -> std::optional<ConstructionTypeRef> {
+        return enumeration_shape(reference) ? std::optional(reference) : std::nullopt;
+    }
+
+    auto enum_cases(ConstructionTypeRef type) const noexcept
+        -> std::vector<ConstructionEnumCaseRef> {
+        auto result = std::vector<ConstructionEnumCaseRef>();
+        for (const auto& item : enumeration_shape(type)->cases) {
+            result.push_back(item.reference);
+        }
+        return result;
+    }
+
+    auto enum_case(ConstructionTypeRef type, ConstructionEnumCaseRef reference) const noexcept
+        -> EnumCaseShape {
+        const auto shape = *enumeration_shape(type);
+        return *std::ranges::find(shape.cases, reference, &EnumCaseShape::reference);
+    }
+
+    auto case_constructor(ConstructionTypeRef type, ConstructionEnumCaseRef id) noexcept
         -> std::expected<CoveragePattern, std::string> {
-        const auto member = enum_case(id);
+        const auto member = enum_case(type, id);
         auto payload = std::vector<CoveragePattern>();
         payload.reserve(member.payload_types.size());
         for (const auto payload_type : member.payload_types) {
@@ -1034,11 +1061,7 @@ private:
             payload.push_back({.value = CoverageAny {.type = payload_type}});
         }
         return CoveragePattern {
-            .value = CoverageCase {
-                .type = type,
-                .enum_case = id,
-                .payload = std::move(payload),
-            },
+            .value = CoverageCase {.type = type, .enum_case = id, .payload = std::move(payload)}
         };
     }
 
@@ -1058,22 +1081,14 @@ private:
         }
     }
 
-    auto enum_case(EnumCaseID id) const noexcept {
-        if constexpr (std::same_as<PatternTable, MutableBodyTable<ElaboratedPattern, PatternID>>) {
-            return program.construction_enum_case_declaration_copy(id);
-        } else {
-            return program.declarations().enum_case(id);
-        }
-    }
-
-    const Program& program;
+    Program& program;
     const PatternTable& patterns;
 };
 
 } // namespace
 
 auto compute_pattern_coverage(
-    const ProgramDraft& draft,
+    ProgramDraft& draft,
     const MutableBodyTable<ElaboratedPattern, PatternID>& patterns,
     ConstructionTypeRef subject_type,
     std::span<const PatternCoverageArm> arms

@@ -76,13 +76,18 @@ implementation; provider artifacts remain independent of their callers.
 
 The `carven/api` header contains explicit `export(cpp)` declarations in
 `carven::api`, followed by nested namespaces for the encoded module path
-components. Its implementation contains the corresponding façades. The header
-is self-contained.
+components. Its implementation contains the corresponding function façades. The
+header is self-contained and publishes typed source contracts for its exported
+callables.
+Signature dependencies are collected regardless of their Carven visibility:
+same-craft types need no ordinary `export` to be used through this C++ interface.
 
 Modules containing concrete `import(cpp)` declarations produce a
-`carven/providers` header with signature type aliases and complete type
-dependencies. Native authors include it when naming Carven representations;
-function declarations remain in authored C++ headers or source fragments.
+`carven/providers` header with signature type aliases, typed host contracts, and
+complete type dependencies. Imports without an explicit native target have a
+matching `invoke` declaration supplied through their generated interface. Native
+authors include the provider header when implementing those declarations.
+Explicit targets retain authored C++ declarations.
 
 C++ header imports become ordered includes in the owning implementation. An
 external type or result query needed by an interface brings its context module's
@@ -139,18 +144,22 @@ Native compiler dependency files establish C++ header dependencies.
 
 ## Build integration
 
-The `compile` command collects fixed Crafts roots and writes generated artifacts;
-it does not compile or copy collected `.cpp` sources. A manual native build
-selects the generated implementations and C++ providers needed by its target,
-including any required native initialization. A program using only header-based
-runtime operations needs its own generated implementation and runtime headers.
-The direct-run entry compiles all generated implementations and collected native
-sources in a temporary directory. For project builds, supply the output root and
-installed support root as include paths, plus required native sources and
-libraries. Header imports add neither include directories nor link inputs.
+The `compile` command analyzes the supplied sources with the matching toolchain
+and writes generated artifacts. It does not compile or copy native providers.
+A manual native build selects the generated implementations and C++ providers
+needed by its target, including any required native initialization. Supply the
+output root and installed support root as include paths, plus required native
+sources and libraries. A program using only header-based runtime operations needs
+its own generated implementation and runtime headers. Header imports add neither
+include directories nor link inputs.
 
-Xmake is the default project build system. Use Xmake 3.1.1 or later and a
-C++20-capable toolchain. Declare the package and attach its rule to the application:
+`carven build` executes the project's `build.cv`. The script uses `std::build`
+to construct executables and static libraries, with `build/` as the default
+output directory. `carven run` also launches the selected executable.
+
+External Xmake projects can use the separate Carven rule repository with Xmake
+3.1.1 or later and a C++20-capable toolchain. Declare the package and attach its
+rule to the application:
 
 ```lua
 add_repositories("carven-xmake-repo https://github.com/ryblust/carven-xmake-repo.git")
@@ -214,19 +223,21 @@ Configure native providers through ordinary target settings and dependencies.
 Xmake owns target dependencies, native configuration, preparation order, header
 scanning, compilation, linking, and concurrency. The Carven rule supplies generated
 sources and preserves the native settings attached to their originating `.cv`
-files. The rule processes the full installed standard library and registers its
-generated implementations and installed native support sources on each consumer
-target. Xmake compiles these sources with that target's native configuration and
-manages incremental builds. Reuse of native objects and other native artifacts
-follows Xmake's mechanisms and their requirements.
+files. The rule processes the full installed standard library, then selects its
+generated implementations through the manifests' link dependencies. Consumer
+implementations, test entries, and published standard-library C++ interfaces supply
+the roots. Installed native support sources are included in every consumer target.
+Xmake compiles the selected sources with that target's native configuration and
+manages incremental builds. Native object reuse follows Xmake's mechanisms.
 
 Identical source batches share analysis and publish only semantics and discovery
 facts. Each application target generates its C++ and selected entry from the
 retained program in its own linkage domain. Within one configured Xmake project,
 targets using the same Carven compiler and installed sources share standard-library
 analysis results and generated C++ text. The standard library keeps its fixed
-generated symbol identity across those targets. Analysis with host input, clock
-sampling, or waiting runs again on the next build request.
+generated symbol identity across those targets. Analysis that executes host effects,
+including file access, process execution, input, clock sampling, or waiting,
+runs again on the next build request.
 
 Use ordinary Xmake targets, source lists, and dependencies to model component
 boundaries and definition ownership. Standard-library source registration is per
@@ -317,9 +328,9 @@ support. `format/writer.hpp` defines FormatWriter for prepared builtin formattin
 including integer, floating, bool, char, and text fields; precomputed text uses
 direct String construction or append. Structural printing uses
 `display/display.hpp`. The consumer compiler checks delegated format strings
-and native formatter availability. `io/print.hpp` supplies stdout and stderr
-printing through the C++20 implementation or available C++23 library print
-support under the consumer's selected standard.
+and native formatter availability. `io/print.hpp` writes text to stdout and stderr
+with C++20 `fwrite`; formatting and structural-display headers are selected by the
+generated argument conversions.
 
 For direct C++ calls, `String::from_str` and `append` require valid UTF-8, and
 `push` requires a Unicode scalar. `String::from_utf8` validates incoming byte

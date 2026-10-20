@@ -1,27 +1,30 @@
 # Generic extensions and static capabilities
 
 - **Status:** Draft
-- **Scope:** Static capabilities, associated types, generic class operations, and finite boundary extensions
+- **Scope:** Source-defined static capabilities, associated types, and finite boundary extensions
 
 ## Summary
 
-Add static capabilities and associated types so generic bodies can require
-checked operations on unknown types. The capability design is accepted; its
-implementation scope and remaining decisions are open. Parameterized class
-operations and generic C++ boundaries select their own delivery scopes.
+Extend static capabilities with source-defined contracts, implementations, and
+associated types. The general capability design is accepted; finite evidence
+expansion remains open. Generic C++ boundaries select an independent delivery scope.
 
 ## Context
 
-Type and failure-set parameters on named functions and nominal declarations,
-definition-site body checking, local call inference, fixed tuple substitution,
+Type and failure-set parameters on named functions, nominal declarations, and
+class operations, definition-site body checking, local call inference, fixed tuple substitution,
 and first-order recursive-growth rejection are implemented. Static function
 parameters and residual specialization keep parameter types, result types, and
 layouts fixed. Value-dependent types and generic value arguments remain deferred.
 
 Unknown type parameters admit forwarding and whole-value Take; additional
-operations need capability evidence. Associated projections must extend finite
-instance formation with a termination argument. Parameterized class operations
-and generic C++ boundary declarations remain unsupported.
+operations need capability evidence. The compiler provides `Hash` and `Equal`
+through `std::collections`, explicit conjunctive parameter bounds, and qualified
+operations. These intrinsic requirements compose through the existing finite
+type-parameter model without searching source implementations. User capability
+declarations and implementations remain outside this delivered scope.
+Associated projections and source evidence must extend finite instance formation
+with a termination argument. Generic C++ boundary declarations remain unsupported.
 
 `concept`, `impl`, `Self`, and `where` are ordinary identifiers today.
 
@@ -48,6 +51,28 @@ represented as a synthesized impl within this same model.
 
 A `concept` is a compile-time contract with no runtime value representation or
 subtyping. Runtime holding and dispatch require a separate value contract.
+
+### Capability ownership and delivery
+
+Compiler knowledge includes concrete copying, transfer, retained backing, and
+execution admission. Share satisfaction and resolved-operation machinery where
+these facts participate in capability obligations. A source concept names a
+requirement on an unknown type when an API needs that expression. The capability
+contract specifies whether evidence is compiler-derived, source-provided, or
+admitted from a native provider; an ordinary impl cannot assert an intrinsic
+property whose validity requires compiler or provider knowledge.
+
+Standard Craft and user modules declare reusable source contracts and algorithms.
+Builtins can derive concrete types and effects directly. The static evidence
+model has no runtime representation; native mechanisms required by a selected
+operation belong to Runtime Craft or that operation's native adapter.
+
+Select a usable capability slice with an ordinary source API requiring checked
+operations on unknown types. Include associated types when that API needs an
+evidence-determined output type. Retain the accepted projection and coherence
+rules for that scope. Closed builtin APIs and native resource admission consume
+only the capability facts their contracts need. Broader generic extensions retain
+their independent activation conditions.
 
 ### Concept and impl declarations
 
@@ -294,18 +319,6 @@ Validate same-key recursion, finite permutations and concrete resets, recursive
 associated projections, overlapping evidence, and growing obligations, including
 unused definitions. Check finite source formation before C++ lowering.
 
-### OPEN-04 — Parameterized class operations
-
-- **Status:** Active
-- **Depends on:** GEN-16
-
-Class field substitution is implemented. Operations still need to inherit owner
-parameters and lexical access authority while preserving receiver Read, Write,
-Take, result backing, failures, and static admission. Select a concrete container
-or wrapper with at least two element types. Establish definition-site legality,
-method lookup, and finite call closure without requiring capability dispatch for
-operations already justified by universal rules.
-
 ## Deferred work
 
 ### DEFER-01 — Const and value generic parameters
@@ -393,9 +406,12 @@ moved owner may remain.
 
 Deliver the chosen capability identities, declarations, definition-site operations,
 conformance, coherence, normalization, and finite closure as one usable slice.
+Exercise an independently useful source algorithm or container contract; builtin
+reimplementation alone does not establish the slice. Normalize associated
+projections wherever the selected signatures use them.
 
-Class operations and native generic boundaries select their own slices and need
-only the capability features their contracts use.
+Native generic boundaries select their own slices and need only the capability
+features their contracts use.
 
 ## Validation
 
@@ -406,7 +422,7 @@ anchored heads, overlapping impls, projection cycles, and canonical instance reu
 Include static calls, failures, exactly-once operand evaluation, borrowed backing,
 and Take across generic and concrete callers.
 
-### Class operations and native boundaries
+### Native boundaries
 
 Test private arguments and cross-module dependencies through self-contained
 generated interfaces and C++20 compile, link, and execution. Do not fix private

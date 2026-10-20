@@ -10,6 +10,17 @@ import :source.provenance;
 import :source.provenance.ids;
 import std;
 
+enum class CallStopEffect : std::uint8_t { None = 0, Test = 1, Runtime = 2, TestAndRuntime = 3 };
+
+constexpr auto combine_call_stops(CallStopEffect left, CallStopEffect right) noexcept
+    -> CallStopEffect {
+    return static_cast<CallStopEffect>(std::to_underlying(left) | std::to_underlying(right));
+}
+
+constexpr auto includes_test_stop(CallStopEffect effect) noexcept -> bool {
+    return (std::to_underlying(effect) & std::to_underlying(CallStopEffect::Test)) != 0;
+}
+
 enum class CppHeaderDelimiter {
     AngleBrackets,
     Quotes,
@@ -144,7 +155,7 @@ struct ClosureBodyImplementation final {
 
 struct CppImportImplementation final {
     ProgramOriginID form_origin;
-    CppNameReference target;
+    std::optional<CppNameReference> target;
 };
 
 struct NumberParseImplementation final {
@@ -170,6 +181,7 @@ struct CallableDeclaration final {
 };
 
 auto callable_body_id(const CallableDeclaration& callable) noexcept -> std::optional<BodyID>;
+
 auto cpp_import_form_origin(const CallableDeclaration& callable) noexcept
     -> std::optional<ProgramOriginID>;
 
@@ -292,8 +304,10 @@ public:
     // Borrowed until the next callable reservation.
     auto callable_contract(CallableID id) const noexcept -> const ConstructionCallableContract&;
     auto callable_implementation(CallableID id) const noexcept -> CallableImplementation;
+
     auto try_callable_implementation(CallableID id) const noexcept
         -> std::optional<CallableImplementation>;
+
     auto function_ids() const noexcept -> std::vector<FunctionID>;
     auto struct_ids() const noexcept -> std::vector<StructID>;
     auto enum_ids() const noexcept -> std::vector<EnumID>;
@@ -338,7 +352,10 @@ public:
 
     auto set_enum_equality(EnumID enumeration, bool supported) noexcept -> void;
     auto append_function_instance(FunctionDeclaration declaration) noexcept -> FunctionID;
-    auto append_nominal_item(ModuleID module, NominalDeclarationRef declaration) noexcept -> void;
+
+    auto append_nominal_item(ModuleID module_id, NominalDeclarationRef declaration) noexcept
+        -> void;
+
     auto finish_heads() noexcept -> DeclarationConstructionView;
     auto construction_view() const noexcept -> DeclarationConstructionView;
     auto append_body_callable(ConstructionCallableContract contract) noexcept -> CallableID;

@@ -1,10 +1,31 @@
 import std::async using Operation;
+import std::collections using { Hash as Hashing, Equal as Equality }
+
+private const fn same_key<T: Equal>(left: T, right: T) -> bool => left == right;
+
+private const fn key_hash<T: Hashing>(value: T) -> u64 => Hashing::hash(value);
+
+private const fn forwarded_hash<T: Hash>(value: T) -> u64 => key_hash(value);
+
+const test "Generic capabilities: checked bounds compose ordinary value operations" {
+    let text = "索引\0key" as String;
+    check(same_key<i32>(42, 42));
+    check(!same_key<i32>(42, 7));
+    check(Equality::equal(text, text.as_str()));
+    check(forwarded_hash(text) == key_hash(text.as_str()));
+    check(same_key<([i32; 2], bool)>(([20, 22], true), ([20, 22], true)));
+    check(key_hash(([20, 22], true)) == forwarded_hash(([20, 22], true)));
+}
 
 private struct Box<T> {
     value: T,
 }
 
 private const fn relay<T>(&&value: T) -> T => &&value;
+
+private fn apply<T>(callback: fn(T) -> T, value: T) -> T => callback(value);
+
+private fn increment(value: i32) -> i32 => value + 1;
 
 private const fn hold<T>(&&value: T) -> Box<T> => { value: &&value };
 
@@ -76,6 +97,11 @@ const test "Generic functions: checked bodies specialize ordinary values and pro
 }
 
 test "Generic functions: owned values transfer through ordinary aggregate fields" {
+    check(apply(increment, 41) == 42);
+    let hash: fn(i32) -> u64 = Hashing::hash;
+    let equal: fn(i32, i32) -> bool = Equality::equal;
+    check(hash(42) == key_hash(42));
+    check(equal(42, 42) && !equal(42, 7));
     let text = "first" as String;
     let boxed = hold<String>(&&text);
     var unpacked = release<String>(&&boxed);

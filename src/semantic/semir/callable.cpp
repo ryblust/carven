@@ -73,7 +73,8 @@ auto query_callable_adaptation(
                 using Shape = std::remove_cvref_t<decltype(shape)>;
                 if constexpr (std::same_as<Shape, CallableViewTypeValue>) {
                     return values.callable_signature_copy(shape.signature).failures;
-                } else if constexpr (std::same_as<Shape, ConstructionCallableViewTypeValue>) {
+                } else if constexpr (std::same_as<Shape, ConstructionCallableViewTypeValue>
+                                     || std::same_as<Shape, GenericCallableViewType>) {
                     return shape.failures;
                 }
                 return std::nullopt;

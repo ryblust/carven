@@ -89,6 +89,8 @@ struct CppSelection final {
 };
 
 enum class BuiltinFunction {
+    Hash,
+    Equal,
     Print,
     Println,
     Eprint,
@@ -257,7 +259,7 @@ class BodyBatchElaborator;
 class BodyElaborator final {
     friend class BodyExprSite;
     friend class BodyBatchElaborator;
-    std::optional<StructID> lexical_class;
+    std::optional<ClassDeclarationRef> lexical_class;
 
 public:
     BodyElaborator(
@@ -270,8 +272,8 @@ public:
         FailureTermID outward_failure_term_id,
         bool accepts_catch_residual,
         bool test_body,
-        std::optional<GenericTypeContext> generic_context = std::nullopt,
-        bool observe_source = true
+        std::optional<GenericTypeContext> generic_context,
+        bool observe_source
     ) noexcept;
     ~BodyElaborator() noexcept;
 
@@ -390,8 +392,11 @@ private:
     auto resolve_type_qualifier(ASTExprID expression) noexcept
         -> AnalysisTask<std::optional<ConstructionTypeRef>>;
 
-    auto resolve_constant_enum_case(TypeID type, std::string_view name, Span span) noexcept
-        -> AnalysisTask<ResolvedEnumCase>;
+    auto resolve_constant_enum_case(
+        ConstructionTypeRef type,
+        std::string_view name,
+        Span span
+    ) noexcept -> AnalysisTask<ResolvedEnumCase>;
 
     auto compatible(ConstructionTypeRef left, ConstructionTypeRef right) const noexcept -> bool;
 
@@ -601,7 +606,9 @@ private:
         const ASTCallExpr& source,
         GenericDeclarationID definition,
         std::span<const ASTGenericArgument> type_arguments,
-        Span span
+        Span span,
+        GenericEnvironment owner_arguments = {},
+        std::optional<BuiltExpression> receiver = std::nullopt
     ) noexcept -> AnalysisTask<BuiltExpression>;
 
     auto call_expression(
@@ -725,13 +732,17 @@ private:
         std::optional<ConstructionTypeRef> expected = std::nullopt
     ) noexcept -> AnalysisTask<std::optional<BuiltExpression>>;
 
-    auto class_operation(StructID owner, std::string_view name, bool receiver, Span span) noexcept
-        -> AnalysisTask<BuiltExpression>;
+    auto class_operation(
+        ConstructionStructRef owner,
+        std::string_view name,
+        bool receiver,
+        Span span
+    ) noexcept -> AnalysisTask<BuiltExpression>;
 
     auto class_call(
         const ASTCallExpr& source,
         const ASTMemberExpr& member,
-        StructID owner,
+        ConstructionStructRef owner,
         std::optional<BuiltExpression> receiver,
         Span span
     ) noexcept -> AnalysisTask<BuiltExpression>;

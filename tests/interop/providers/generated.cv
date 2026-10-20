@@ -1,6 +1,6 @@
 import std::io using IOError;
 
-private struct Record {
+struct Record {
     text: String,
     count: i32
 }
@@ -35,14 +35,14 @@ private import(cpp) fn generated_record(
     mode: i32,
     local: Failure,
     io: IOError
-) -> Record throw Failure + IOError;
+) -> Record throw Failure + IOError = ::generated_record;
 
-import(cpp) fn generated_void();
-import(cpp) fn generated_other_translation_unit() -> bool;
-import(cpp) fn generated_converted() -> i32;
-private import(cpp) fn generated_write(&value: WriteValue);
-private import(cpp) fn generated_slice(values: [SliceValue]) -> i32;
-private import(cpp) fn generated_links(value: ptr<Link>) -> i32;
+import(cpp) fn generated_void() = ::generated_void;
+import(cpp) fn generated_other_translation_unit() -> bool = ::generated_other_translation_unit;
+import(cpp) fn generated_converted() -> i32 = ::generated_converted;
+private import(cpp) fn generated_write(&value: WriteValue) = ::generated_write;
+private import(cpp) fn generated_slice(values: [SliceValue]) -> i32 = ::generated_slice;
+private import(cpp) fn generated_links(value: ptr<Link>) -> i32 = ::generated_links;
 
 export(cpp) fn generated_check() -> bool {
     generated_void();

@@ -1,5 +1,5 @@
-import sibling using sibling_value;
-import nested.worker using worker_value;
 import __internal using internal_value;
+import nested.worker using worker_value;
+import sibling using sibling_value;
 
-export fn total() -> i32 => sibling_value() + worker_value() + internal_value();
+fn total() -> i32 => sibling_value() + worker_value() + internal_value();

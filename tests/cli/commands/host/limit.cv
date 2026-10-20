@@ -1,4 +1,4 @@
-import std::io using { IOError, Read };
+import std::io using { IOError, ReadResult }
 
 const {
     let input = stdin().with_line_limit(2);

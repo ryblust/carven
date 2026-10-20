@@ -1,6 +1,6 @@
 import .block using invalid_utf8_block;
 import std::simd.bytes using ascii_prefix;
-import std::utf using { UTF8Error, UTF8ErrorKind };
+import std::utf using { UTF8Error, UTF8ErrorKind }
 
 // Craft-internal state. Zero initialization starts an empty stream.
 // Block commits and byte transitions agree; rejected bytes leave every field unchanged.

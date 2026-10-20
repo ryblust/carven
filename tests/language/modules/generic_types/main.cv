@@ -1,5 +1,5 @@
-import .api using Box;
-import .first using { HiddenBox, first };
+import .api using { Box, Owned }
+import .first using { HiddenBox, first }
 import .second using second;
 
 test "Generics: shared values and private types remain usable across modules" {
@@ -8,4 +8,6 @@ test "Generics: shared values and private types remain usable across modules" {
     check(first(box) == .Some(42));
     let hidden = HiddenBox::new(17);
     check(hidden.read() == 17);
+    let owner = Owned<String>::new(&&("across modules" as String));
+    check(owner.release().as_str() == "across modules");
 }

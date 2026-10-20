@@ -1,7 +1,6 @@
 module carven:driver.options;
 
 import :backend.generation.request;
-import :driver.sources;
 import std;
 
 struct DirectoryArtifactDestination final {
@@ -20,7 +19,6 @@ struct CompilationOptions final {
     std::optional<ArtifactDestination> destination;
     TestGenerationMode test_mode;
     std::vector<std::string_view> input_paths;
-    std::vector<SourceInput> mapped_inputs;
     bool timings;
 };
 
@@ -29,7 +27,6 @@ enum class CompilationOptionErrorKind {
     TestModeSpecifiedMoreThanOnce,
     MissingOutputPath,
     EmptyOutputPath,
-    InvalidSourceInput,
     UnknownOption,
     NoSourceInput,
 };

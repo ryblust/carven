@@ -12,7 +12,7 @@ namespace {
 
 struct ArtifactContext final {};
 
-constexpr auto compilation_artifact_kind = 3u;
+constexpr auto compilation_artifact_kind = 4u;
 
 } // namespace
 
@@ -32,8 +32,8 @@ auto encode_compilation_artifact(
     auto context = ArtifactContext {};
     writer.unsigned_value(compilation_artifact_kind, 4);
     writer.unsigned_value(modules.size(), 8);
-    for (const auto& module : modules) {
-        writer.write(module, context);
+    for (const auto& module_record : modules) {
+        writer.write(module_record, context);
     }
     writer.write(unit.cacheable, context);
     writer.unsigned_value(program->size(), 8);

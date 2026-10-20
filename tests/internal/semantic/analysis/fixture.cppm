@@ -23,6 +23,21 @@ auto semantic_test_module_path() noexcept -> CanonicalModulePath {
     return std::move(*result);
 }
 
+auto semantic_test_diagnostic_text(std::span<const Diagnostic> diagnostics) noexcept
+    -> std::string {
+    auto text = std::string();
+    for (const auto& diagnostic : diagnostics) {
+        if (diagnostic.finding.severity == DiagnosticSeverity::Error) {
+            text += std::format(
+                "\n  {}: {}",
+                diagnostic_code_info(diagnostic.finding.code).name,
+                diagnostic.finding.message
+            );
+        }
+    }
+    return text;
+}
+
 auto analyze_test_errors(
     std::string source_text,
     std::span<const std::string_view> standard_modules = {}
@@ -37,7 +52,9 @@ auto analyze_test_errors(
     }};
     append_standard_sources(sources, inputs, standard_modules);
     auto parsed = parse_program(sources, SourceBatch {.modules = inputs});
-    require(parsed.has_value()).note("source = ", source_view.text);
+    require(parsed.has_value()).note("source = ", source_view.text).note([&]() noexcept {
+        return parsed ? std::string() : semantic_test_diagnostic_text(parsed.error());
+    });
     auto analyzed = analyze(std::move(*parsed), HostEffects::Allow, {}, {}, {});
     if (analyzed.has_value()) {
         return std::move(analyzed->diagnostics);
@@ -60,24 +77,14 @@ auto analyze_test_program(
     }};
     append_standard_sources(sources, inputs, standard_modules);
     auto parsed = parse_program(sources, SourceBatch {.modules = inputs});
-    require(parsed.has_value(), location).note("source = ", source_view.text);
+    require(parsed.has_value(), location).note("source = ", source_view.text).note([&]() noexcept {
+        return parsed ? std::string() : semantic_test_diagnostic_text(parsed.error());
+    });
     auto analyzed = analyze(std::move(*parsed), HostEffects::Allow, {}, {}, {});
     require(analyzed.has_value(), location)
         .note("source = ", source_view.text)
         .note([&]() noexcept {
-            auto errors = std::string();
-            if (!analyzed.has_value()) {
-                for (const auto& diagnostic : analyzed.error()) {
-                    if (diagnostic.finding.severity == DiagnosticSeverity::Error) {
-                        errors += std::format(
-                            "\n  {}: {}",
-                            diagnostic_code_info(diagnostic.finding.code).name,
-                            diagnostic.finding.message
-                        );
-                    }
-                }
-            }
-            return errors;
+            return analyzed ? std::string() : semantic_test_diagnostic_text(analyzed.error());
         });
     return std::move(analyzed->value);
 }

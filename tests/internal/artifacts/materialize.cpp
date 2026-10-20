@@ -18,6 +18,7 @@ auto generated(const std::string& logical_path, const std::string& content) noex
         .source_mapping = ArtifactSourceMappingPolicy::SourceAttributed,
         .source_path = std::nullopt,
         .content = content,
+        .link_dependencies = {},
     };
 }
 

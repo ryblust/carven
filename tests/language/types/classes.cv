@@ -124,8 +124,39 @@ private const fn static_counter_value() -> i32 {
     return counter.read() * 10 + copy.read();
 }
 
+private class Cell<T> {
+    value: T,
+
+    const fn new(&&value: T) -> Cell<T> => { value: &&value };
+    const fn take(&&self) -> T => (&&self).value;
+    const fn view(&self) -> ptr<T> => addressof(self.value);
+
+    const fn replace(&self, &&value: T) {
+        self.value = &&value;
+    }
+
+    private const fn forward<U>(self, &&value: U) -> U => &&value;
+    const fn pass<U>(self, &&value: U) -> U => self.forward<U>(&&value);
+}
+
+private class Key<T: Hash> {
+
+    const fn hash(value: T) -> u64 => Hash::hash(value);
+    const fn pass<Hash>(&&value: Hash) -> Hash => &&value;
+}
+
 const test "Classes: const operations preserve private construction, mutation and independent copies" {
     check(static_counter_value() == 12);
+    var cell = Cell<i32>::new(&&17);
+    cell.replace(&&42);
+    let view = cell.view();
+    if view != nullptr { check(*view == 42); }
+    check(cell.pass<String>(&&("value" as String)).as_str() == "value");
+    check(cell.take() == 42);
+    let text = Cell<String>::new(&&("Carven" as String));
+    check(text.take().as_str() == "Carven");
+    check(Key<i32>::hash(42) == Hash::hash(42));
+    check(Key<i32>::pass<String>(&&("key" as String)).as_str() == "key");
 }
 
 private const direct_counter = StaticCounter::new(7);

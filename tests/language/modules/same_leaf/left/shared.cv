@@ -1,5 +1,5 @@
-export struct LeftValue {
+struct LeftValue {
     value: i32,
 }
 
-export fn make_left() -> LeftValue => { value: 19 };
+fn make_left() -> LeftValue => { value: 19 };

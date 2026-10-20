@@ -46,6 +46,11 @@ class AsyncOperation;
 template<typename Result, typename... Failures>
 class Child;
 
+enum class Progress { Runnable, Waiting, Complete };
+
+template<typename Result, typename... Failures>
+class Root;
+
 template<typename Result, typename... Failures>
 auto drive_root(
     AsyncOperation<Result, Failures...>&& operation,
@@ -104,16 +109,28 @@ inline thread_local TaskContext* current_task = nullptr;
 
 // Logical cancellation identity is separate from an activation's lifetime gate.
 struct TaskContext final {
+    enum class Request { None, Cancelled, Stopped };
     Driver* driver;
     TaskContext* parent;
-    bool requested;
+    Request request;
     auto cancel_requested() const noexcept -> bool;
+    auto stop_requested() const noexcept -> bool;
     auto request_cancel() noexcept -> void;
+    auto request_stop() noexcept -> void;
 };
 
 inline auto TaskContext::cancel_requested() const noexcept -> bool {
     for (auto* task = this; task != nullptr; task = task->parent) {
-        if (task->requested) {
+        if (task->request != Request::None) {
+            return true;
+        }
+    }
+    return false;
+}
+
+inline auto TaskContext::stop_requested() const noexcept -> bool {
+    for (auto* task = this; task != nullptr; task = task->parent) {
+        if (task->request == Request::Stopped) {
             return true;
         }
     }
@@ -137,12 +154,16 @@ class Driver final {
     friend class OperationState;
     friend class ChildScope;
     friend class YieldAwaiter;
+
     template<std::size_t Count>
     friend class WaitReadyAwaiter;
+
     template<typename T, typename... E>
     friend class Child;
+
     template<typename T, typename... E>
-    friend auto drive_root(AsyncOperation<T, E...>&&, EventSource*) noexcept -> Completion<T, E...>;
+    friend class Root;
+
     auto enqueue(detail::WorkNode& node) noexcept -> void;
     auto subscribe(detail::CancellationRegistration& registration) noexcept -> void;
 
@@ -167,8 +188,19 @@ inline Driver::Driver() noexcept
     : task_slot(detail::current_task) {}
 
 inline auto TaskContext::request_cancel() noexcept -> void {
-    if (!requested) {
-        requested = true;
+    if (request == Request::None) {
+        request = Request::Cancelled;
+        driver->cancellation_dirty = true;
+    }
+}
+
+inline auto TaskContext::request_stop() noexcept -> void {
+    auto* root = this;
+    while (root->parent != nullptr) {
+        root = root->parent;
+    }
+    if (root->request != Request::Stopped) {
+        root->request = Request::Stopped;
         driver->cancellation_dirty = true;
     }
 }
@@ -215,7 +247,7 @@ inline auto Driver::wait(std::optional<std::int64_t> deadline) noexcept -> bool 
             return true;
         }
     }
-    return timers.wait();
+    return timers.wait(deadline);
 }
 
 inline auto Driver::subscribe(detail::CancellationRegistration& registration) noexcept -> void {
@@ -326,6 +358,11 @@ public:
         return node.task->cancel_requested();
     }
 
+    auto request_stop() noexcept -> void {
+        detail::require_protocol(bound());
+        node.task->request_stop();
+    }
+
     auto driver() const noexcept -> Driver& {
         detail::require_protocol(bound());
         return *node.task->driver;
@@ -340,6 +377,7 @@ public:
 class OperationState final {
 public:
     TaskContext* task = nullptr;
+
     std::variant<
         std::monostate,
         std::coroutine_handle<>,
@@ -441,6 +479,15 @@ inline auto cancel_requested() noexcept -> bool {
     return detail::current_task != nullptr && detail::current_task->cancel_requested();
 }
 
+inline auto stop_requested() noexcept -> bool {
+    return detail::current_task != nullptr && detail::current_task->stop_requested();
+}
+
+inline auto request_stop() noexcept -> void {
+    detail::require_protocol(detail::current_task != nullptr);
+    detail::current_task->request_stop();
+}
+
 template<typename Result, typename... Failures>
 class AsyncOperation final {
 public:
@@ -493,12 +540,17 @@ public:
 
         auto return_value(Completion<Result, Failures...> result) noexcept -> void {
             detail::require_protocol(completion.empty() && !result.empty());
+            if (result.is_stopped()) {
+                state.task->request_stop();
+            }
             completion.initialize(std::move(result));
         }
 
         auto take_completion() noexcept -> Completion<Result, Failures...> {
             detail::require_protocol(!completion.empty());
-            return Completion<Result, Failures...>(std::move(completion));
+            return state.task->stop_requested()
+                ? Completion<Result, Failures...>::stopped()
+                : Completion<Result, Failures...>(std::move(completion));
         }
     };
 
@@ -511,8 +563,9 @@ private:
         : frame(handle) {}
     template<typename T, typename... E>
     friend class Child;
+
     template<typename T, typename... E>
-    friend auto drive_root(AsyncOperation<T, E...>&&, EventSource*) noexcept -> Completion<T, E...>;
+    friend class Root;
 
     auto release() noexcept -> Handle {
         detail::require_protocol(frame != nullptr);
@@ -630,6 +683,110 @@ inline auto yield_once() noexcept -> AsyncOperation<void> {
     co_return co_await await_yield_once();
 }
 
+// A host-driven root owns its driver and coroutine frame. Controls stay on the
+// constructing thread; advance never waits and external providers only enqueue.
+// Cancellation is cooperative. Finish or cancel and advance to completion before
+// destruction so children and external registrations have closed normally.
+template<typename Result, typename... Failures>
+class Root final {
+public:
+    explicit Root(
+        AsyncOperation<Result, Failures...>&& operation,
+        EventSource* source = nullptr
+    ) noexcept;
+
+    Root(const Root&) = delete;
+    Root(Root&&) = delete;
+    auto operator=(const Root&) -> Root& = delete;
+    auto operator=(Root&&) -> Root& = delete;
+    ~Root() noexcept;
+    auto advance() noexcept -> Progress;
+    auto wait(std::optional<std::int64_t> deadline = std::nullopt) noexcept -> bool;
+    auto cancel() noexcept -> void;
+    auto take_completion() noexcept -> Completion<Result, Failures...>;
+
+private:
+    Driver driver;
+    TaskContext task;
+    typename AsyncOperation<Result, Failures...>::Handle frame;
+    detail::WorkNode startup;
+    EventSource* source;
+};
+
+template<typename Result, typename... Failures>
+Root<Result, Failures...>::Root(
+    AsyncOperation<Result, Failures...>&& operation,
+    EventSource* source
+) noexcept
+    : driver(),
+      task {.driver = &driver, .parent = nullptr, .request = TaskContext::Request::None},
+      frame(operation.release()),
+      startup(detail::resume_node(frame, task)),
+      source(source) {
+    detail::require_protocol(detail::current_task == nullptr);
+    if (source != nullptr) {
+        driver.attach(*source);
+    }
+    frame.promise().state.bind(task);
+    driver.enqueue(startup);
+}
+
+template<typename Result, typename... Failures>
+Root<Result, Failures...>::~Root() noexcept {
+    detail::require_protocol(frame == nullptr || frame.done());
+    if (frame != nullptr) {
+        detail::destroy(frame, frame.promise().state);
+    }
+    if (source != nullptr) {
+        driver.detach(*source);
+    }
+}
+
+template<typename Result, typename... Failures>
+auto Root<Result, Failures...>::advance() noexcept -> Progress {
+    detail::require_protocol(detail::current_task == nullptr);
+    if (frame == nullptr || frame.done()) {
+        return Progress::Complete;
+    }
+    driver.poll();
+    const auto progressed = driver.dispatch_one();
+    if (frame.done()) {
+        return Progress::Complete;
+    }
+    // A continuation may register an event source or request cancellation.
+    // Poll that work before allowing the owner to wait.
+    return progressed ? Progress::Runnable : Progress::Waiting;
+}
+
+template<typename Result, typename... Failures>
+auto Root<Result, Failures...>::wait(std::optional<std::int64_t> deadline) noexcept -> bool {
+    const auto timer = driver.timer_queue().next_deadline();
+    if (timer && (!deadline || *timer < *deadline)) {
+        deadline = timer;
+    }
+    return driver.wait(deadline);
+}
+
+template<typename Result, typename... Failures>
+auto Root<Result, Failures...>::cancel() noexcept -> void {
+    if (frame != nullptr && !frame.done()) {
+        task.request_cancel();
+    }
+}
+
+template<typename Result, typename... Failures>
+auto Root<Result, Failures...>::take_completion() noexcept -> Completion<Result, Failures...> {
+    detail::require_protocol(frame != nullptr && frame.done());
+    auto completion = frame.promise().take_completion();
+    detail::destroy(frame, frame.promise().state);
+    frame = nullptr;
+    if (source != nullptr) {
+        driver.detach(*source);
+        source = nullptr;
+    }
+    return completion;
+}
+
 // A host source is borrowed through root completion and child closure. All sources
 // commit completions and enqueue continuations; only the driver resumes user code.
 template<typename Result, typename... Failures>
@@ -637,30 +794,14 @@ inline auto drive_root(
     AsyncOperation<Result, Failures...>&& operation,
     EventSource* source
 ) noexcept -> Completion<Result, Failures...> {
-    detail::require_protocol(detail::current_task == nullptr);
-    auto driver = Driver();
-    if (source != nullptr) {
-        driver.attach(*source);
-    }
-    auto task = TaskContext {.driver = &driver, .parent = nullptr, .requested = false};
-    const auto frame = operation.release();
-    auto& state = frame.promise().state;
-    state.bind(task);
-    auto startup = detail::resume_node(frame, task);
-    driver.enqueue(startup);
-    while (!frame.done()) {
-        driver.poll();
-        const auto progressed = driver.dispatch_one();
-        if (!progressed) {
-            detail::require_protocol(driver.wait(driver.timer_queue().next_deadline()));
+    auto root = Root<Result, Failures...>(std::move(operation), source);
+    while (true) {
+        switch (root.advance()) {
+            case Progress::Complete: return root.take_completion();
+            case Progress::Runnable: break;
+            case Progress::Waiting:  detail::require_protocol(root.wait()); break;
         }
     }
-    auto completion = frame.promise().take_completion();
-    detail::destroy(frame, state);
-    if (source != nullptr) {
-        driver.detach(*source);
-    }
-    return completion;
 }
 
 } // namespace carven::runtime::execution

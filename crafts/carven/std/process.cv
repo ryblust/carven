@@ -1,0 +1,164 @@
+import std::async using Operation;
+import std::io using ReadResult;
+import <carven/std/process/native.hpp> using carven::standard::process;
+
+export enum ProcessError {
+    System(i32)
+}
+
+export enum OperatingSystem {
+    Windows,
+    MacOS,
+    Linux,
+    Other
+}
+
+export struct ProcessExit {
+    index: usize,
+    status: i32
+}
+
+private const fn checked(code: i32) throw ProcessError {
+    if code != 0 { throw ProcessError::System(code); }
+}
+
+export const fn arguments() -> Vector<String> throw ProcessError {
+    var result = process::arguments();
+    checked(result.code as i32)?;
+    return (&result).take_arguments() as Vector<String>;
+}
+
+export const fn executable() -> String throw ProcessError {
+    var result = process::executable();
+    checked(result.code as i32)?;
+    return (&result).take_text() as String;
+}
+
+export const fn find_executable(name: str) -> String throw ProcessError {
+    var result = process::find_executable(name);
+    checked(result.code as i32)?;
+    return (&result).take_text() as String;
+}
+
+export const fn operating_system() -> OperatingSystem => match process::operating_system() as i32 {
+    0 => .Windows,
+    1 => .MacOS,
+    2 => .Linux,
+    _ => .Other,
+};
+
+export const fn environment(name: str) -> String throw ProcessError {
+    var result = process::environment(name);
+    checked(result.code as i32)?;
+    return (&result).take_text() as String;
+}
+
+export const fn run(program: str, arguments: [String]) -> i32 throw ProcessError => run_to(
+    program,
+    arguments,
+    ""
+)?;
+
+export const fn run_to(program: str, arguments: [String], output: str) -> i32 throw ProcessError {
+    let result = process::run(program, arguments, output);
+    checked(result.code as i32)?;
+    return result.status as i32;
+}
+
+export const fn available_parallelism() -> usize => (process::parallelism() as i32) as usize;
+
+export class Process {
+    native: process::Handle,
+
+    const fn spawn(
+        program: str,
+        arguments: [String]
+    ) -> Process throw ProcessError => Process::spawn_in(program, arguments, "")?;
+
+    const fn spawn_in(
+        program: str,
+        arguments: [String],
+        directory: str
+    ) -> Process throw ProcessError {
+        var result = process::spawn(program, arguments, directory);
+        checked(result.code as i32)?;
+        return { native: (&result).take_process() };
+    }
+
+    // Commands such as compilers inherit stdio and need no pipe-draining task.
+    const fn spawn_inherited(program: str, arguments: [String]) -> Process throw ProcessError {
+        var result = process::spawn_inherited(program, arguments, "");
+        checked(result.code as i32)?;
+        return { native: (&result).take_process() };
+    }
+
+    const fn read(
+        self,
+        limit: usize
+    ) -> Operation<ReadResult<Vector<u8>>, throw ProcessError> => read_process(self.native, limit);
+
+    const fn write_all(
+        self,
+        &&bytes: Vector<u8>
+    ) -> Operation<void, throw ProcessError> => write_process(self.native, &&bytes);
+
+    const fn close_input(self) throw ProcessError {
+        checked(process::close_input(self.native) as i32)?;
+    }
+
+    const fn wait(self) -> Operation<i32, throw ProcessError> => wait_process(self.native);
+
+    const fn terminate(self) throw ProcessError {
+        checked(process::terminate(self.native) as i32)?;
+    }
+}
+
+// An owning set of children. Completion removes one child and returns its
+// previous insertion index, matching the caller's pending-task collection.
+export class ProcessGroup {
+    native: process::Group,
+
+    const fn new() -> ProcessGroup => { native: process::group_new() };
+
+    const fn spawn_inherited(self, program: str, arguments: [String]) throw ProcessError {
+        checked(process::group_spawn(self.native, program, arguments) as i32)?;
+    }
+
+    const fn wait(self) -> ProcessExit throw ProcessError {
+        let result = process::group_wait(self.native);
+        checked(result.code as i32)?;
+        return {
+            index: result.index as usize,
+            status: result.status as i32
+        };
+    }
+}
+
+private const async fn read_process(
+    native: process::Handle,
+    limit: usize
+) -> ReadResult<Vector<u8>> throw ProcessError {
+    assert(limit > 0);
+    let bounded = if limit > 65536 { 65536usize } else { limit };
+    let pending = process::read(native, bounded);
+    var result = await pending;
+    checked(result.code as i32)?;
+    if result.end as bool { return .End; }
+    return .Data((&result).take_bytes() as Vector<u8>);
+}
+
+private const async fn write_process(
+    native: process::Handle,
+    &&bytes: Vector<u8>
+) throw ProcessError {
+    let pending = process::write(native, &&bytes);
+    let result = await pending;
+    checked(result.code as i32)?;
+}
+
+private const async fn wait_process(native: process::Handle) -> i32 throw ProcessError {
+    let pending = process::wait(native);
+    let result = await pending;
+    checked(result.code as i32)?;
+    return result.status as i32;
+}

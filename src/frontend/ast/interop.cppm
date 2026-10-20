@@ -1,19 +1,12 @@
 module carven:frontend.ast.interop;
 
+import :frontend.ast.imports;
 import :source.text;
 import std;
 
 enum class ASTCppHeaderDelimiter {
     AngleBrackets,
     Quotes,
-};
-
-struct ASTCppSingleSelection final {
-    Span name;
-};
-
-struct ASTCppListSelection final {
-    std::vector<Span> names;
 };
 
 struct ASTCppNamespaceSelection final {
@@ -23,7 +16,7 @@ struct ASTCppNamespaceSelection final {
 struct ASTCppUsing final {
     Span span;
     std::vector<Span> prefix;
-    std::variant<ASTCppSingleSelection, ASTCppListSelection, ASTCppNamespaceSelection> selection;
+    std::variant<ASTSingleImport, ASTImportList, ASTCppNamespaceSelection> selection;
 };
 
 struct ASTCppHeaderImport final {

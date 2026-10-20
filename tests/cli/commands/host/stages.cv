@@ -1,5 +1,5 @@
-import std::io using { IOError, Read };
-import std::time using { TimePoint, RangeError, Timeout, sleep, timeout };
+import std::io using { IOError, ReadResult }
+import std::time using { TimePoint, TimeRangeError, Timeout, sleep, timeout }
 
 const async fn one() -> String throw IOError {
     return match await stdin().read_line()? {
@@ -21,7 +21,7 @@ const {
     println("static", first, second);
 }
 
-async fn main() throw IOError + RangeError + Timeout {
+async fn main() throw IOError + TimeRangeError + Timeout {
     let current = TimePoint::now();
     assert(!current.is_before(sampled));
     assert(sampled.has_passed());

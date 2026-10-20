@@ -6,33 +6,50 @@ import :driver.diagnostic;
 import :driver.dump;
 import :driver.interpret;
 import :driver.options;
-import :driver.run;
 import :support.process;
 import std;
 
 namespace {
+
+auto run_project_command(std::string_view command, std::span<const std::string> args) noexcept
+    -> int {
+    if (args.size() == 1 && (args[0] == "--help" || args[0] == "-h")) {
+        std::println(
+            "Usage: carven {}{}\n\nBuild an explicit source file or execute the current directory's build.cv.\n"
+            "The standard builder writes outputs under build/.",
+            command,
+            command == "run" ? " [<source.cv>|<target>] [-- <arguments>...]" : " [<source.cv>]"
+        );
+        return 0;
+    }
+    if (!args.empty() && std::string_view(args[0]).ends_with(".cv")) {
+        return run_interpret_function("crafts.carven.std.build.cli", "execute_source");
+    }
+    return run_interpret_command(std::array<std::string, 1> {"build.cv"});
+}
 
 auto print_help() noexcept -> int {
     std::print(
         "Carven compiler and runner.\n"
         "\n"
         "Usage:\n"
-        "  carven [options] <source-file>... [-- <arguments>...]\n"
+        "  carven build [<source.cv>]\n"
+        "  carven run [<source.cv>|<target>] [-- <arguments>...]\n"
         "  carven <command> [options] <input>...\n"
         "\n"
         "Commands:\n"
+        "  build                           Build a source file or execute build.cv\n"
+        "  run                             Build and run an executable\n"
         "  compile                         Generate C++ artifacts\n"
         "  check                           Check sources and run const tests\n"
         "  interpret                       Interpret supported programs and tests\n"
         "  dump                            Print tokens or the syntax tree\n"
         "\n"
         "Options:\n"
-        "      --tests                     Run runtime tests instead of the program\n"
-        "      --timings                   Show total and stage timings on stderr\n"
         "  -h, --help                      Show this help\n"
         "  -V, --version                   Show the version\n"
         "\n"
-        "Source files without a command are compiled and run natively.\n"
+        "Pass a .cv source to build or run, or use the current directory's build.cv.\n"
         "Use 'carven <command> --help' for command options.\n"
     );
     return 0;
@@ -66,16 +83,20 @@ auto carven_main(int argc, const char* const* native_argv) noexcept -> int {
         return run_dump_command(args.subspan(1));
     }
 
+    if (first_arg == "build" || first_arg == "run") {
+        return run_project_command(first_arg, args.subspan(1));
+    }
+
     if (first_arg == "compile") {
-        return run_compilation_command(argv[0], args.subspan(1), CompilationCommand::Compile);
+        return run_compilation_command(args.subspan(1), CompilationCommand::Compile);
     }
     if (first_arg == "check") {
-        return run_compilation_command(argv[0], args.subspan(1), CompilationCommand::Check);
+        return run_compilation_command(args.subspan(1), CompilationCommand::Check);
     }
 
     if (first_arg == "interpret") {
-        return run_interpret_command(argv[0], args.subspan(1));
+        return run_interpret_command(args.subspan(1));
     }
 
-    return run_native_command(argv[0], args);
+    return emit_driver_error("expected a command; use 'carven --help' for commands", "carven");
 }

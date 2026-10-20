@@ -81,6 +81,27 @@ let result = relay(&&number);
 
 An unknown type supports Read and Write access and whole-value Take. It provides
 no implicit copying, default construction, comparison, or formatting capability.
+Type parameters can require compiler-provided capabilities with `T: Hash + Equal`.
+The names `Hash` and `Equal` are default bindings, also available through ordinary
+imports and aliases from `std::collections`. They have no runtime value
+representation. Bounds apply to functions and nominal declarations, and are checked
+at definitions and applications. A failure-set parameter cannot carry object
+capabilities.
+
+```carven
+const fn key_hash<T: Hash>(value: T) -> u64 => Hash::hash(value);
+const fn same<T: Equal>(left: T, right: T) -> bool => Equal::equal(left, right);
+```
+
+Both operations read their operands and support static execution. `Equal` uses
+the type's existing equality semantics. Its operands have the same type, or are
+`String` and `str` text representations. `Hash` supports integers, booleans,
+characters, `String`, `str`, and arrays or tuples whose elements support `Hash`.
+Text hashing uses exact UTF-8 bytes, including embedded zero bytes. Equal keys
+have equal hashes; hash collisions still require equality checks. Floating-point
+values do not provide `Hash`. Hash values are not a persistent storage format.
+User `concept` and `impl` declarations are not part of this contract.
+
 Known arrays, slices, Tuple shapes, and nominal fields retain their ordinary
 operations. Array extents and nominal failure payload types must be independent
 of type parameters. A failure-set parameter represents a set of those payload
@@ -88,9 +109,11 @@ types, including the empty set.
 Named external C++ types may depend on type parameters. Their native
 construction, calls, and conversions are checked by C++ after concrete
 substitution.
-Parameterized closures, callable-view signatures that depend on rigid type or
-failure parameters, and `import(cpp)` or `export(cpp)` parameterized function
-declarations are not supported.
+Callable-view signatures can use type and failure-set parameters. Generic calls
+infer those arguments from the callable's parameter, result, and failure contracts
+under the same bounded inference rules as other types. The resulting callable
+view has a concrete signature at each application. Parameterized closures and
+`import(cpp)` or `export(cpp)` parameterized function declarations are not supported.
 
 Operations can retain type formation requirements. Dereferencing `ptr<T>`, for
 example, requires a non-void target. The requirement follows generic forwarding

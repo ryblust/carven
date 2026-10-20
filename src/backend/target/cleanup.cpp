@@ -35,7 +35,7 @@ auto TargetExpressionCleanup::clear(TargetExprValue& value) noexcept -> void {
     }
     auto root = TargetExpr {.value = std::move(value)};
     auto cleanup = Cleanup();
-    static_cast<void>(traverse_target_expression(root, cleanup));
+    static_cast<void>(traverse_target_expression(root, cleanup, TargetExpressionRole::Operand));
 }
 
 auto TargetStatementCleanup::clear(TargetStmtValue& value) noexcept -> void {

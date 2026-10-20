@@ -1,16 +1,16 @@
 import <vector> using std::vector;
 import "modules/staged_calls/provider.hpp";
 
-export const fn adjust(value: i32, const delta: i32) -> i32 {
+const fn adjust(value: i32, const delta: i32) -> i32 {
     const amount = delta + 2;
     return value + amount;
 }
 
-export const fn relay(value: i32, const delta: i32) -> i32 => adjust(value, delta);
+const fn relay(value: i32, const delta: i32) -> i32 => adjust(value, delta);
 
-export fn runtime_relay(value: i32, const delta: i32) -> i32 => relay(value, delta);
+fn runtime_relay(value: i32, const delta: i32) -> i32 => relay(value, delta);
 
-private import(cpp) fn staged_native_bias(value: i32) -> i32;
+private import(cpp) fn staged_native_bias(value: i32) -> i32 = ::staged_native_bias;
 
 private struct Lane {
     index: i32,
@@ -34,7 +34,7 @@ private fn step(value: i32, const lane: i32) -> i32 {
 
 // Callers realize these instances; the private helpers they reach stay
 // defined once by this module.
-export fn unrolled(value: i32, const lanes: i32) -> i32 {
+fn unrolled(value: i32, const lanes: i32) -> i32 {
     var total = 0;
     const for lane in 0..lanes {
         total += step(value, lane);
@@ -42,16 +42,16 @@ export fn unrolled(value: i32, const lanes: i32) -> i32 {
     return total;
 }
 
-export fn biased(value: i32, const offset: i32) -> i32 => staged_native_bias(value) + offset;
+fn biased(value: i32, const offset: i32) -> i32 => staged_native_bias(value) + offset;
 
-export fn untouched() -> i32 => unused_helper();
+fn untouched() -> i32 => unused_helper();
 
 private struct DisplayNode {
     children: [DisplayNode],
 }
 
 // Shared instances exercise storage, nominal display and native result queries.
-export fn inspect_native(value: i32, const offset: i32) -> i32 {
+fn inspect_native(value: i32, const offset: i32) -> i32 {
     const weights: [i32] = [2, 3];
     let values = vector<i32> { value, weights[0] };
     println(
@@ -64,4 +64,4 @@ export fn inspect_native(value: i32, const offset: i32) -> i32 {
     return (values[0] as i32) + weights[1] + offset;
 }
 
-export fn dormant(value: i32, const enabled: bool) -> bool => enabled && (relay(value, 3) == 0);
+fn dormant(value: i32, const enabled: bool) -> bool => enabled && (relay(value, 3) == 0);

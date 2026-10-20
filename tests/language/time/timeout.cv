@@ -1,7 +1,7 @@
-import std::async using { cancel_requested, yield_once, wait_ready, close };
-import std::time using { timeout as deadline, Duration, RangeError, sleep, Timeout };
+import std::async using { cancel_requested, yield_once, wait_ready, close }
+import std::time using { timeout as deadline, Duration, TimeRangeError, sleep, Timeout }
 
-async fn delayed(value: i32, duration: Duration) -> i32 throw RangeError {
+async fn delayed(value: i32, duration: Duration) -> i32 throw TimeRangeError {
     await sleep(duration)?;
     return value;
 }
@@ -20,38 +20,38 @@ async fn cooperative(&started: i32, &closed: i32) -> i32 {
     return 17;
 }
 
-async fn protected(&started: i32, &closed: i32) -> i32 throw Timeout + RangeError {
+async fn protected(&started: i32, &closed: i32) -> i32 throw Timeout + TimeRangeError {
     return await deadline(cooperative(&started, &closed), 1s)?;
 }
 
-async fn run_timeout() throw RangeError {
+async fn run_timeout() throw TimeRangeError {
     var started = 0;
     let zero = try {
         let _ = await deadline(touch(&started), 0ns)?;
         false
     } catch {
         Timeout(_) => true,
-        RangeError(_) => false,
+        TimeRangeError(_) => false,
     };
     let negative = try {
         let _ = await deadline(touch(&started), -9223372036854775808ns)?;
         false
     } catch {
         Timeout(_) => true,
-        RangeError(_) => false,
+        TimeRangeError(_) => false,
     };
     let expired = try {
         let _ = await deadline(delayed(7, 100ms), 1ms)?;
         false
     } catch {
         Timeout(_) => true,
-        RangeError(_) => false,
+        TimeRangeError(_) => false,
     };
     let completed = try {
         await deadline(touch(&started), 100ms)? == 42
     } catch {
         Timeout(_) => false,
-        RangeError(_) => false,
+        TimeRangeError(_) => false,
     };
     assert(zero && negative && expired && completed && started == 1);
     var closed = 0;
@@ -60,7 +60,7 @@ async fn run_timeout() throw RangeError {
         false
     } catch {
         Timeout(_) => true,
-        RangeError(_) => false,
+        TimeRangeError(_) => false,
     };
     assert(drained && started == 2 && closed == 1);
 

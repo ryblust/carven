@@ -1,8 +1,16 @@
-import .json.node using { Node, Member };
-import .json.parse using { parse_node, parse_node_bytes, parse_number_node };
-import .json.serialize using serialize_node;
-import .json.string using { begin_string, next_string_part };
-import .json.syntax using { syntax_state, next_event };
+import .json.node using Node;
+import .json.serialize using serialize_value;
+import .json.string using { begin_string, read_string_contents }
+
+import .json.syntax using {
+    SyntaxState,
+    SyntaxEvent,
+    syntax_state,
+    next_event,
+    read_string,
+    validate_number,
+}
+
 import std::core using NumberParseError;
 import std::utf using UTF8Error;
 
@@ -24,7 +32,7 @@ export struct JSONError {
     offset: usize,
 }
 
-export enum ValueError {
+export enum JSONValueError {
     WrongKind,
     MissingKey,
     IndexOutOfBounds,
@@ -32,7 +40,7 @@ export enum ValueError {
     DepthLimit,
 }
 
-export enum ValueKind: u8 {
+export enum JSONValueKind: u8 {
     Null,
     Boolean,
     Number,
@@ -41,42 +49,54 @@ export enum ValueKind: u8 {
     Object,
 }
 
-private const fn find_member(members: Vector<Member>, key: str) -> usize {
+private const fn find_member(members: Vector<(String, JSONValue)>, key: str) -> usize {
     var index = members.length();
     while index != 0 {
         index -= 1;
-        if members[index].key.as_str() == key { return index; }
+        if members[index].0.as_str() == key { return index; }
     }
     return members.length();
 }
 
-// Child access returns independent values; text access borrows this value.
-export class Value {
+// Child queries copy; text and collection views borrow this value.
+export class JSONValue {
     node: Node,
 
-    const fn null() -> Value => { node:.Null };
-    const fn boolean(value: bool) -> Value => { node:.Boolean(value) };
-    const fn number(text: str) -> Value throw JSONError => { node: parse_number_node(text)? };
-    const fn integer(value: i64) -> Value => { node:.Number(f"{value}") };
-    const fn unsigned_integer(value: u64) -> Value => { node:.Number(f"{value}") };
+    const fn null() -> JSONValue => { node: .Null };
+    const fn boolean(value: bool) -> JSONValue => { node: .Boolean(value) };
 
-    const fn real(value: f64) -> Value throw ValueError {
-        if !value.is_finite() { throw ValueError::NumberConversion; }
-        return { node:.Number(f"{value}") };
+    const fn number(text: str) -> JSONValue throw JSONError {
+        validate_number(text.bytes)?;
+        return { node: .Number(text as String) };
     }
 
-    const fn string(text: str) -> Value => { node:.Text(text as String) };
-    const fn array() -> Value => { node:.Array([]) };
-    const fn object() -> Value => { node:.Object([]) };
-    const fn parse(text: str) -> Value throw JSONError => { node: parse_node(text)? };
+    const fn integer(value: i64) -> JSONValue => { node: .Number(f"{value}") };
+    const fn unsigned_integer(value: u64) -> JSONValue => { node: .Number(f"{value}") };
 
-    const fn parse_bytes(bytes: [u8]) -> Value throw JSONError + UTF8Error => {
-        node: parse_node_bytes(bytes)?,
-    };
+    const fn real(value: f64) -> JSONValue throw JSONValueError {
+        if !value.is_finite() { throw JSONValueError::NumberConversion; }
+        return { node: .Number(f"{value}") };
+    }
 
-    const fn to_json(self) -> String throw ValueError => serialize_node(self.node)?;
+    const fn string(text: str) -> JSONValue => { node: .Text(text as String) };
+    const fn array() -> JSONValue => { node: .Array([]) };
+    const fn object() -> JSONValue => { node: .Object([]) };
 
-    const fn kind(self) -> ValueKind {
+    const fn parse(text: str) -> JSONValue throw JSONError {
+        var state = syntax_state();
+        let event = next_event(text.bytes, &state)?;
+        let result = JSONValue::read_value(text.bytes, &state, event)?;
+        assert(next_event(text.bytes, &state)? == .Complete);
+        return &&result;
+    }
+
+    const fn parse_bytes(bytes: [u8]) -> JSONValue throw JSONError + UTF8Error => JSONValue::parse(
+        str::from_utf8(bytes)?
+    )?;
+
+    const fn to_json(self) -> String throw JSONValueError => serialize_value(self)?;
+
+    const fn kind(self) -> JSONValueKind {
         return match self.node {
             .Null => .Null,
             .Boolean(_) => .Boolean,
@@ -87,178 +107,183 @@ export class Value {
         };
     }
 
-    const fn as_bool(self) -> bool throw ValueError {
+    const fn as_bool(self) -> bool throw JSONValueError {
         match self.node {
             .Boolean(value) => return value,
-            _ => throw ValueError::WrongKind,
+            _ => throw JSONValueError::WrongKind,
         }
     }
 
-    const fn as_str(self) -> str throw ValueError {
+    const fn as_str(self) -> str throw JSONValueError {
         match self.node {
             .Text(text) => return text.as_str(),
-            _ => throw ValueError::WrongKind,
+            _ => throw JSONValueError::WrongKind,
         }
     }
 
-    const fn number_text(self) -> str throw ValueError {
+    const fn number_text(self) -> str throw JSONValueError {
         match self.node {
             .Number(text) => return text.as_str(),
-            _ => throw ValueError::WrongKind,
+            _ => throw JSONValueError::WrongKind,
         }
     }
 
-    const fn as_i64(self) -> i64 throw ValueError {
+    const fn as_i64(self) -> i64 throw JSONValueError {
         let text = self.number_text()?;
         return try {
             i64::parse(text)?
         } catch {
-            NumberParseError(_) => throw ValueError::NumberConversion,
+            NumberParseError(_) => throw JSONValueError::NumberConversion,
         };
     }
 
-    const fn as_u64(self) -> u64 throw ValueError {
+    const fn as_u64(self) -> u64 throw JSONValueError {
         let text = self.number_text()?;
         return try {
             u64::parse(text)?
         } catch {
-            NumberParseError(_) => throw ValueError::NumberConversion,
+            NumberParseError(_) => throw JSONValueError::NumberConversion,
         };
     }
 
-    const fn as_f64(self) -> f64 throw ValueError {
+    const fn as_f64(self) -> f64 throw JSONValueError {
         let text = self.number_text()?;
         return try {
             f64::parse(text)?
         } catch {
-            NumberParseError(_) => throw ValueError::NumberConversion,
+            NumberParseError(_) => throw JSONValueError::NumberConversion,
         };
     }
 
-    const fn length(self) -> usize throw ValueError {
+    const fn length(self) -> usize throw JSONValueError {
         return match self.node {
             .Array(items) => items.length(),
             .Object(members) => members.length(),
-            _ => throw ValueError::WrongKind,
+            _ => throw JSONValueError::WrongKind,
         };
     }
 
-    const fn at(self, index: usize) -> Value throw ValueError {
+    const fn elements(self) -> [JSONValue] throw JSONValueError {
+        match self.node {
+            .Array(items) => return items,
+            _ => throw JSONValueError::WrongKind,
+        }
+    }
+
+    const fn members(self) -> [(String, JSONValue)] throw JSONValueError {
+        match self.node {
+            .Object(members) => return members,
+            _ => throw JSONValueError::WrongKind,
+        }
+    }
+
+    const fn at(self, index: usize) -> JSONValue throw JSONValueError {
         match self.node {
             .Array(items) => {
-                if index >= items.length() { throw ValueError::IndexOutOfBounds; }
-                return { node: items[index] };
+                if index >= items.length() { throw JSONValueError::IndexOutOfBounds; }
+                return items[index];
             },
-            _ => throw ValueError::WrongKind,
+            _ => throw JSONValueError::WrongKind,
         }
     }
 
-    const fn push(&self, &&value: Value) throw ValueError {
+    const fn push(&self, &&value: JSONValue) throw JSONValueError {
         match self.node {
-            .Array(&items) => {
-                let child = (&&value).node;
-                items.push(&&child);
-            },
-            _ => throw ValueError::WrongKind,
+            .Array(&items) => { items.push(&&value); },
+            _ => throw JSONValueError::WrongKind,
         }
     }
 
-    const fn set_at(&self, index: usize, &&value: Value) throw ValueError {
+    const fn set_at(&self, index: usize, &&value: JSONValue) throw JSONValueError {
         match self.node {
             .Array(&items) => {
-                if index >= items.length() { throw ValueError::IndexOutOfBounds; }
-                items[index] = (&&value).node;
+                if index >= items.length() { throw JSONValueError::IndexOutOfBounds; }
+                items[index] = &&value;
             },
-            _ => throw ValueError::WrongKind,
+            _ => throw JSONValueError::WrongKind,
         }
     }
 
-    const fn remove_at(&self, index: usize) throw ValueError {
+    const fn remove_at(&self, index: usize) throw JSONValueError {
         match self.node {
             .Array(&items) => {
-                if index >= items.length() { throw ValueError::IndexOutOfBounds; }
+                if index >= items.length() { throw JSONValueError::IndexOutOfBounds; }
                 items.remove(index);
             },
-            _ => throw ValueError::WrongKind,
+            _ => throw JSONValueError::WrongKind,
         }
     }
 
-    const fn key_at(self, index: usize) -> str throw ValueError {
+    const fn key_at(self, index: usize) -> str throw JSONValueError {
         match self.node {
             .Object(members) => {
-                if index >= members.length() { throw ValueError::IndexOutOfBounds; }
-                return members[index].key;
+                if index >= members.length() { throw JSONValueError::IndexOutOfBounds; }
+                return members[index].0;
             },
-            _ => throw ValueError::WrongKind,
+            _ => throw JSONValueError::WrongKind,
         }
     }
 
-    const fn member_value_at(self, index: usize) -> Value throw ValueError {
+    const fn member_value_at(self, index: usize) -> JSONValue throw JSONValueError {
         match self.node {
             .Object(members) => {
-                if index >= members.length() { throw ValueError::IndexOutOfBounds; }
-                return { node: members[index].value };
+                if index >= members.length() { throw JSONValueError::IndexOutOfBounds; }
+                return members[index].1;
             },
-            _ => throw ValueError::WrongKind,
+            _ => throw JSONValueError::WrongKind,
         }
     }
 
-    const fn has(self, key: str) -> bool throw ValueError {
+    const fn has(self, key: str) -> bool throw JSONValueError {
         return match self.node {
             .Object(members) => find_member(members, key) != members.length(),
-            _ => throw ValueError::WrongKind,
+            _ => throw JSONValueError::WrongKind,
         };
     }
 
-    const fn get(self, key: str) -> Value throw ValueError {
+    const fn get(self, key: str) -> JSONValue throw JSONValueError {
         match self.node {
             .Object(members) => {
                 let index = find_member(members, key);
-                if index == members.length() { throw ValueError::MissingKey; }
-                return { node: members[index].value };
+                if index == members.length() { throw JSONValueError::MissingKey; }
+                return members[index].1;
             },
-            _ => throw ValueError::WrongKind,
+            _ => throw JSONValueError::WrongKind,
         }
     }
 
-    const fn append_member(&self, key: str, &&value: Value) throw ValueError {
+    const fn append_member(&self, key: str, &&value: JSONValue) throw JSONValueError {
         match self.node {
             .Object(&members) => {
-                let member = Member {
-                    key: key as String,
-                    value: (&&value).node
-                };
+                let member = (key as String, &&value);
                 members.push(&&member);
             },
-            _ => throw ValueError::WrongKind,
+            _ => throw JSONValueError::WrongKind,
         }
     }
 
-    const fn set(&self, key: str, &&value: Value) throw ValueError {
+    const fn set(&self, key: str, &&value: JSONValue) throw JSONValueError {
         match self.node {
             .Object(&members) => {
                 let index = find_member(members, key);
                 if index == members.length() {
-                    let member = Member {
-                        key: key as String,
-                        value: (&&value).node
-                    };
+                    let member = (key as String, &&value);
                     members.push(&&member);
                 } else {
-                    members[index].value = (&&value).node;
+                    members[index].1 = &&value;
                 }
             },
-            _ => throw ValueError::WrongKind,
+            _ => throw JSONValueError::WrongKind,
         }
     }
 
-    const fn erase(&self, key: str) -> usize throw ValueError {
+    const fn erase(&self, key: str) -> usize throw JSONValueError {
         match self.node {
             .Object(&members) => {
                 var removed: usize = 0;
                 var index: usize = 0;
                 while index < members.length() {
-                    if members[index].key.as_str() == key {
+                    if members[index].0.as_str() == key {
                         members.remove(index);
                         removed += 1;
                     } else {
@@ -267,8 +292,62 @@ export class Value {
                 }
                 return removed;
             },
-            _ => throw ValueError::WrongKind,
+            _ => throw JSONValueError::WrongKind,
         }
+    }
+
+    // Recursion builds the tree from checked events; syntax alone limits depth.
+    private const fn read_value(
+        bytes: [u8],
+        &state: SyntaxState,
+        event: SyntaxEvent
+    ) -> JSONValue throw JSONError {
+        match event {
+            .Null => return { node: .Null },
+            .Boolean(value) => return { node: .Boolean(value) },
+            .Number(start, end) => {
+                return {
+                    node: .Number(str::from_utf8_unchecked(bytes.slice(start, end)) as String)
+                };
+            },
+            .StringBegin(is_key) => {
+                assert(is_key == false);
+                let text = read_string(bytes, &state)?;
+                return { node: .Text(&&text) };
+            },
+            .ArrayBegin => {
+                var result: Vector<JSONValue> = [];
+                while {
+                    let element = next_event(bytes, &state)?;
+                    match element {
+                        .ArrayEnd => return { node: .Array(&&result) },
+                        _ => {
+                            let child = JSONValue::read_value(bytes, &state, element)?;
+                            result.push(&&child);
+                        },
+                    }
+                }
+            },
+            .ObjectBegin => {
+                var result: Vector<(String, JSONValue)> = [];
+                while {
+                    match next_event(bytes, &state)? {
+                        .ObjectEnd => return { node: .Object(&&result) },
+                        .StringBegin(is_key) => {
+                            assert(is_key);
+                            let key = read_string(bytes, &state)?;
+                            let element = next_event(bytes, &state)?;
+                            let child = JSONValue::read_value(bytes, &state, element)?;
+                            let member = (&&key, &&child);
+                            result.push(&&member);
+                        },
+                        _ => assert(false),
+                    }
+                }
+            },
+            _ => assert(false),
+        }
+        return { node: .Null };
     }
 }
 
@@ -293,25 +372,12 @@ export const fn validate_bytes(bytes: [u8]) throw JSONError + UTF8Error => valid
 export const fn decode_string(text: str) -> String throw JSONError {
     var offset: usize = 0;
     begin_string(text.bytes, &offset)?;
-    var result = String {};
-    while {
-        let start = offset;
-        match next_string_part(text.bytes, &offset)? {
-            .End(end) => {
-                if offset != text.byte_length() {
-                    throw JSONError {
-                        kind:.TrailingInput,
-                        offset: offset
-                    };
-                }
-                // Quotes and escapes are ASCII boundaries in valid UTF-8.
-                result.append(str::from_utf8_unchecked(text.bytes.slice(start, end)));
-                return &&result;
-            },
-            .Escape(end, character) => {
-                result.append(str::from_utf8_unchecked(text.bytes.slice(start, end)));
-                result.push(character);
-            },
-        }
+    let result = read_string_contents(text.bytes, &offset)?;
+    if offset != text.byte_length() {
+        throw JSONError {
+            kind: .TrailingInput,
+            offset: offset
+        };
     }
+    return &&result;
 }

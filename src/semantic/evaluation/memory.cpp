@@ -2,16 +2,34 @@ module carven:semantic.evaluation.memory.impl;
 
 import :semantic.evaluation.limits;
 import :semantic.evaluation.memory;
+import :semantic.evaluation.value;
 import :semantic.semir.delegation;
 import :semantic.semir.type;
 import std;
 
+ExecutionRead::ExecutionRead(const ExecutionValue& value) noexcept
+    : value(&value) {}
+
+ExecutionRead::ExecutionRead(ExecutionValue&& value) noexcept
+    : value(std::move(value)) {}
+
+auto ExecutionRead::get() const noexcept -> const ExecutionValue& {
+    if (const auto* borrowed = std::get_if<const ExecutionValue*>(&value)) {
+        return **borrowed;
+    }
+    return std::get<ExecutionValue>(value);
+}
+
 ExecutionMemory::ExecutionMemory() noexcept
     : identity(ExecutionIdentity::fresh()) {}
 
-auto ExecutionMemory::create(ExecutionValue value) noexcept -> ExecutionPlace {
+auto ExecutionMemory::create(ExecutionValue&& value) noexcept -> ExecutionPlace {
     const auto index = objects.size();
-    objects.emplace_back(std::optional<ExecutionValue>(std::move(value)));
+    objects.emplace_back(
+        std::in_place_type<std::optional<ExecutionValue>>,
+        std::in_place,
+        std::move(value)
+    );
     return {.owner = identity, .object = index, .path = {}};
 }
 
@@ -25,7 +43,7 @@ auto ExecutionMemory::text_bytes(const ExecutionText& text, TypeID element) noex
         return ExecutionPlace {.owner = identity, .object = found->second, .path = {}};
     }
     const auto index = objects.size();
-    objects.emplace_back(TextBytes {.storage = storage, .element = element, .observed = {}});
+    objects.emplace_back(TextBytes {.storage = storage, .element = element});
     text_backings.emplace(storage, index);
     return ExecutionPlace {.owner = identity, .object = index, .path = {}};
 }
@@ -47,49 +65,68 @@ auto ExecutionMemory::release(const ExecutionPlace& place) noexcept -> void {
     }
 }
 
-auto ExecutionMemory::resolve(const ExecutionPlace& place) const noexcept -> const ExecutionValue* {
+auto ExecutionMemory::read(const ExecutionPlace& place) const noexcept
+    -> std::optional<ExecutionRead> {
     if (place.owner != identity || place.object >= objects.size()) {
-        return nullptr;
+        return std::nullopt;
     }
     if (const auto* projection = std::get_if<Projection>(&objects[place.object])) {
         if (!projection->target) {
-            return nullptr;
+            return std::nullopt;
         }
         auto selected = *projection->target;
         selected.path.insert(selected.path.end(), place.path.begin(), place.path.end());
-        return resolve(selected);
+        return read(selected);
     }
     if (const auto* text = std::get_if<TextBytes>(&objects[place.object])) {
         const auto storage = text->storage.lock();
         const auto bytes = storage ? std::optional(storage->view()) : std::nullopt;
         if (!bytes || place.path.size() != 1uz || place.path[0] >= bytes->size()) {
-            return nullptr;
+            return std::nullopt;
         }
-        const auto index = place.path[0];
-        return &text->observed
-                    .try_emplace(
-                        index,
-                        ExecutionByteView {.element = text->element, .bytes = *bytes}[index]
-                    )
-                    .first->second;
+        return ExecutionRead(
+            ExecutionByteView {.element = text->element, .bytes = *bytes}[place.path[0]]
+        );
     }
     const auto& object = std::get<std::optional<ExecutionValue>>(objects[place.object]);
     if (!object) {
-        return nullptr;
+        return std::nullopt;
     }
     auto* current = &*object;
-    for (const auto index : place.path) {
+    for (const auto [depth, index] : std::views::enumerate(place.path)) {
+        if (const auto* bytes = std::get_if<ExecutionBytes>(current)) {
+            if (static_cast<std::size_t>(depth) + 1uz != place.path.size()
+                || index >= bytes->bytes.size()) {
+                return std::nullopt;
+            }
+            return ExecutionRead(ExecutionValue(
+                ConstantAtom {
+                    .type = bytes->element,
+                    .value = IntegerConstant::from_parts(
+                        bytes->bytes.at(index, carven::runtime::SourceSite::native()),
+                        false
+                    )
+                }
+            ));
+        }
         const auto* aggregate = std::get_if<ExecutionAggregateValue>(current);
         const auto* enumeration = std::get_if<ExecutionEnumValue>(current);
         const auto* elements = aggregate ? &aggregate->elements
             : enumeration                ? &enumeration->payload
                                          : nullptr;
         if (elements == nullptr || index >= elements->size()) {
-            return nullptr;
+            return std::nullopt;
         }
         current = &(*elements)[index];
     }
-    return current;
+    return ExecutionRead(*current);
+}
+
+auto ExecutionMemory::resolve(const ExecutionPlace& place) const noexcept -> const ExecutionValue* {
+    const auto selected = read(place);
+    const auto* borrowed =
+        selected ? std::get_if<const ExecutionValue*>(&selected->value) : nullptr;
+    return borrowed ? *borrowed : nullptr;
 }
 
 auto ExecutionMemory::resolve(const ExecutionPlace& place) noexcept -> ExecutionValue* {
@@ -108,50 +145,72 @@ auto ExecutionMemory::owning_value(const ExecutionPlace& place) const noexcept
     return object && *object ? &**object : nullptr;
 }
 
-auto ExecutionMemory::view(const ExecutionSlice& slice) const noexcept
-    -> std::optional<ExecutionSequenceView> {
-    const auto& place = slice.backing;
-    if (place.owner != identity || place.object >= objects.size()) {
+auto ExecutionMemory::view(
+    const ExecutionPlace& place,
+    std::size_t offset,
+    std::size_t extent
+) const noexcept -> std::optional<ExecutionSequenceView> {
+    const auto selected = storage_place(place);
+    if (!selected) {
         return std::nullopt;
     }
-    if (const auto* text = std::get_if<TextBytes>(&objects[place.object])) {
+    if (const auto* text = std::get_if<TextBytes>(&objects[selected->object])) {
         const auto storage = text->storage.lock();
         const auto bytes = storage ? std::optional(storage->view()) : std::nullopt;
         if (!bytes
-            || !place.path.empty()
-            || slice.offset > bytes->size()
-            || slice.extent > bytes->size() - slice.offset) {
+            || !selected->path.empty()
+            || offset > bytes->size()
+            || extent > bytes->size() - offset) {
             return std::nullopt;
         }
+        return ExecutionByteView {.element = text->element, .bytes = bytes->substr(offset, extent)};
+    }
+    const auto* backing = resolve(*selected);
+    if (const auto* bytes = backing ? std::get_if<ExecutionBytes>(backing) : nullptr) {
+        if (offset > bytes->bytes.size() || extent > bytes->bytes.size() - offset) {
+            return std::nullopt;
+        }
+        const auto contents = std::string_view(
+            reinterpret_cast<const char*>(bytes->bytes.begin()),
+            bytes->bytes.size()
+        );
         return ExecutionByteView {
-            .element = text->element,
-            .bytes = bytes->substr(slice.offset, slice.extent)
+            .element = bytes->element,
+            .bytes = contents.substr(offset, extent)
         };
     }
-    const auto* backing = resolve(place);
     const auto* aggregate = backing ? std::get_if<ExecutionAggregateValue>(backing) : nullptr;
     if (aggregate == nullptr
-        || slice.offset > aggregate->elements.size()
-        || slice.extent > aggregate->elements.size() - slice.offset) {
+        || offset > aggregate->elements.size()
+        || extent > aggregate->elements.size() - offset) {
         return std::nullopt;
     }
-    return std::span<const ExecutionValue>(aggregate->elements).subspan(slice.offset, slice.extent);
+    return std::span<const ExecutionValue>(aggregate->elements).subspan(offset, extent);
 }
 
 auto ExecutionMemory::project(ExecutionPlace place, std::size_t index) noexcept
     -> std::optional<ExecutionPlace> {
-    if (place.owner == identity && place.object < objects.size()) {
-        if (const auto* text = std::get_if<TextBytes>(&objects[place.object])) {
-            const auto storage = text->storage.lock();
-            const auto bytes = storage ? std::optional(storage->view()) : std::nullopt;
-            if (!bytes || !place.path.empty() || index >= bytes->size()) {
-                return std::nullopt;
-            }
-            place.path.push_back(index);
-            return place;
-        }
+    const auto selected = storage_place(place);
+    if (!selected) {
+        return std::nullopt;
     }
-    const auto* value = resolve(place);
+    if (const auto* text = std::get_if<TextBytes>(&objects[selected->object])) {
+        const auto storage = text->storage.lock();
+        const auto bytes = storage ? std::optional(storage->view()) : std::nullopt;
+        if (!bytes || !selected->path.empty() || index >= bytes->size()) {
+            return std::nullopt;
+        }
+        place.path.push_back(index);
+        return place;
+    }
+    const auto* value = resolve(*selected);
+    if (const auto* bytes = value ? std::get_if<ExecutionBytes>(value) : nullptr) {
+        if (index >= bytes->bytes.size()) {
+            return std::nullopt;
+        }
+        place.path.push_back(index);
+        return place;
+    }
     const auto* aggregate = value ? std::get_if<ExecutionAggregateValue>(value) : nullptr;
     const auto* enumeration = value ? std::get_if<ExecutionEnumValue>(value) : nullptr;
     const auto* elements = aggregate ? &aggregate->elements
@@ -164,17 +223,38 @@ auto ExecutionMemory::project(ExecutionPlace place, std::size_t index) noexcept
     return place;
 }
 
-auto ExecutionMemory::assign(const ExecutionPlace& place, ExecutionValue value) noexcept -> bool {
-    if (place.owner != identity
-        || place.object >= objects.size()
-        || std::holds_alternative<TextBytes>(objects[place.object])) {
+auto ExecutionMemory::assign(
+    const ConstantValueReader& values,
+    const ExecutionPlace& place,
+    ExecutionValue&& value
+) noexcept -> bool {
+    auto selected = storage_place(place);
+    if (!selected || std::holds_alternative<TextBytes>(objects[selected->object])) {
         return false;
     }
-    auto* destination = resolve(place);
-    if (destination == nullptr) {
+    if (auto* destination = resolve(*selected)) {
+        *destination = std::move(value);
+        return true;
+    }
+    if (selected->path.empty()) {
         return false;
     }
-    *destination = std::move(value);
+    const auto index = selected->path.back();
+    selected->path.pop_back();
+    auto* parent = resolve(*selected);
+    auto* bytes = parent ? std::get_if<ExecutionBytes>(parent) : nullptr;
+    const auto atom = execution_atom(values, value);
+    const auto* integer = atom ? std::get_if<IntegerConstant>(&atom->value) : nullptr;
+    if (!bytes
+        || index >= bytes->bytes.size()
+        || !integer
+        || atom->type != bytes->element
+        || integer->negative()
+        || integer->magnitude() > 255u) {
+        return false;
+    }
+    bytes->bytes.at(index, carven::runtime::SourceSite::native()) =
+        static_cast<std::uint8_t>(integer->magnitude());
     return true;
 }
 
@@ -256,7 +336,7 @@ auto ExecutionMemory::address_key_from(
         return std::nullopt;
     }
     const auto& object = std::get<std::optional<ExecutionValue>>(objects[place.object]);
-    if (!object || !resolve(place)) {
+    if (!object || !read(place)) {
         return std::nullopt;
     }
     if (place.path.empty()) {
@@ -350,7 +430,7 @@ auto ExecutionMemory::same_address(
     if (first == second) {
         return true;
     }
-    if (!resolve(first) || !resolve(second)) {
+    if (!read(first) || !read(second)) {
         return std::nullopt;
     }
     if (first.owner != second.owner || first.object != second.object) {
@@ -377,6 +457,9 @@ auto ExecutionMemory::same_address(
     const auto common = std::min(first.path.size(), second.path.size());
     for (auto index = 0uz; index < common; ++index) {
         if (first.path[index] != second.path[index]) {
+            if (std::holds_alternative<TextBytes>(objects[first.object])) {
+                return false;
+            }
             auto ancestor = first;
             ancestor.path.resize(index);
             const auto* parent = resolve(ancestor);
@@ -415,14 +498,14 @@ auto ExecutionMemory::access_address(
     ConstructionTypeRef type
 ) const noexcept -> std::optional<ExecutionPlace> {
     auto selected = storage_place(place);
-    if (!selected || !resolve(*selected)) {
+    if (!selected || !read(*selected)) {
         return std::nullopt;
     }
     auto candidate = *selected;
     for (;;) {
-        const auto* value = resolve(candidate);
+        const auto value = read(candidate);
         if (value
-            && execution_value_type(values, *value) == type
+            && execution_value_type(values, value->get()) == type
             && same_address(values, *selected, candidate) == true) {
             return candidate;
         }
@@ -434,11 +517,11 @@ auto ExecutionMemory::access_address(
     const auto key = address_key(values, *selected);
     candidate = key ? *key : *selected;
     for (auto depth = 0uz; depth <= maximum_constant_aggregate_depth; ++depth) {
-        const auto* value = resolve(candidate);
+        const auto value = read(candidate);
         if (!value) {
             return std::nullopt;
         }
-        const auto reference = execution_value_type(values, *value);
+        const auto reference = execution_value_type(values, value->get());
         if (reference == type && same_address(values, *selected, candidate) == true) {
             return candidate;
         }

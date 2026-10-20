@@ -1,4 +1,4 @@
-import std::simd using { u8x32, u8x32 as Bytes };
+import std::simd using { u8x32, u8x32 as Bytes }
 
 import std::simd.bytes using {
     block_count,
@@ -8,7 +8,7 @@ import std::simd.bytes using {
     ascii_digit,
     ascii_prefix,
     ascii_lower,
-};
+}
 
 private const fn reversed_lanes() -> [u8; 32] {
     var result: [u8; 32] = {};
@@ -28,7 +28,7 @@ const fn stamped(&trace: i32, digit: i32) -> u8x32 {
     return u8x32::splat(digit as u8);
 }
 
-export const fn verify_vectors() -> bool {
+const fn verify_vectors() -> bool {
     assert(frozen_vector.lane(0) == 7 && frozen_vector.lane(15) == 99);
     assert(frozen_mask.bits() == 0x8001);
     var trace = 0;
@@ -95,7 +95,7 @@ export const fn verify_vectors() -> bool {
     return true;
 }
 
-export const fn verify_classification() -> bool {
+const fn verify_classification() -> bool {
     for byte in 0u16..256 {
         let scalar = byte as u8;
         let v = u8x32::splat(scalar);
@@ -107,7 +107,7 @@ export const fn verify_classification() -> bool {
     return true;
 }
 
-export const fn verify_blocks() -> bool {
+const fn verify_blocks() -> bool {
     var data: [u8; 97] = {};
     data[15] = 7;
     data[16] = 7;
@@ -154,7 +154,7 @@ test "SIMD: native execution agrees on vectors, masks and static controls" {
     check(verify_blocks());
 }
 
-export const fn verify_ascii_prefix() -> bool {
+const fn verify_ascii_prefix() -> bool {
     let lengths: [usize; 13] = [0, 1, 15, 16, 17, 31, 32, 33, 63, 64, 65, 96, 97];
     for length in lengths {
         var text: [u8; 97] = {};
@@ -175,7 +175,7 @@ test "SIMD: native ASCII prefix positions and tails" {
 const fn shift_count() -> usize => 4;
 
 // Boundary bytes expose sign, carry, and cross-lane leaks in word-based shifts.
-export const fn verify_shift(const amount: usize) -> bool {
+const fn verify_shift(const amount: usize) -> bool {
     for byte in [0u16, 1, 0x55, 0x7f, 0x80, 0xaa, 0xfe, 0xff] {
         let value = u8x32::splat(byte as u8);
         assert((value.shift_left(amount) == (((byte << (amount as u16)) & 255) as u8)).all());
@@ -184,7 +184,7 @@ export const fn verify_shift(const amount: usize) -> bool {
     return true;
 }
 
-export const fn verify_shifts_and_first() -> bool {
+const fn verify_shifts_and_first() -> bool {
     const count = shift_count();
     let boundaries: [u8; 16] = [0, 1, 2, 3, 15, 16, 31, 63, 64, 127, 128, 129, 191, 223, 254, 255];
     var bytes: [u8; 32] = {};

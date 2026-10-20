@@ -1,0 +1,8 @@
+import .catalog using items;
+import std::json using { JSONError, JSONValueError }
+
+fn main() throw JSONError + JSONValueError {
+    for item in items()? {
+        println(f"{item.name}: {item.stock} in stock");
+    }
+}

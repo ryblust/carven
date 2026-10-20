@@ -4,6 +4,7 @@ import :semantic.evaluation.execution;
 import :semantic.evaluation.memory;
 import :semantic.evaluation.operation;
 import :semantic.evaluation.shape;
+import :semantic.evaluation.value;
 import :semantic.semir.structured;
 import :support.input;
 import std;
@@ -12,7 +13,8 @@ enum class ExecutionFlow { Normal, Return, Break, Continue };
 
 struct ExecutionCompletion final {
     ExecutionFlow flow;
-    ExecutionValue value;
+    // Void completion carries control only; values belong to producing expressions.
+    std::optional<ExecutionValue> value;
 };
 
 struct ExecutionConditionObservation final {
@@ -91,6 +93,7 @@ public:
     auto operator=(SemanticExecutor&&) -> SemanticExecutor& = delete;
     ~SemanticExecutor() noexcept;
     auto evaluate_body(ExecutionBody body) noexcept -> ExecutionTask<void>;
+
     auto evaluate_root(const SemanticExpression& source, std::optional<ExecutionBody> body) noexcept
         -> ExecutionTask<ExecutionValue>;
 
@@ -112,12 +115,38 @@ public:
         ProgramOriginID origin
     ) noexcept -> ExecutionTask<ExecutionValue>;
 
+    // Begin once, then advance on the owning thread. A quantum counts coroutine
+    // resumptions, independently of the semantic execution budget.
+    auto begin_call(
+        CallableID callable,
+        std::vector<ExecutionOperand> arguments,
+        ProgramOriginID origin
+    ) noexcept -> void;
+
+    auto advance(std::size_t quantum) noexcept -> ExecutionProgress;
+    // Drive an already-started root, waiting for host progress when needed.
+    auto run_until_complete(ProgramOriginID origin) noexcept -> void;
+    auto cancel() noexcept -> void;
+    auto take_result() noexcept -> ExecutionResult<ExecutionValue>;
+
 private:
+    auto begin(ExecutionTask<ExecutionValue> operation) noexcept -> void;
+
+    auto root_call(
+        CallableID callable,
+        std::vector<ExecutionOperand> arguments,
+        ProgramOriginID origin
+    ) noexcept -> ExecutionTask<ExecutionValue>;
+
     // Only these public roots drive the FIFO. Ordinary calls share the active task.
-    auto drive(ExecutionTask<ExecutionValue> operation) noexcept -> ExecutionResult<ExecutionValue>;
+    auto drive(ExecutionTask<ExecutionValue> operation, ProgramOriginID origin) noexcept
+        -> ExecutionResult<ExecutionValue>;
+
+    auto admit_host_value(ExecutionValue value, ProgramOriginID origin) noexcept
+        -> ExecutionResult<ExecutionValue>;
 
     auto call(
-        CallableID callable,
+        ExecutionCallSite target,
         std::vector<ExecutionOperand> arguments,
         ProgramOriginID origin
     ) noexcept -> ExecutionTask<ExecutionValue>;
@@ -266,6 +295,41 @@ private:
         ExecutionLogicalTask* dependency
     ) noexcept -> void;
 
+    class ExternalWait final {
+    public:
+        ExternalWait(
+            SemanticExecutor& executor,
+            std::unique_ptr<ExecutionExternalOperation> operation,
+            ProgramOriginID origin
+        ) noexcept;
+
+        ExternalWait(const ExternalWait&) = delete;
+        ExternalWait(ExternalWait&&) = delete;
+        ~ExternalWait() noexcept;
+        auto await_ready() noexcept -> bool;
+
+        template<typename Promise>
+        auto await_suspend(std::coroutine_handle<Promise> continuation) noexcept -> void {
+            suspend(continuation.promise().task_loop(), continuation);
+        }
+
+        auto await_resume() noexcept -> std::expected<ExecutionValue, ExecutionCallFailure>;
+
+    private:
+        friend class SemanticExecutor;
+
+        auto suspend(ContinuationTaskLoop& loop, std::coroutine_handle<> continuation) noexcept
+            -> void;
+
+        SemanticExecutor& executor;
+        std::unique_ptr<ExecutionExternalOperation> operation;
+        ProgramOriginID origin;
+        std::optional<std::list<ExternalWait*>::iterator> registration;
+        std::optional<ExecutionWork> work;
+        std::optional<std::expected<ExecutionValue, ExecutionCallFailure>> result;
+        bool cancelled;
+    };
+
     class TimerWait final {
     public:
         TimerWait(SemanticExecutor& executor, std::int64_t deadline) noexcept;
@@ -284,6 +348,7 @@ private:
     private:
         auto suspend(ContinuationTaskLoop& loop, std::coroutine_handle<> continuation) noexcept
             -> void;
+
         SemanticExecutor& executor;
         friend class SemanticExecutor;
         std::int64_t deadline;
@@ -300,6 +365,7 @@ private:
             TypeID result_type,
             ProgramOriginID origin
         ) noexcept;
+
         InputWait(const InputWait&) = delete;
         InputWait(InputWait&&) = delete;
         ~InputWait() noexcept;
@@ -314,8 +380,10 @@ private:
 
     private:
         friend class SemanticExecutor;
+
         auto suspend(ContinuationTaskLoop& loop, std::coroutine_handle<> continuation) noexcept
             -> void;
+
         SemanticExecutor& executor;
         TypeID result_type;
         ProgramOriginID origin;
@@ -328,15 +396,19 @@ private:
 
     auto input_value(const HostInputResult& response, const InputWait& input) noexcept
         -> ExecutionResult<ExecutionValue>;
+
     auto host_clock(ProgramOriginID origin) noexcept -> ExecutionResult<std::int64_t>;
     auto poll_host() noexcept -> void;
     auto wait_host() noexcept -> bool;
     static auto task_cancel_requested(const ExecutionLogicalTask& task) noexcept -> bool;
     auto cancelled(ProgramOriginID origin) const noexcept -> ExecutionFailure;
+
     auto source_failure(TypeID failure, ExecutionValue payload, ProgramOriginID origin) noexcept
         -> ExecutionFailure;
+
     auto host_operation(ExecutionColdOperation operation, ProgramOriginID origin) noexcept
         -> ExecutionTask<ExecutionValue>;
+
     auto timeout(
         ExecutionTimeoutAction action,
         ConstructionTypeRef operation_type,
@@ -354,7 +426,7 @@ private:
         ProgramOriginID origin
     ) noexcept -> ExecutionTask<ExecutionValue>;
 
-    auto bind(ExecutionFrame& frame, std::size_t slot, ExecutionValue value) noexcept -> void;
+    auto bind(ExecutionFrame& frame, std::size_t slot, ExecutionValue&& value) noexcept -> void;
     auto release(ExecutionFrame& frame, std::size_t slot) noexcept -> void;
     auto release_frame(ExecutionFrame& frame) noexcept -> void;
     auto release_temporaries(ExecutionFrame& frame, std::size_t begin) noexcept -> void;
@@ -376,7 +448,22 @@ private:
     auto check_value_size(const ExecutionValue& value, ProgramOriginID origin) noexcept
         -> ExecutionResult<void>;
 
-    auto bounded_value(ExecutionValue value, ProgramOriginID origin) noexcept
+    auto value_size(const ExecutionValue& value, ProgramOriginID origin, std::size_t depth) noexcept
+        -> ExecutionResult<std::size_t>;
+
+    auto mutation_place(const ExecutionPlace& place, ProgramOriginID origin) noexcept
+        -> ExecutionResult<ExecutionPlace>;
+
+    auto resize_value(
+        const ExecutionPlace& place,
+        std::size_t removed,
+        std::size_t added,
+        ProgramOriginID origin
+    ) noexcept -> ExecutionResult<void>;
+
+    auto forget_value_size(const ExecutionPlace& place) noexcept -> void;
+
+    auto constructed_value(ExecutionValue value, ProgramOriginID origin) noexcept
         -> ExecutionResult<ExecutionValue>;
 
     auto default_value(ConstructionTypeRef type, ProgramOriginID origin) noexcept
@@ -405,14 +492,14 @@ private:
     ) noexcept -> ExecutionFailure;
 
     auto step(ProgramOriginID origin) noexcept -> ExecutionResult<void>;
-    auto account_text(std::size_t bytes, ProgramOriginID origin) noexcept -> ExecutionResult<void>;
+    auto account_bytes(std::size_t bytes, ProgramOriginID origin) noexcept -> ExecutionResult<void>;
 
     auto account_aggregate(std::size_t elements, ProgramOriginID origin) noexcept
         -> ExecutionResult<void>;
 
     auto read_borrows_storage(ConstructionTypeRef type) noexcept -> bool;
 
-    auto own_storage(ExecutionValue value, ProgramOriginID origin) noexcept
+    auto own_storage(ExecutionValue&& value, ProgramOriginID origin) noexcept
         -> ExecutionResult<ExecutionValue>;
 
     enum class CopyMode { Value, Retained };
@@ -424,8 +511,26 @@ private:
         ExecutionValue& value,
         ConstructionTypeRef target,
         ProgramOriginID origin,
-        std::size_t depth = 0uz
+        std::size_t depth
     ) noexcept -> ExecutionResult<void>;
+
+    auto deliver_aggregate(
+        ExecutionValue& value,
+        ConstructionTypeRef target,
+        ProgramOriginID origin,
+        std::size_t depth
+    ) noexcept -> ExecutionResult<void>;
+
+    auto byte_sequence_element(ConstructionTypeRef type) const noexcept -> std::optional<TypeID>;
+
+    auto append_bytes(
+        ExecutionBytes& target,
+        const ExecutionSequenceView& source,
+        ProgramOriginID origin
+    ) noexcept -> ExecutionResult<void>;
+
+    auto sequence_element_type(ConstructionTypeRef type) const noexcept
+        -> std::optional<ConstructionTypeRef>;
 
     auto check_callable_adaptation(
         ConstructionTypeRef source,
@@ -454,19 +559,16 @@ private:
         ProgramOriginID origin
     ) noexcept -> ExecutionResult<ExecutionPlace>;
 
-    auto detach_views(
-        ExecutionValue value,
-        ProgramOriginID origin,
-        std::size_t depth = 0uz
-    ) noexcept -> ExecutionResult<ExecutionValue>;
+    auto detach_views(ExecutionValue value, ProgramOriginID origin, std::size_t depth) noexcept
+        -> ExecutionResult<ExecutionValue>;
 
     auto check_aggregate_size(ConstructionTypeRef type, ProgramOriginID origin) noexcept
         -> ExecutionResult<void>;
 
     auto type(ConstructionTypeRef type, ProgramOriginID origin) noexcept -> ExecutionResult<TypeID>;
 
-    auto read_fact(const ExecutionValue& value, ProgramOriginID origin) noexcept
-        -> ExecutionResult<ConstantFact>;
+    auto read_atom(const ExecutionValue& value, ProgramOriginID origin) noexcept
+        -> ExecutionResult<ConstantAtom>;
 
     auto text(const ExecutionValue& value, ProgramOriginID origin) noexcept
         -> ExecutionResult<ExecutionTextObservation>;
@@ -477,21 +579,30 @@ private:
         ProgramOriginID origin
     ) noexcept -> ExecutionResult<bool>;
 
+    auto hash(const ExecutionValue& value, ProgramOriginID origin) noexcept
+        -> ExecutionResult<std::uint64_t>;
+
     auto boolean(const ExecutionValue& value, ProgramOriginID origin) noexcept
         -> ExecutionResult<bool>;
 
     auto finish(
-        std::expected<ConstantFact, ConstantEvaluationFailure> result,
+        std::expected<ConstantAtom, ConstantEvaluationFailure> result,
         ProgramOriginID origin
     ) noexcept -> ExecutionResult<ExecutionValue>;
 
     auto slot_value(ExecutionFrame& frame, std::size_t slot, ProgramOriginID origin) noexcept
-        -> ExecutionResult<ExecutionValue*>;
+        -> ExecutionResult<ExecutionRead>;
 
     static auto has_bound_storage(const SemanticExpression& expression) noexcept -> bool;
 
     auto place(ExecutionFrame& frame, const SemanticExpression& expression) noexcept
         -> ExecutionTask<ExecutionPlace>;
+
+    auto observed(const ExecutionPlace& place, ProgramOriginID origin) noexcept
+        -> ExecutionResult<ExecutionRead>;
+
+    auto observed(const ExecutionOperand& operand, ProgramOriginID origin) noexcept
+        -> ExecutionResult<ExecutionRead>;
 
     auto located(const ExecutionPlace& place, ProgramOriginID origin) noexcept
         -> ExecutionResult<ExecutionValue*>;
@@ -570,12 +681,8 @@ private:
         const Operation& operation
     ) noexcept -> ExecutionTask<Result>;
 
-    template<typename Operation>
-    auto expression_value(
-        ExecutionFrame& frame,
-        const SemanticExpression& source,
-        const Operation& operation
-    ) noexcept -> ExecutionTask<ExecutionValue>;
+    auto cpp_expression(ExecutionFrame& frame, const SemanticExpression& source) noexcept
+        -> ExecutionTask<ExecutionValue>;
 
     auto unsupported_expression(
         ExecutionFrame& frame,
@@ -664,6 +771,8 @@ private:
     std::map<ConstantID, ExecutionPlace> retained_backings;
     std::map<ProgramSpellingID, ExecutionPlace> retained_cstring_backings;
     std::map<ConstructionTypeRef, bool> storage_reads;
+    // Counts belong to canonical memory objects; projections share the same summary.
+    std::map<std::size_t, std::size_t> object_sizes;
     std::map<ProgramSpellingID, ExecutionText> retained_text;
     // The arena outlives every slot and frame; source memory outlives arena frames.
     std::list<ExecutionLogicalTask> tasks;
@@ -671,11 +780,14 @@ private:
     std::list<ReadySelection*> cancellation_waiters;
     std::list<TimerWait*> timers;
     std::list<InputWait*> input_requests;
+    std::list<ExternalWait*> external_requests;
+    bool dispatching = false;
+    bool result_taken = false;
     bool cancellation_dirty = false;
     ExecutionLogicalTask* current = nullptr;
     std::optional<ExecutionFailure> stopped;
     bool testing = false;
     std::size_t steps = 0;
-    std::size_t text_work = 0;
+    std::size_t byte_work = 0;
     std::size_t aggregate_work = 0;
 };

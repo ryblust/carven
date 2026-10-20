@@ -1,0 +1,121 @@
+import std::build using BuildError;
+
+import std::fs using {
+    DirectoryScan,
+    FileError,
+    canonical as fs_canonical,
+    resolve as fs_resolve,
+    create_directories,
+    files as fs_files,
+    read_text as fs_read_text,
+    remove as fs_remove,
+    write_text as fs_write_text,
+}
+
+import std::process using {
+    ProcessError,
+    environment as process_environment,
+    run_to as process_run_to,
+}
+
+import <carven/std/build/native.hpp> using carven::standard::build;
+
+private const fn file_error(action: str, path: str, error: FileError) -> BuildError => match error {
+    .System(code) => BuildError { message: f"cannot {action} '{path}': system error {code}" },
+    .InvalidUTF8(error) => BuildError {
+        message: f"cannot {action} '{path}': invalid UTF-8 at byte {error.offset}"
+    },
+};
+
+const fn process_error(context: str, error: ProcessError) -> BuildError {
+    let code = match error {
+        .System(code) => code
+    };
+    return { message: f"{context}: system error {code}" };
+}
+
+const fn cached_text(path: str) -> String => try {
+    fs_read_text(path)?
+} catch {
+    FileError(_) => ""
+};
+
+const fn environment(name: str) -> String throw BuildError => try {
+    process_environment(name)?
+} catch {
+    ProcessError(error) => throw process_error(f"cannot read environment variable '{name}'", error)
+};
+
+// Missing or unreadable inputs invalidate a record; callers require a nonempty
+// fingerprint before publishing a successful build record.
+const fn fingerprint(paths: [String], values: [String]) -> String {
+    return build::fingerprint(paths, values) as String;
+}
+
+const fn fingerprints(paths: [Vector<String>]) -> Vector<String> {
+    return build::fingerprints(paths) as Vector<String>;
+}
+
+const fn write_text(path: str, text: str) throw BuildError {
+    try {
+        fs_write_text(path, text)?;
+    } catch {
+        FileError(error) => throw file_error("write", path, error)
+    }
+}
+
+const fn read_text(path: str) -> String throw BuildError => try {
+    fs_read_text(path)?
+} catch {
+    FileError(error) => throw file_error("read", path, error)
+};
+
+const fn canonical(path: str) -> String throw BuildError => try {
+    fs_canonical(path)?
+} catch {
+    FileError(error) => throw file_error("resolve", path, error)
+};
+
+const fn resolve(path: str) -> String throw BuildError => try {
+    fs_resolve(path)?
+} catch {
+    FileError(error) => throw file_error("resolve", path, error)
+};
+
+const fn files(scan: DirectoryScan) -> Vector<String> throw BuildError => try {
+    fs_files(scan)?
+} catch {
+    FileError(error) => throw file_error("list", scan.root, error)
+};
+
+const fn directory(path: str) throw BuildError {
+    try {
+        create_directories(path)?;
+    } catch {
+        FileError(error) => throw file_error("create directory", path, error)
+    }
+}
+
+const fn run_to(arguments: [String], output: str) throw BuildError {
+    let code = execute(arguments, output)?;
+    if code != 0 { throw BuildError { message: f"'{arguments[0]}' failed with exit code {code}" }; }
+}
+
+const fn run(arguments: [String]) throw BuildError {
+    run_to(arguments, "")?;
+}
+
+// Program exit codes are results, while build-tool failures stop the build.
+const fn execute(arguments: [String], output: str) -> i32 throw BuildError => try {
+    process_run_to(arguments[0], arguments.slice(1, arguments.length()), output)?
+} catch {
+    ProcessError(error) => throw process_error(f"cannot run '{arguments[0]}'", error)
+};
+
+const fn remove(path: str) throw BuildError {
+    try {
+        fs_remove(path)?;
+    } catch {
+        FileError(error) => throw file_error("remove", path, error)
+    }
+}

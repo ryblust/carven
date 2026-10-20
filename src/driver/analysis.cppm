@@ -8,15 +8,16 @@ import :semantic.semir.program;
 import :support.timing;
 import std;
 
-// Loads the collected source batch with its resolved module identities.
+// Loads explicit roots and their available source dependencies. The inventory
+// retains only loaded modules; parsed documents feed the same analysis once.
 auto load_and_analyze_sources(
-    std::span<const SourceInput> inputs,
+    CommandSources& inputs,
     ExecutionOutput output,
     TimingOutput timings = {}
 ) noexcept -> std::optional<SemIRProgram>;
 
 auto load_and_analyze_checked_sources(
-    std::span<const SourceInput> inputs,
+    CommandSources& inputs,
     std::optional<CheckedDefinitions> seed,
     bool retain_definitions,
     ExecutionOutput output,

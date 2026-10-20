@@ -39,6 +39,34 @@ using TextIntrinsicDecision = std::expected<TextIntrinsic, OperationDiagnostic>;
 
 auto type_supports_copy(ProgramDraft& draft, ConstructionTypeRef type) noexcept -> bool;
 
+auto type_satisfies_capability(
+    const ProgramDraft& draft,
+    ConstructionTypeRef type,
+    BuiltinCapability capability
+) noexcept -> bool;
+
+template<typename ElementCapability>
+auto hash_type_support(const CanonicalType& type, ElementCapability&& element) noexcept -> bool {
+    return type.value.visit([&](const auto& shape) noexcept {
+        using Shape = std::remove_cvref_t<decltype(shape)>;
+        if constexpr (std::same_as<Shape, BuiltinTypeValue>) {
+            return builtin_is_integer(shape.kind)
+                || shape.kind == BuiltinType::Bool
+                || shape.kind == BuiltinType::Char
+                || shape.kind == BuiltinType::String
+                || shape.kind == BuiltinType::Str;
+        } else if constexpr (std::same_as<Shape, ArrayTypeValue>) {
+            return element(shape.element);
+        } else if constexpr (std::same_as<Shape, TupleTypeValue>) {
+            return std::ranges::all_of(shape.elements, element);
+        } else {
+            return false;
+        }
+    });
+}
+
+auto type_supports_hash(const CanonicalTypeStore& types, TypeID type) noexcept -> bool;
+
 // Concrete aliases in rigid environments preserve the ordinary type identity.
 auto unwrap_type_alias(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
     -> ConstructionTypeRef;
@@ -54,7 +82,7 @@ auto default_initialization(ProgramDraft& draft, ConstructionTypeRef type) noexc
 
 struct StructureInitializer final {
     std::uint32_t declaration_index;
-    ASTExprID expression;
+    std::optional<ASTExprID> expression;
     std::optional<Span> name;
 };
 
@@ -74,6 +102,25 @@ struct RecordShape final {
 
 auto record_shape(ProgramDraft& draft, ConstructionTypeRef type) noexcept
     -> std::optional<RecordShape>;
+
+struct EnumCaseShape final {
+    ConstructionEnumCaseRef reference;
+    ProgramSpellingID name;
+    std::vector<ConstructionTypeRef> payload_types;
+    std::optional<ConstantID> constant;
+};
+
+struct EnumShape final {
+    ConstructionEnumRef owner;
+    std::vector<EnumCaseShape> cases;
+};
+
+// Nominal classification does not require the enum's cases to be available.
+auto enum_owner(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
+    -> std::optional<ConstructionEnumRef>;
+auto enum_shape(ProgramDraft& draft, ConstructionTypeRef type) noexcept -> std::optional<EnumShape>;
+auto enum_case_count(const ProgramDraft& draft, ConstructionEnumCaseRef reference) noexcept
+    -> std::size_t;
 
 enum class SequenceShapeKind { Array, Slice, Vector };
 
@@ -188,6 +235,13 @@ auto type_shapes_compatible(
     ConstructionTypeRef left,
     ConstructionTypeRef right
 ) noexcept -> bool;
+
+auto make_callable_view_type(
+    ProgramDraft& draft,
+    std::vector<ConstructionCallableParameter> parameters,
+    ConstructionTypeRef result,
+    ConstructionFailureRef failures
+) noexcept -> ConstructionTypeRef;
 
 // Inspects construction shapes; nominal members are checked at their storage boundary.
 auto type_contains_callable_view(const ProgramDraft& draft, ConstructionTypeRef type) noexcept

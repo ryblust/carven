@@ -81,7 +81,7 @@ inline auto contract_record(const Value& value) noexcept -> Value {
 
 template<typename Callback>
 inline auto contract_callback(const Callback& callback) noexcept {
-    return carven::runtime::native_test_result(callback(7));
+    return callback(7);
 }
 
 template<typename Failure>

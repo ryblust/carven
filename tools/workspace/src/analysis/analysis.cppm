@@ -135,7 +135,7 @@ struct WorkspaceDocumentBatchUpdateFailure final {
 class WorkspaceAnalysisHost final {
 public:
     // Zero disables retained semantic selections; returned query owners stay valid.
-    explicit WorkspaceAnalysisHost(std::size_t semantic_cache_capacity = 2) noexcept;
+    explicit WorkspaceAnalysisHost(std::size_t semantic_cache_capacity) noexcept;
     WorkspaceAnalysisHost(const WorkspaceAnalysisHost&) = delete;
     WorkspaceAnalysisHost(WorkspaceAnalysisHost&&) = default;
     auto operator=(const WorkspaceAnalysisHost&) -> WorkspaceAnalysisHost& = delete;

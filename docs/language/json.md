@@ -9,27 +9,27 @@ Import value types, errors, and functions from `std::json`.
 
 | Operation | Result | Failure |
 | --- | --- | --- |
-| `Value::parse(text: str)` | Independent value tree | `JSONError` |
-| `Value::parse_bytes(bytes: [u8])` | Validate UTF-8, then return an independent tree | `UTF8Error`, `JSONError` |
-| `value.to_json()` | Independent, compact JSON `String` | `ValueError` |
+| `JSONValue::parse(text: str)` | Independent value tree | `JSONError` |
+| `JSONValue::parse_bytes(bytes: [u8])` | Validate UTF-8, then return an independent tree | `UTF8Error`, `JSONError` |
+| `value.to_json()` | Independent, compact JSON `String` | `JSONValueError` |
 
 Any JSON value may be the root. Byte parsing checks the entire input's UTF-8
 encoding first, so an encoding error takes precedence over a JSON syntax error.
 
 ```carven
-import std::json using { Value, JSONError, ValueError };
+import std::json using { JSONValue, JSONError, JSONValueError }
 
-fn update(text: str) -> String throw JSONError + ValueError {
-    var config = Value::parse(text)?;
-    config.set("enabled", &&Value::boolean(true))?;
-    config.set("attempts", &&Value::integer(3))?;
+fn update(text: str) -> String throw JSONError + JSONValueError {
+    var config = JSONValue::parse(text)?;
+    config.set("enabled", &&JSONValue::boolean(true))?;
+    config.set("attempts", &&JSONValue::integer(3))?;
     return config.to_json()?;
 }
 ```
 
 ## Values and collections
 
-All factories return `Value`:
+All factories return `JSONValue`:
 
 | Factory | Input and failure |
 | --- | --- |
@@ -37,17 +37,19 @@ All factories return `Value`:
 | `boolean(value: bool)`, `string(text: str)` | Store a boolean or an independent text copy |
 | `number(text: str)` | Exactly one JSON number spelling; throws `JSONError` |
 | `integer(value: i64)`, `unsigned_integer(value: u64)` | Exact integer value |
-| `real(value: f64)` | Finite floating value; throws `ValueError` otherwise |
+| `real(value: f64)` | Finite floating value; throws `JSONValueError` otherwise |
 
-`value.kind()` returns `ValueKind`: `Null`, `Boolean`, `Number`, `String`, `Array`,
+`value.kind()` returns `JSONValueKind`: `Null`, `Boolean`, `Number`, `String`, `Array`,
 or `Object`. `as_bool()` and `as_str()` read the corresponding scalar kinds.
-Scalar queries and collection operations throw `ValueError` for an incompatible
+Scalar queries and collection operations throw `JSONValueError` for an incompatible
 kind; collection operations also check keys and indices. Mutating methods require a Write receiver;
 `&&value` transfers a child into its container.
 
 | Operation | Result |
 | --- | --- |
 | `length()` | Array element or object member count |
+| `elements()` | Borrowed array elements as `[JSONValue]` |
+| `members()` | Borrowed object members as `[(String, JSONValue)]` |
 | `at(index)` / `get(key)` | Independent child value |
 | `push(&&value)` / `set_at(index, &&value)` / `remove_at(index)` | Append, replace, or remove an array element |
 | `has(key)` | Whether an object contains the key |
@@ -57,13 +59,19 @@ kind; collection operations also check keys and indices. Mutating methods requir
 
 Objects retain member order and duplicate keys. `get` selects the last matching
 member, `set` replaces that member or appends a new one, and `erase` removes
-all matching members. Child access returns an independent value. Copies can
-be modified independently; modifying a child copy requires assigning it back
-to its parent.
+all matching members. `get`, `at`, and `member_value_at` return independent values.
+Copies can be modified independently; modifying a child copy requires assigning
+it back to its parent.
+
+`elements` and `members` borrow their collections without copying child trees.
+Iteration such as `for (key, value) in object.members()?` preserves member order
+and reads the original children. Assigning an element to `let` or `var` creates
+an independent copy.
 
 `as_str`, `number_text`, and `key_at` return borrowed `str` views. Keep the value
-alive and unchanged while using a view; conflicting mutation and escaping borrows
-are rejected. Copy with `as String` when the text needs an independent lifetime.
+alive and unchanged while using text or collection views; conflicting mutation
+and escaping borrows are rejected. Copy with `as String` when the text needs an
+independent lifetime.
 Bind a child returned by `get` or `at` before retaining a view into that child:
 
 ```carven
@@ -80,7 +88,7 @@ negative zero, and exponent spelling. `as_i64` requires integer spelling and a
 representable result; `as_u64`
 additionally requires nonnegative spelling. `as_f64` permits rounding but rejects
 out-of-range results. `number_text` returns the original spelling.
-Numeric conversion failures report `ValueError::NumberConversion` without an
+Numeric conversion failures report `JSONValueError::NumberConversion` without an
 input byte offset. Conversions use the entire number spelling.
 
 ## Validation and failures
@@ -105,7 +113,7 @@ number spelling and does not normalize or sort them.
 the input length; `UnpairedSurrogate` points at the offending backslash.
 `JSONError.kind` is one of `UnexpectedEnd`, `UnexpectedByte`, `InvalidEscape`,
 `InvalidHex`, `UnpairedSurrogate`, `ControlCharacter`, `InvalidNumber`,
-`TrailingInput`, or `DepthLimit`. Value operations use `ValueError::WrongKind`,
+`TrailingInput`, or `DepthLimit`. Value operations use `JSONValueError::WrongKind`,
 `MissingKey`, `IndexOutOfBounds`, `NumberConversion`, or `DepthLimit`.
 
 ## Static execution
@@ -115,7 +123,7 @@ writing are `const fn` operations. They use ordinary execution budgets and the
 same ownership and failure rules as runtime calls. For example:
 
 ```carven
-const compact = Value::parse(r#"{ "enabled": true }"#)?.to_json()?;
+const compact = JSONValue::parse(r#"{ "enabled": true }"#)?.to_json()?;
 ```
 
 Completed `String` results retain their owning type. JSON values can also be

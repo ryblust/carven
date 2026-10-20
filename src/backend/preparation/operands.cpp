@@ -71,9 +71,12 @@ auto BodyPreparation::operands(
                     add(input, PreparedUse::OperandValue);
                 });
             },
+            [&](const SemHash& value) noexcept { add(*value.operand, PreparedUse::ReadArgument); },
             [&](const SemBinary& value) noexcept {
                 visit_semantic_children(value, [&](const SemanticExpression& input) noexcept {
-                    add(input, PreparedUse::OperandValue);
+                    add(input,
+                        input.category == SemanticValueCategory::Value ? PreparedUse::OperandValue
+                                                                       : PreparedUse::ReadArgument);
                 });
             },
             [&](const SemCast& value) noexcept {
@@ -113,7 +116,7 @@ auto BodyPreparation::operands(
             [](const SemReport&) static noexcept {},
             [&](const SemPrint& value) noexcept {
                 for (const auto& input : value.operands) {
-                    result.push_back(argument(input));
+                    value_read(input, false);
                 }
             },
             [&](const SemFormat& value) noexcept {

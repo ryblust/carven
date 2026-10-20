@@ -11,8 +11,7 @@ auto choose(LayoutBuilder& builder, std::initializer_list<LayoutNodeID> alternat
     return builder.choice(std::span<const LayoutNodeID>(alternatives.begin(), alternatives.size()));
 }
 
-auto finish(LayoutBuilder builder, LayoutNodeID root, std::size_t width = 100) noexcept
-    -> std::string {
+auto finish(LayoutBuilder builder, LayoutNodeID root, std::size_t width) noexcept -> std::string {
     return render_layout(std::move(builder).finish(root), width);
 }
 
@@ -20,13 +19,13 @@ const TestSuite suite([] static noexcept {
     "Layout: empty documents and mandatory lines have canonical endings"_test = [] static noexcept {
         auto empty = LayoutBuilder {};
         const auto empty_root = empty.empty();
-        expect_equal(finish(std::move(empty), empty_root), std::string_view("\n"));
+        expect_equal(finish(std::move(empty), empty_root, 100uz), std::string_view("\n"));
 
         auto lines = LayoutBuilder {};
         const auto root = lines.concat(
             {lines.text("first "), lines.line(), lines.line(), lines.text("second\t"), lines.line()}
         );
-        expect_equal(finish(std::move(lines), root), std::string_view("first\n\nsecond\n"));
+        expect_equal(finish(std::move(lines), root, 100uz), std::string_view("first\n\nsecond\n"));
     };
 
     "Layout: text nodes own string-view input"_test = [] static noexcept {
@@ -35,7 +34,7 @@ const TestSuite suite([] static noexcept {
         const auto root = builder.text(source);
         source.assign("changed");
 
-        expect_equal(finish(std::move(builder), root), std::string_view("stable\n"));
+        expect_equal(finish(std::move(builder), root, 100uz), std::string_view("stable\n"));
     };
 
     "Layout: ordered choices use the first fitting alternative"_test = [] static noexcept {
@@ -168,7 +167,7 @@ const TestSuite suite([] static noexcept {
             auto preserved = LayoutBuilder {};
             const auto preserved_root = preserved.raw("raw \nnext\t");
             expect_equal(
-                finish(std::move(preserved), preserved_root),
+                finish(std::move(preserved), preserved_root, 100uz),
                 std::string_view("raw \nnext\t\n")
             );
         };
@@ -186,7 +185,7 @@ const TestSuite suite([] static noexcept {
             )
         );
         expect_equal(
-            finish(std::move(builder), nested),
+            finish(std::move(builder), nested, 100uz),
             std::string_view("    body\n#line 1\n    tail\n")
         );
     };

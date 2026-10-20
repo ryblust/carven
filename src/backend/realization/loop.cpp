@@ -94,16 +94,15 @@ auto BodyRealizer::lower_loop(const SemLoop& value, LoweringStmtBuilder& destina
     }
     if (known_predicate(condition) == false) {
         initializer.append(std::move(condition_statements));
-        close_async_scopes(outer_scopes, false, initializer);
-        leave_async_scopes(outer_scopes);
+        end_async_scopes(outer_scopes, initializer);
         destination.scope(
             std::move(initializer),
             TargetGeneratedExpansionAttribution {.reason = TargetExpansionReason::LoweringSupport}
         );
         co_return {};
     }
-    // Lowering chooses syntax before realizing the body, so a native for loop
-    // gives continue its C++ step semantics without a separate transfer target.
+    // Realize the body before steps: a body without a back edge must not
+    // register cleanup or failure continuations for steps that cannot execute.
     const auto step_label = names.fresh(TargetTemporaryNameKind::Continue);
     const auto continuation = LoopContinuation {
         .step = step_label,
@@ -115,86 +114,111 @@ auto BodyRealizer::lower_loop(const SemLoop& value, LoweringStmtBuilder& destina
         .continue_async_scopes = async_scopes.size(),
     };
     const auto outer_loop = std::exchange(current_loop, continuation);
-    auto steps = (co_await region(*value.steps, LoweringDiscardResult {}, false));
+    auto body_statements = (co_await region(*value.body, LoweringDiscardResult {}, false));
+    const auto continued = body_statements.exits().contains(continuation.target);
+    const auto breaks = body_statements.exits().contains(continuation.break_target);
+    const auto run_steps = body_statements.continues() || continued;
+    auto steps = run_steps ? (co_await region(*value.steps, LoweringDiscardResult {}, false))
+                           : LoweringStmtBuilder();
+    current_loop = outer_loop;
     const auto direct_condition = condition_statements.empty();
     auto for_step = direct_condition && !preparation.requires_coroutine_context(*value.steps)
         ? take_for_step(context, steps)
         : std::nullopt;
     const auto step = for_step || steps.empty() ? std::nullopt : std::optional(step_label);
-    current_loop->step = step;
-    auto body_statements = (co_await region(*value.body, LoweringDiscardResult {}, false));
-    current_loop = outer_loop;
-    const auto continued = body_statements.exits().contains(continuation.target);
-    const auto breaks = body_statements.exits().contains(continuation.break_target);
-    const auto run_steps = body_statements.continues() || continued;
-    if (!run_steps) {
-        steps = LoweringStmtBuilder();
-        for_step.reset();
-    }
     const auto conditional = known_predicate(condition) != true;
-    auto loop_condition = bool_expression(true);
-    auto iteration = std::move(condition_statements);
-    if (direct_condition) {
-        loop_condition = predicate_expression(std::move(*condition));
-    } else if (conditional) {
-        auto exit_body = LoweringStmtBuilder();
-        exit_body.terminate(generated_statement(TargetBreakStmt {}), continuation.break_target);
-        iteration.emit(
-            generated_statement(
-                TargetIfStmt {
-                    .condition = prefix_expression(
-                        TargetPrefixOperator::LogicalNot,
-                        predicate_expression(std::move(*condition))
-                    ),
-                    .body = std::move(exit_body).finish(),
-                    .else_body = std::nullopt
+    if (!run_steps && !breaks) {
+        initializer.append(std::move(condition_statements));
+        if (conditional) {
+            initializer.record_exits(body_statements.exits());
+            initializer.emit(
+                generated_statement(
+                    TargetIfStmt {
+                        .condition = predicate_expression(std::move(*condition)),
+                        .body = std::move(body_statements).finish(),
+                        .else_body = std::nullopt
+                    }
+                ),
+                true
+            );
+        } else {
+            initializer.scope(
+                std::move(body_statements),
+                TargetGeneratedExpansionAttribution {
+                    .reason = TargetExpansionReason::LoweringSupport
                 }
-            ),
-            true
-        );
-    }
-    if (step.has_value()) {
-        iteration.scope(
-            std::move(body_statements),
-            TargetGeneratedExpansionAttribution {.reason = TargetExpansionReason::LoweringSupport}
-        );
+            );
+        }
     } else {
-        iteration.append(std::move(body_statements));
-    }
-    if (continued && step.has_value()) {
-        iteration.resume(*step, continuation.target);
-    }
-    iteration.append(std::move(steps));
-    static_cast<void>(iteration.consume_exit(continuation.target));
-    static_cast<void>(iteration.consume_exit(continuation.break_target));
-    initializer.record_exits(iteration.exits());
-    if (for_step) {
-        auto header_steps = std::vector<TargetForStep>();
-        header_steps.push_back(std::move(*for_step));
-        initializer.emit(
-            generated_statement(
-                TargetForStmt {
-                    .initializer = std::nullopt,
-                    .condition = std::move(loop_condition),
-                    .steps = std::move(header_steps),
-                    .body = std::move(iteration).finish(),
+        auto loop_condition = bool_expression(true);
+        auto iteration = std::move(condition_statements);
+        if (direct_condition) {
+            loop_condition = predicate_expression(std::move(*condition));
+        } else if (conditional) {
+            auto exit_body = LoweringStmtBuilder();
+            exit_body.terminate(generated_statement(TargetBreakStmt {}), continuation.break_target);
+            iteration.emit(
+                generated_statement(
+                    TargetIfStmt {
+                        .condition = prefix_expression(
+                            TargetPrefixOperator::LogicalNot,
+                            predicate_expression(std::move(*condition))
+                        ),
+                        .body = std::move(exit_body).finish(),
+                        .else_body = std::nullopt
+                    }
+                ),
+                true
+            );
+        }
+        if (step.has_value()) {
+            iteration.scope(
+                std::move(body_statements),
+                TargetGeneratedExpansionAttribution {
+                    .reason = TargetExpansionReason::LoweringSupport
                 }
-            ),
-            breaks || conditional
-        );
-    } else {
-        initializer.emit(
-            generated_statement(
-                TargetWhileStmt {
-                    .condition = std::move(loop_condition),
-                    .body = std::move(iteration).finish(),
-                }
-            ),
-            breaks || conditional
-        );
+            );
+        } else {
+            iteration.append(std::move(body_statements));
+        }
+        if (continued && step.has_value()) {
+            iteration.resume(*step, continuation.target);
+        }
+        iteration.append(std::move(steps));
+        static_cast<void>(iteration.consume_exit(continuation.target));
+        static_cast<void>(iteration.consume_exit(continuation.break_target));
+        initializer.record_exits(iteration.exits());
+        auto iteration_body = std::move(iteration).finish();
+        if (continued && !step) {
+            resolve_native_continue(iteration_body, step_label);
+        }
+        if (for_step) {
+            auto header_steps = std::vector<TargetForStep>();
+            header_steps.push_back(std::move(*for_step));
+            initializer.emit(
+                generated_statement(
+                    TargetForStmt {
+                        .initializer = std::nullopt,
+                        .condition = std::move(loop_condition),
+                        .steps = std::move(header_steps),
+                        .body = std::move(iteration_body),
+                    }
+                ),
+                breaks || conditional
+            );
+        } else {
+            initializer.emit(
+                generated_statement(
+                    TargetWhileStmt {
+                        .condition = std::move(loop_condition),
+                        .body = std::move(iteration_body),
+                    }
+                ),
+                breaks || conditional
+            );
+        }
     }
-    close_async_scopes(outer_scopes, false, initializer);
-    leave_async_scopes(outer_scopes);
+    end_async_scopes(outer_scopes, initializer);
     destination.scope(
         std::move(initializer),
         TargetGeneratedExpansionAttribution {.reason = TargetExpansionReason::LoweringSupport}

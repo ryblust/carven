@@ -6,11 +6,7 @@ import :backend.lower;
 import :backend.lowering.context;
 import :backend.lowering.decl;
 import :backend.target;
-import :backend.target.builder;
-import :backend.target.decl;
 import :backend.target.item;
-import :backend.target.name;
-import :backend.target.type;
 import :backend.target.unit;
 import :semantic.semir.decl;
 import :semantic.semir.ids;
@@ -91,6 +87,16 @@ auto lower_interface(ArtifactLowering& context, const TargetInterfaceArtifact& s
                 );
                 append_items(module_items, module_context.take_query_aliases());
                 append_items(module_items, std::move(lowered));
+                if constexpr (std::same_as<decltype(id), StructID>
+                              || std::same_as<decltype(id), EnumID>) {
+                    if (std::ranges::contains(schedule.host_nominals, NominalDeclarationRef(id))) {
+                        if constexpr (std::same_as<decltype(id), StructID>) {
+                            append_items(module_items, lower_host_record(module_context, id));
+                        } else {
+                            append_items(module_items, lower_host_enumeration(module_context, id));
+                        }
+                    }
+                }
             }
         });
     }
@@ -103,10 +109,15 @@ auto lower_interface(ArtifactLowering& context, const TargetInterfaceArtifact& s
             flush();
         }
     }
+    auto native_providers = std::vector<TargetItem>();
+    for (const auto id : schedule.native_providers) {
+        const auto owner = context.semantic().declarations().function(id).module_id;
+        native_providers.push_back(lower_native_provider(context.module_context(owner), id));
+    }
     return {
         .preamble = {},
         .body = wrap_linkage_namespaces(context, std::move(root)),
-        .epilogue = {},
+        .epilogue = std::move(native_providers),
     };
 }
 
@@ -119,80 +130,29 @@ auto lower_cpp_api_header(
     for (const auto function : schedule.cpp_export_declarations) {
         declarations.push_back(lower_cpp_export_header_declaration(module_context, function));
     }
-    return {
-        .preamble = {},
-        .body = target_items(namespace_item(
-            context.plan().names().module_names(schedule.module_id).public_namespace_name,
-            std::move(declarations),
-            TargetCompilerReason::ArtifactScaffolding,
-            true
-        )),
-        .epilogue = {},
-    };
+    auto items = target_items(namespace_item(
+        context.plan().names().module_names(schedule.module_id).public_namespace_name,
+        std::move(declarations),
+        TargetCompilerReason::ArtifactScaffolding,
+        true
+    ));
+    for (const auto function : schedule.cpp_export_declarations) {
+        items.push_back(lower_host_contract(module_context, function));
+    }
+    auto support = wrap_linkage_namespaces(context, context.take_support());
+    support.append_range(items | std::views::as_rvalue);
+    items = std::move(support);
+    return {.preamble = {}, .body = std::move(items), .epilogue = {}};
 }
 
 auto lower_cpp_provider_header(
     ArtifactLowering& context,
     const TargetCppProviderHeaderArtifact& schedule
 ) noexcept -> TargetUnitSections {
-    auto& module = context.module_context(schedule.module_id);
-    const auto& semantic = context.semantic();
+    auto& lowering = context.module_context(schedule.module_id);
     auto items = std::vector<TargetItem>();
     for (const auto id : schedule.providers) {
-        const auto& function = semantic.declarations().function(id);
-        const auto& callable = semantic.declarations().callable(function.callable);
-        const auto& signature = semantic.callable_signatures().signature(callable.signature);
-        auto aliases = std::vector<TargetItem>();
-        const auto alias = [&](std::string_view name, TargetTypeID type) noexcept {
-            aliases.push_back(target_lowering_item(
-                TargetDecl {TargetTypeAlias {
-                    .name = TargetIdentifier::from_spelling(name),
-                    .type = type,
-                }}
-            ));
-        };
-        alias("Result", module.lower_type(signature.result, TypeNameScope::Global));
-        const auto completion =
-            module.lower_signature_result(callable.signature, false, TypeNameScope::Global);
-        alias("Completion", completion);
-        for (const auto [index, parameter] : std::views::enumerate(signature.parameters)) {
-            alias(
-                std::format("Parameter{}", index),
-                module.lower_type(parameter.type, TypeNameScope::Global)
-            );
-        }
-        for (const auto [index, failure] :
-             std::views::enumerate(context.plan().failure_abi().members(signature.failures))) {
-            alias(
-                std::format("Failure{}", index),
-                module.lower_type(failure, TypeNameScope::Global)
-            );
-        }
-        const auto& path =
-            semantic.provenance()
-                .module_record(
-                    semantic.declarations().module_decl(schedule.module_id).provenance_module
-                )
-                .path;
-        auto components = std::vector<TargetIdentifier> {
-            TargetIdentifier::from_spelling("carven"),
-            TargetIdentifier::from_spelling("providers")
-        };
-        for (const auto& component : path.components()) {
-            components.push_back(public_target_identifier(component));
-        }
-        // Public source identifiers cannot encode to this synthetic component.
-        // Keep callable aliases separate from namespaces for descendant modules.
-        components.push_back(TargetIdentifier::from_spelling("cv_escaped_functions"));
-        components.push_back(
-            public_target_identifier(semantic.provenance().spelling(function.name))
-        );
-        items.push_back(namespace_item(
-            TargetName::from_components(std::move(components)),
-            std::move(aliases),
-            TargetCompilerReason::ArtifactScaffolding,
-            true
-        ));
+        items.push_back(lower_host_contract(lowering, id));
     }
     return {.preamble = {}, .body = std::move(items), .epilogue = {}};
 }

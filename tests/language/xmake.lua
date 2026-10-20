@@ -81,20 +81,18 @@ target("carven-test-language-implicit-entry")
     add_tests("recovery", {run_timeout = 30000})
 target_end()
 
-for _, mode in ipairs({{standard = "c++20", suffix = ""}, {standard = "c++23", suffix = "-cxx23"}}) do
-    target("carven-test-language-printing" .. mode.suffix)
-        set_languages(mode.standard)
-        add_rules("@carven/carven")
-        add_files("printing/core.cv")
-        add_tests("printing", {run_timeout = 30000})
-        on_test(function (target, opt)
-            return import("process", {rootdir = path.join(os.projectdir(), "tests", "harness")})
-                .main(target, opt, {
-                    args = {}, stdout = "stdout.txt", stderr = "stderr.txt",
-                }, path.join(language_dir, "printing"))
-        end)
-    target_end()
-end
+target("carven-test-language-printing")
+    set_languages("c++20")
+    add_rules("@carven/carven")
+    add_files("printing/core.cv")
+    add_tests("printing", {run_timeout = 30000})
+    on_test(function (target, opt)
+        return import("process", {rootdir = path.join(os.projectdir(), "tests", "harness")})
+            .main(target, opt, {
+                args = {}, stdout = "stdout.txt", stderr = "stderr.txt",
+            }, path.join(language_dir, "printing"))
+    end)
+target_end()
 
 for _, case in ipairs({
     {name = "implicit-failure", source = "implicit_failure.cv", reports = {"escaped the program entry", "Failure {}"}},

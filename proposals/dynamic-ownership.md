@@ -20,7 +20,30 @@ cancellation owners. General `Unique<T>` and `Shared<T>` types, source-defined
 lifecycle operations, and allocator parameters remain unimplemented. Source
 `ptr<T>` is a nullable nonowning handle. The owner contracts below are proposed.
 
+Hosting object references and the native handles used by process and byte-channel
+Crafts have defined identity and native lifecycle contracts. Result carriers
+retain payload ownership across synchronous and async delivery. These existing
+mechanisms provide neither a general source owner nor source-defined lifecycle
+operations.
+
 ## Design
+
+### Ownership and delivery
+
+Compiler knowledge records copying, transfer, destruction, native construction
+capabilities, and retained backing through containing values. Builtin operations
+can supply the bounded resource or construction contract a consumer needs.
+Runtime Craft owns shared native storage and lifetime mechanisms. Standard Craft
+owns public owner APIs, allocator policy, and resource-specific adapters; source
+implementations use the admitted operations.
+
+Select native resource admission, a general Unique owner, Shared ownership, and
+allocator customization independently. `NET-02` needs checked native owner and
+view relationships, not a public owner protocol. A Unique consumer needs its
+own allocation and construction contract; Shared adds access and final-release
+rules. Public concepts, destructor hooks, and allocator parameters enter a slice
+only when its source API requires them. The selected primitive or adapter must
+establish the full lifecycle contract even when no general source surface exists.
 
 ### Construction and lifetime
 
@@ -66,10 +89,10 @@ fails. A successful allocation alone does not establish a live T object.
 
 ### Construction destinations
 
-Constructing directly in owned storage is a general mechanism consumed by
-factories, containers, and native adapters. It must preserve source evaluation
-order, initialized-prefix cleanup, and failure propagation. The mechanism applies
-to all factories independently of their names.
+Factories, containers, and native adapters can consume final-storage construction.
+Select the destination operations required by the consumer, preserving source
+evaluation order, initialized-prefix cleanup, and failure propagation. Factory
+names remain ordinary lookup and introduce no construction semantics.
 
 An owner factory needs empty/live/consumed destination states, partial
 initialization, and native object lifetime. It consumes those construction
@@ -106,7 +129,7 @@ inside an ordinary source struct does not establish that relationship.
 
 Native wrappers currently rely on C++ copyability and host lifetime contracts.
 A wrapper that copies native `Connection` passes Carven analysis; C++ rejects
-the deleted copy constructor. The shared `ConnectionView` nominal supports
+the deleted copy constructor. The shared `NetConnectionView` nominal supports
 existing cold-operation holder checks, while the pointed-to socket's lifetime
 remains the host's responsibility.
 
@@ -140,11 +163,13 @@ and retained borrows through the selected consumer.
 
 ## Validation
 
-Select an end-to-end Unique consumer such as a recursive node or an independently
-allocated native resource. Establish source capability checks, whole-owner
-transfer, retained-borrow rejection, construction failure, and exactly-once
-cleanup through ordinary and failure exits. Native representation must preserve
-the C++20 baseline and the allocator's matching release requirements.
+For `NET-02`, validate connection construction, owner/view relationships, transfer,
+close, and cancellation through the selected native adapter. For a general Unique
+delivery, select a consumer such as a recursive node or an independently allocated
+object. Each owner slice establishes its capability checks, retained-borrow
+rejection, construction failure, and exactly-once cleanup through ordinary and
+failure exits. Native representation must preserve the C++20 baseline and the
+selected allocation/release contract.
 
 Shared ownership is activated by a concrete multi-owner consumer. Its evidence
 must cover handle copies, final release, target access, and retained borrows;

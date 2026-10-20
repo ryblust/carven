@@ -44,8 +44,8 @@ auto parse_number_constant(
     const ExecutionValueAccess& values,
     BuiltinType number,
     std::string_view text
-) noexcept -> std::optional<ConstantFact> {
-    const auto integer = [&]<typename Number>() noexcept -> std::optional<ConstantFact> {
+) noexcept -> std::optional<ConstantAtom> {
+    const auto integer = [&]<typename Number>() noexcept -> std::optional<ConstantAtom> {
         const auto parsed = parsed_number<Number>(text);
         if (!parsed) {
             return std::nullopt;
@@ -54,18 +54,18 @@ auto parse_number_constant(
         const auto negative = std::is_signed_v<Number> && *parsed < 0;
         const auto bits = static_cast<Unsigned>(*parsed);
         const auto magnitude = negative ? static_cast<Unsigned>(Unsigned {0} - bits) : bits;
-        return ConstantFact {
+        return ConstantAtom {
             .type = values.builtin_type(number),
             .value = IntegerConstant::from_parts(magnitude, negative)
         };
     };
     const auto floating =
-        [&]<typename Number, typename Constant>() noexcept -> std::optional<ConstantFact> {
+        [&]<typename Number, typename Constant>() noexcept -> std::optional<ConstantAtom> {
         const auto parsed = parsed_number<Number>(text);
         if (!parsed) {
             return std::nullopt;
         }
-        return ConstantFact {
+        return ConstantAtom {
             .type = values.builtin_type(number),
             .value = Constant {.value = *parsed}
         };
@@ -234,6 +234,7 @@ auto validate_constant_value(const ConstantValueReader& values, const ConstantVa
                     || std::same_as<Item, F32Constant>
                     || std::same_as<Item, F64Constant>
                     || std::same_as<Item, CharacterConstant>
+                    || std::same_as<Item, ByteSequenceConstant>
                     || std::same_as<Item, VoidConstant>,
                 "unhandled value validation"
             );
@@ -333,16 +334,16 @@ auto checked_multiply(std::uint64_t left, std::uint64_t right) noexcept
     return left * right;
 }
 
-auto constant_integer(TypeID type, IntegerConstant value) noexcept -> ConstantFact {
+auto constant_integer(TypeID type, IntegerConstant value) noexcept -> ConstantAtom {
     return {.type = type, .value = value};
 }
 
 auto constant_boolean(const ExecutionValueAccess& values, TypeID type, bool value) noexcept
-    -> std::expected<ConstantFact, ConstantEvaluationFailure> {
+    -> std::expected<ConstantAtom, ConstantEvaluationFailure> {
     if (!is_builtin(values, type, BuiltinType::Bool)) {
         return std::unexpected(ConstantEvaluationFailure::InvalidOperation);
     }
-    return ConstantFact {.type = type, .value = BooleanConstant {.value = value}};
+    return ConstantAtom {.type = type, .value = BooleanConstant {.value = value}};
 }
 
 auto finish_constant_integer(
@@ -351,7 +352,7 @@ auto finish_constant_integer(
     IntegerConstant value,
     BuiltinType type,
     IntegerArithmetic arithmetic
-) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure> {
+) noexcept -> std::expected<ConstantAtom, ConstantEvaluationFailure> {
     if (builtin_type(values, result) != type) {
         return std::unexpected(ConstantEvaluationFailure::InvalidOperation);
     }
@@ -378,13 +379,13 @@ auto evaluate_floating(
     Floating right,
     TypeID result,
     TypeID operand_type
-) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure> {
+) noexcept -> std::expected<ConstantAtom, ConstantEvaluationFailure> {
     const auto finish =
-        [&](auto value) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure> {
+        [&](auto value) noexcept -> std::expected<ConstantAtom, ConstantEvaluationFailure> {
         if (result != operand_type) {
             return std::unexpected(ConstantEvaluationFailure::InvalidOperation);
         }
-        return ConstantFact {.type = result, .value = Floating {.value = value}};
+        return ConstantAtom {.type = result, .value = Floating {.value = value}};
     };
     switch (operation) {
         case BinaryOperator::Add:      return finish(left.value + right.value);
@@ -411,7 +412,7 @@ auto evaluate_signed_integer(
     BuiltinType type,
     TypeID result,
     IntegerArithmetic arithmetic
-) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure> {
+) noexcept -> std::expected<ConstantAtom, ConstantEvaluationFailure> {
     const auto width = builtin_integer_width(type);
     const auto lhs = left.as_signed();
     const auto rhs = right.as_signed();
@@ -500,7 +501,7 @@ auto evaluate_unsigned_integer(
     BuiltinType type,
     TypeID result,
     IntegerArithmetic arithmetic
-) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure> {
+) noexcept -> std::expected<ConstantAtom, ConstantEvaluationFailure> {
     const auto width = builtin_integer_width(type);
     const auto lhs = left.as_unsigned();
     const auto rhs = right.as_unsigned();
@@ -583,13 +584,14 @@ auto load_constant_fact(
     return &fact;
 }
 
-auto constant_value_equal(
+namespace {
+
+template<typename Payload>
+auto equal_constant_payload(
     const ConstantValueReader& values,
-    const ConstantValue& left,
-    const ConstantValue& right
+    const Payload& left,
+    const Payload& right
 ) noexcept -> bool {
-    validate_constant_value(values, left);
-    validate_constant_value(values, right);
     if (left.index() != right.index()) {
         return false;
     }
@@ -612,7 +614,8 @@ auto constant_value_equal(
             }
             return true;
         } else if constexpr (std::same_as<Value, StructConstant>
-                             || std::same_as<Value, VectorConstant>) {
+                             || std::same_as<Value, VectorConstant>
+                             || std::same_as<Value, ByteSequenceConstant>) {
             invariant_violation("structure constants do not support language equality");
         } else if constexpr (std::same_as<Value, ArrayConstant>
                              || std::same_as<Value, TupleConstant>) {
@@ -637,15 +640,31 @@ auto constant_value_equal(
     });
 }
 
+} // namespace
+
+auto constant_value_equal(
+    const ConstantValueReader& values,
+    const ConstantValue& left,
+    const ConstantValue& right
+) noexcept -> bool {
+    return equal_constant_payload(values, left, right);
+}
+
+auto constant_value_equal(
+    const ConstantValueReader& values,
+    const ConstantAtomValue& left,
+    const ConstantAtomValue& right
+) noexcept -> bool {
+    return equal_constant_payload(values, left, right);
+}
+
 auto evaluate_unary_constant_value(
     const ExecutionValueAccess& values,
     UnaryOperator operation,
-    const ConstantFact& operand,
+    const ConstantAtom& operand,
     TypeID result,
     IntegerArithmetic arithmetic
-) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure> {
-    validate_constant_fact(values, operand);
-    static_cast<void>(values.type_copy(result));
+) noexcept -> std::expected<ConstantAtom, ConstantEvaluationFailure> {
     if (const auto* vector = std::get_if<SIMDConstant>(&operand.value)) {
         const auto owner = builtin_type(values, operand.type);
         const auto layout = owner ? simd_layout(*owner) : std::nullopt;
@@ -657,10 +676,12 @@ auto evaluate_unary_constant_value(
             return std::unexpected(ConstantEvaluationFailure::InvalidOperation);
         }
         auto output = *vector;
-        for (auto& lane : output.lanes) {
-            lane = floating ? lane ^ 0x80000000u : (~lane & 255u);
+        const auto element = floating ? BuiltinType::F32 : BuiltinType::U8;
+        for (auto i = 0uz; i < layout->width; ++i) {
+            const auto lane = output.lane(i, element);
+            output.set_lane(i, element, floating ? lane ^ 0x80000000u : (~lane & 255u));
         }
-        return ConstantFact {.type = result, .value = std::move(output)};
+        return ConstantAtom {.type = result, .value = output};
     }
     switch (operation) {
         case UnaryOperator::LogicalNot:
@@ -674,7 +695,7 @@ auto evaluate_unary_constant_value(
                 if (result != operand.type) {
                     return std::unexpected(ConstantEvaluationFailure::InvalidOperation);
                 }
-                return ConstantFact {
+                return ConstantAtom {
                     .type = result,
                     .value = F32Constant {.value = -floating->value}
                 };
@@ -683,7 +704,7 @@ auto evaluate_unary_constant_value(
                 if (result != operand.type) {
                     return std::unexpected(ConstantEvaluationFailure::InvalidOperation);
                 }
-                return ConstantFact {
+                return ConstantAtom {
                     .type = result,
                     .value = F64Constant {.value = -floating->value}
                 };
@@ -739,14 +760,11 @@ auto evaluate_unary_constant_value(
 auto evaluate_binary_constant_value(
     const ExecutionValueAccess& values,
     BinaryOperator operation,
-    const ConstantFact& left,
-    const ConstantFact& right,
+    const ConstantAtom& left,
+    const ConstantAtom& right,
     TypeID result,
     IntegerArithmetic arithmetic
-) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure> {
-    validate_constant_fact(values, left);
-    validate_constant_fact(values, right);
-    static_cast<void>(values.type_copy(result));
+) noexcept -> std::expected<ConstantAtom, ConstantEvaluationFailure> {
     if (const auto* first = std::get_if<SIMDConstant>(&left.value)) {
         const auto* second = std::get_if<SIMDConstant>(&right.value);
         const auto owner = builtin_type(values, left.type);
@@ -769,27 +787,29 @@ auto evaluate_binary_constant_value(
         if (result != (comparison ? values.builtin_type(layout->mask) : left.type)) {
             return std::unexpected(ConstantEvaluationFailure::InvalidOperation);
         }
-        auto output = SIMDConstant {.lanes = std::vector<std::uint32_t>(layout->width)};
+        auto output = SIMDConstant {};
         const auto floating = *owner == layout->vector && layout->element == BuiltinType::F32;
-        for (auto i = 0uz; i < output.lanes.size(); ++i) {
-            const auto a = first->lanes[i];
-            const auto b = second->lanes[i];
+        const auto element = floating ? BuiltinType::F32 : BuiltinType::U8;
+        const auto output_element = comparison ? BuiltinType::U8 : element;
+        for (auto i = 0uz; i < layout->width; ++i) {
+            const auto a = first->lane(i, element);
+            const auto b = second->lane(i, element);
             if (floating) {
                 const auto x = std::bit_cast<float>(a);
                 const auto y = std::bit_cast<float>(b);
                 auto predicate = false;
                 switch (operation) {
                     case BinaryOperator::Add:
-                        output.lanes[i] = std::bit_cast<std::uint32_t>(x + y);
+                        output.set_lane(i, output_element, std::bit_cast<std::uint32_t>(x + y));
                         break;
                     case BinaryOperator::Subtract:
-                        output.lanes[i] = std::bit_cast<std::uint32_t>(x - y);
+                        output.set_lane(i, output_element, std::bit_cast<std::uint32_t>(x - y));
                         break;
                     case BinaryOperator::Multiply:
-                        output.lanes[i] = std::bit_cast<std::uint32_t>(x * y);
+                        output.set_lane(i, output_element, std::bit_cast<std::uint32_t>(x * y));
                         break;
                     case BinaryOperator::Divide:
-                        output.lanes[i] = std::bit_cast<std::uint32_t>(x / y);
+                        output.set_lane(i, output_element, std::bit_cast<std::uint32_t>(x / y));
                         break;
                     case BinaryOperator::Equal:        predicate = x == y; break;
                     case BinaryOperator::NotEqual:     predicate = x != y; break;
@@ -800,31 +820,50 @@ auto evaluate_binary_constant_value(
                     default: return std::unexpected(ConstantEvaluationFailure::InvalidOperation);
                 }
                 if (comparison) {
-                    output.lanes[i] = predicate ? 255u : 0u;
+                    output.set_lane(i, output_element, predicate ? 255u : 0u);
                 }
             } else {
                 switch (operation) {
-                    case BinaryOperator::Add:          output.lanes[i] = (a + b) & 255u; break;
-                    case BinaryOperator::Subtract:     output.lanes[i] = (a - b) & 255u; break;
-                    case BinaryOperator::BitwiseAnd:   output.lanes[i] = a & b; break;
-                    case BinaryOperator::BitwiseOr:    output.lanes[i] = a | b; break;
-                    case BinaryOperator::BitwiseXor:   output.lanes[i] = a ^ b; break;
-                    case BinaryOperator::Equal:        output.lanes[i] = a == b ? 255u : 0u; break;
-                    case BinaryOperator::NotEqual:     output.lanes[i] = a != b ? 255u : 0u; break;
-                    case BinaryOperator::Less:         output.lanes[i] = a < b ? 255u : 0u; break;
-                    case BinaryOperator::LessEqual:    output.lanes[i] = a <= b ? 255u : 0u; break;
-                    case BinaryOperator::Greater:      output.lanes[i] = a > b ? 255u : 0u; break;
-                    case BinaryOperator::GreaterEqual: output.lanes[i] = a >= b ? 255u : 0u; break;
+                    case BinaryOperator::Add:
+                        output.set_lane(i, output_element, (a + b) & 255u);
+                        break;
+                    case BinaryOperator::Subtract:
+                        output.set_lane(i, output_element, (a - b) & 255u);
+                        break;
+                    case BinaryOperator::BitwiseAnd:
+                        output.set_lane(i, output_element, a & b);
+                        break;
+                    case BinaryOperator::BitwiseOr:
+                        output.set_lane(i, output_element, a | b);
+                        break;
+                    case BinaryOperator::BitwiseXor:
+                        output.set_lane(i, output_element, a ^ b);
+                        break;
+                    case BinaryOperator::Equal:
+                        output.set_lane(i, output_element, a == b ? 255u : 0u);
+                        break;
+                    case BinaryOperator::NotEqual:
+                        output.set_lane(i, output_element, a != b ? 255u : 0u);
+                        break;
+                    case BinaryOperator::Less:
+                        output.set_lane(i, output_element, a < b ? 255u : 0u);
+                        break;
+                    case BinaryOperator::LessEqual:
+                        output.set_lane(i, output_element, a <= b ? 255u : 0u);
+                        break;
+                    case BinaryOperator::Greater:
+                        output.set_lane(i, output_element, a > b ? 255u : 0u);
+                        break;
+                    case BinaryOperator::GreaterEqual:
+                        output.set_lane(i, output_element, a >= b ? 255u : 0u);
+                        break;
                     default: return std::unexpected(ConstantEvaluationFailure::InvalidOperation);
                 }
             }
         }
-        return ConstantFact {.type = result, .value = std::move(output)};
+        return ConstantAtom {.type = result, .value = output};
     }
     if (operation == BinaryOperator::Equal || operation == BinaryOperator::NotEqual) {
-        if (std::holds_alternative<SliceConstant>(left.value)) {
-            return std::unexpected(ConstantEvaluationFailure::UnsupportedOperation);
-        }
         const auto equal = constant_value_equal(values, left.value, right.value);
         return constant_boolean(
             values,
@@ -905,27 +944,26 @@ auto evaluate_binary_constant_value(
 auto evaluate_cast_constant_value(
     const ExecutionValueAccess& values,
     CastKind kind,
-    const ConstantFact& operand,
+    const ConstantAtom& operand,
     TypeID result
-) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure> {
-    validate_constant_fact(values, operand);
+) noexcept -> std::expected<ConstantAtom, ConstantEvaluationFailure> {
     const auto target = builtin_type(values, result);
     if (kind == CastKind::PointerRead
         && std::holds_alternative<NullPointerConstant>(operand.value)) {
         if (constant_pointer_narrows(values, operand.type, result)) {
-            return ConstantFact {.type = result, .value = NullPointerConstant {}};
+            return ConstantAtom {.type = result, .value = NullPointerConstant {}};
         }
         return std::unexpected(ConstantEvaluationFailure::InvalidOperation);
     }
     if ((kind == CastKind::PointerErase || kind == CastKind::PointerRestore)
         && std::holds_alternative<NullPointerConstant>(operand.value)) {
-        return ConstantFact {.type = result, .value = NullPointerConstant {}};
+        return ConstantAtom {.type = result, .value = NullPointerConstant {}};
     }
     if (kind == CastKind::Identity) {
         if (operand.type != result) {
             return std::unexpected(ConstantEvaluationFailure::InvalidOperation);
         }
-        return ConstantFact {.type = result, .value = operand.value};
+        return ConstantAtom {.type = result, .value = operand.value};
     }
     if (!target.has_value()) {
         return std::unexpected(ConstantEvaluationFailure::InvalidOperation);
@@ -944,11 +982,11 @@ auto evaluate_cast_constant_value(
         }
         if (kind == CastKind::IntegerToFloating
             && (*target == BuiltinType::F32 || *target == BuiltinType::F64)) {
-            const auto convert = [&]<typename Floating>() noexcept -> ConstantFact {
+            const auto convert = [&]<typename Floating>() noexcept -> ConstantAtom {
                 using Native = decltype(Floating::value);
                 const auto value = integer->negative() ? static_cast<Native>(*integer->as_signed())
                                                        : static_cast<Native>(integer->magnitude());
-                return ConstantFact {.type = result, .value = Floating {.value = value}};
+                return ConstantAtom {.type = result, .value = Floating {.value = value}};
             };
             return *target == BuiltinType::F32 ? convert.template operator()<F32Constant>()
                                                : convert.template operator()<F64Constant>();
@@ -987,7 +1025,7 @@ auto evaluate_cast_constant_value(
         if (const auto* value = std::get_if<F32Constant>(&operand.value); value != nullptr
             && source_builtin != nullptr
             && source_builtin->kind == BuiltinType::F32) {
-            return ConstantFact {
+            return ConstantAtom {
                 .type = result,
                 .value = F64Constant {.value = static_cast<double>(value->value)},
             };
@@ -999,10 +1037,9 @@ auto evaluate_cast_constant_value(
 auto evaluate_text_intrinsic_constant_value(
     const ExecutionValueAccess& values,
     TextIntrinsic intrinsic,
-    const ConstantFact& operand,
+    const ConstantAtom& operand,
     TypeID result
-) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure> {
-    validate_constant_fact(values, operand);
+) noexcept -> std::expected<ConstantAtom, ConstantEvaluationFailure> {
     const auto* string = std::get_if<TextConstant>(&operand.value);
     if (string == nullptr || !is_builtin(values, operand.type, BuiltinType::Str)) {
         return std::unexpected(ConstantEvaluationFailure::UnsupportedOperation);
@@ -1047,8 +1084,11 @@ auto evaluate_slice_intrinsic_constant_value(
     validate_constant_fact(values, operand);
     const auto* array = std::get_if<ArrayConstant>(&operand.value);
     const auto* slice = std::get_if<SliceConstant>(&operand.value);
+    const auto* bytes = std::get_if<ByteSequenceConstant>(&operand.value);
     const auto contract = slice_intrinsic_contract(intrinsic);
-    if (array == nullptr && slice == nullptr) {
+    if ((!array && !slice && !bytes)
+        || (bytes
+            && !std::holds_alternative<SliceTypeValue>(values.type_copy(operand.type).value))) {
         return std::unexpected(ConstantEvaluationFailure::UnsupportedOperation);
     }
     if (!slice_intrinsic_accepts_receiver(
@@ -1061,9 +1101,11 @@ auto evaluate_slice_intrinsic_constant_value(
     if (intrinsic == SliceIntrinsic::View) {
         return std::unexpected(ConstantEvaluationFailure::UnsupportedOperation);
     }
-    const auto& elements = array ? array->elements : slice->elements;
+    const auto size = bytes ? bytes->bytes.size()
+        : array             ? array->elements.size()
+                            : slice->elements.size();
     if (intrinsic == SliceIntrinsic::IsEmpty) {
-        return constant_boolean(values, result, elements.empty());
+        return constant_boolean(values, result, size == 0uz).transform(constant_fact);
     }
     if (intrinsic == SliceIntrinsic::Length) {
         if (!is_builtin(values, result, BuiltinType::Usize)) {
@@ -1071,7 +1113,7 @@ auto evaluate_slice_intrinsic_constant_value(
         }
         return ConstantFact {
             .type = result,
-            .value = IntegerConstant::from_parts(elements.size(), false),
+            .value = IntegerConstant::from_parts(size, false),
         };
     }
     if (result != operand.type) {
@@ -1088,8 +1130,18 @@ auto evaluate_slice_intrinsic_constant_value(
         offsets[index] = integer->magnitude();
     }
     const auto [start, end] = offsets;
-    if (start > end || end > slice->elements.size()) {
+    if (start > end || end > size) {
         return std::unexpected(ConstantEvaluationFailure::SliceOutOfBounds);
+    }
+    if (bytes) {
+        const auto selected = std::span(bytes->bytes).subspan(start, end - start);
+        return ConstantFact {
+            .type = result,
+            .value = ByteSequenceConstant {
+                .bytes = std::vector(selected.begin(), selected.end()),
+                .capacity = selected.size(),
+            },
+        };
     }
     const auto selected = std::span(slice->elements).subspan(start, end - start);
     return ConstantFact {
@@ -1116,13 +1168,18 @@ auto fold_unary_constant(
                 || builtin_type(values, (*fact)->type) == BuiltinType::F32x8))) {
         return std::unexpected(ConstantEvaluationFailure::UnsupportedOperation);
     }
+    const auto atom = constant_atom(**fact);
+    if (!atom) {
+        return std::unexpected(ConstantEvaluationFailure::UnsupportedOperation);
+    }
     return evaluate_unary_constant_value(
-        values,
-        operation,
-        **fact,
-        result,
-        IntegerArithmetic::Wrapping
-    );
+               values,
+               operation,
+               *atom,
+               result,
+               IntegerArithmetic::Wrapping
+    )
+        .transform(constant_fact);
 }
 
 auto fold_binary_constant(
@@ -1152,14 +1209,30 @@ auto fold_binary_constant(
                     || builtin_type(values, (*right_fact)->type) == BuiltinType::F32x8)))) {
         return std::unexpected(ConstantEvaluationFailure::UnsupportedOperation);
     }
+    if ((operation == BinaryOperator::Equal || operation == BinaryOperator::NotEqual)
+        && !std::holds_alternative<SIMDConstant>((*left_fact)->value)) {
+        if (std::holds_alternative<SliceConstant>((*left_fact)->value)
+            || std::holds_alternative<ByteSequenceConstant>((*left_fact)->value)) {
+            return std::unexpected(ConstantEvaluationFailure::UnsupportedOperation);
+        }
+        const auto equal = constant_value_equal(values, (*left_fact)->value, (*right_fact)->value);
+        return constant_boolean(values, result, operation == BinaryOperator::Equal ? equal : !equal)
+            .transform(constant_fact);
+    }
+    const auto lhs = constant_atom(**left_fact);
+    const auto rhs = constant_atom(**right_fact);
+    if (!lhs || !rhs) {
+        return std::unexpected(ConstantEvaluationFailure::UnsupportedOperation);
+    }
     return evaluate_binary_constant_value(
-        values,
-        operation,
-        **left_fact,
-        **right_fact,
-        result,
-        IntegerArithmetic::Wrapping
-    );
+               values,
+               operation,
+               *lhs,
+               *rhs,
+               result,
+               IntegerArithmetic::Wrapping
+    )
+        .transform(constant_fact);
 }
 
 auto fold_cast_constant(
@@ -1175,7 +1248,17 @@ auto fold_cast_constant(
     if (!fact.has_value()) {
         return std::unexpected(fact.error());
     }
-    return evaluate_cast_constant_value(values, kind, **fact, result);
+    if (kind == CastKind::Identity) {
+        if ((*fact)->type != result) {
+            return std::unexpected(ConstantEvaluationFailure::InvalidOperation);
+        }
+        return **fact;
+    }
+    const auto atom = constant_atom(**fact);
+    if (!atom) {
+        return std::unexpected(ConstantEvaluationFailure::UnsupportedOperation);
+    }
+    return evaluate_cast_constant_value(values, kind, *atom, result).transform(constant_fact);
 }
 
 auto fold_text_intrinsic_constant(
@@ -1188,16 +1271,21 @@ auto fold_text_intrinsic_constant(
     if (!fact.has_value()) {
         return std::unexpected(fact.error());
     }
-    return evaluate_text_intrinsic_constant_value(values, intrinsic, **fact, result);
+    const auto atom = constant_atom(**fact);
+    if (!atom) {
+        return std::unexpected(ConstantEvaluationFailure::UnsupportedOperation);
+    }
+    return evaluate_text_intrinsic_constant_value(values, intrinsic, *atom, result)
+        .transform(constant_fact);
 }
 
 auto evaluate_simd_constant_value(
     const ExecutionValueAccess& values,
     SIMDIntrinsic intrinsic,
     BuiltinType owner,
-    std::span<const ConstantFact> inputs,
+    std::span<const ConstantAtom> inputs,
     TypeID result
-) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure> {
+) noexcept -> std::expected<ConstantAtom, ConstantEvaluationFailure> {
     auto indices = std::optional<BuiltinType>();
     if (intrinsic == SIMDIntrinsic::Lookup) {
         const auto type = values.type_copy(result);
@@ -1208,33 +1296,17 @@ auto evaluate_simd_constant_value(
         }
         indices = builtin->kind;
     }
-    const auto contract = simd_contract(intrinsic, owner, indices);
-    if (inputs.size() != contract.inputs.size()) {
-        return std::unexpected(ConstantEvaluationFailure::InvalidOperation);
-    }
-    const auto lookup = [&](TypeID id) noexcept {
-        return values.type_copy(id);
-    };
-    for (const auto& [index, input] : std::views::enumerate(inputs)) {
-        validate_constant_fact(values, input);
-        if (!matches_simd_type(contract.inputs[index], input.type, lookup)) {
-            return std::unexpected(ConstantEvaluationFailure::InvalidOperation);
-        }
-    }
-    if (!matches_simd_type(contract.result, result, lookup)) {
-        return std::unexpected(ConstantEvaluationFailure::InvalidOperation);
-    }
     const auto layout = *simd_layout(owner);
     const auto width = layout.width;
     const auto floating = layout.element == BuiltinType::F32;
     using Vector = SIMDConstant;
     using Mask = SIMDConstant;
-    const auto scalar = [&](const ConstantFact& fact) noexcept -> std::uint32_t {
+    const auto scalar = [&](const ConstantAtom& fact) noexcept -> std::uint32_t {
         return floating
             ? std::bit_cast<std::uint32_t>(std::get<F32Constant>(fact.value).value)
             : static_cast<std::uint32_t>(std::get<IntegerConstant>(fact.value).magnitude());
     };
-    const auto scalar_fact = [&](std::uint32_t bits) noexcept -> ConstantFact {
+    const auto scalar_fact = [&](std::uint32_t bits) noexcept -> ConstantAtom {
         if (floating) {
             return {.type = result, .value = F32Constant {.value = std::bit_cast<float>(bits)}};
         }
@@ -1243,18 +1315,22 @@ auto evaluate_simd_constant_value(
     const auto number = [&](std::size_t index) noexcept {
         return std::get<IntegerConstant>(inputs[index].value).magnitude();
     };
-    const auto lanes = [&](std::size_t index) noexcept -> const auto& {
-        return std::get<Vector>(inputs[index].value).lanes;
+    const auto lane = [&](std::size_t input, std::size_t index) noexcept {
+        return std::get<Vector>(inputs[input].value).lane(index, layout.element);
     };
-    const auto mask = [&](std::size_t index) noexcept -> const auto& {
-        return std::get<Mask>(inputs[index].value).lanes;
+    const auto mask = [&](std::size_t input, std::size_t index) noexcept {
+        return std::get<Mask>(inputs[input].value).lane(index, BuiltinType::U8);
     };
-    auto output = Vector {.lanes = std::vector<std::uint32_t>(width)};
+    auto output = Vector {};
     switch (intrinsic) {
-        case SIMDIntrinsic::Splat:    std::ranges::fill(output.lanes, scalar(inputs[0])); break;
+        case SIMDIntrinsic::Splat:
+            for (auto i = 0uz; i < width; ++i) {
+                output.set_lane(i, layout.element, scalar(inputs[0]));
+            }
+            break;
         case SIMDIntrinsic::FromBits:
         case SIMDIntrinsic::Prefix:   {
-            auto output_mask = Mask {.lanes = std::vector<std::uint32_t>(width)};
+            auto output_mask = Mask {};
             if (intrinsic == SIMDIntrinsic::Prefix && number(0) > width) {
                 return std::unexpected(ConstantEvaluationFailure::SIMDOutOfBounds);
             }
@@ -1262,40 +1338,27 @@ auto evaluate_simd_constant_value(
                 const auto active = intrinsic == SIMDIntrinsic::Prefix
                     ? i < number(0)
                     : (number(0) & (1ull << i)) != 0;
-                output_mask.lanes[i] = active ? 255 : 0;
+                output_mask.set_lane(i, BuiltinType::U8, active ? 255u : 0u);
             }
-            return ConstantFact {.type = result, .value = std::move(output_mask)};
+            return ConstantAtom {.type = result, .value = output_mask};
         }
         case SIMDIntrinsic::Lane:
             if (number(1) >= width) {
                 return std::unexpected(ConstantEvaluationFailure::SIMDOutOfBounds);
             }
-            return scalar_fact(lanes(0)[number(1)]);
+            return scalar_fact(lane(0, number(1)));
         case SIMDIntrinsic::WithLane:
             if (number(1) >= width) {
                 return std::unexpected(ConstantEvaluationFailure::SIMDOutOfBounds);
             }
-            output.lanes = lanes(0);
-            output.lanes[number(1)] = scalar(inputs[2]);
+            output = std::get<Vector>(inputs[0].value);
+            output.set_lane(number(1), layout.element, scalar(inputs[2]));
             break;
-        case SIMDIntrinsic::Swizzle: {
-            const auto& indices = std::get<ArrayConstant>(inputs[1].value).elements;
-            for (auto index = 0uz; index < width; ++index) {
-                const auto& control =
-                    std::get<IntegerConstant>(values.constant(indices[index]).value);
-                if (control.negative() || control.magnitude() >= width) {
-                    return std::unexpected(ConstantEvaluationFailure::SIMDOutOfBounds);
-                }
-                output.lanes[index] = lanes(0)[control.magnitude()];
-            }
-            break;
-        }
         case SIMDIntrinsic::Lookup:
             if (!floating) {
-                output.lanes.resize(lanes(1).size());
-                for (auto i = 0uz; i < output.lanes.size(); ++i) {
-                    const auto index = lanes(1)[i];
-                    output.lanes[i] = index < width ? lanes(0)[index] : 0;
+                for (auto i = 0uz; i < simd_layout(*indices)->width; ++i) {
+                    const auto index = lane(1, i);
+                    output.set_lane(i, layout.element, index < width ? lane(0, index) : 0);
                 }
             } else {
                 std::unreachable();
@@ -1307,7 +1370,11 @@ auto evaluate_simd_constant_value(
             }
             for (auto i = 0uz; i < width; ++i) {
                 const auto index = number(2) + i;
-                output.lanes[i] = index < width ? lanes(0)[index] : lanes(1)[index - width];
+                output.set_lane(
+                    i,
+                    layout.element,
+                    index < width ? lane(0, index) : lane(1, index - width)
+                );
             }
             break;
         case SIMDIntrinsic::ShiftLeft:
@@ -1317,9 +1384,13 @@ auto evaluate_simd_constant_value(
             }
             if (!floating) {
                 for (auto i = 0uz; i < width; ++i) {
-                    output.lanes[i] = static_cast<std::uint8_t>(
-                        intrinsic == SIMDIntrinsic::ShiftLeft ? lanes(0)[i] << number(1)
-                                                              : lanes(0)[i] >> number(1)
+                    output.set_lane(
+                        i,
+                        layout.element,
+                        static_cast<std::uint8_t>(
+                            intrinsic == SIMDIntrinsic::ShiftLeft ? lane(0, i) << number(1)
+                                                                  : lane(0, i) >> number(1)
+                        )
                     );
                 }
             } else {
@@ -1328,27 +1399,27 @@ auto evaluate_simd_constant_value(
             break;
         case SIMDIntrinsic::Sum: {
             auto sum = 0u;
-            for (const auto lane : lanes(0)) {
-                sum += lane;
+            for (auto i = 0uz; i < width; ++i) {
+                sum += lane(0, i);
             }
-            return ConstantFact {.type = result, .value = IntegerConstant::from_parts(sum, false)};
+            return ConstantAtom {.type = result, .value = IntegerConstant::from_parts(sum, false)};
         }
         case SIMDIntrinsic::FirstOr: {
             auto first = number(1);
             for (auto i = 0uz; i < width; ++i) {
-                if (mask(0)[i]) {
+                if (mask(0, i)) {
                     first = i;
                     break;
                 }
             }
-            return ConstantFact {
+            return ConstantAtom {
                 .type = result,
                 .value = IntegerConstant::from_parts(first, false)
             };
         }
         case SIMDIntrinsic::Select:
             for (auto i = 0uz; i < width; ++i) {
-                output.lanes[i] = mask(0)[i] ? lanes(1)[i] : lanes(2)[i];
+                output.set_lane(i, layout.element, mask(0, i) ? lane(1, i) : lane(2, i));
             }
             break;
         case SIMDIntrinsic::Bits:
@@ -1357,12 +1428,12 @@ auto evaluate_simd_constant_value(
         case SIMDIntrinsic::All:   {
             auto bits = 0ull;
             for (auto i = 0uz; i < width; ++i) {
-                if (mask(0)[i]) {
+                if (mask(0, i)) {
                     bits |= 1ull << i;
                 }
             }
             if (intrinsic == SIMDIntrinsic::Any || intrinsic == SIMDIntrinsic::All) {
-                return ConstantFact {
+                return ConstantAtom {
                     .type = result,
                     .value = BooleanConstant {
                         .value = intrinsic == SIMDIntrinsic::Any ? bits != 0
@@ -1370,7 +1441,7 @@ auto evaluate_simd_constant_value(
                     }
                 };
             }
-            return ConstantFact {
+            return ConstantAtom {
                 .type = result,
                 .value = IntegerConstant::from_parts(
                     intrinsic == SIMDIntrinsic::Bits ? bits : std::popcount(bits),
@@ -1381,10 +1452,11 @@ auto evaluate_simd_constant_value(
         case SIMDIntrinsic::Load:
         case SIMDIntrinsic::LoadPartial:
         case SIMDIntrinsic::FromArray:
+        case SIMDIntrinsic::Swizzle:
         case SIMDIntrinsic::ToArray:
             return std::unexpected(ConstantEvaluationFailure::UnsupportedOperation);
     }
-    return ConstantFact {.type = result, .value = output};
+    return ConstantAtom {.type = result, .value = output};
 }
 
 auto fold_simd_constant(
@@ -1394,29 +1466,53 @@ auto fold_simd_constant(
     std::span<const std::optional<ConstantID>> operands,
     TypeID result
 ) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure> {
-    auto inputs = std::vector<ConstantFact>();
+    if (intrinsic == SIMDIntrinsic::Swizzle) {
+        const auto input = load_constant_fact(values, operands[0]);
+        const auto controls = load_constant_fact(values, operands[1]);
+        if (!input || !controls) {
+            return std::unexpected(!input ? input.error() : controls.error());
+        }
+        const auto layout = *simd_layout(owner);
+        const auto& vector = std::get<SIMDConstant>((*input)->value);
+        const auto& indices = std::get<ArrayConstant>((*controls)->value).elements;
+        auto output = SIMDConstant {};
+        for (auto index = 0uz; index < layout.width; ++index) {
+            const auto& control = std::get<IntegerConstant>(values.constant(indices[index]).value);
+            if (control.negative() || control.magnitude() >= layout.width) {
+                return std::unexpected(ConstantEvaluationFailure::SIMDOutOfBounds);
+            }
+            output
+                .set_lane(index, layout.element, vector.lane(control.magnitude(), layout.element));
+        }
+        return ConstantFact {.type = result, .value = output};
+    }
+    auto inputs = std::vector<ConstantAtom>();
     for (const auto operand : operands) {
         const auto fact = load_constant_fact(values, operand);
         if (!fact) {
             return std::unexpected(fact.error());
         }
-        inputs.push_back(**fact);
+        const auto atom = constant_atom(**fact);
+        if (!atom) {
+            return std::unexpected(ConstantEvaluationFailure::UnsupportedOperation);
+        }
+        inputs.push_back(*atom);
     }
-    return evaluate_simd_constant_value(values, intrinsic, owner, inputs, result);
+    return evaluate_simd_constant_value(values, intrinsic, owner, inputs, result)
+        .transform(constant_fact);
 }
 
 auto evaluate_float_intrinsic_constant_value(
     const ExecutionValueAccess& values,
     FloatIntrinsic intrinsic,
-    std::span<const ConstantFact> operands,
+    std::span<const ConstantAtom> operands,
     TypeID result
-) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure> {
+) noexcept -> std::expected<ConstantAtom, ConstantEvaluationFailure> {
     if (operands.size() != float_intrinsic_arguments(intrinsic) + 1) {
         return std::unexpected(ConstantEvaluationFailure::InvalidOperation);
     }
     const auto receiver_type = operands.front().type;
     for (const auto& operand : operands) {
-        validate_constant_fact(values, operand);
         if (operand.type != receiver_type) {
             return std::unexpected(ConstantEvaluationFailure::InvalidOperation);
         }
@@ -1432,29 +1528,19 @@ auto evaluate_float_intrinsic_constant_value(
                 : receiver_type)) {
         return std::unexpected(ConstantEvaluationFailure::InvalidOperation);
     }
-    const auto evaluate = [&]<typename Floating>(
-                              std::span<const ConstantFact> facts,
-                              TypeID output_type
-                          ) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure> {
-        auto inputs = std::array<const Floating*, 3> {};
-        for (auto index = 0uz; index < facts.size(); ++index) {
-            inputs[index] = std::get_if<Floating>(&facts[index].value);
-            if (inputs[index] == nullptr) {
-                return std::unexpected(ConstantEvaluationFailure::InvalidOperation);
-            }
-        }
-        const auto value = inputs.front()->value;
-        const auto finish = [&](auto output) noexcept {
-            return ConstantFact {.type = output_type, .value = Floating {.value = output}};
+    const auto evaluate = [&]<typename Floating>(std::span<const Floating> inputs) noexcept
+        -> std::expected<std::variant<Floating, BooleanConstant>, ConstantEvaluationFailure> {
+        const auto value = inputs.front().value;
+        const auto finish = [](auto output) static noexcept {
+            return Floating {.value = output};
         };
         switch (intrinsic) {
-            case FloatIntrinsic::IsFinite:
-                return constant_boolean(values, output_type, std::isfinite(value));
-            case FloatIntrinsic::Sqrt: return finish(std::sqrt(value));
-            case FloatIntrinsic::Abs:  return finish(std::fabs(value));
+            case FloatIntrinsic::IsFinite: return BooleanConstant {.value = std::isfinite(value)};
+            case FloatIntrinsic::Sqrt:     return finish(std::sqrt(value));
+            case FloatIntrinsic::Abs:      return finish(std::fabs(value));
             case FloatIntrinsic::Min:
-            case FloatIntrinsic::Max:  {
-                const auto second = inputs[1]->value;
+            case FloatIntrinsic::Max:      {
+                const auto second = inputs[1].value;
                 if (value != value) {
                     return finish(value);
                 }
@@ -1467,8 +1553,8 @@ auto evaluate_float_intrinsic_constant_value(
                 );
             }
             case FloatIntrinsic::Clamp: {
-                const auto lower = inputs[1]->value;
-                const auto upper = inputs[2]->value;
+                const auto lower = inputs[1].value;
+                const auto upper = inputs[2].value;
                 if (!(lower <= upper)) {
                     return std::unexpected(ConstantEvaluationFailure::InvalidClampBounds);
                 }
@@ -1477,39 +1563,48 @@ auto evaluate_float_intrinsic_constant_value(
         }
         std::unreachable();
     };
+    const auto scalar = [&]<typename Floating>() noexcept
+        -> std::expected<ConstantAtom, ConstantEvaluationFailure> {
+        auto inputs = std::array<Floating, 3> {};
+        for (auto i = 0uz; i < operands.size(); ++i) {
+            inputs[i] = std::get<Floating>(operands[i].value);
+        }
+        return evaluate(std::span<const Floating>(inputs).first(operands.size()))
+            .transform([&](const auto& output) noexcept {
+                return output.visit([&](const auto& value) noexcept {
+                    return ConstantAtom {.type = result, .value = value};
+                });
+            });
+    };
     if (std::holds_alternative<F32Constant>(operands.front().value)) {
-        return evaluate.template operator()<F32Constant>(operands, result);
+        return scalar.template operator()<F32Constant>();
     }
     if (std::holds_alternative<F64Constant>(operands.front().value)) {
-        return evaluate.template operator()<F64Constant>(operands, result);
+        return scalar.template operator()<F64Constant>();
     }
     if (layout) {
-        const auto element_type = values.builtin_type(BuiltinType::F32);
         const auto predicate = intrinsic == FloatIntrinsic::IsFinite;
-        const auto output_type = predicate ? values.builtin_type(BuiltinType::Bool) : element_type;
-        auto output = SIMDConstant {.lanes = std::vector<std::uint32_t>(layout->width)};
-        auto lane_operands = std::vector<ConstantFact>();
-        lane_operands.reserve(operands.size());
-        for (auto lane = 0uz; lane < output.lanes.size(); ++lane) {
-            lane_operands.clear();
-            for (const auto& operand : operands) {
-                lane_operands.push_back(
-                    {.type = element_type,
-                     .value = F32Constant {
-                         .value =
-                             std::bit_cast<float>(std::get<SIMDConstant>(operand.value).lanes[lane])
-                     }}
+        auto output = SIMDConstant {};
+        auto lane_operands = std::array<F32Constant, 3> {};
+        for (auto lane = 0uz; lane < layout->width; ++lane) {
+            for (auto i = 0uz; i < operands.size(); ++i) {
+                lane_operands[i].value = std::bit_cast<float>(
+                    std::get<SIMDConstant>(operands[i].value).lane(lane, BuiltinType::F32)
                 );
             }
-            auto evaluated = evaluate.template operator()<F32Constant>(lane_operands, output_type);
+            auto evaluated =
+                evaluate(std::span<const F32Constant>(lane_operands).first(operands.size()));
             if (!evaluated) {
                 return std::unexpected(evaluated.error());
             }
-            output.lanes[lane] = predicate
-                ? (std::get<BooleanConstant>(evaluated->value).value ? 255u : 0u)
-                : std::bit_cast<std::uint32_t>(std::get<F32Constant>(evaluated->value).value);
+            output.set_lane(
+                lane,
+                predicate ? BuiltinType::U8 : BuiltinType::F32,
+                predicate ? (std::get<BooleanConstant>(*evaluated).value ? 255u : 0u)
+                          : std::bit_cast<std::uint32_t>(std::get<F32Constant>(*evaluated).value)
+            );
         }
-        return ConstantFact {.type = result, .value = std::move(output)};
+        return ConstantAtom {.type = result, .value = output};
     }
     return std::unexpected(ConstantEvaluationFailure::InvalidOperation);
 }

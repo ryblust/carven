@@ -60,10 +60,14 @@ without calling the function. Canonical runtime value representations supply the
 same contract, and structural carriers compose their element contracts. The fact
 is available before use and agrees across translation units.
 
-Async completion uses this contract for both success and failure alternatives.
-Proven values reside in the completion carrier; other payloads retain independent
-storage. Native constructibility and trivial-copy traits do not establish this
-transport proof. Source-visible transfers still use their ordinary delivery policy.
+Synchronous outcomes and async completions share payload storage. Each payload
+owns its value and destroys it through ordinary C++ member lifetime. The published
+inline-storage contract admits incidental transport; other payloads retain
+independent storage. Native constructibility does not establish that transport
+proof. Carrier delivery preserves payload ownership without introducing another
+source-level value transfer. Binding a fresh result receives its independent
+owner without reconstructing the value. Reading or taking a named source value
+retains the ordinary copy or transfer requirements.
 
 ## Constants and default values
 
@@ -185,10 +189,13 @@ annotation. Backend operand storage and projections receive ordinary analysis.
 Callable thunks borrow the already evaluated parameters until invocation. Reference
 parameters retain their declared category; value parameters are delivered through
 the ordinary transfer policy. Callable admission checks that exact delivery
-expression and any required result widening. Same-carrier propagation and Outcome
-widening reconstruct the active payload through the same transfer operation,
-including success payloads inside their wrapper. Widening requires construction
-only for the source alternatives; newly admitted failure types need no transfer.
+expression and any required result widening. Result carriers preserve the active
+payload's ownership and construction policy.
+Direct initialization constructs a native result in its owning storage; crossing
+a carrier boundary does not require copying or moving that result. Source-level
+value transfers retain their ordinary capability requirements. Delivering an
+already materialized native result through a raw C++ by-value parameter or result
+still requires the corresponding native construction operation.
 
 The parameter policy is shared by declarations, definitions, and callable signatures.
 C++ imports and export façades use this same parameter policy, type realization,
@@ -201,9 +208,8 @@ deleted move constructors. Import bridges call the globally qualified
 provider directly, allowing C++ overload resolution and template deduction.
 Type lowering receives an explicit naming scope: public signatures use globally
 qualified nominal names, while module bodies retain local names. Both use the
-same dependency discovery and callable work queue. Export façades project internal
-test-stop transport to the declared result carrier, retaining declared failures
-and terminating on an escaping test stop.
+same dependency discovery and callable work queue. Export façades retain the
+callable result carrier, including its stopped state.
 
 Concrete closures use named structures with const call operators defined in the
 source artifact. Closures exposed by function result types publish their layouts
@@ -232,32 +238,29 @@ bridges, and export façades use unconditional `noexcept` specifications.
 `FunctionRef` invocation and `Outcome` payload construction and movement also
 establish `noexcept` boundaries. Their constraints require the constructions
 and invocations they perform, without requiring those operations to declare
-`noexcept`. Outcome remains move-constructible when its alternatives permit
-it, with no copy, assignment, or default construction. Function-pointer thunks
-restore the original pointer type before invocation.
+`noexcept`. Outcome has no copy, assignment, or default construction.
+Function-pointer thunks restore the original pointer type before invocation.
 
 Class methods arrive as checked calls with explicit receiver arguments.
 Factories and field access use nominal product realization; source privacy is
 already checked. C++ validates delegated construction and invocation expressions.
 
-## Failure and test-stop ABI
+## Failure and stop ABI
 
-`FailureABI` orders failure members by the shared canonical type content identity,
-including the source declaration and normalized generic arguments. Generic
-nominal target naming uses the same identity. Failing results use `Outcome`;
-other results are direct. Widening accepts identity or a strict failure-set superset.
-Calls, propagation, handlers, and callable adaptation use this one contract.
+`FailureABI` orders declared failures by canonical type content identity.
+Synchronous callables that may fail or stop return `Outcome<Result, Failures...>`;
+other concrete callables return their result directly. `Outcome` stores success,
+a declared failure, or a stopped state. Callable views admit stopping and lift
+ordinary results into the same carrier. Every `import(cpp)` contract admits
+stopping, independently of its target binding and declared failure set. Reverse
+call dependencies propagate stopping through source helpers.
+Async callables use the stopped state of `Completion` alongside cancellation.
 
-A concrete callable whose published effect admits
-test stop returns `Outcome<Result, TestStopped, Failures...>`. Callable views
-use the same transport, with result adaptation lifting ordinary returns.
-Unaffected concrete callables retain their ordinary return representation.
-
-Native export façades remove `TestStopped` from the result carrier, preserving
-success and every declared failure. An escaping test stop terminates. Arbitrary
-C++ callbacks do not participate in Carven propagation.
-
-Control realization applies these carriers at calls, handlers, returns, and test exits.
+Exported signatures preserve these carriers. Native callback adaptation cannot
+erase a stopped result into an ordinary result. Native targets keep their authored
+signatures; the import bridge constructs ordinary results directly in the
+carrier and preserves Outcomes. Header-imported C++ expressions retain their
+native result representations. They do not declare a Carven call contract.
 
 ## External result types
 

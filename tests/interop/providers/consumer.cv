@@ -1,4 +1,4 @@
-import .header_bridge using { header_twice, twice_via_header };
+import .header_bridge using { header_twice, twice_via_header }
 
 import "providers/providers.hpp";
 import <cstdint>;
@@ -31,10 +31,10 @@ import <cstdint>;
     }
 ---
 
-private import(cpp) fn native_counted(value: i32) -> i32;
-private import(cpp) fn native_observe(value: usize);
-private import(cpp) fn native_trace() -> i32;
-private import(cpp) fn linked_offset(value: i32) -> i32;
+private import(cpp) fn native_counted(value: i32) -> i32 = ::native_counted;
+private import(cpp) fn native_observe(value: usize) = ::native_observe;
+private import(cpp) fn native_trace() -> i32 = ::native_trace;
+private import(cpp) fn linked_offset(value: i32) -> i32 = ::linked_offset;
 
 test "C++ provider forms execute import bridges and Carven wrappers" {
     check(native_counted(7) == 7);

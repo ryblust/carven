@@ -2,6 +2,8 @@ module carven:backend.generation.names;
 
 import :backend.generation.linkage;
 import :backend.target.name;
+import :semantic.semir.ids;
+import :semantic.semir.program;
 import std;
 
 enum class TargetTemporaryNameKind {
@@ -46,13 +48,20 @@ auto source_target_identifier(
     std::string_view spelling,
     std::string_view enclosing_class = {}
 ) noexcept -> TargetIdentifier;
+
 auto public_target_identifier(std::string_view spelling) noexcept -> TargetIdentifier;
 auto generated_target_namespace() noexcept -> TargetName;
+
+auto cpp_contract_namespace(const SemIRProgram& semantic, FunctionID function) noexcept
+    -> TargetName;
+
 auto linkage_target_namespace(const LinkageDomainID& linkage_domain) noexcept -> TargetName;
+
 auto claim_target_identifier(
     std::string_view preferred,
     std::flat_set<std::string>& occupied
 ) noexcept -> TargetIdentifier;
+
 auto claim_target_type_identifier(
     std::string_view preferred,
     std::flat_set<std::string>& occupied
@@ -63,6 +72,7 @@ auto claim_content_identifiers(
     std::span<const TargetContentName> requests,
     std::flat_set<std::string>& occupied
 ) noexcept -> std::vector<TargetIdentifier>;
+
 auto enum_payload_field_identifier(std::size_t payload_index) noexcept -> TargetIdentifier;
 auto process_entry_identifier() noexcept -> TargetIdentifier;
 auto process_argument_count_identifier() noexcept -> TargetIdentifier;

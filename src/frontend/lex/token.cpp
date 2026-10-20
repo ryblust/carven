@@ -173,6 +173,7 @@ auto std::formatter<TokenKind>::display_name(TokenKind kind) noexcept -> std::st
         case Comma:              return "Comma";
         case Dot:                return "Dot";
         case DotDotEqual:        return "DotDotEqual";
+        case Ellipsis:           return "Ellipsis";
         case DotDot:             return "DotDot";
         case Colon:              return "Colon";
         case Semicolon:          return "Semicolon";

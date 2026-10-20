@@ -78,6 +78,27 @@ against Carven's access, lifetime, and native-interface contracts.
 
 ## Design
 
+### Ownership and experiment scope
+
+Compiler knowledge supplies logical type contents, addressability, lifetime,
+and validated target facts. Backend planning owns representation selection and
+publishes one plan to construction, projection, matching, and reconstruction.
+Runtime Craft supplies shared native carriers and legal encoding helpers.
+Builtin layout queries or source markers require a consumer that needs to
+observe or fix representation; internal selection can use target facts directly.
+
+Standard Craft owns explicit pool, compact collection, and reader/builder APIs,
+including indexing, growth, format, and conversion policy. Those APIs consume
+the storage and lifetime operations they need. Compare source implementations
+and bounded builtins when a container needs additional compiler knowledge.
+
+Select record ordering, a compact carrier, and a collection API as independent
+experiments. Select native layout syntax with an interoperability consumer and
+public construction primitives with a source builder that needs them. Shared or
+cyclic static contents require retained graph identity. A restricted scalar-record
+or unshared acyclic collection experiment requires its selected construction,
+target, and lifetime contracts.
+
 ### Representation contracts
 
 #### Ordinary and native records
@@ -247,8 +268,8 @@ native traits, and constant reconstruction. Begin experiments with
 trivial payloads and use the existing representation as the fallback.
 
 Typed failure and async completion carriers are later consumers of this mechanism.
-They must preserve success, each nominal failure, cancellation, and any internal
-state that is actually observable by the runtime. Compression never merges those
+They must preserve success, each nominal failure, invocation stop, async
+cancellation, and payload ownership. Compression never merges those
 states. `FailureABI` member order stays independent of physical discriminant
 encoding; import/export providers require a matching carrier contract.
 
@@ -417,10 +438,10 @@ reconstructing offsets or tags. A plan verifier checks total and inverse field
 mappings, encoding disjointness, alignment, occupied bits, and supported projection
 recipes. Generated C++ checks verify target facts that the planner assumes.
 
-Do not build a general representation DSL before a second encoding needs it.
-Begin with identity and reordered-record plans; add enum recipes only with an
-actual carrier experiment. The research on dual representations motivates the
-boundary, not an obligation to reproduce its compiler.
+Record-ordering experiments need identity and permutation mappings. A selected
+carrier experiment adds its own encoding and projection recipes independently.
+Evaluate a shared representation description when multiple encodings expose
+repeated rules; compare its verification and planning costs with concrete plans.
 
 ### Execution and retained data
 

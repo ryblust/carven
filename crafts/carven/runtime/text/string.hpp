@@ -54,6 +54,13 @@ public:
         return String(std::move(bytes));
     }
 
+    constexpr auto into_utf8() && noexcept -> std::string {
+        if (auto* owner = std::get_if<std::string>(&storage)) {
+            return std::move(*owner);
+        }
+        return std::string(std::get<std::string_view>(storage));
+    }
+
     constexpr auto size() const noexcept -> std::size_t { return as_str().size(); }
 
     constexpr auto empty() const noexcept -> bool { return as_str().empty(); }
@@ -76,6 +83,10 @@ public:
 
     constexpr auto operator==(const String& other) const noexcept -> bool {
         return as_str() == other.as_str();
+    }
+
+    constexpr auto operator==(std::string_view other) const noexcept -> bool {
+        return as_str() == other;
     }
 
 private:

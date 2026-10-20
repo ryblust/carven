@@ -63,7 +63,7 @@ const TestSuite suite([] static noexcept {
             standard_modules
         );
         with_compiled_source(
-            "import std::io using Read; struct Cycle { value: Read<Cycle> }",
+            "import std::io using ReadResult; struct Cycle { value: ReadResult<Cycle> }",
             [](const auto&, const auto& result) static noexcept {
                 if (expect(!result.has_value())) {
                     expect_diagnostic(result.error(), DiagnosticCode::TypeRecursiveStorage);

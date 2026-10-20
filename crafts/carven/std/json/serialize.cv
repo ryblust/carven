@@ -1,6 +1,5 @@
-import .node using Node;
-import std::json using ValueError;
-import std::simd.scan using { one_of, byte_range, set_union, find_from };
+import std::json using { JSONValue, JSONValueError }
+import std::simd.scan using { one_of, byte_range, set_union, find_from }
 
 private const escaped_bytes = set_union(byte_range(0, 0x1f), one_of([0x22, 0x5c]));
 
@@ -34,38 +33,42 @@ private const fn append_quoted(text: str, &output: String) {
     output.push('"');
 }
 
-private const fn append_value(value: Node, &output: String, depth: usize) -> void throw ValueError {
-    match value {
+private const fn append_value(
+    value: JSONValue,
+    &output: String,
+    depth: usize
+) -> void throw JSONValueError {
+    match value.kind() {
         .Null => output.append("null"),
-        .Boolean(boolean) => output.append(if boolean { "true" } else { "false" }),
-        .Number(text) => output.append(text),
-        .Text(text) => append_quoted(text, &output),
-        .Array(items) => {
-            if depth == 64 { throw ValueError::DepthLimit; }
+        .Boolean => output.append(if value.as_bool()? { "true" } else { "false" }),
+        .Number => output.append(value.number_text()?),
+        .String => append_quoted(value.as_str()?, &output),
+        .Array => {
+            if depth == 64 { throw JSONValueError::DepthLimit; }
             output.push('[');
             var first = true;
-            for item in items {
+            for item in value.elements()? {
                 if first { first = false; } else { output.push(','); }
                 append_value(item, &output, depth + 1)?;
             }
             output.push(']');
         },
-        .Object(members) => {
-            if depth == 64 { throw ValueError::DepthLimit; }
+        .Object => {
+            if depth == 64 { throw JSONValueError::DepthLimit; }
             output.push('{');
             var first = true;
-            for member in members {
+            for (key, child) in value.members()? {
                 if first { first = false; } else { output.push(','); }
-                append_quoted(member.key, &output);
+                append_quoted(key, &output);
                 output.push(':');
-                append_value(member.value, &output, depth + 1)?;
+                append_value(child, &output, depth + 1)?;
             }
             output.push('}');
         },
     }
 }
 
-const fn serialize_node(value: Node) -> String throw ValueError {
+const fn serialize_value(value: JSONValue) -> String throw JSONValueError {
     var output = String {};
     append_value(value, &output, 0)?;
     return &&output;

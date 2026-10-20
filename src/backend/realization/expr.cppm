@@ -25,20 +25,24 @@ public:
         const SemanticExpression& source,
         std::optional<LifetimeRegionID> delivered_region = std::nullopt
     ) noexcept;
+
     ~ExpressionBuilder() noexcept;
     auto owns(const SemanticExpression& source) const noexcept -> bool;
+
     auto evaluate(
         const SemanticExpression& source,
         ConstantLiteralContext literal,
         ResultDemand demand,
         PreparedUse use
     ) noexcept -> ContinuationTask<Lowered<LoweringResult>>;
+
     auto deliver_structured(
         const SemanticExpression& source,
         const LoweringResultDestination& result,
         LoweringStmtBuilder& destination,
         bool shared
     ) noexcept -> ContinuationTask<std::monostate>;
+
     auto finish_expression(
         const SemanticExpression& source,
         ConstantLiteralContext literal,
@@ -46,11 +50,19 @@ public:
         PreparedUse final_use,
         bool shared
     ) noexcept -> ContinuationTask<Lowered<LoweringResult>>;
+
     auto initialize_expression(
         LocalBindingID binding,
         const SemanticExpression& initializer,
         LoweringStmtBuilder& destination
     ) noexcept -> ContinuationTask<std::monostate>;
+
+    auto initialize_success(
+        const SemanticExpression& initializer,
+        const LoweringDeferredStorage& storage,
+        LoweringStmtBuilder& destination
+    ) noexcept -> ContinuationTask<std::monostate>;
+
     auto assign(const SemAssign& assignment, LoweringStmtBuilder& destination) noexcept
         -> ContinuationTask<std::monostate>;
 
@@ -62,7 +74,7 @@ private:
         PreparedUse use;
         bool retain_backing;
         std::size_t expression_depth;
-        // Only an immediate await consumes an embedded producer's ordinary result.
+        // Only an immediate await consumes an embedded producer's result.
         std::optional<PreparedAwaitProducer> await_fusion;
     };
 
@@ -73,10 +85,9 @@ private:
 
     // Bindings and completed constant facts can be referenced repeatedly without
     // reconstructing an executed expression. Every other inline tree is moved once.
-    struct AwaitedCarrier final {
+    struct ResultCarrier final {
         TargetLocalID local;
         bool deferred;
-        TypeID operation;
     };
 
     struct Fragment final {
@@ -88,7 +99,7 @@ private:
         bool executes;
         bool observes;
         bool materialize_void;
-        std::optional<AwaitedCarrier> awaited_carrier;
+        std::optional<ResultCarrier> result_carrier;
     };
 
     class BuildScope final {
@@ -122,6 +133,7 @@ private:
     auto finish_fragment(Fragment value) noexcept -> Fragment;
     auto adopt(Fragment& value) noexcept -> void;
     auto take_statements(bool shared) noexcept -> LoweringStmtBuilder;
+
     auto owns_cleanup_scope(std::optional<LifetimeRegionID> delivered_region) const noexcept
         -> bool;
 
@@ -143,8 +155,10 @@ private:
     auto has_storage_read(const Fragment& value) const noexcept -> bool;
     auto has_effect(const Fragment& value) const noexcept -> bool;
     static auto value_binding(PreparedUse use) noexcept -> TargetVariableBinding;
+
     auto build(const SemanticExpression& expression, BuildRequest request) noexcept
         -> ContinuationTask<Fragment>;
+
     auto complete_writer(
         Fragment& value,
         const SemFormat& format,
@@ -153,51 +167,61 @@ private:
         std::span<const PreparedOperand> inputs,
         std::optional<TargetLocalID> output
     ) noexcept -> void;
+
     auto sequenced_suffix_begin(const PreparedOperation& value) const noexcept -> std::size_t;
     auto first_unsequenced(const PreparedOperation& value) const noexcept -> std::size_t;
     auto retain_input(Fragment& value, PreparedUse use) noexcept -> void;
+
     auto raw(Fragment& value, ConstantLiteralContext literal, PreparedUse use) noexcept
         -> TargetExpr;
+
     auto emit(Fragment& value, PreparedUse use, ConstantLiteralContext literal) noexcept
         -> TargetExpr;
+
     auto anchor(Fragment& value, PreparedUse use, bool force) noexcept -> void;
     static auto native_await_intrinsic(const SemAwait& source) noexcept -> const SemAsyncIntrinsic*;
+
     auto complete_await(
         Fragment& value,
         TargetExpr invocation,
         const SemAwait& source,
-        bool project_success,
+        ResultDemand demand,
         PreparedUse use
     ) noexcept -> void;
-    auto complete_awaited(
+
+    auto consume_await(
         Fragment& value,
-        TargetExpr completion,
         const SemAwait& source,
-        bool project_success,
+        ResultDemand demand,
         PreparedUse use
     ) noexcept -> void;
+
     auto snapshot_parameters(
         CallableID callable,
         BodyID body,
         std::vector<TargetExpr> operands
     ) noexcept -> BodyLoweringInputs;
+
     auto fuse_call(
+        Fragment& value,
         const SemColdCall& call,
         BodyID body,
         std::vector<TargetExpr> operands,
         ResultDemand demand
-    ) noexcept -> std::optional<TargetLocalID>;
+    ) noexcept -> void;
+
     auto fuse_factory(
+        Fragment& value,
         const SemCall& call,
         const PreparedAwaitProducer& producer,
         std::vector<TargetExpr> operands,
         ResultDemand demand
-    ) noexcept -> std::optional<TargetLocalID>;
+    ) noexcept -> void;
+
     auto complete_call(
         Fragment& value,
         const FallibleCall& transport,
-        bool project_success,
-        PreparedUse use,
-        bool propagate_outcome
+        ResultDemand demand,
+        PreparedUse use
     ) noexcept -> void;
 };

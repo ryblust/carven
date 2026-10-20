@@ -74,7 +74,7 @@ auto ConstructionRequests::standard_declaration(
                 DiagnosticCode::NameUnresolved,
                 std::format(
                     "standard declaration '{}.{}' is unavailable",
-                    contract.module,
+                    contract.module_path,
                     contract.name
                 )
             )
@@ -135,7 +135,7 @@ auto ConstructionRequests::standard_type(
                 DiagnosticCode::TypeMismatch,
                 std::format(
                     "standard declaration '{}.{}' does not satisfy its builtin operation contract",
-                    contract.module,
+                    contract.module_path,
                     contract.name
                 )
             )

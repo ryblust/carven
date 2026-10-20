@@ -5,7 +5,7 @@ import std::utf using {
     UTF8Error,
     UnicodeScalarError,
     validate_utf8,
-};
+}
 
 const test "UTF8: prefix decoding stops before later bytes" {
     try {

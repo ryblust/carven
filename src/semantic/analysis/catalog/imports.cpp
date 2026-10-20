@@ -2,6 +2,7 @@ module carven:semantic.analysis.catalog.imports.impl;
 
 import :diagnostics.builder;
 import :frontend.ast.decl;
+import :frontend.ast.imports;
 import :frontend.ast.interop;
 import :frontend.ast.storage;
 import :frontend.ast.tree;
@@ -149,44 +150,50 @@ auto AnalysisCatalogBuilder::bind_cpp_imports(
         for (const auto component : clause.prefix) {
             prefix.push_back(spelling(component));
         }
-        const auto append = [&](Span leaf, bool opens_namespace) noexcept {
+        const auto select = [&](const ASTImportItem& item) noexcept {
             auto components = prefix;
-            if (!opens_namespace) {
-                components.push_back(spelling(leaf));
-                if (declarations.contains(components.back())) {
-                    diagnostics.push_back(binding_error(
-                        source_id,
-                        "a C++ import conflicts with a Carven declaration",
-                        leaf
-                    ));
-                }
-                auto& selections = cpp_selections[components.back()];
-                if (!selections.empty()
-                    && cpp_bindings[selections.front()].components != components) {
-                    diagnostics.push_back(binding_error(
-                        source_id,
-                        "explicit C++ imports bind one name to different paths",
-                        leaf
-                    ));
-                }
-                selections.push_back(cpp_bindings.size());
+            components.push_back(spelling(item.name_span));
+            const auto local_span = item.local_name_span();
+            const auto local_name = draft.source_slice_copy(module_id, local_span);
+            if (declarations.contains(local_name)) {
+                diagnostics.push_back(binding_error(
+                    source_id,
+                    "a C++ import conflicts with a Carven declaration",
+                    local_span
+                ));
             }
+            auto& selections = cpp_selections[local_name];
+            if (!selections.empty() && cpp_bindings[selections.front()].components != components) {
+                diagnostics.push_back(binding_error(
+                    source_id,
+                    "explicit C++ imports bind one name to different paths",
+                    local_span
+                ));
+            }
+            selections.push_back(cpp_bindings.size());
             cpp_bindings.push_back({
                 .header_index = static_cast<std::size_t>(header_index),
                 .components = std::move(components),
-                .opens_namespace = opens_namespace,
-                .origin = leaf,
+                .opens_namespace = false,
+                .origin = local_span,
             });
         };
         clause.selection.visit(
             Overloaded {
-                [&](const ASTCppSingleSelection& value) noexcept { append(value.name, false); },
-                [&](const ASTCppListSelection& value) noexcept {
-                    for (const auto name : value.names) {
-                        append(name, false);
+                [&](const ASTSingleImport& value) noexcept { select(value.item); },
+                [&](const ASTImportList& value) noexcept {
+                    for (const auto& item : value.names) {
+                        select(item);
                     }
                 },
-                [&](const ASTCppNamespaceSelection& value) noexcept { append(value.star, true); },
+                [&](const ASTCppNamespaceSelection& value) noexcept {
+                    cpp_bindings.push_back({
+                        .header_index = static_cast<std::size_t>(header_index),
+                        .components = prefix,
+                        .opens_namespace = true,
+                        .origin = value.star,
+                    });
+                },
             }
         );
     }
@@ -234,7 +241,7 @@ auto AnalysisCatalogBuilder::bind_imports() noexcept -> void {
             }
             if (target_id.provided) {
                 for (const auto& entry : provided_exports()) {
-                    if (entry.module == *target_id.provided && !entry.module_local) {
+                    if (entry.provider == *target_id.provided && !entry.module_local) {
                         target_entities.push_back(entry.identity);
                     }
                 }
@@ -292,7 +299,7 @@ auto AnalysisCatalogBuilder::bind_imports() noexcept -> void {
             auto names_in_declaration = std::flat_map<std::string, Span, std::less<>>();
 
             for (const auto& item : selected_names) {
-                const auto name_span = item.alias_span.value_or(item.name_span);
+                const auto name_span = item.local_name_span();
                 const auto name = draft.source_slice_copy(module_id, name_span);
                 const auto export_name = draft.source_slice_copy(module_id, item.name_span);
                 if (name == "ptr") {
@@ -435,7 +442,9 @@ auto AnalysisCatalogBuilder::bind_imports() noexcept -> void {
         }
         for (const auto& binding : result.cpp_bindings[module_index]) {
             if (!binding.opens_namespace
-                && result.visible_candidates[module_index].contains(binding.components.back())) {
+                && result.visible_candidates[module_index].contains(
+                    draft.source_slice_copy(module_id, binding.origin)
+                )) {
                 diagnostics.push_back(binding_error(
                     draft.module_source_id(module_id),
                     "a C++ import conflicts with a Carven binding",

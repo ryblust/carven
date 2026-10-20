@@ -1,4 +1,12 @@
-import std::json using { JSONError, JSONErrorKind, ValueError, decode_string, validate, Value };
+import std::json using {
+    JSONError,
+    JSONErrorKind,
+    JSONValueError,
+    decode_string,
+    validate,
+    JSONValue,
+}
+
 import std::utf using UTF8Error;
 
 test "JSON: decoded strings own independent Unicode text" {
@@ -27,27 +35,27 @@ test "JSON: decoding checks its quoted-string boundary and preserves scanner err
     let inputs = [
         InvalidString {
             text: "",
-            kind:.UnexpectedEnd,
+            kind: .UnexpectedEnd,
             offset: 0
         },
         {
             text: "true",
-            kind:.UnexpectedByte,
+            kind: .UnexpectedByte,
             offset: 0
         },
         {
             text: " \"a\"",
-            kind:.UnexpectedByte,
+            kind: .UnexpectedByte,
             offset: 0
         },
         {
             text: "\"a\" ",
-            kind:.TrailingInput,
+            kind: .TrailingInput,
             offset: 3
         },
         {
             text: r#""\x""#,
-            kind:.InvalidEscape,
+            kind: .InvalidEscape,
             offset: 2
         },
     ];
@@ -77,15 +85,17 @@ test "JSON: escape and UTF sequences cross block boundaries" {
         expected.append("\"😀你好");
         try {
             check(decode_string(input)? == expected);
+            check(JSONValue::parse(input)?.as_str()? == expected);
         } catch {
             JSONError(_) => fail("block boundaries must preserve decoding"),
+            JSONValueError(_) => fail("a quoted document must produce a string"),
         }
     }
 }
 
 private fn same_syntax_error(text: str) -> bool {
     var expected = JSONError {
-        kind:.UnexpectedEnd,
+        kind: .UnexpectedEnd,
         offset: 0
     };
     var invalid = false;
@@ -99,7 +109,7 @@ private fn same_syntax_error(text: str) -> bool {
     }
     if invalid == false { return false; }
     try {
-        let _ = Value::parse(text)?;
+        let _ = JSONValue::parse(text)?;
     } catch {
         JSONError(error) => return error.kind == expected.kind && error.offset == expected.offset,
     }
@@ -109,7 +119,7 @@ private fn same_syntax_error(text: str) -> bool {
 test "JSON parse: events build independent owners and preserve nested value kinds" {
     var input: String = r#"{"\u006b":[null,true,{"s":"owned","n":123}],"empty":{"":[]}}"#;
     try {
-        let document = Value::parse(input)?;
+        let document = JSONValue::parse(input)?;
         input.clear();
         check(document.kind() == .Object);
         check(document.length()? == 2);
@@ -125,7 +135,7 @@ test "JSON parse: events build independent owners and preserve nested value kind
         check(empty.get("")?.length()? == 0);
     } catch {
         JSONError(error) => fail(f"parse rejected valid input at byte {error.offset}"),
-        ValueError(_) => fail("parsed value has an unexpected shape"),
+        JSONValueError(_) => fail("parsed value has an unexpected shape"),
     }
 }
 
@@ -138,7 +148,7 @@ test "JSON parse: byte ingress rejects encoding before document syntax" {
     let bytes = [0x5bu8, 0x31, 0x2c, 0x5d, 0xff];
     var rejected_encoding = false;
     try {
-        let _ = Value::parse_bytes(bytes)?;
+        let _ = JSONValue::parse_bytes(bytes)?;
     } catch {
         UTF8Error(error) => { rejected_encoding = error.offset == 4; },
         JSONError(_) => {},
@@ -154,49 +164,49 @@ test "JSON: serialization preserves scalars and escapes controls" {
             text.push(char::from_u32_unchecked(scalar));
         }
         text.append("\"\\/é你好😀");
-        let value = Value::string(text);
+        let value = JSONValue::string(text);
         let encoded = value.to_json()?;
         validate(encoded)?;
-        check(Value::parse(encoded)?.as_str()? == text.as_str());
-        check(Value::string("").to_json()? == "\"\"");
-        check(Value::null().to_json()? == "null");
-        check(Value::boolean(true).to_json()? == "true");
-        check(Value::boolean(false).to_json()? == "false");
+        check(JSONValue::parse(encoded)?.as_str()? == text.as_str());
+        check(JSONValue::string("").to_json()? == "\"\"");
+        check(JSONValue::null().to_json()? == "null");
+        check(JSONValue::boolean(true).to_json()? == "true");
+        check(JSONValue::boolean(false).to_json()? == "false");
     } catch {
         JSONError(_) => check(false),
-        ValueError(_) => check(false),
+        JSONValueError(_) => check(false),
     }
 }
 
 test "JSON: serialization preserves member order, duplicates and number spelling" {
     try {
         let input = r#"{"x":1E400,"x":-0,"items":[[],{},1.2300e+04]}"#;
-        let value = Value::parse(input)?;
+        let value = JSONValue::parse(input)?;
         let encoded = value.to_json()?;
         check(encoded.as_str() == input);
-        check(Value::parse(encoded)?.to_json()?.as_str() == input);
+        check(JSONValue::parse(encoded)?.to_json()?.as_str() == input);
     } catch {
         JSONError(_) => check(false),
-        ValueError(_) => check(false),
+        JSONValueError(_) => check(false),
     }
 }
 
 test "JSON: writing checks the container depth of constructed values" {
     try {
-        var nested = Value::null();
+        var nested = JSONValue::null();
         for _ in 0..64 {
-            var parent = Value::array();
+            var parent = JSONValue::array();
             parent.push(&&nested)?;
             nested = &&parent;
         }
         validate(nested.to_json()?)?;
-        var parent = Value::array();
+        var parent = JSONValue::array();
         parent.push(&&nested)?;
         var rejected = false;
         try {
             let _ = parent.to_json()?;
         } catch {
-            ValueError(error) => {
+            JSONValueError(error) => {
                 check(error == .DepthLimit);
                 rejected = true;
             },
@@ -204,6 +214,6 @@ test "JSON: writing checks the container depth of constructed values" {
         check(rejected);
     } catch {
         JSONError(_) => check(false),
-        ValueError(_) => check(false),
+        JSONValueError(_) => check(false),
     }
 }

@@ -1,62 +1,46 @@
+module;
+
+#include <carven/std/process/native.hpp>
+
 module carven:driver.sources.impl;
 
 import :backend.generation.request;
-import :driver.input_path;
-import :driver.process;
 import :driver.sources;
+import :source.module_path;
 import :support.path;
 import :support.timing;
 import std;
 
 namespace {
 
-auto find_crafts_directory(std::string_view executable) noexcept -> std::filesystem::path {
-    const auto program = current_executable_path(executable);
-    if (program.empty()) {
-        return {};
-    }
-    auto error = std::error_code();
-    auto installed = program.parent_path().parent_path() / "crafts";
-    if (std::filesystem::is_directory(installed / "carven", error)) {
-        return installed;
-    }
-    // Development binaries must belong to a Carven source checkout.
-    for (auto root = program.parent_path(); root != root.parent_path(); root = root.parent_path()) {
-        if (std::filesystem::is_regular_file(root / "src/carven.cppm", error)
-            && std::filesystem::is_regular_file(root / "xmake.lua", error)
-            && std::filesystem::is_directory(root / "crafts/carven", error)) {
-            return root / "crafts";
-        }
-    }
-    return {};
-}
-
 enum class CollectedSourceKind {
     Standard,
-    Project,
     Explicit,
 };
 
-// Installed sources supply references; project discovery and explicit inputs
-// supply implementations. Mapped input batches own project source selection.
+// Installed sources supply available dependencies; explicit inputs select roots.
 auto collect_sources(
     std::span<const std::string_view> inputs,
-    const std::optional<std::filesystem::path>& crafts,
-    std::span<const SourceInput> mapped_inputs
+    const std::optional<std::filesystem::path>& crafts
 ) noexcept -> std::expected<CommandSources, std::string> {
     auto result = CommandSources {
         .crafts = crafts.value_or(std::filesystem::path()),
         .carven = {},
-        .native = {},
         .standard_modules = {},
         .owned_modules = {},
+        .external_modules = {},
     };
-    auto seen = std::map<std::filesystem::path, std::optional<CanonicalModulePath>>();
+    auto root_error = std::error_code();
+    const auto project_root = std::filesystem::canonical(".", root_error);
+    if (root_error) {
+        return std::unexpected(
+            std::format("cannot resolve working directory: {}", root_error.message())
+        );
+    }
+    auto seen = std::map<std::filesystem::path, CanonicalModulePath>();
     const auto add = [&](const std::filesystem::path& path,
                          std::string_view logical_path,
-                         CollectedSourceKind kind,
-                         const CanonicalModulePath* mapped =
-                             nullptr) noexcept -> std::expected<void, std::string> {
+                         CollectedSourceKind kind) noexcept -> std::expected<void, std::string> {
         auto error = std::error_code();
         const auto physical = std::filesystem::absolute(path, error).lexically_normal();
         const auto identity =
@@ -71,61 +55,46 @@ auto collect_sources(
             );
         }
         if (const auto previous = seen.find(identity); previous != seen.end()) {
-            if (mapped && previous->second != *mapped) {
-                return std::unexpected(
-                    std::format("conflicting module identities for source '{}'", logical_path)
-                );
-            }
             if (kind == CollectedSourceKind::Explicit
-                && previous->second
-                && !std::ranges::contains(result.owned_modules, *previous->second)) {
-                result.owned_modules.push_back(*previous->second);
+                && !std::ranges::contains(result.owned_modules, previous->second)) {
+                result.owned_modules.push_back(previous->second);
             }
             return {};
         }
-        if (path.extension() == ".cv") {
-            auto module_path = mapped ? std::expected<CanonicalModulePath, std::string>(*mapped)
-                                      : derive_input_module_path(logical_path);
-            if (!module_path) {
-                return std::unexpected(module_path.error());
-            }
-            seen.emplace(identity, *module_path);
-            if (kind == CollectedSourceKind::Standard) {
-                result.standard_modules.push_back(*module_path);
-            } else {
-                result.owned_modules.push_back(*module_path);
-            }
-            result.carven.push_back({
-                .path = path_to_generic_utf8(physical),
-                .module_path = std::move(*module_path),
-            });
-        } else {
-            seen.emplace(identity, std::nullopt);
-            result.native.push_back(path_to_generic_utf8(physical));
+        const auto logical = kind == CollectedSourceKind::Standard
+            ? path_from_utf8(logical_path)
+            : identity.lexically_relative(project_root);
+        if (kind == CollectedSourceKind::Explicit
+            && (logical.empty() || logical.is_absolute() || *logical.begin() == "..")) {
+            return std::unexpected(
+                std::format("input '{}' escapes the working directory", path_to_generic_utf8(path))
+            );
         }
+        auto module_path = CanonicalModulePath::from_source_path(path_to_generic_utf8(logical));
+        if (!module_path) {
+            return std::unexpected(module_path.error());
+        }
+        seen.emplace(identity, *module_path);
+        if (kind == CollectedSourceKind::Standard) {
+            result.standard_modules.push_back(*module_path);
+        } else {
+            result.owned_modules.push_back(*module_path);
+        }
+        result.carven.push_back({
+            .path = path_to_generic_utf8(physical),
+            .module_path = std::move(*module_path),
+        });
         return {};
     };
-    const auto roots = std::array {
-        crafts ? *crafts / "carven" : std::filesystem::path(),
-        std::filesystem::path("crafts"),
-    };
-    for (auto index = 0uz; index < roots.size(); ++index) {
-        if ((index == 0uz && !crafts) || (index == 1uz && !mapped_inputs.empty())) {
-            continue;
-        }
-        const auto& root = roots[index];
+    if (crafts) {
+        const auto root = *crafts / "carven";
         auto error = std::error_code();
-        const auto exists = std::filesystem::exists(root, error);
-        if (!error && !exists && root == std::filesystem::path("crafts")) {
-            continue;
-        }
         auto iterator = std::filesystem::recursive_directory_iterator(root, error);
         const auto end = std::filesystem::recursive_directory_iterator();
         auto files = std::vector<std::filesystem::path>();
         while (!error && iterator != end) {
             const auto path = iterator->path();
-            if ((path.extension() == ".cv" || path.extension() == ".cpp")
-                && iterator->is_regular_file(error)) {
+            if (path.extension() == ".cv" && iterator->is_regular_file(error)) {
                 files.push_back(path);
             }
             if (!error) {
@@ -143,39 +112,26 @@ auto collect_sources(
         }
         std::ranges::sort(files);
         for (const auto& path : files) {
-            const auto logical = (index == 0 ? std::filesystem::path("crafts/carven")
-                                             : std::filesystem::path("crafts"))
-                / path.lexically_relative(root);
-            const auto kind =
-                index == 0uz ? CollectedSourceKind::Standard : CollectedSourceKind::Project;
-            if (const auto added = add(path, path_to_generic_utf8(logical), kind); !added) {
+            const auto logical =
+                std::filesystem::path("crafts/carven") / path.lexically_relative(root);
+            if (const auto added =
+                    add(path, path_to_generic_utf8(logical), CollectedSourceKind::Standard);
+                !added) {
                 return std::unexpected(added.error());
             }
         }
     }
-    for (const auto& input : mapped_inputs) {
-        if (const auto added =
-                add(path_from_utf8(input.path),
-                    input.path,
-                    CollectedSourceKind::Explicit,
-                    &input.module_path);
-            !added) {
-            return std::unexpected(added.error());
-        }
-    }
     for (const auto input : inputs) {
         const auto path = path_from_utf8(input);
-        // Discovered files keep their root-relative identity. Other explicit inputs
-        // follow the ordinary application or Crafts path convention.
+        // Known installed files keep their identity; all other paths are project-relative.
         if (path.extension() != ".cv") {
             return std::unexpected(std::format("input '{}' does not have a .cv extension", input));
         }
-        if (const auto added = add(path, input, CollectedSourceKind::Explicit); !added) {
+        if (const auto added = add(path, {}, CollectedSourceKind::Explicit); !added) {
             return std::unexpected(added.error());
         }
     }
     std::ranges::sort(result.carven, {}, &SourceInput::path);
-    std::ranges::sort(result.native);
     std::ranges::sort(result.standard_modules);
     std::ranges::sort(result.owned_modules);
     return result;
@@ -183,57 +139,69 @@ auto collect_sources(
 
 } // namespace
 
-auto parse_source_input(std::string_view value) noexcept
-    -> std::expected<SourceInput, std::string> {
-    const auto separator = value.find('=');
-    if (separator == std::string_view::npos || separator + 1 == value.size()) {
-        return std::unexpected("source mapping requires <canonical-module>=<path>");
+auto locate_standard_crafts() noexcept -> std::filesystem::path {
+    const auto executable = carven::standard::process::executable();
+    if (executable.code != 0) {
+        return {};
     }
-    auto module = CanonicalModulePath::from_value(value.substr(0, separator));
-    if (!module) {
-        return std::unexpected("source mapping requires a canonical module identity");
+    auto error = std::error_code();
+    const auto program =
+        std::filesystem::canonical(path_from_utf8(executable.text.as_str()), error);
+    if (error) {
+        return {};
     }
-    const auto path = value.substr(separator + 1);
-    if (path_from_utf8(path).extension() != ".cv") {
-        return std::unexpected("mapped source must have a .cv extension");
+    const auto root = program.parent_path().parent_path() / "crafts";
+    if (std::filesystem::is_directory(root / "carven", error)) {
+        return root;
     }
-    return SourceInput {.path = std::string(path), .module_path = std::move(*module)};
+    for (auto directory = program.parent_path(); directory != directory.parent_path();
+         directory = directory.parent_path()) {
+        if (std::filesystem::is_regular_file(directory / "src/carven.cppm", error)
+            && std::filesystem::is_directory(directory / "crafts/carven", error)) {
+            return directory / "crafts";
+        }
+    }
+    return {};
 }
 
 auto collect_command_sources(
-    std::string_view executable,
     std::span<const std::string_view> inputs,
-    TimingOutput timings,
-    std::span<const SourceInput> mapped_inputs
+    TimingOutput timings
+) noexcept -> std::expected<CommandSources, std::string> {
+    return collect_toolchain_sources(locate_standard_crafts(), inputs, timings);
+}
+
+auto collect_toolchain_sources(
+    const std::filesystem::path& crafts,
+    std::span<const std::string_view> inputs,
+    TimingOutput timings
 ) noexcept -> std::expected<CommandSources, std::string> {
     const auto collection = TimingScope(timings, TimingStage::SourceCollection);
-    const auto crafts = find_crafts_directory(executable);
     if (crafts.empty()) {
         return std::unexpected(
-            "cannot locate Crafts in the Carven installation or source checkout"
+            "incomplete Carven installation: cannot locate Crafts beside the compiler"
         );
     }
-    return collect_sources(inputs, crafts, mapped_inputs);
+    return collect_sources(inputs, crafts);
 }
 
 auto collect_project_sources(
     std::span<const std::string_view> inputs,
-    TimingOutput timings,
-    std::span<const SourceInput> mapped_inputs
+    TimingOutput timings
 ) noexcept -> std::expected<CommandSources, std::string> {
     const auto collection = TimingScope(timings, TimingStage::SourceCollection);
-    return collect_sources(inputs, std::nullopt, mapped_inputs);
+    return collect_sources(inputs, std::nullopt);
 }
 
-auto standard_source_library(const CommandSources& sources, bool own_all_standard) noexcept
+auto standard_source_library(const CommandSources& sources) noexcept
     -> std::optional<SourceLibrary> {
     if (sources.standard_modules.empty()) {
         return std::nullopt;
     }
     auto owned = std::vector<CanonicalModulePath>();
-    for (const auto& module : sources.standard_modules) {
-        if (own_all_standard || std::ranges::contains(sources.owned_modules, module)) {
-            owned.push_back(module);
+    for (const auto& module_path : sources.standard_modules) {
+        if (!std::ranges::contains(sources.external_modules, module_path)) {
+            owned.push_back(module_path);
         }
     }
     return SourceLibrary {

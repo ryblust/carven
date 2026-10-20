@@ -1,6 +1,7 @@
 module carven:semantic.evaluation.timeout.impl;
 
 import :semantic.evaluation.executor;
+import :semantic.evaluation.value;
 import :semantic.semir.type;
 import :support.invariant;
 import std;
@@ -21,7 +22,7 @@ auto SemanticExecutor::timeout(
     if (!duration) {
         co_return std::unexpected(std::move(duration.error()));
     }
-    const auto fact = read_fact(*duration, origin);
+    const auto fact = read_atom(*duration, origin);
     if (!fact) {
         co_return std::unexpected(fact.error());
     }
@@ -65,12 +66,11 @@ auto SemanticExecutor::timeout(
     if (!result) {
         co_return std::unexpected(std::move(result.error()));
     }
-    auto timer = std::make_unique<ExecutionColdOperation>(ExecutionColdOperation {
-        .type = operation_type,
-        .action =
-            ExecutionTimerAction {.deadline = instant + delay, .failure = action.timeout_failure},
-        .arguments = {}
-    });
+    auto timer = std::make_unique<ExecutionColdOperation>(
+        operation_type,
+        ExecutionTimerAction {.deadline = instant + delay, .failure = action.timeout_failure},
+        std::vector<ExecutionOperand>()
+    );
     auto inputs = std::vector<ExecutionOperand>();
     inputs.push_back(std::move(arguments.front()));
     inputs.emplace_back(ExecutionValue(std::move(timer)));

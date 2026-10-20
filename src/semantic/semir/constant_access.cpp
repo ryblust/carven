@@ -20,6 +20,8 @@ auto constant_has_storage(const ConstantValueReader& values, ConstantID id) noex
     const auto& fact = values.constant(id);
     return (constant_children(fact.value).has_value()
             && !std::holds_alternative<SliceConstant>(fact.value))
+        || (std::holds_alternative<ByteSequenceConstant>(fact.value)
+            && std::holds_alternative<VectorTypeValue>(values.type_copy(fact.type).value))
         || (std::holds_alternative<TextConstant>(fact.value)
             && values.type_copy(fact.type).value
                 == CanonicalTypeValue {BuiltinTypeValue {.kind = BuiltinType::String}});

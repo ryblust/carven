@@ -7,6 +7,7 @@ import :semantic.evaluation.value;
 import :semantic.semir.body;
 import :semantic.semir.decl;
 import :semantic.semir.structured;
+import :support.function_ref;
 import :support.task;
 import std;
 
@@ -128,9 +129,20 @@ public:
     auto binding_type(LocalBindingID id) const noexcept -> ConstructionTypeRef;
     auto binding_access(LocalBindingID id) const noexcept -> AccessMode;
     auto binding_storage(LocalBindingID id) const noexcept -> BindingStorage;
-    auto bindings_in(LifetimeRegionID lifetime) const noexcept -> std::vector<std::size_t>;
     auto binding_lifetime(LocalBindingID binding) const noexcept -> LifetimeRegionID;
     auto has_children(LifetimeRegionID lifetime) const noexcept -> bool;
+
+    template<typename Visitor>
+    auto visit_bindings(Visitor&& visitor) const noexcept {
+        return body.visit([&](const auto* value) noexcept {
+            if constexpr (std::
+                              same_as<std::remove_cvref_t<decltype(*value)>, StructuredBodyDraft>) {
+                return std::forward<Visitor>(visitor)(value->bindings.entries());
+            } else {
+                return std::forward<Visitor>(visitor)(value->bindings());
+            }
+        });
+    }
 
     template<typename Visitor>
     auto visit_pattern(PatternID id, Visitor&& visitor) const noexcept {
@@ -171,7 +183,40 @@ struct ExecutionBuiltinCall final {
     std::variant<NumberParseImplementation, ProvidedFunctionImplementation> implementation;
 };
 
-using ExecutionCallTarget = std::variant<ExecutionBody, ExecutionBuiltinCall>;
+enum class ExecutionProgress { Runnable, Waiting, Complete };
+
+// External completion is observed only on the execution thread. Cancel detaches
+// provider reachability; destroying an operation also cancels any outstanding work.
+// Host results own text and aggregate storage recursively. Adapters materialize
+// borrowed views and retained constants before transferring values to the executor.
+class ExecutionExternalOperation {
+public:
+    virtual ~ExecutionExternalOperation() = default;
+
+    virtual auto poll() noexcept
+        -> std::optional<std::expected<ExecutionValue, ExecutionCallFailure>> = 0;
+
+    // Return false when readiness requires advancement by an external owner.
+    virtual auto wait(std::optional<std::int64_t> deadline) noexcept -> bool;
+    virtual auto cancel() noexcept -> void = 0;
+};
+
+using ExecutionHostResult =
+    std::variant<ExecutionValue, std::unique_ptr<ExecutionExternalOperation>>;
+
+using ExecutionCallSite = std::variant<CallableID, const SemanticExpression*>;
+
+using ExecutionHostFunction = FunctionRef<std::expected<
+    ExecutionHostResult,
+    ExecutionCallFailure>(ExecutionCallSite, std::span<ExecutionValue>, ProgramOriginID) noexcept>;
+
+struct ExecutionHostCall final {
+    ExecutionCallSite target;
+    ExecutionHostFunction invoke;
+    bool asynchronous;
+};
+
+using ExecutionCallTarget = std::variant<ExecutionBody, ExecutionBuiltinCall, ExecutionHostCall>;
 
 class SemanticExecutionContext {
 public:
@@ -198,7 +243,7 @@ public:
     // execution freezes values.
     virtual auto freeze(ExecutionValue value) noexcept -> std::optional<ConstantID>;
 
-    virtual auto prepare_call(CallableID callable, ProgramOriginID origin) noexcept
+    virtual auto prepare_call(ExecutionCallSite target, ProgramOriginID origin) noexcept
         -> ContinuationTask<std::expected<ExecutionCallTarget, ExecutionCallFailure>> = 0;
 
     virtual auto report(const ExecutionEvent& event) noexcept -> void = 0;

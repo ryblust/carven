@@ -54,8 +54,9 @@ auto construct_vector_call(
         const auto expected = *contract.argument == VectorIntrinsicArgument::Index
             ? std::optional<ConstructionTypeRef>()
             : std::optional(
-                  *contract.argument == VectorIntrinsicArgument::Element
-                      ? shape->element
+                  *contract.argument == VectorIntrinsicArgument::Element ? shape->element
+                      : *contract.argument == VectorIntrinsicArgument::Slice
+                      ? make_slice_type(site.draft(), shape->element)
                       : ConstructionTypeRef(site.draft().builtin_type(BuiltinType::Usize))
               );
         const auto execution = site.enter_operand_execution(state.completes);

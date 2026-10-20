@@ -76,7 +76,7 @@ auto check_contract(const ContractCase& input) noexcept -> void {
 auto check_timeout_contract(const ContractCase& input) noexcept -> void {
     constexpr auto standard_modules = std::to_array<std::string_view>({"time"});
     auto source = std::string(
-        "import std::time using { Duration, RangeError }; "
+        "import std::time using { Duration, TimeRangeError } "
         "import std::time using Timeout; "
     );
     source += input.source;
@@ -692,22 +692,22 @@ async fn run() {
         constexpr auto modules = std::array {
             std::pair<std::string_view, std::string_view> {
                 "provider",
-                "export const fn yield_once() -> i32 => 9; "
-                "export const fn cancel_requested() -> i32 => 11; "
-                "export const fn when_all(value: i32) -> i32 => value; "
-                "export const async fn wait_ready() -> i32 => 7; "
-                "export const async fn close() {}"
+                "const fn yield_once() -> i32 => 9; "
+                "const fn cancel_requested() -> i32 => 11; "
+                "const fn when_all(value: i32) -> i32 => value; "
+                "const async fn wait_ready() -> i32 => 7; "
+                "const async fn close() {}"
             },
             std::pair<std::string_view, std::string_view> {
                 "relay",
-                "import provider using *; export fn marker() {}"
+                "import provider using *; fn marker() {}"
             }
         };
         constexpr auto cases = std::array {
             ContractCase {
                 .name = "explicit Carven imports select source in bodies and constants",
                 .source =
-                    "import provider using { yield_once, cancel_requested }; const value: i32 = yield_once(); fn run() -> i32 => cancel_requested();",
+                    "import provider using { yield_once, cancel_requested } const value: i32 = yield_once(); fn run() -> i32 => cancel_requested();",
                 .rejection = std::nullopt
             },
             ContractCase {
@@ -903,7 +903,7 @@ fn run() { let callback = when_all; }
 
 struct Failure {}
 async fn leaf() -> i32 throw Failure { throw Failure {}; }
-async fn run() -> i32 throw Failure + Timeout + RangeError {
+async fn run() -> i32 throw Failure + Timeout + TimeRangeError {
     let pending = leaf();
     return await timeout(&&pending, Duration { nanoseconds: 1 })?;
 }
@@ -976,7 +976,7 @@ fn run(pending: Operation<void>) { let wrapped = timeout(&&pending, Duration {})
                     .source = R"(import std::time using timeout;
 
 async fn leaf() {}
-async fn run() throw Timeout + RangeError {
+async fn run() throw Timeout + TimeRangeError {
     async let child = leaf();
     await timeout(&&child, Duration {})?;
 }
@@ -988,7 +988,7 @@ async fn run() throw Timeout + RangeError {
                     .source = R"(import std::time using timeout;
 
 async fn leaf(&value: i32) -> i32 => value;
-async fn run() throw Timeout + RangeError {
+async fn run() throw Timeout + TimeRangeError {
     var value = 1;
     let wrapped = timeout(leaf(&value), Duration {});
     let moved = &&value;
@@ -1010,7 +1010,7 @@ const {
             false
         } catch {
             Timeout(_) => true,
-            RangeError(_) => false,
+            TimeRangeError(_) => false,
         };
         assert(expired && started == 0);
     }

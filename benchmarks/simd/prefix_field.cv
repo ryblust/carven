@@ -1,4 +1,4 @@
-import std::simd.scan using { byte_range, set_union, prefix_end };
+import std::simd.scan using { byte_range, set_union, prefix_end }
 
 private const selected = set_union(
     byte_range(0, 9),

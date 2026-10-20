@@ -4,6 +4,7 @@ import :backend.generation.plan;
 import :backend.lowering.constant;
 import :backend.lowering.context;
 import :backend.preparation.body;
+import :backend.realization.decl;
 import :backend.realization.expr;
 import :backend.realization.format;
 import :backend.realization.operation;
@@ -187,8 +188,9 @@ auto BodyRealizer::ExpressionBuilder::build(
         .executes = false,
         .observes = false,
         .materialize_void = request.demand != ResultDemand::Discard
-            && request.demand != ResultDemand::PropagateOutcome,
-        .awaited_carrier = std::nullopt
+            && request.demand != ResultDemand::AdoptSuccess
+            && request.demand != ResultDemand::ForwardResult,
+        .result_carrier = std::nullopt
     };
     const auto& value = fragment.preparation;
     if (std::holds_alternative<SemUnreachable>(value.operation.value)) {
@@ -285,6 +287,7 @@ auto BodyRealizer::ExpressionBuilder::build(
         // Complete suspension in the owning coroutine before any result factory
         // can move this metadata into deferred expression storage.
         const auto local = owner.fresh_local(TargetTemporaryNameKind::Operand);
+        owner.unused_initializers.emplace(local, UnusedInitializer::Evaluate);
         statements.declare(
             TargetVariableStmt {
                 .binding = TargetVariableBinding::MutableValue,
@@ -299,6 +302,7 @@ auto BodyRealizer::ExpressionBuilder::build(
             },
             false
         );
+        owner.check_stopped(statements);
         complete(fragment, Saved {.local = local, .kind = SavedKind::Value});
         fragment.executes = true;
         fragment.observes = true;
@@ -312,6 +316,7 @@ auto BodyRealizer::ExpressionBuilder::build(
             ))),
             true
         );
+        owner.check_stopped(statements);
         complete(fragment, LoweringCompleted {});
         fragment.executes = true;
         fragment.observes = true;
@@ -348,6 +353,17 @@ auto BodyRealizer::ExpressionBuilder::build(
                 if (statements.continues()) {
                     fragment.executes = true;
                     fragment.observes = true;
+                    if (completed.result_carrier) {
+                        fragment.result_carrier = completed.result_carrier;
+                        consume_await(
+                            fragment,
+                            *awaited,
+                            result_needed ? request.demand : ResultDemand::Discard,
+                            result_use
+                        );
+                        co_return finish_fragment(std::move(fragment));
+                    }
+                    owner.check_stopped(statements);
                     if (!owner.context.is_void(operation_type->success)) {
                         if (check_character) {
                             statements.emit(
@@ -390,13 +406,14 @@ auto BodyRealizer::ExpressionBuilder::build(
                     discard_statement(co_await_expression(std::move(invocation))),
                     true
                 );
+                owner.check_stopped(statements);
                 complete(fragment, LoweringCompleted {});
             } else {
                 complete_await(
                     fragment,
                     std::move(invocation),
                     *awaited,
-                    result_needed && request.demand != ResultDemand::AdoptSuccess,
+                    result_needed ? request.demand : ResultDemand::Discard,
                     result_use
                 );
             }
@@ -415,7 +432,7 @@ auto BodyRealizer::ExpressionBuilder::build(
             (co_await owner
                  .structured_expression(expression, LoweringDiscardResult {}, statements));
         } else if (!value.requires_coroutine_context
-                   && !value.operation.exits_test
+                   && !value.operation.exits_call
                    && owner.context.semantic()
                           .failure_sets()
                           .failure_set(value.operation.failures.resolved())
@@ -449,7 +466,7 @@ auto BodyRealizer::ExpressionBuilder::build(
             reservations = LoweringStmtBuilder();
             (co_await owner.structured_expression(
                 expression,
-                LoweringInitializeResult {.storage = storage},
+                LoweringInitializeResult {.storage = storage, .retain_success = false},
                 statements
             ));
             outer.append(std::move(reservations));
@@ -650,9 +667,11 @@ auto BodyRealizer::ExpressionBuilder::build(
         }
         co_return finish_fragment(std::move(fragment));
     }
-    // Fallible calls split the full expression at their outcome declaration.
-    // Borrowed success values still need their operand owners after that call.
-    retain_backing |= owner.fallible(value.operation).has_value();
+    // Fallible calls retain operands while their result is checked or delivered.
+    // Borrowed success values may still refer to those operand owners.
+    // Printing completes source operands before constructing output text.
+    retain_backing |= owner.fallible(value.operation).has_value()
+        || std::holds_alternative<SemPrint>(value.operation.value);
     auto& inputs = fragment.preparation.operands;
     const auto* native_conversion = std::get_if<SemCpp>(&value.operation.value);
     const auto* conversion = native_conversion
@@ -801,6 +820,11 @@ auto BodyRealizer::ExpressionBuilder::build(
         }
         children.push_back(std::move(child));
     }
+    if (std::holds_alternative<SemPrint>(value.operation.value)) {
+        // Output conversions observe completed Read arguments, including owners
+        // changed by later operands. Finish their source evaluation first.
+        commit_prior(true, std::numeric_limits<std::size_t>::max());
+    }
     const auto* format = std::get_if<SemFormat>(&value.operation.value);
     const auto* prepared = std::get_if<PreparedFormat>(value.preparation.get());
     const auto* writer =
@@ -866,7 +890,7 @@ auto BodyRealizer::ExpressionBuilder::build(
             fragment,
             std::move(invocation),
             *awaited,
-            result_needed && request.demand != ResultDemand::AdoptSuccess,
+            result_needed ? request.demand : ResultDemand::Discard,
             result_use
         );
         co_return finish_fragment(std::move(fragment));
@@ -903,34 +927,30 @@ auto BodyRealizer::ExpressionBuilder::build(
         );
     }
     if (request.await_fusion) {
-        const auto result = [&]() noexcept -> std::optional<TargetLocalID> {
-            if (request.await_fusion->factory) {
-                const auto* call = std::get_if<SemCall>(&value.operation.value);
-                if (call == nullptr || !call->target) {
-                    invariant_violation("fused factory lost its resolved call identity");
-                }
-                return fuse_factory(
-                    *call,
-                    *request.await_fusion,
-                    std::move(operands),
-                    request.demand
-                );
+        if (request.await_fusion->factory) {
+            const auto* call = std::get_if<SemCall>(&value.operation.value);
+            if (call == nullptr || !call->target) {
+                invariant_violation("fused factory lost its resolved call identity");
             }
+            fuse_factory(
+                fragment,
+                *call,
+                *request.await_fusion,
+                std::move(operands),
+                request.demand
+            );
+        } else {
             const auto* call = std::get_if<SemColdCall>(&value.operation.value);
             if (call == nullptr) {
                 invariant_violation("fused await operand lost its cold call identity");
             }
-            return fuse_call(
+            fuse_call(
+                fragment,
                 *call,
                 request.await_fusion->body,
                 std::move(operands),
                 request.demand
             );
-        }();
-        if (statements.continues() && result) {
-            complete(fragment, Saved {.local = *result, .kind = SavedKind::Value});
-        } else {
-            complete(fragment, LoweringCompleted {});
         }
     } else if (read_conversion) {
         complete(
@@ -1014,9 +1034,8 @@ auto BodyRealizer::ExpressionBuilder::build(
         complete_call(
             fragment,
             *transport,
-            result_needed && !owner.context.is_void(value.operation.type.resolved()),
-            result_use,
-            request.demand == ResultDemand::PropagateOutcome
+            result_needed ? request.demand : ResultDemand::Discard,
+            result_use
         );
     }
     if (!result_needed) {

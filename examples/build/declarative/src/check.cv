@@ -1,0 +1,11 @@
+import .catalog using items;
+import std::json using { JSONError, JSONValueError }
+
+fn main() throw JSONError + JSONValueError {
+    let catalog = items()?;
+    for item in catalog {
+        assert(!item.name.is_empty());
+        assert(item.stock >= 0);
+    }
+    println(f"Checked {catalog.length()} catalog items");
+}

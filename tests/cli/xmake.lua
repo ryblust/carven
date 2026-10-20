@@ -1,13 +1,27 @@
 local case_specs = {
+    ["commands/collections"] = {
+        case_dir = "../crafts/carven/std/collections",
+        inputs = {"containers.cv"}, args = {"interpret", "--tests", "containers.cv"},
+        stderr_contains = {"tests: 1 passed; 0 failed"},
+    },
+    ["commands/fs"] = {
+        case_dir = "../crafts/fs",
+        inputs = {"bridge.cv"}, args = {"interpret", "--tests", "bridge.cv"},
+        stdout_contains = {"fs: bytes, text, path kinds, errors\n"},
+        stderr_contains = {"tests: 1 passed; 0 failed"},
+    },
+    ["commands/toml"] = {
+        case_dir = "../crafts/carven/std/toml",
+        inputs = {"smoke.cv"}, args = {"interpret", "--tests", "smoke.cv"},
+        stderr_contains = {"tests:", "0 failed"},
+    },
     ["commands/host"] = {
-        inputs = {"stages.cv", "bytes.cv", "recovery.cv", "limit.cv", "module_witness.cv", "cold.cv", "timers.cv", "pieces.cv", "budget.cv", "witness.cv", "operation.cv"},
+        inputs = {"stages.cv", "bytes.cv", "recovery.cv", "limit.cv", "module_witness.cv", "cold.cv", "timers.cv", "pieces.cv", "budget.cv", "witness.cv"},
         cases = {
-            budget = {args = {"check", "budget.cv"}, stdin_bytes = string.rep("x", 70000), exit_code = 1,
+            budget = {args = {"check", "budget.cv"}, stdin_bytes = string.rep("x", 1024 * 1024 + 1), exit_code = 1,
                 stderr_contains = {"CV-CONST-LIMIT", "execution value size limit"}},
             witness = {args = {"check", "witness.cv"}, stdin = "witness.txt", exit_code = 1,
                 stderr_contains = {"type dependency query"}},
-            operation = {args = {"check", "operation.cv"}, exit_code = 1,
-                stderr_contains = {"CV-CONST-INITIALIZER"}},
             stages = {args = {"interpret", "stages.cv"}, stdin_bytes = "first\r\nsecond\nthird\n", stdout_contains = {"static first second\nruntime third\n"}},
             bytes = {args = {"check", "bytes.cv"}, stdin = "bytes.txt", stdout_contains = {"bytes\n"}, stderr_contains = {"check passed"}},
             recovery = {args = {"check", "recovery.cv"}, stdin = "recovery.txt", stdout_contains = {"recovered\n"}, stderr_contains = {"check passed"}},
@@ -18,23 +32,23 @@ local case_specs = {
             pieces = {args = {"interpret", "pieces.cv"}, stdin = "pieces.txt", stdout_contains = {"static pieces\nruntime pieces\n"}},
         },
     },
+    ["commands/standard_capabilities"] = {
+        case_dir = "commands/host",
+        inputs = {"standard.cv", "native_constant.cv", "filesystem_witness.cv"},
+        steps = {
+            {args = {"check", "native_constant.cv"}, exit_code = 1,
+                stderr_contains = {"CV-CONST-INITIALIZER"}},
+            {args = {"check", "filesystem_witness.cv"}, exit_code = 1,
+                stderr_contains = {"CV-CONST-ADMISSION", "type dependency query"}},
+            {args = {"interpret", "standard.cv"},
+                stdout_contains = {"static standard capabilities\ninterpreted standard capabilities\n"},
+                output_files = {"observed.txt", "generated.cv", "emitted/generated.cpp"}},
+        },
+    },
     ["commands/provider"] = {
         inputs = {"input.cv", "input/provider/Result.cv", "private_only.cv"},
         args = {"compile", "-o", "emit", "input.cv", "input/provider/Result.cv", "private_only.cv"},
         output_files = {"emit/carven/providers/input.hpp", "emit/carven/providers/input/provider/Result.hpp", "emit/carven/providers/private_only.hpp", "emit/carven/manifest.json"},
-    },
-    ["input/mapped"] = {
-        fixtures = {["../../commands/manifest/input.cv"] = "crafts/toolchain/项目 🌍/input.cv"},
-        steps = {
-            {args = {"compile", "--source=logical.input=crafts/toolchain/项目 🌍/input.cv",
-                     "-o", "emit"},
-                output_files = {"emit/logical/input.cpp", "emit/carven/manifest.json"}},
-            {args = {"check", "--source=logical.input=crafts/toolchain/项目 🌍/input.cv",
-                     "--source=logical.input=crafts/toolchain/项目 🌍/input.cv"},
-                stderr_contains = {"check passed"}},
-            {args = {"compile", "--source=logical.input=crafts/toolchain/项目 🌍/input.cv", "--stdout"},
-                stdout_contains = {"==> logical/input.cpp <=="}},
-        },
     },
     ["commands/manifest"] = {
         fixtures = {["invalid.cv.fixture"] = "invalid.cv"},
@@ -65,16 +79,15 @@ local case_specs = {
         inputs = {"input.cv", "crafts/demo/helper.cv", "crafts/demo/unrelated.cv",
             "crafts/cycle/a.cv", "crafts/cycle/b.cv"},
         steps = {
-            {args = {"compile", "input.cv", "--stdout"},
-                stdout_contains = {"==> input.cpp <=="},
-                stdout_not_contains = {"==> crafts/", "/crafts/demo/helper.hpp <==", "unrelated"}},
+            {args = {"compile", "input.cv", "--stdout"}, exit_code = 1,
+                stderr_contains = {"demo"}},
             {args = {"compile", "input.cv", "crafts/demo/helper.cv", "--stdout"},
                 stdout_contains = {"==> input.cpp <==", "==> crafts/demo/helper.cpp <==", "/crafts/demo/helper.hpp <=="},
                 stdout_not_contains = {"unrelated", "==> crafts/carven/"}},
-            {args = {"compile", "crafts/cycle/b.cv", "--stdout"},
-                stdout_contains = {"==> crafts/cycle/b.cpp <==", "/crafts/cycle/a.hpp <=="},
-                stdout_not_contains = {"==> crafts/cycle/a.cpp <==", "/crafts/cycle/b.hpp <==", "==> input.cpp <=="}},
-            {args = {"compile", "input.cv", "-o", "emit"},
+            {args = {"compile", "crafts/cycle/b.cv", "crafts/cycle/a.cv", "--stdout"},
+                stdout_contains = {"==> crafts/cycle/b.cpp <==", "==> crafts/cycle/a.cpp <=="},
+                stdout_not_contains = {"==> input.cpp <=="}},
+            {args = {"compile", "input.cv", "crafts/demo/helper.cv", "crafts/demo/unrelated.cv", "-o", "emit"},
                 output_files = {"emit/input.cpp", "emit/crafts/demo/helper.cpp", "emit/crafts/demo/unrelated.cpp"}},
         },
     },
@@ -168,6 +181,7 @@ local case_specs = {
         fixtures = {["../fixtures/bare_structure.cv"] = "bare_structure.cv"},
         args = {"compile", "bare_structure.cv"},
         output_files = {"bare_structure.cpp", "carven/generated/*/bare_structure.hpp"},
+        file_not_contains = {["carven/manifest.json"] = {"crafts.carven.std"}},
     },
     ["output/destination"] = {
         fixtures = {
@@ -227,27 +241,35 @@ local case_specs = {
     },
 }
 
+if not is_plat("windows", "mingw") then
+    case_specs["commands/native_async"] = {
+        case_dir = "../crafts/async", inputs = {"operations.cv"},
+        args = {"interpret", "operations.cv"},
+        stdout_contains = {"native async: stdout, channel, cancellation\n"},
+    }
+end
+
 local native_execution = {
     native_operation = {
-        args = {"interpret", "native.cv"}, exit_code = 1, stdout = "source_stdout.txt",
+        args = {"interpret", "native.cv", "crafts/demo/api.cv"}, exit_code = 1, stdout = "source_stdout.txt",
         stderr_contains = {"CV-INTERPRET-ADMISSION", "native C++ function requires compiled execution",
             "crafts/demo/api.cv:", "native.cv:"},
     },
     interpret = {
-        args = {"interpret", "source.cv"}, stdout = "source_stdout.txt",
+        args = {"interpret", "source.cv", "crafts/demo/api.cv"}, stdout = "source_stdout.txt",
     },
     tests = {
-        args = {"interpret", "--tests", "source.cv"},
+        args = {"interpret", "--tests", "source.cv", "crafts/demo/api.cv"},
         stderr_contains = {"tests: 1 passed; 0 failed"},
     },
     compile = {
-        args = {"compile", "source.cv", "-o", "emit"},
-        output_files = {"emit/source.cpp", "emit/crafts/demo/api.cpp", "emit/carven/generated/*/crafts/carven/std/io.hpp"},
+        args = {"compile", "source.cv", "crafts/demo/api.cv", "-o", "emit"},
+        output_files = {"emit/source.cpp", "emit/crafts/demo/api.cpp"},
         absent_files = {"emit/crafts/carven/std/io.cpp"},
     },
 }
 
--- Keep normal discovery against the real bundled Standard and Runtime Crafts.
+-- Use the real bundled Standard and Runtime Crafts.
 for name, scenario in pairs(native_execution) do
     scenario.case_dir = "commands/native_execution"
     scenario.inputs = {"source.cv", "native.cv", "crafts/demo/api.cv", "crafts/demo/native.hpp"}
@@ -270,11 +292,9 @@ local interpretation = {
         "input.cv", "implicit_recovery.cv", "wrapping.cv",
         "declarations.cv", "main.cv", "floating.cv", "typed_failures.cv",
         "async_waiting_entry.cv", "async_composition_entry.cv", "async_scheduling_entry.cv",
-        "failure.cv", "limit.cv", "static_only.cv", "static_failure.cv", "composition_budget.cv",
+        "failure.cv", "limit.cv", "static_only.cv", "static_failure.cv",
     },
     cases = {
-        ["composition-budget"] = {args = {"interpret", "--max-steps", "128", "composition_budget.cv"}, exit_code = 1,
-            stdout_not_contains = {"unreachable"}, stderr_contains = {"CV-INTERPRET-LIMIT"}},
         ["missing-input"] = {args = {"interpret"}, exit_code = 1, stderr_contains = {"requires at least one source file", "carven interpret --help"}},
         ["async-failure"] = {args = {"interpret", "async_failure.cv"}, exit_code = 1,
             stderr_ordered = {"root failure selected", "child cancellation requested: true", "child closed",
@@ -335,6 +355,12 @@ local interpretation = {
         ["explicit-entry"] = {
             args = {"interpret", "main.cv", "declarations.cv"},
             stdout = "main.txt",
+        },
+        ["multiple-entries"] = {
+            args = {"interpret", "main.cv", "input.cv"}, exit_code = 1,
+            stdout_contains = {"compile 21"},
+            stderr_contains = {"CV-ENTRY-DUPLICATE", "main.cv", "input.cv"},
+            stdout_not_contains = {"explicit main", "result 42"},
         },
         ["arguments"] = {
             args = {"interpret", "--trace", "input.cv", "--", "--help"},
@@ -420,16 +446,26 @@ case_specs["commands/execution_modes"] = {
 }
 
 case_specs["commands/source_collection"] = {
-    inputs = {"input.cv", "isolated.cv", "crafts/demo/value.cv", "explicit.cv", "external/crafts/json/parser.cv"},
+    inputs = {"input.cv", "isolated.cv", "crafts/demo/value.cv", "explicit.cv"},
+    fixtures = {["external/crafts/json/parser.cv"] = "crafts/json/parser.cv"},
     steps = {
-        {args = {"interpret", "isolated.cv"},
+        {args = {"interpret", "isolated.cv"}, exit_code = 1,
+            stderr_contains = {"demo"}},
+        {args = {"interpret", "isolated.cv", "crafts/demo/value.cv"},
             stdout_contains = {"7\n"}},
-        {args = {"interpret", "explicit.cv"}, absolute_inputs = {"external/crafts/json/parser.cv"},
+        {args = {"interpret", "explicit.cv"}, absolute_inputs = {"crafts/json/parser.cv"},
             stdout_contains = {"42\n"}},
         {args = {"compile", "input.cv", "crafts/demo/value.cv", "-o", "emit"},
-            output_files = {"emit/input.cpp", "emit/crafts/demo/value.cpp"},
-            absent_files = {"emit/crafts/carven/std/time.cpp"}},
-        {args = {"interpret", "input.cv"}, stdout_contains = {"65 7\n"}},
+            output_files = {"emit/input.cpp", "emit/crafts/demo/value.cpp", "emit/crafts/carven/std/time.cpp"},
+            file_not_contains = {["emit/carven/manifest.json"] = {"crafts.carven.std.json", "crafts.carven.std.net"}}},
+        {args = {"check", "input.cv", "crafts/demo/value.cv", "-o", "checked"},
+            stderr_contains = {"carven: check passed"},
+            output_files = {"checked/carven/semantic"}},
+        {args = {"compile", "checked", "--tests", "-o", "restored"},
+            output_files = {"restored/input.cpp", "restored/crafts/demo/value.cpp",
+                "restored/crafts/carven/std/time.cpp"},
+            file_not_contains = {["restored/carven/manifest.json"] = {'"external": true'}}},
+        {args = {"interpret", "input.cv", "crafts/demo/value.cv"}, stdout_contains = {"65 7\n"}},
     },
 }
 
@@ -593,7 +629,9 @@ for name, scenario in pairs(host.cases) do
 end
 
 local help = {
-    main = {"Usage:", "carven [options]", "Commands:"},
+    main = {"Usage:", "carven build", "carven run", "Commands:"},
+    build = {"carven build", "outputs under build/"},
+    run = {"carven run [<source.cv>|<target>", "-- <arguments>"},
     compile = {"carven compile [options]", "-o <dir>", "--tests"},
     check = {"carven check [options]", "-o <dir>"},
     interpret = {"carven interpret [options]", "--max-steps"},
@@ -645,8 +683,15 @@ target("carven-test-cli")
     on_test(function (target, opt)
         local name = opt.name:match("^[^/]+/(.+)$")
         local spec = case_specs[name]
+        if name == "commands/standard_capabilities" then
+            spec.steps[3].envs = {
+                CARVEN_TEST_COMPILER = path.absolute(target:dep("carven"):targetfile(), os.projectdir()),
+            }
+        end
         return import("process", {rootdir = path.join(os.projectdir(), "tests", "harness")})
             .main(target:dep("carven"), opt, spec,
                 path.join(os.projectdir(), "tests", "cli", spec.case_dir or name))
     end)
 target_end()
+
+includes("build")

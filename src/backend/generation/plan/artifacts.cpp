@@ -174,7 +174,9 @@ auto plan_artifacts(
             provenance.module_record(module_record.value.provenance_module).path;
         const auto owned =
             !library_module || std::ranges::contains(request.library->owned_modules, module_path);
-        const auto test_mode = owned ? request.test_mode : TestGenerationMode::None;
+        const auto emit_tests = owned
+            && (!request.test_modules || std::ranges::contains(*request.test_modules, module_path));
+        const auto test_mode = emit_tests ? request.test_mode : TestGenerationMode::None;
         module_ids.push_back(module_record.id);
         module_by_index[module_record.id.index()] = module_record.id;
         schedules[module_record.id.index()] = TargetModuleSchedule {
@@ -184,7 +186,7 @@ auto plan_artifacts(
             .interface_callables = {},
             .emitted_tests = {},
             .emit_program_entry =
-                !library_module && test_mode != TestGenerationMode::RunnerEntryPoint,
+                !library_module && request.test_mode != TestGenerationMode::RunnerEntryPoint,
         };
         auto& closure_definitions = schedules[module_record.id.index()]->closure_definitions;
         closure_definitions.assign(
@@ -515,6 +517,23 @@ auto plan_artifacts(
         const auto& anchor_path = provenance.module_record(anchor.provenance_module).path;
         const auto& namespace_name =
             names.module_names(component_members[component_index].front()).module_namespace_name;
+        auto host_nominals = std::vector<NominalDeclarationRef>();
+        for (const auto nominal : component_nominals[component_index]) {
+            if (references.host_nominals.contains(nominal)) {
+                host_nominals.push_back(nominal);
+            }
+        }
+        auto native_providers = std::vector<FunctionID>();
+        for (const auto provider : providers) {
+            const auto& function = declarations.function(provider);
+            const auto& imported = std::get<CppImportImplementation>(
+                declarations.callable(function.callable).implementation
+            );
+            if (!imported.target
+                && std::ranges::contains(component_members[component_index], function.module_id)) {
+                native_providers.push_back(provider);
+            }
+        }
         const auto id = artifacts.add(
             TargetInterfaceArtifact {
                 .logical_path = interface_component_logical_path(
@@ -525,6 +544,8 @@ auto plan_artifacts(
                 .predecessor_artifacts = std::move(predecessor_artifacts),
                 .forward_declarations = std::move(forward_declarations),
                 .declarations = std::move(interface_declarations),
+                .host_nominals = std::move(host_nominals),
+                .native_providers = std::move(native_providers),
             }
         );
         component_artifacts[component_index] = id;
@@ -572,8 +593,8 @@ auto plan_artifacts(
         if (!module_component[module_id.index()].has_value()) {
             invariant_violation("C++ provider module has no published interface component");
         }
-        const auto& module = declarations.module_decl(module_id);
-        const auto& path = provenance.module_record(module.provenance_module).path;
+        const auto& module_decl = declarations.module_decl(module_id);
+        const auto& path = provenance.module_record(module_decl.provenance_module).path;
         auto logical_path = std::string("carven/providers/");
         for (const auto& component : path.components()) {
             logical_path += component + "/";
@@ -645,6 +666,7 @@ auto artifact_directive_inputs(
             || role == GeneratedArtifactRole::TestRunnerHeader,
         .requirements = {},
         .native_headers = {},
+        .generated_dependencies = {},
     };
     auto dependencies = std::flat_set<TargetArtifactID>();
     for (const auto dependency : artifact_dependencies(artifact)) {
@@ -657,6 +679,7 @@ auto artifact_directive_inputs(
         static_cast<void>(plan.artifact(dependency));
         dependencies.insert(dependency);
     }
+    result.generated_dependencies.assign(dependencies.begin(), dependencies.end());
     const auto associated = artifact_associated_header(artifact);
     for (const auto dependency : dependencies) {
         result.requirements.push_back({
@@ -666,7 +689,7 @@ auto artifact_directive_inputs(
                     .path = std::string(artifact_logical_path(plan.artifact(dependency))),
                 },
             .group = associated == dependency ? TargetHeaderGroup::Associated
-                                              : TargetHeaderGroup::Generated,
+                                              : TargetHeaderGroup::Project,
         });
     }
     return result;

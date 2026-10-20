@@ -8,7 +8,7 @@ import .tail using run_tail;
 import .tuples using run_tuples;
 import .waiting using run_waiting;
 
-export async fn run_behavior() {
+async fn run_behavior() {
     await run_containers();
     await run_tuples();
     await run_tail();

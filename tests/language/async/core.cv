@@ -1,4 +1,4 @@
-import std::async using { cancel_requested, cancel_point, yield_once };
+import std::async using { cancel_requested, cancel_point, yield_once }
 
 async fn leaf(value: i32) -> i32 => value + 1;
 async fn other(value: i32) -> i32 => value + 2;
@@ -177,7 +177,7 @@ async fn fresh_turn_boundary() -> i32 {
     return trace;
 }
 
-export async fn run_core() -> i32 {
+async fn run_core() -> i32 {
     var trace: i32 = 0;
     let operation = write_later(&trace, 9);
     assert(trace == 0);

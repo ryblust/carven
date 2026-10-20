@@ -7,6 +7,7 @@ import :semantic.analysis.body.context;
 import :semantic.analysis.constant.fold;
 import :semantic.analysis.expr.operand;
 import :semantic.analysis.names;
+import :semantic.evaluation.standard;
 import :semantic.semir.structured;
 import :semantic.semir.traversal;
 import :semantic.semir.type;
@@ -35,8 +36,7 @@ auto BodyElaborator::select_cpp_name(const ASTCppNameExpr& name, Span span) noex
         catalog(),
         import_usage(),
         source_module_id,
-        CppNameLookup::Global,
-        name.components
+        {.global_root = name.global_root, .components = name.components}
     );
     if (!reference.has_value()) {
         return std::unexpected(reference.error());
@@ -46,6 +46,67 @@ auto BodyElaborator::select_cpp_name(const ASTCppNameExpr& name, Span span) noex
 
 auto BodyElaborator::cpp_query_result_type(GenericCppQueryType query) noexcept
     -> ConstructionTypeRef {
+    if (const auto result = standard_native_result(draft(), query); result && result->by_value) {
+        const auto project =
+            [&](this const auto& self,
+                const StandardNativeType& native) noexcept -> std::optional<TypeID> {
+            if (const auto builtin = standard_native_builtin(native)) {
+                return draft().builtin_type(*builtin);
+            }
+            switch (native.kind) {
+                case StandardNativeKind::Vector: {
+                    const auto element = self(*native.element);
+                    return element
+                        ? std::optional(
+                              draft().intern_type({.value = VectorTypeValue {.element = *element}})
+                          )
+                        : std::nullopt;
+                }
+                case StandardNativeKind::Opaque: {
+                    if (native.name.empty()) {
+                        return std::nullopt;
+                    }
+                    auto components = std::vector<std::string>();
+                    for (const auto part :
+                         native.name | std::views::split(std::string_view("::"))) {
+                        components.emplace_back(part.begin(), part.end());
+                    }
+                    return draft().intern_type(
+                        {.value = CppTypeValue {
+                             .form = CppNamedType {
+                                 .name =
+                                     CppNameReference {
+                                         .context_module =
+                                             catalog().find_module(source_module_id)->declaration,
+                                         .lookup = CppNameLookup::Global,
+                                         .components = std::move(components)
+                                     },
+                                 .arguments = {}
+                             }
+                         }}
+                    );
+                }
+                case StandardNativeKind::Void:
+                case StandardNativeKind::Bool:
+                case StandardNativeKind::String:
+                case StandardNativeKind::Signed:
+                case StandardNativeKind::Unsigned:
+                case StandardNativeKind::Str:
+                case StandardNativeKind::Slice:    return std::nullopt;
+            }
+            std::unreachable();
+        };
+        if (const auto projected = project(*result->type)) {
+            return result->asynchronous ? draft().intern_type(
+                                              {.value =
+                                                   OperationTypeValue {
+                                                       .success = *projected,
+                                                       .failures = draft().empty_failure_set()
+                                                   }}
+                                          )
+                                        : *projected;
+        }
+    }
     auto symbolic = false;
     visit_cpp_query_types(query, [&](ConstructionTypeRef type) noexcept {
         symbolic |= !std::holds_alternative<TypeID>(unwrap_type_alias(draft(), type));
@@ -94,15 +155,13 @@ auto BodyElaborator::materialize_selection(
     }
     if (const auto* builtin = std::get_if<BuiltinSelection>(&selected)) {
         const auto view = expected ? draft().callable_shape(*expected) : std::nullopt;
-        if (view
-            && !view->owning_type
-            && view->result == ConstructionTypeRef(draft().builtin_type(BuiltinType::Void))) {
+        if (view && !view->owning_type) {
             return builtin_callable(*builtin, view->parameters);
         }
         return std::unexpected(fail(
             builtin->span,
             DiagnosticCode::TypeNotCallable,
-            "builtin value requires an expected callable signature returning void"
+            "builtin value requires an expected callable signature"
         ));
     }
     auto& selection = std::get<CppSelection>(selected);
@@ -181,6 +240,35 @@ auto BodyElaborator::cpp_expression(
     std::optional<ConstructionTypeRef> type
 ) noexcept -> AnalysisResult<BuiltExpression> {
     if (type.has_value() && std::holds_alternative<CppConvertOperation>(operation)) {
+        // A typed native producer constructs the operation directly. Its C++
+        // return type must satisfy the source completion contract.
+        if (operation_shape(*type)
+            && operands.size() == 1uz
+            && std::holds_alternative<SemCppCall>(operands.front().expression.value)) {
+            const auto& source = operands.front().expression;
+            const auto query = cpp_call_query(
+                std::get<SemCppCall>(source.value),
+                [](ConstructionTypeRef type) static noexcept { return type; }
+            );
+            if (const auto native = standard_native_result(draft(), query);
+                native
+                && !standard_native_result_matches(
+                    draft(),
+                    *native,
+                    *type,
+                    catalog().find_module(source_module_id)->declaration
+                )) {
+                return std::unexpected(type_mismatch(source.type.construction(), *type, span));
+            }
+            auto value = std::move(operands.front().expression);
+            value.type = BodyType(*type);
+            return BuiltExpression {
+                .storage = UniqueIndirect {BodyExpressionStorage {std::move(value)}},
+                .pending_failures = {},
+                .takeable = true,
+                .completes = true,
+            };
+        }
         const auto shape = draft().callable_shape(*type);
         const auto borrowed = shape && !shape->owning_type;
         if (borrowed) {

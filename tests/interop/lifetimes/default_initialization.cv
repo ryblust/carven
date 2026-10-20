@@ -5,7 +5,7 @@ import "lifetimes/default_initialization.hpp" using default_probe::{
     reset,
     observed,
     owners,
-};
+}
 
 struct Mixed {
     first: Item,

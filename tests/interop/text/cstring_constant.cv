@@ -1,5 +1,5 @@
 const constant_text = c"shared across modules";
 
-export fn constant_text_value() => constant_text;
+fn constant_text_value() => constant_text;
 
-export const fn constant_text_address() -> ptr<void> => constant_text as ptr<void>;
+const fn constant_text_address() -> ptr<void> => constant_text as ptr<void>;

@@ -98,6 +98,8 @@ private:
                 return T {.enum_case = node.enum_case, .payload = copy(node.payload)};
             } else if constexpr (std::same_as<T, SemUnary>) {
                 return T {.operation = node.operation, .operand = copy(node.operand)};
+            } else if constexpr (std::same_as<T, SemHash>) {
+                return T {.operand = copy(node.operand)};
             } else if constexpr (std::same_as<T, SemBinary> || std::same_as<T, SemShortCircuit>) {
                 return T {
                     .left = copy(node.left),
@@ -300,7 +302,7 @@ auto SemanticClone::copy(const SemanticExpression& value) noexcept -> SemanticEx
         .origin = value.origin,
         .constant = value.constant,
         .failures = value.failures,
-        .exits_test = value.exits_test,
+        .exits_call = value.exits_call,
         .operation_reachable = value.operation_reachable,
         .category = value.category,
         .value = SemDefault {},
@@ -324,7 +326,7 @@ auto SemanticClone::copy(const SemanticRegion& value) noexcept -> SemanticRegion
         .result = copy(value.result),
         .result_reachable = value.result_reachable,
         .failures = value.failures,
-        .exits_test = value.exits_test,
+        .exits_call = value.exits_call,
     };
 }
 

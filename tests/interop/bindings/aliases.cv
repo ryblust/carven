@@ -1,0 +1,47 @@
+import <vector> using std::vector as Items;
+import "bindings/provider.hpp" using native as cpp;
+
+import "bindings/provider.hpp" using native::{
+    AccessProbe as Probe,
+    argument_access as access,
+    identity,
+}
+
+import "bindings/provider.hpp" using plain as template;
+import "bindings/keyword_names.hpp" using async::{ match as Match, test as answer }
+
+struct AccessProbe {
+    value: i32
+}
+
+fn argument_access() -> i32 => 42;
+fn plain() -> i32 => 19;
+fn read_probe(value: Probe) -> i32 => value.access();
+fn invoke(value: cpp::Receiver) -> i32 => value.invoke(3, 4);
+fn read_match(value: Match) -> i32 => value.await();
+
+test "C++ aliases: types and namespace members retain native identity" {
+    let probe: Probe = Probe {};
+    check(read_probe(probe) == 1);
+    let receiver: cpp::Receiver = cpp::Receiver {};
+    check(invoke(receiver) == 7);
+    var items: Items<i32> = Items<i32> {};
+    items.push_back(5);
+    check(items.at(0) == 5);
+    check(read_match(Match { 8 }) == 9);
+    let own = AccessProbe { value: 11 };
+    check(own.value == 11);
+}
+
+test "C++ aliases: local names preserve native overloads and source bindings" {
+    var value = 7;
+    check(access(value) == 1);
+    check(access(&value) == 2);
+    check(identity(value) == 8);
+    check(argument_access() == 42);
+    check(plain() == 19);
+    check(template(13) == 13);
+    check(answer() == 42);
+    let access = [](number: i32) -> i32 => number + 10;
+    check(access(2) == 12);
+}

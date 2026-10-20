@@ -1,7 +1,8 @@
 #pragma once
 
 #include <carven/runtime/numeric/numeric.hpp>
-#include <carven/runtime/text/text.hpp>
+#include <carven/runtime/text/string.hpp>
+#include <carven/runtime/text/utf8.hpp>
 
 #include <array>
 #include <charconv>

@@ -4,6 +4,7 @@ import :frontend.ast.control;
 import :frontend.ast.decl;
 import :frontend.ast.expr;
 import :frontend.ast.ids;
+import :frontend.ast.imports;
 import :frontend.ast.interop;
 import :frontend.ast.literal;
 import :frontend.ast.pattern;
@@ -15,6 +16,14 @@ import :frontend.parse.parser;
 import :source.identifier;
 import :source.text;
 import std;
+
+auto Parser::parse_import_item(Span name) noexcept -> ASTImportItem {
+    auto alias = std::optional<Span>();
+    if (match(TokenKind::As)) {
+        alias = expect(TokenKind::Identifier, "expected local import name after 'as'").span;
+    }
+    return {.name_span = name, .alias_span = alias};
+}
 
 auto Parser::parse_module_reference() noexcept -> ASTModuleReference {
     const auto start = current().span;
@@ -107,21 +116,22 @@ auto Parser::parse_module_reference() noexcept -> ASTModuleReference {
 auto Parser::parse_cpp_header_import() noexcept -> ASTCppHeaderImport {
     const auto start = expect(TokenKind::Import, "expected 'import'").span;
     const auto header = consume();
+    auto end = header.span;
     auto using_clause = std::optional<ASTCppUsing>();
     if (const auto using_token = match(TokenKind::Using)) {
         auto prefix = std::vector<Span>();
-        auto end = using_token->span;
-        const auto list = [&]() noexcept -> ASTCppListSelection {
+        const auto list = [&]() noexcept -> ASTImportList {
             expect(TokenKind::LeftBrace, "expected '{' in C++ selection");
-            auto names = std::vector<Span>();
+            auto names = std::vector<ASTImportItem>();
             do {
-                names.push_back(expect_name_component("expected a simple C++ name").span);
+                const auto name = expect_name_component("expected a simple C++ name").span;
+                names.push_back(parse_import_item(name));
             } while (!failed && match(TokenKind::Comma) && !check(TokenKind::RightBrace));
             end = expect(TokenKind::RightBrace, "expected '}' after C++ selection").span;
             return {.names = std::move(names)};
         };
         auto selection = [&]() noexcept
-            -> std::variant<ASTCppSingleSelection, ASTCppListSelection, ASTCppNamespaceSelection> {
+            -> std::variant<ASTSingleImport, ASTImportList, ASTCppNamespaceSelection> {
             if (check(TokenKind::LeftBrace)) {
                 return list();
             }
@@ -137,8 +147,9 @@ auto Parser::parse_cpp_header_import() noexcept -> ASTCppHeaderImport {
                 }
                 name = expect_name_component("expected a C++ name after '::'").span;
             }
-            end = name;
-            return ASTCppSingleSelection {.name = name};
+            const auto item = parse_import_item(name);
+            end = item.local_name_span();
+            return ASTSingleImport {.item = item};
         }();
         using_clause = ASTCppUsing {
             .span = join(using_token->span, end),
@@ -146,9 +157,15 @@ auto Parser::parse_cpp_header_import() noexcept -> ASTCppHeaderImport {
             .selection = std::move(selection),
         };
     }
-    const auto semicolon = expect(TokenKind::Semicolon, "expected ';' after C++ header import");
+    if (using_clause && std::holds_alternative<ASTImportList>(using_clause->selection)) {
+        if (check(TokenKind::Semicolon)) {
+            fail_here("unexpected ';' after import list");
+        }
+    } else {
+        end = expect(TokenKind::Semicolon, "expected ';' after C++ header import").span;
+    }
     return {
-        .span = join(start, semicolon.span),
+        .span = join(start, end),
         .delimiter = header.kind == TokenKind::CppAngleHeaderName
             ? ASTCppHeaderDelimiter::AngleBrackets
             : ASTCppHeaderDelimiter::Quotes,
@@ -164,17 +181,13 @@ auto Parser::parse_module_import() noexcept -> ASTModuleImportID {
 
     const auto parse_item = [&]() noexcept -> ASTImportItem {
         const auto name = expect(TokenKind::Identifier, "expected imported name").span;
-        auto alias = std::optional<Span>();
-        if (match(TokenKind::As)) {
-            alias = expect(TokenKind::Identifier, "expected local import name after 'as'").span;
-        }
-        return {.name_span = name, .alias_span = alias};
+        return parse_import_item(name);
     };
     auto selection = [&]() noexcept -> ASTImportSelection {
         if (check(TokenKind::Identifier)) {
             const auto item = parse_item();
             return {
-                .span = join(item.name_span, item.alias_span.value_or(item.name_span)),
+                .span = join(item.name_span, item.local_name_span()),
                 .value = ASTSingleImport {.item = item},
             };
         }
@@ -212,9 +225,16 @@ auto Parser::parse_module_import() noexcept -> ASTModuleImportID {
         };
     }();
 
-    const auto semicolon = expect(TokenKind::Semicolon, "expected ';' after import declaration");
+    auto end = selection.span;
+    if (std::holds_alternative<ASTImportList>(selection.value)) {
+        if (check(TokenKind::Semicolon)) {
+            fail_here("unexpected ';' after import list");
+        }
+    } else {
+        end = expect(TokenKind::Semicolon, "expected ';' after import declaration").span;
+    }
     return builder.append_module_import({
-        .span = join(start, semicolon.span),
+        .span = join(start, end),
         .module_reference = std::move(module_reference),
         .selection = std::move(selection),
     });
@@ -245,15 +265,17 @@ auto Parser::parse_top_level_item() noexcept -> std::optional<ASTItemID> {
     if (const auto keyword = match(TokenKind::Private)) {
         visibility = ASTPrivateDeclarationVisibility {.keyword_span = keyword->span};
     } else if (const auto keyword = match(TokenKind::Export)) {
-        visibility = ASTExportDeclarationVisibility {.keyword_span = keyword->span};
         if (check(TokenKind::LeftParen)) {
+            // C++ interface generation leaves the ordinary module-domain audience intact.
             cpp_export = ASTCppExportForm {.span = parse_cpp_declaration_form(*keyword)};
+        } else {
+            visibility = ASTExportDeclarationVisibility {.keyword_span = keyword->span};
         }
     }
     if (const auto keyword = match(TokenKind::Import)) {
-        if (std::holds_alternative<ASTExportDeclarationVisibility>(visibility)) {
+        if (cpp_export) {
             fail(
-                "an import(cpp) declaration cannot be exported directly",
+                "import(cpp) and export(cpp) cannot be combined",
                 keyword->span,
                 DiagnosticCode::Syntax
             );
@@ -418,8 +440,17 @@ auto Parser::parse_type_parameters() noexcept -> std::optional<ASTTypeParameterC
         const auto kind = match(TokenKind::Throw) ? ASTGenericParameterKind::FailureSet
                                                   : ASTGenericParameterKind::Type;
         const auto name = expect(TokenKind::Identifier, "expected generic parameter name");
-
-        parameters.push_back({.name_span = name.span, .kind = kind});
+        auto bounds = std::vector<ASTTypeID>();
+        if (match(TokenKind::Colon)) {
+            do {
+                const auto bound = parse_named_type();
+                if (!bound) {
+                    return std::nullopt;
+                }
+                bounds.push_back(*bound);
+            } while (match(TokenKind::Plus));
+        }
+        parameters.push_back({.name_span = name.span, .kind = kind, .bounds = std::move(bounds)});
         if (!match(TokenKind::Comma) || check(TokenKind::Greater)) {
             break;
         }

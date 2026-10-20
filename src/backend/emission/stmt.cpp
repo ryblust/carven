@@ -51,10 +51,13 @@ auto TargetRenderer::render_statement_node(const TargetStmt& statement) noexcept
     const auto rendered = statement.value.visit(
         Overloaded {
             [&](const TargetExprStmt& value) noexcept {
-                return concat({render_expression(value.expression), text(";")});
+                return concat(
+                    {render_expression(value.expression, TargetPrecedence::Lowest), text(";")}
+                );
             },
             [&](const TargetDiscardStmt& value) noexcept {
-                const auto argument = std::array {render_expression(value.expression)};
+                const auto argument =
+                    std::array {render_expression(value.expression, TargetPrecedence::Lowest)};
                 return concat(
                     {text("static_cast<void>"), delimited_list(argument, "(", ")"), text(";")}
                 );
@@ -63,13 +66,17 @@ auto TargetRenderer::render_statement_node(const TargetStmt& statement) noexcept
                 if (!value.expression.has_value()) {
                     return text("return;");
                 }
-                return concat({text("return "), render_expression(*value.expression), text(";")});
+                return concat(
+                    {text("return "),
+                     render_expression(*value.expression, TargetPrecedence::Lowest),
+                     text(";")}
+                );
             },
             [&](const TargetCoReturnStmt& value) noexcept {
                 return concat(
                     {text(target_symbol_info(value.native_symbol()).spelling),
                      text(" "),
-                     render_expression(value.expression),
+                     render_expression(value.expression, TargetPrecedence::Lowest),
                      text(";")}
                 );
             },
@@ -90,7 +97,9 @@ auto TargetRenderer::render_statement_node(const TargetStmt& statement) noexcept
                      render_identifier(value.local),
                      text(snapshot_annotation(value.binding))}
                 );
-                const auto right = concat({text("= "), render_expression(value.initializer)});
+                const auto right = concat(
+                    {text("= "), render_expression(value.initializer, TargetPrecedence::Lowest)}
+                );
                 const auto declaration = concat(
                     {choice(
                          {concat({left, text(" "), right}),
@@ -106,9 +115,11 @@ auto TargetRenderer::render_statement_node(const TargetStmt& statement) noexcept
                 return render_statement_block(value.statements);
             },
             [&](const TargetAssignmentStmt& value) noexcept {
-                const auto left = render_expression(value.target);
+                const auto left = render_expression(value.target, TargetPrecedence::Lowest);
                 const auto right = concat(
-                    {text(assignment_spelling(value.op)), text(" "), render_expression(value.value)}
+                    {text(assignment_spelling(value.op)),
+                     text(" "),
+                     render_expression(value.value, TargetPrecedence::Lowest)}
                 );
                 return concat(
                     {choice(
@@ -149,7 +160,8 @@ auto TargetRenderer::render_statement_node(const TargetStmt& statement) noexcept
                 return concat({render_identifier(value.label), text(":;")});
             },
             [&](const TargetIfStmt& value) noexcept {
-                const auto condition = std::array {render_expression(value.condition)};
+                const auto condition =
+                    std::array {render_expression(value.condition, TargetPrecedence::Lowest)};
                 auto result = concat(
                     {text("if "),
                      delimited_list(condition, "(", ")"),
@@ -179,7 +191,8 @@ auto TargetRenderer::render_statement_node(const TargetStmt& statement) noexcept
                 for (const auto& child : value.body) {
                     body.push_back(render_statement(child));
                 }
-                const auto condition = std::array {render_expression(value.condition)};
+                const auto condition =
+                    std::array {render_expression(value.condition, TargetPrecedence::Lowest)};
                 return concat(
                     {text("while "),
                      delimited_list(condition, "(", ")"),
@@ -199,7 +212,7 @@ auto TargetRenderer::render_statement_node(const TargetStmt& statement) noexcept
                      render_identifier(value.local),
                      text(snapshot_annotation(value.binding)),
                      text(" : "),
-                     render_expression(value.range),
+                     render_expression(value.range, TargetPrecedence::Lowest),
                      text(") "),
                      render_statement_block(value.body)}
                 );
@@ -208,8 +221,9 @@ auto TargetRenderer::render_statement_node(const TargetStmt& statement) noexcept
                 const auto initializer = value.initializer.has_value()
                     ? render_for_initializer(*value.initializer)
                     : text("");
-                const auto condition =
-                    value.condition.has_value() ? render_expression(*value.condition) : text("");
+                const auto condition = value.condition.has_value()
+                    ? render_expression(*value.condition, TargetPrecedence::Lowest)
+                    : text("");
                 auto steps = std::vector<LayoutNodeID>();
                 for (const auto& step : value.steps) {
                     steps.push_back(render_for_step(step));
@@ -258,11 +272,13 @@ auto TargetRenderer::render_for_initializer(const TargetForInitializer& initiali
     return initializer.value.visit(
         Overloaded {
             [&](const TargetExprStmt& value) noexcept {
-                return render_expression(value.expression);
+                return render_expression(value.expression, TargetPrecedence::Lowest);
             },
             [&](const TargetDiscardStmt& value) noexcept {
                 return concat(
-                    {text("static_cast<void>("), render_expression(value.expression), text(")")}
+                    {text("static_cast<void>("),
+                     render_expression(value.expression, TargetPrecedence::Lowest),
+                     text(")")}
                 );
             },
             [&](const TargetVariableStmt& value) noexcept {
@@ -282,16 +298,16 @@ auto TargetRenderer::render_for_initializer(const TargetForInitializer& initiali
                      render_identifier(value.local),
                      text(snapshot_annotation(value.binding)),
                      text(" = "),
-                     render_expression(value.initializer)}
+                     render_expression(value.initializer, TargetPrecedence::Lowest)}
                 );
             },
             [&](const TargetAssignmentStmt& value) noexcept {
                 return concat(
-                    {render_expression(value.target),
+                    {render_expression(value.target, TargetPrecedence::Lowest),
                      text(" "),
                      text(assignment_spelling(value.op)),
                      text(" "),
-                     render_expression(value.value)}
+                     render_expression(value.value, TargetPrecedence::Lowest)}
                 );
             },
             [&](const TargetUpdateStmt& value) noexcept {
@@ -308,20 +324,22 @@ auto TargetRenderer::render_for_step(const TargetForStep& step) noexcept -> Layo
     return step.value.visit(
         Overloaded {
             [&](const TargetExprStmt& value) noexcept {
-                return render_expression(value.expression);
+                return render_expression(value.expression, TargetPrecedence::Lowest);
             },
             [&](const TargetDiscardStmt& value) noexcept {
                 return concat(
-                    {text("static_cast<void>("), render_expression(value.expression), text(")")}
+                    {text("static_cast<void>("),
+                     render_expression(value.expression, TargetPrecedence::Lowest),
+                     text(")")}
                 );
             },
             [&](const TargetAssignmentStmt& value) noexcept {
                 return concat(
-                    {render_expression(value.target),
+                    {render_expression(value.target, TargetPrecedence::Lowest),
                      text(" "),
                      text(assignment_spelling(value.op)),
                      text(" "),
-                     render_expression(value.value)}
+                     render_expression(value.value, TargetPrecedence::Lowest)}
                 );
             },
             [&](const TargetUpdateStmt& value) noexcept {

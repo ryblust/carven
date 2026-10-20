@@ -59,8 +59,8 @@ const TestSuite suite([] static noexcept {
                 std::array<std::uint32_t, 4> {0u, 0x80000000u, 0x7fc00001u, 0x7fc00002u};
             auto identities = std::set<ConstantID>();
             for (const auto pattern : patterns) {
-                auto value = SIMDConstant {.lanes = std::vector<std::uint32_t>(4uz)};
-                value.lanes[2] = pattern;
+                auto value = SIMDConstant {};
+                value.set_lane(2uz, BuiltinType::F32, pattern);
                 const auto fact = ConstantFact {.type = type, .value = value};
                 const auto id = draft.intern_constant(fact);
                 expect(draft.intern_constant(fact) == id);
@@ -88,19 +88,23 @@ const TestSuite suite([] static noexcept {
             },
             [](auto type) static noexcept {
                 const auto layout = *simd_layout(type);
-                auto vector = SIMDConstant {.lanes = std::vector<std::uint32_t>(layout.width)};
+                auto vector = SIMDConstant {};
                 expect(matches_simd_constant(type, vector));
-                vector.lanes.back() = 0xffffffffu;
-                expect_equal(
-                    matches_simd_constant(type, vector),
-                    layout.element == BuiltinType::F32
-                );
-                vector.lanes.pop_back();
-                expect(!matches_simd_constant(type, vector));
-                auto mask = SIMDConstant {.lanes = std::vector<std::uint32_t>(layout.width, 255u)};
+                const auto bits = layout.element == BuiltinType::F32 ? 0xffffffffu : 255u;
+                vector.set_lane(layout.width - 1, layout.element, bits);
+                expect(matches_simd_constant(type, vector));
+                expect_equal(vector.lane(layout.width - 1, layout.element), bits);
+                auto mask = SIMDConstant {};
+                for (auto i = 0uz; i < layout.width; ++i) {
+                    mask.set_lane(i, BuiltinType::U8, 255u);
+                }
                 expect(matches_simd_constant(layout.mask, mask));
-                mask.lanes.back() = 1u;
+                mask.set_lane(layout.width - 1, BuiltinType::U8, 1u);
                 expect(!matches_simd_constant(layout.mask, mask));
+                if (layout.width < 32) {
+                    mask.set_lane(layout.width, BuiltinType::U8, 255u);
+                    expect(!matches_simd_constant(layout.mask, mask));
+                }
             }
         );
     };

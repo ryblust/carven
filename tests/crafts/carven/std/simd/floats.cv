@@ -1,4 +1,4 @@
-import std::simd.floats using { block_count, load_block };
+import std::simd.floats using { block_count, load_block }
 
 const frozen = f32x8::from_array([1.0, -2.0, 0.5, 4.0, 1.0, -2.0, 0.5, 4.0]);
 const frozen_mask = frozen < 1.0;
@@ -72,7 +72,7 @@ test "SIMD: proven controls preserve operand effects and lane values" {
     check(trace == 1234);
 }
 
-export const fn verify_floats() -> bool {
+const fn verify_floats() -> bool {
     let v = frozen;
     let empty: f32x8 = {};
     let inactive: mask8 = {};

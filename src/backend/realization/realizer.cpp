@@ -246,10 +246,7 @@ auto BodyRealizer::region(
         }
     }
     if (!retain_async_scope) {
-        if (statements.continues()) {
-            close_async_scopes(retained, false, statements);
-        }
-        leave_async_scopes(retained);
+        end_async_scopes(retained, statements);
     }
     co_return statements;
 }
@@ -266,7 +263,7 @@ auto BodyRealizer::fallible(const SemanticExpression& source) const noexcept
                  .failure_sets()
                  .failure_set(call->callee_failures.resolved())
                  .members.empty()
-            || context.semantic().may_stop_test(*call))) {
+            || context.semantic().may_stop(*call))) {
         return FallibleCall {
             .call = *call,
             .failures = call->callee_failures.resolved(),

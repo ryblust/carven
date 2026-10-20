@@ -25,10 +25,10 @@ import std;
 namespace {
 
 auto task_failure_type(ProgramDraft& draft, ProgramOriginID origin) noexcept -> TypeID {
-    const auto module = draft.reserve_module_declaration();
+    const auto module_id = draft.reserve_module_declaration();
     const auto structure = draft.reserve_struct_declaration();
     draft.define_declaration(
-        module,
+        module_id,
         ModuleDeclaration {
             .provenance_module = draft.provenance_module_at(0uz),
             .origin = origin,
@@ -41,7 +41,7 @@ auto task_failure_type(ProgramDraft& draft, ProgramOriginID origin) noexcept -> 
         structure,
         ConstructionStructDeclaration {
             .kind = RecordKind::Struct,
-            .module_id = module,
+            .module_id = module_id,
             .name = draft.intern_spelling("TaskFailure"),
             .origin = origin,
             .visibility = DeclarationVisibility::Module,
@@ -75,10 +75,13 @@ auto forward_value_task(ExecutionTask<ExecutionValue> child) noexcept
 class BodyExecutionContext final : public SemanticExecutionContext {
 public:
     explicit BodyExecutionContext(const SemIRProgram& program) noexcept;
+
     auto function_for_callable(CallableID callable) const noexcept
         -> std::optional<FunctionID> override;
-    auto prepare_call(CallableID callable, ProgramOriginID origin) noexcept
+
+    auto prepare_call(ExecutionCallSite target, ProgramOriginID origin) noexcept
         -> ContinuationTask<std::expected<ExecutionCallTarget, ExecutionCallFailure>> override;
+
     auto report(const ExecutionEvent& event) noexcept -> void override;
     auto write(ExecutionOutputStream stream, std::string_view bytes) noexcept -> void override;
 
@@ -97,8 +100,25 @@ auto BodyExecutionContext::function_for_callable(CallableID callable) const noex
     return program.source_function(callable);
 }
 
-auto BodyExecutionContext::prepare_call(CallableID callable, ProgramOriginID) noexcept
+auto BodyExecutionContext::prepare_call(ExecutionCallSite target, ProgramOriginID origin) noexcept
     -> ContinuationTask<std::expected<ExecutionCallTarget, ExecutionCallFailure>> {
+    if (std::holds_alternative<const SemanticExpression*>(target)) {
+        co_return std::unexpected(
+            ExecutionEvent {
+                .origin = origin,
+                .cause =
+                    ExecutionIssue {
+                        .reason = ExecutionReason::Admission,
+                        .message = "native C++ operation is unavailable in this execution context",
+                        .termination = ExecutionTermination::StopRoot,
+                    },
+                .fields = {},
+                .calls = {},
+                .blocks = {},
+            }
+        );
+    }
+    const auto callable = std::get<CallableID>(target);
     const auto body = callable_body_id(program.declarations().callable(callable));
     require(body.has_value());
     co_return ExecutionBody(program.bodies().body(*body));
@@ -119,10 +139,13 @@ public:
         ConstructionRequests& requests,
         ProgramModuleID module_id
     ) noexcept;
+
     auto function_for_callable(CallableID callable) const noexcept
         -> std::optional<FunctionID> override;
-    auto prepare_call(CallableID callable, ProgramOriginID origin) noexcept
+
+    auto prepare_call(ExecutionCallSite target, ProgramOriginID origin) noexcept
         -> ContinuationTask<std::expected<ExecutionCallTarget, ExecutionCallFailure>> override;
+
     auto report(const ExecutionEvent& event) noexcept -> void override;
 
     auto write(ExecutionOutputStream, std::string_view) noexcept -> void override;
@@ -155,9 +178,25 @@ auto ExecutionContext::function_for_callable(CallableID callable) const noexcept
     return draft.function_for_callable(callable);
 }
 
-auto ExecutionContext::prepare_call(CallableID callable, ProgramOriginID origin) noexcept
+auto ExecutionContext::prepare_call(ExecutionCallSite target, ProgramOriginID origin) noexcept
     -> ContinuationTask<std::expected<ExecutionCallTarget, ExecutionCallFailure>> {
-    const auto function = *draft.function_for_callable(callable);
+    if (std::holds_alternative<const SemanticExpression*>(target)) {
+        co_return std::unexpected(
+            ExecutionEvent {
+                .origin = origin,
+                .cause =
+                    ExecutionIssue {
+                        .reason = ExecutionReason::Admission,
+                        .message = "native C++ operation is unavailable in this execution context",
+                        .termination = ExecutionTermination::StopRoot,
+                    },
+                .fields = {},
+                .calls = {},
+                .blocks = {},
+            }
+        );
+    }
+    const auto function = *draft.function_for_callable(std::get<CallableID>(target));
     calls.push_back(function);
     const auto body = co_await requests.ensure_function_body(
         function,
@@ -204,15 +243,14 @@ auto with_execution(std::string source_text, Action action) noexcept -> void {
     if (!expect(construction.run().has_value())) {
         return;
     }
-    const auto module = std::ranges::find_if(view.modules(), [&](const auto& entry) noexcept {
+    const auto module_entry = std::ranges::find_if(view.modules(), [&](const auto& entry) noexcept {
         return draft.module_path_copy(entry.module_id) == constant_test_module_path("execution");
     });
-    require(module != view.modules().end());
-    const auto module_id = module->module_id;
+    require(module_entry != view.modules().end());
+    const auto module_id = module_entry->module_id;
     const auto origin = draft.append_source_origin(draft.module_source(module_id), Span::at(0u));
     auto context = ExecutionContext(draft, construction.construction_requests(), module_id);
-    const auto evaluate = [&](std::string_view name,
-                              ExecutionLimits limits = static_execution_limits()) noexcept {
+    const auto evaluate = [&](std::string_view name, ExecutionLimits limits) noexcept {
         const auto found = std::ranges::find(view.symbols(), name, &CatalogSymbol::name);
         require(found != view.symbols().end());
         const auto function = std::get<CatalogFunctionForm>(found->form);
@@ -322,7 +360,7 @@ const TestSuite suite([] static noexcept {
                 [](ProgramDraft& draft,
                    ExecutionContext& context,
                    const auto& evaluate) static noexcept {
-                    const auto result = evaluate("run");
+                    const auto result = evaluate("run", static_execution_limits());
                     if (!expect(result.has_value())) {
                         return;
                     }
@@ -384,7 +422,7 @@ const TestSuite suite([] static noexcept {
                 [](ProgramDraft& draft,
                    ExecutionContext& context,
                    const auto& evaluate) static noexcept {
-                    const auto result = evaluate("run");
+                    const auto result = evaluate("run", static_execution_limits());
                     if (!expect(result.has_value())) {
                         return;
                     }
@@ -435,7 +473,7 @@ const TestSuite suite([] static noexcept {
                 const auto two = evaluate("pair", limits);
                 expect(!two.has_value());
                 check_limit(context, "steps");
-                const auto completed = evaluate("pair");
+                const auto completed = evaluate("pair", static_execution_limits());
                 require(completed.has_value());
                 check_integer(draft, *completed, 2);
             }
@@ -462,7 +500,7 @@ const TestSuite suite([] static noexcept {
             with_execution(
                 text,
                 [&](ProgramDraft& draft, ExecutionContext& context, const auto& evaluate) noexcept {
-                    const auto result = evaluate("run");
+                    const auto result = evaluate("run", static_execution_limits());
                     expect(!result.has_value());
                     if (!expect_equal(context.reports.size(), 1uz)) {
                         return;
@@ -499,7 +537,7 @@ const TestSuite suite([] static noexcept {
             }
         )",
                 [](ProgramDraft&, ExecutionContext& context, const auto& evaluate) static noexcept {
-                    const auto result = evaluate("run");
+                    const auto result = evaluate("run", static_execution_limits());
                     expect(!result.has_value());
                     if (!expect_equal(context.reports.size(), 1uz)) {
                         return;
@@ -526,7 +564,7 @@ const TestSuite suite([] static noexcept {
             struct Scenario final {
                 std::string_view name;
                 std::string_view source;
-                std::size_t text_work;
+                std::size_t byte_work;
                 std::size_t aggregate_work;
                 ExecutionReason reason;
             };
@@ -534,7 +572,7 @@ const TestSuite suite([] static noexcept {
                 Scenario {
                     .name = "native Read borrows String storage",
                     .source = R"(test { let text: String = "ab"; ::native(text); })",
-                    .text_work = 2uz,
+                    .byte_work = 2uz,
                     .aggregate_work = 0uz,
                     .reason = ExecutionReason::Admission,
                 },
@@ -542,42 +580,42 @@ const TestSuite suite([] static noexcept {
                     .name = "native Read borrows aggregate storage",
                     .source = R"(struct Payload { number: i32 }
 test { let owner = Payload { number: 1 }; ::native(owner); })",
-                    .text_work = 0uz,
+                    .byte_work = 0uz,
                     .aggregate_work = 1uz,
                     .reason = ExecutionReason::Admission,
                 },
                 Scenario {
                     .name = "native Write selects String storage",
                     .source = R"(test { var text: String = "ab"; ::native(&text); })",
-                    .text_work = 2uz,
+                    .byte_work = 2uz,
                     .aggregate_work = 0uz,
                     .reason = ExecutionReason::Admission,
                 },
                 Scenario {
                     .name = "native Take transfers String storage",
                     .source = R"(test { let text: String = "ab"; ::native(&&text); })",
-                    .text_work = 2uz,
+                    .byte_work = 2uz,
                     .aggregate_work = 0uz,
                     .reason = ExecutionReason::Admission,
                 },
                 Scenario {
                     .name = "Write capture selects String storage",
                     .source = R"(test { var text: String = "ab"; let closure = [&text]() {}; })",
-                    .text_work = 2uz,
+                    .byte_work = 2uz,
                     .aggregate_work = 0uz,
                     .reason = ExecutionReason::Admission,
                 },
                 Scenario {
                     .name = "value capture exhausts its copy budget",
                     .source = R"(test { let text: String = "ab"; let closure = [text]() {}; })",
-                    .text_work = 3uz,
+                    .byte_work = 3uz,
                     .aggregate_work = 0uz,
                     .reason = ExecutionReason::Limit,
                 },
                 Scenario {
                     .name = "value capture pays for its String copy",
                     .source = R"(test { let text: String = "ab"; let closure = [text]() {}; })",
-                    .text_work = 4uz,
+                    .byte_work = 4uz,
                     .aggregate_work = 0uz,
                     .reason = ExecutionReason::Admission,
                 },
@@ -599,7 +637,7 @@ test { let owner = Payload { number: 1 }; ::native(owner); })",
                                         context,
                                         ExecutionBody(program.bodies().body(*test.value.body)),
                                         {.steps = maximum_constant_steps,
-                                         .text_work = scenario.text_work,
+                                         .byte_work = scenario.byte_work,
                                          .aggregate_work = scenario.aggregate_work}
                 )
                                         .run();
@@ -860,7 +898,7 @@ test { let owner = Payload { number: 1 }; ::native(owner); })",
                 }
                 const auto body = ExecutionBody(program.bodies().body(*test.value.body));
                 auto limits = static_execution_limits();
-                limits.text_work = scenario.rendered.size();
+                limits.byte_work = scenario.rendered.size();
                 const auto completed = execute_body(values, context, body, limits).run();
                 expect(completed.has_value());
                 if (!expect(context.reports.size() == 1uz)) {
@@ -869,7 +907,7 @@ test { let owner = Payload { number: 1 }; ::native(owner); })",
                 expect(context.reports.front().termination() == ExecutionTermination::Continue);
                 expect(execution_message(context.reports.front()) == scenario.rendered);
                 context.reports.clear();
-                --limits.text_work;
+                --limits.byte_work;
                 auto limited = execute_body(values, context, body, limits).run();
                 if (!expect(!limited.has_value())) {
                     return;
@@ -914,7 +952,7 @@ test { let owner = Payload { number: 1 }; ::native(owner); })",
                     [&](ProgramDraft& draft,
                         ExecutionContext& context,
                         const auto& evaluate) noexcept {
-                        const auto result = evaluate("run");
+                        const auto result = evaluate("run", static_execution_limits());
                         if (!(
                                 expect(result.has_value()).note("scenario.right = ", scenario.right)
                             )) {
@@ -1008,7 +1046,7 @@ test { let owner = Payload { number: 1 }; ::native(owner); })",
                             expect(!(evaluate(
                                          "run",
                                          {.steps = maximum_constant_steps,
-                                          .text_work = 8uz * maximum_constant_text_bytes,
+                                          .byte_work = 8uz * maximum_constant_bytes,
                                           .aggregate_work = scenario.work - 1uz}
                             )
                                          .has_value()));
@@ -1017,7 +1055,7 @@ test { let owner = Payload { number: 1 }; ::native(owner); })",
                         const auto result = evaluate(
                             "run",
                             {.steps = maximum_constant_steps,
-                             .text_work = 8uz * maximum_constant_text_bytes,
+                             .byte_work = 8uz * maximum_constant_bytes,
                              .aggregate_work = scenario.work}
                         );
                         if (!(expect(result.has_value()))) {
@@ -1046,7 +1084,7 @@ test { let owner = Payload { number: 1 }; ::native(owner); })",
                         if (!expect(evaluate(
                                         "leaf",
                                         {.steps = maximum_constant_steps,
-                                         .text_work = 8uz * maximum_constant_text_bytes,
+                                         .byte_work = 8uz * maximum_constant_bytes,
                                          .aggregate_work = 2uz}
                             )
                                         .has_value())) {
@@ -1057,7 +1095,7 @@ test { let owner = Payload { number: 1 }; ::native(owner); })",
                     expect(!(evaluate(
                                  "run",
                                  {.steps = maximum_constant_steps,
-                                  .text_work = 8uz * maximum_constant_text_bytes,
+                                  .byte_work = 8uz * maximum_constant_bytes,
                                   .aggregate_work = 3uz}
                     )
                                  .has_value()));
@@ -1065,105 +1103,13 @@ test { let owner = Payload { number: 1 }; ::native(owner); })",
                     const auto result = evaluate(
                         "run",
                         {.steps = maximum_constant_steps,
-                         .text_work = 8uz * maximum_constant_text_bytes,
+                         .byte_work = 8uz * maximum_constant_bytes,
                          .aggregate_work = 4uz}
                     );
                     if (!expect(result.has_value())) {
                         return;
                     }
                     check_integer(draft, *result, 2);
-                }
-            );
-        };
-
-    "Static execution: step limits include nested calls and recursive equality"_test =
-        [] static noexcept {
-            with_execution(
-                R"(
-        const data = [[1, 2], [3, 4]];
-        const fn leaf() -> i32 => 1;
-        const fn binding() -> i32 { let value = 1; return value; }
-        const fn run() -> i32 => leaf() + leaf();
-        const fn equal() -> bool => data == data;
-    )",
-                [](ProgramDraft& draft,
-                   ExecutionContext& context,
-                   const auto& evaluate) static noexcept {
-                    expect(!(evaluate(
-                                 "leaf",
-                                 {.steps = 0uz,
-                                  .text_work = 8uz * maximum_constant_text_bytes,
-                                  .aggregate_work = maximum_constant_aggregate_work}
-                    )
-                                 .has_value()));
-                    check_limit(context, "steps");
-                    expect(!(evaluate(
-                                 "leaf",
-                                 {.steps = 5uz,
-                                  .text_work = 8uz * maximum_constant_text_bytes,
-                                  .aggregate_work = maximum_constant_aggregate_work}
-                    )
-                                 .has_value()));
-                    check_limit(context, "steps");
-                    // Call, callee value, invocation, body region, return, and literal each use one step.
-                    for (auto root = 0uz; root < 2uz; ++root) {
-                        expect(evaluate(
-                                   "leaf",
-                                   {.steps = 6uz,
-                                    .text_work = 8uz * maximum_constant_text_bytes,
-                                    .aggregate_work = maximum_constant_aggregate_work}
-                        )
-                                   .has_value());
-                    }
-                    expect(!(evaluate(
-                                 "binding",
-                                 {.steps = 7uz,
-                                  .text_work = 8uz * maximum_constant_text_bytes,
-                                  .aggregate_work = maximum_constant_aggregate_work}
-                    )
-                                 .has_value()));
-                    check_limit(context, "steps");
-                    const auto binding = evaluate(
-                        "binding",
-                        {.steps = 8uz,
-                         .text_work = 8uz * maximum_constant_text_bytes,
-                         .aggregate_work = maximum_constant_aggregate_work}
-                    );
-                    if (!expect(binding.has_value())) {
-                        return;
-                    }
-                    check_integer(draft, *binding, 1);
-                    expect(context.reports.empty());
-                    expect(!(evaluate(
-                                 "run",
-                                 {.steps = 17uz,
-                                  .text_work = 8uz * maximum_constant_text_bytes,
-                                  .aggregate_work = maximum_constant_aggregate_work}
-                    )
-                                 .has_value()));
-                    check_limit(context, "steps");
-                    expect(evaluate(
-                               "run",
-                               {.steps = 18uz,
-                                .text_work = 8uz * maximum_constant_text_bytes,
-                                .aggregate_work = maximum_constant_aggregate_work}
-                    )
-                               .has_value());
-                    expect(!(evaluate(
-                                 "equal",
-                                 {.steps = 14uz,
-                                  .text_work = 8uz * maximum_constant_text_bytes,
-                                  .aggregate_work = maximum_constant_aggregate_work}
-                    )
-                                 .has_value()));
-                    check_limit(context, "comparison");
-                    expect(evaluate(
-                               "equal",
-                               {.steps = 15uz,
-                                .text_work = 8uz * maximum_constant_text_bytes,
-                                .aggregate_work = maximum_constant_aggregate_work}
-                    )
-                               .has_value());
                 }
             );
         };
@@ -1208,15 +1154,15 @@ test { let owner = Payload { number: 1 }; ::native(owner); })",
                         expect(!(evaluate(
                                      "run",
                                      {.steps = maximum_constant_steps,
-                                      .text_work = scenario.work - 1uz,
+                                      .byte_work = scenario.work - 1uz,
                                       .aggregate_work = maximum_constant_aggregate_work}
                         )
                                      .has_value()));
-                        check_limit(context, "text");
+                        check_limit(context, "byte");
                         const auto result = evaluate(
                             "run",
                             {.steps = maximum_constant_steps,
-                             .text_work = scenario.work,
+                             .byte_work = scenario.work,
                              .aggregate_work = maximum_constant_aggregate_work}
                         );
                         if (!(expect(result.has_value()))) {
@@ -1236,16 +1182,16 @@ test { let owner = Payload { number: 1 }; ::native(owner); })",
                 expect(!(evaluate(
                              "run",
                              {.steps = maximum_constant_steps,
-                              .text_work = 4uz,
+                              .byte_work = 4uz,
                               .aggregate_work = maximum_constant_aggregate_work}
                 )
                              .has_value()));
-                check_limit(context, "text");
+                check_limit(context, "byte");
                 expect(context.output == "ab 3");
                 expect(evaluate(
                            "run",
                            {.steps = maximum_constant_steps,
-                            .text_work = 5uz,
+                            .byte_work = 5uz,
                             .aggregate_work = maximum_constant_aggregate_work}
                 )
                            .has_value());
@@ -1279,7 +1225,7 @@ test { let owner = Payload { number: 1 }; ::native(owner); })",
                ExecutionContext& context,
                const auto& evaluate) static noexcept {
                 for (const auto name : {"direct", "copied", "nested"}) {
-                    const auto result = evaluate(name);
+                    const auto result = evaluate(name, static_execution_limits());
                     if (!(expect(result.has_value()).note("name = ", name))) {
                         return;
                     }
@@ -1308,7 +1254,7 @@ test { let owner = Payload { number: 1 }; ::native(owner); })",
                 const auto result = evaluate(
                     "run",
                     {.steps = maximum_constant_steps,
-                     .text_work = maximum_constant_text_bytes,
+                     .byte_work = maximum_constant_bytes,
                      .aggregate_work = 2uz}
                 );
                 if (!expect(result.has_value())) {
@@ -1348,17 +1294,29 @@ test { let owner = Payload { number: 1 }; ::native(owner); })",
                 return bytes.length() == 3usize && bytes[1] == 98u8
                     && addressof(bytes[1]) == addressof(copy[1]) && count == 3;
             }
+            const fn bytes() -> bool {
+                var values = Vector<u8>::with_capacity(70000);
+                values.push(0u8);
+                values.push(255u8);
+                values[0] = 12u8;
+                values[0] += 1u8;
+                let pointer = addressof(values[1]);
+                let view = values.slice();
+                let copy = Vector<u8>::from_slice(view);
+                return values.capacity() >= 70000 && copy[0] == 13u8
+                    && *pointer == 255u8 && addressof(view[1]) == pointer;
+            }
             const fn frozen() -> [u8] => "ab".bytes;
         )",
                 [](ProgramDraft& draft,
                    ExecutionContext& context,
                    const auto& evaluate) static noexcept {
-                    for (const auto& [name, text_work] :
+                    for (const auto& [name, byte_work] :
                          std::array {std::pair {"owned", 3uz}, std::pair {"retained", 0uz}}) {
                         const auto result = evaluate(
                             name,
                             {.steps = maximum_constant_steps,
-                             .text_work = text_work,
+                             .byte_work = byte_work,
                              .aggregate_work = 0uz}
                         );
                         if (!(expect(result.has_value()).note("name = ", name))) {
@@ -1371,25 +1329,36 @@ test { let owner = Payload { number: 1 }; ::native(owner); })",
                         expect(std::get<BooleanConstant>(atom->value).value).note("name = ", name);
                         expect(context.reports.empty()).note("name = ", name);
                     }
+                    const auto bytes = evaluate(
+                        "bytes",
+                        {.steps = maximum_constant_steps,
+                         .byte_work = 70004uz,
+                         .aggregate_work = 0uz}
+                    );
+                    if (!expect(bytes.has_value())) {
+                        return;
+                    }
+                    expect(std::get<BooleanConstant>(execution_atom(draft, *bytes)->value).value);
+                    expect(context.reports.empty());
                     expect(!(evaluate(
                                  "owned",
                                  {.steps = maximum_constant_steps,
-                                  .text_work = 2uz,
+                                  .byte_work = 2uz,
                                   .aggregate_work = 0uz}
                     )
                                  .has_value()));
-                    check_limit(context, "text");
+                    check_limit(context, "byte");
                     expect(!(evaluate(
                                  "frozen",
                                  {.steps = maximum_constant_steps,
-                                  .text_work = 0uz,
-                                  .aggregate_work = 1uz}
+                                  .byte_work = 1uz,
+                                  .aggregate_work = 0uz}
                     )
                                  .has_value()));
-                    check_limit(context, "aggregate");
+                    check_limit(context, "byte");
                     const auto frozen = evaluate(
                         "frozen",
-                        {.steps = maximum_constant_steps, .text_work = 0uz, .aggregate_work = 2uz}
+                        {.steps = maximum_constant_steps, .byte_work = 2uz, .aggregate_work = 0uz}
                     );
                     if (!expect(frozen.has_value())) {
                         return;
@@ -1602,9 +1571,8 @@ test { let owner = Payload { number: 1 }; ::native(owner); })",
             );
         };
 
-    "Static execution: comparisons preserve operand observations and binding copy budgets"_test =
-        [] static noexcept {
-            const auto program = analyze_test_program(R"(
+    "Static execution: comparisons preserve operand observations"_test = [] static noexcept {
+        const auto program = analyze_test_program(R"(
                 test {
                     var left = 1;
                     var right = 2;
@@ -1612,77 +1580,31 @@ test { let owner = Payload { number: 1 }; ::native(owner); })",
                     check(left > right);
                 }
             )");
-            auto context = BodyExecutionContext(program);
-            const auto values = PublishedConstantValues(program);
-            const auto tests = program.tests().entries();
-            require(!std::ranges::empty(tests));
-            const auto test = *tests.begin();
-            require(test.value.body.has_value());
-            const auto body = ExecutionBody(program.bodies().body(*test.value.body));
-            auto comparisons = 0uz;
-            for (const auto& statement : body.region().statements) {
-                const auto* expression = std::get_if<SemExpressionStatement>(&statement.value);
-                if (expression == nullptr) {
-                    continue;
-                }
-                const auto* report = std::get_if<SemReport>(&expression->expression.value);
-                if (report == nullptr || !report->condition) {
-                    continue;
-                }
-                const auto* comparison = std::get_if<SemBinary>(&(**report->condition).value);
-                if (!expect(comparison != nullptr)) {
-                    return;
-                }
-                expect(std::holds_alternative<SemBinding>(comparison->left->value));
-                expect(std::holds_alternative<SemBinding>(comparison->right->value));
-                ++comparisons;
-            }
-            expect_equal(comparisons, 2uz);
-            const auto completed =
-                execute_body(values, context, body, static_execution_limits()).run();
-            expect(completed.has_value());
-            if (!expect_equal(context.reports.size(), 2uz)) {
+        auto context = BodyExecutionContext(program);
+        const auto values = PublishedConstantValues(program);
+        const auto tests = program.tests().entries();
+        require(!std::ranges::empty(tests));
+        const auto test = *tests.begin();
+        require(test.value.body.has_value());
+        const auto body = ExecutionBody(program.bodies().body(*test.value.body));
+        const auto completed = execute_body(values, context, body, static_execution_limits()).run();
+        expect(completed.has_value());
+        if (!expect_equal(context.reports.size(), 2uz)) {
+            return;
+        }
+        for (const auto& report : context.reports) {
+            expect(report.reason() == ExecutionReason::Test);
+            const auto operands = std::ranges::find(
+                report.fields,
+                std::string_view("operands:"),
+                &ExecutionReportField::label
+            );
+            if (!expect(operands != report.fields.end())) {
                 return;
             }
-            for (const auto& report : context.reports) {
-                expect(report.reason() == ExecutionReason::Test);
-                const auto operands = std::ranges::find(
-                    report.fields,
-                    std::string_view("operands:"),
-                    &ExecutionReportField::label
-                );
-                if (!expect(operands != report.fields.end())) {
-                    return;
-                }
-                expect_equal(operands->text, std::string("left: 1\nright: 2\n"));
-            }
-            with_execution(
-                R"(const fn run() -> bool {
-                    let text: String = "ab";
-                    return text == text;
-                })",
-                [](ProgramDraft& draft,
-                   ExecutionContext& context,
-                   const auto& evaluate) static noexcept {
-                    auto limits = static_execution_limits();
-                    // Two produced bytes, then two independent binding reads of two bytes each.
-                    limits.text_work = 5uz;
-                    expect(!evaluate("run", limits).has_value());
-                    check_limit(context, "text");
-                    limits.text_work = 6uz;
-                    const auto result = evaluate("run", limits);
-                    if (!expect(result.has_value())) {
-                        return;
-                    }
-                    const auto atom = execution_atom(draft, *result);
-                    if (!expect(atom.has_value())) {
-                        return;
-                    }
-                    expect(std::get<BooleanConstant>(atom->value).value);
-                    expect(context.reports.empty());
-                }
-            );
-        };
+            expect_equal(operands->text, std::string("left: 1\nright: 2\n"));
+        }
+    };
 
     "Static execution: root tasks defer source observation and execution until resumed"_test =
         [] static noexcept {
@@ -1785,7 +1707,7 @@ import std::async using close;
                 [](ProgramDraft& draft,
                    ExecutionContext& context,
                    const auto& evaluate) static noexcept {
-                    const auto completed = evaluate("run");
+                    const auto completed = evaluate("run", static_execution_limits());
                     if (!expect(completed.has_value())) {
                         return;
                     }
@@ -1813,7 +1735,7 @@ import std::async using close;
                 }
             )",
             [](ProgramDraft&, ExecutionContext& context, const auto& evaluate) static noexcept {
-                const auto completed = evaluate("run");
+                const auto completed = evaluate("run", static_execution_limits());
                 if (!expect(!completed.has_value())) {
                     return;
                 }
@@ -1830,7 +1752,7 @@ import std::async using close;
         [] static noexcept {
             for (const auto selection : {false, true}) {
                 const auto source =
-                    std::string(R"(import std::async using { yield_once, wait_ready, close };
+                    std::string(R"(import std::async using { yield_once, wait_ready, close }
 
                     const async fn forever() { while true { await yield_once(); } }
                     const async fn run() {

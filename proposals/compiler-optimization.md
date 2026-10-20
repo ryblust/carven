@@ -15,7 +15,6 @@ needed for adoption.
 | Workspace reuse | Can smaller computations or longer-lived requests avoid repeated complete analysis? | Measured edit or request overlap under identical source coverage |
 | Stage parallelism | Can independent work overlap within a bounded resource budget? | Sufficient independent work after scheduling and memory costs |
 | C++ realization | Can a snapshot, reservation, or result carrier be avoided? | A concrete redundant generated operation with an equivalent alternative |
-| Constant output | Can completed values use smaller target expressions? | Output growth in representative programs |
 | Formatting and output | Can reservation or composition remove work? | A workload with preserved observation points and failure behavior |
 | Local value facts | Can additional non-diagnostic facts remove runtime work? | An operation or formatting workload that benefits from precomputation |
 
@@ -32,7 +31,28 @@ Writers use checked minimum/maximum capacity
 bounds and direct `std::to_chars` conversion; proven UTF-8 formatting avoids a
 validation scan. Direct owning format returns can use a local String and NRVO.
 
+Constant-array lowering already omits suffixes matching C++ value-initialization,
+with cached eligibility for nested constants. Synchronous and async results share
+payload storage and ownership delivery. Fresh results construct directly or
+hand off their payload owner; named source values retain ordinary native
+construction requirements. Further delivery experiments need a redundant
+operation that remains after these paths.
+
 ## Design
+
+### Ownership and experiment scope
+
+Compiler knowledge and backend plans may remove work from builtin and ordinary
+source operations under their established contracts. Runtime Craft owns shared
+native carriers and execution kernels; Standard Craft owns source algorithms,
+domain policy, and capability-specific native adapters. Select a native kernel
+independently of whether its public API is builtin or source-defined.
+
+Select a measured cost and record tradeoffs for each experiment. Compiler-internal
+parallel execution, dependency tracking, and value facts require the contracts
+used by that experiment. Public executor abstractions, generic effect constraints, and a
+general query framework require independent source or tooling consumers. Existing
+complete analyses and checked artifacts provide baselines for smaller reuse units.
 
 ### Data and query experiments
 
@@ -123,7 +143,7 @@ and `map_ordered` are provisional.
   behavior and thread-creation failure under `noexcept` do not promise recovery.
 
 The caller supplies resource policy; support does not read CPU count, environment
-variables, or CLI options. Measure coexistence with multiple Xmake-launched
+variables, or CLI options. Measure coexistence with multiple build-launched
 compiler processes. Workers return local timing records; the coordinator aggregates
 them instead of invoking a synchronous recipient concurrently. Stage wall time,
 cumulative task elapsed time, and CPU time remain separate.
@@ -166,31 +186,11 @@ loops, payload snapshots, and cleanup of the entire carrier. Guard mutation must
 not retroactively change a thrown snapshot.
 
 Check protected cleanup before handlers, rejected guards, handler failures,
-rethrow, return, loop transfers, test stops, and skipping later operands after
+rethrow, return, loop transfers, call stops, and skipping later operands after
 failure. Storage and failure lifetime tests, together with target-structure tests,
 check observable behavior and target structure.
 
-### Constant output and local facts
-
-#### Compact default arrays
-
-Frozen `ArrayConstant` lowering reconstructs elements individually. A candidate
-emits `std::array<T, N>{}` when value-initialization of the selected C++
-representation produces the completed typed value with the same construction,
-ownership, backing, and observable behavior. Establish eligibility from the final
-value and target construction rules, including element types of empty arrays.
-Numerical equality alone is insufficient for signed floating zero or a type with
-native construction effects. When equivalence is unproven, retain explicit
-element reconstruction.
-
-Preserve canonical identity, evaluation budgets, and freezing. Avoid repeated
-scans of nested fallback paths. Test empty and nested arrays, non-default values,
-representation-sensitive values, construction obligations, indexing, and
-independent mutation after copying. At fixed depth, require initializer-node count
-to remain bounded as eligible element count grows. Measure scanning, extent
-spelling, target nodes, bytes, generation, and native compilation separately.
-
-#### Broader local value propagation
+### Local value facts
 
 Static-parameter substitution refreshes non-diagnostic expression facts.
 Further propagation through ordinary local bindings, mutation, branches, or loops
@@ -223,15 +223,18 @@ Generation-only consumers retain the executable program. Artifact directories
 carry these results across processes; generation from a retained program repeats
 neither source analysis nor static execution.
 
-Within one configured project, Xmake integration shares analysis for identical
-source batches. Targets using the same Carven compiler and installed sources share
-standard-library analysis results and generated C++ text. The standard library is
-processed in full; its generated implementations and native support sources are
-registered on each consumer target. Xmake manages native compilation, linking,
-incremental builds, and native artifact reuse through its own mechanisms. Ordinary
-and test generation consume the same checked program. Targets with their own
-source preparation retain separate batches. Build integration owns dependency
-freshness and staged publication.
+`std::build` retains standard-library analysis and generated text when producer
+inputs and outputs match. Under its uniform native configuration, unchanged
+standard and common application translation units reuse `.o` files and link
+directly into executables. Application analysis and generation still run for
+each target, and linking runs for every build. Build scripts execute on each
+invocation; native object reuse does not memoize their effects.
+
+External Xmake integration shares analysis for identical source batches and
+standard-library generation for matching compiler and installed sources. Xmake
+owns native compilation, linking, and object reuse for those consumers. Ordinary
+and test generation consume the same checked program. Build integration owns
+dependency freshness and staged publication in either path.
 
 Analysis records observed host input, time, or waiting as noncacheable; build
 integration repeats that producer. Producer roots execute during producer
@@ -273,8 +276,8 @@ measured request overlap within or across builds.
 
 A selected worker owns bounded compiler results. Tag requests and results with
 input revisions and a worker generation; discard replies from failed generations.
-Keep restart and request failure reporting outside the worker. Xmake retains
-target evaluation, native compilation, and job scheduling. Preserve distinct
+Keep restart and request failure reporting outside the worker. Build integration
+retains target evaluation, native compilation, and job scheduling. Preserve distinct
 semantic inputs and source-preparation boundaries.
 
 #### Evidence and decision gates
@@ -299,7 +302,7 @@ Compare diagnostics, static-root execution and output, paths/bytes, and source
 locations under each command's contract. Artifact-only generation must not replay
 producer roots. Source edits must execute the newly selected batch's roots and
 tests. Cover missing names, local aliases, provided prerequisites, recursive
-contracts, and const/generic dependencies. Use existing Xmake scenarios for native
+contracts, and const/generic dependencies. Use existing native-build scenarios for
 behavior. Keep cache sizes, pointer identities, query visitation order, and pass
 counts out of behavioral assertions. Measure generated-program speed separately.
 

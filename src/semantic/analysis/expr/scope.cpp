@@ -2,12 +2,13 @@ module carven:semantic.analysis.expr.scope.impl;
 
 import :semantic.analysis.expr.scope;
 import :semantic.analysis.program;
+import :semantic.analysis.operations;
 import :semantic.semir.type;
 import std;
 
 auto enum_case_reference_type(
     ProgramDraft& draft,
-    TypeID owner,
+    ConstructionTypeRef owner,
     std::span<const ConstructionTypeRef> payload
 ) noexcept -> ConstructionTypeRef {
     if (payload.empty()) {
@@ -24,13 +25,10 @@ auto enum_case_reference_type(
             }
         );
     }
-    return draft.append_construction_type(
-        ConstructionType {
-            .value = ConstructionCallableViewTypeValue {
-                .parameters = std::move(parameters),
-                .result = owner,
-                .failures = draft.add_empty_failure_term(),
-            },
-        }
+    return make_callable_view_type(
+        draft,
+        std::move(parameters),
+        owner,
+        draft.add_empty_failure_term()
     );
 }

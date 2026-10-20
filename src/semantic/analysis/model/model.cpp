@@ -182,7 +182,7 @@ auto AnalysisModelView::compute_shape(ConstructionTypeRef type) const noexcept
     -> AnalysisTypeShape {
     if (const auto* concrete = std::get_if<TypeID>(&type)) {
         return program.types().type(*concrete).value.visit(
-            [](const auto& shape) static noexcept -> AnalysisTypeShape {
+            [&](const auto& shape) noexcept -> AnalysisTypeShape {
                 using Shape = std::remove_cvref_t<decltype(shape)>;
                 if constexpr (std::same_as<Shape, ArrayTypeValue>) {
                     return ConstructionArrayTypeValue {
@@ -201,6 +201,22 @@ auto AnalysisModelView::compute_shape(ConstructionTypeRef type) const noexcept
                     return GenericVectorType {.element = shape.element};
                 } else if constexpr (std::same_as<Shape, PointerTypeValue>) {
                     return AnalysisPointerType {.target = shape.target, .access = shape.access};
+                } else if constexpr (std::same_as<Shape, CallableViewTypeValue>) {
+                    const auto& signature =
+                        program.callable_signatures().signature(shape.signature);
+                    auto parameters = std::vector<ConstructionCallableParameter>();
+                    for (const auto& parameter : signature.parameters) {
+                        parameters.push_back(
+                            {.stage = parameter.stage,
+                             .access = parameter.access,
+                             .type = parameter.type}
+                        );
+                    }
+                    return ConstructionCallableViewTypeValue {
+                        .parameters = std::move(parameters),
+                        .result = signature.result,
+                        .failures = signature.failures
+                    };
                 } else if constexpr (std::same_as<Shape, OperationTypeValue>) {
                     return ConstructionOperationTypeValue {
                         .success = shape.success,
@@ -236,6 +252,12 @@ auto AnalysisModelView::compute_shape(ConstructionTypeRef type) const noexcept
                 return ConstructionSliceTypeValue {.element = shape.element};
             } else if constexpr (std::same_as<Shape, GenericPointerType>) {
                 return AnalysisPointerType {.target = shape.target, .access = shape.access};
+            } else if constexpr (std::same_as<Shape, GenericCallableViewType>) {
+                return ConstructionCallableViewTypeValue {
+                    .parameters = shape.parameters,
+                    .result = shape.result,
+                    .failures = shape.failures
+                };
             } else if constexpr (std::same_as<Shape, GenericOperationType>) {
                 return ConstructionOperationTypeValue {
                     .success = shape.success,
@@ -246,6 +268,17 @@ auto AnalysisModelView::compute_shape(ConstructionTypeRef type) const noexcept
             }
         }
     );
+}
+
+auto AnalysisModelView::enum_case_count(ConstructionEnumCaseRef reference) const noexcept
+    -> std::size_t {
+    if (const auto* concrete = std::get_if<EnumCaseID>(&reference)) {
+        const auto owner = program.declarations().enum_case(*concrete).owner;
+        return program.declarations().enumeration(owner).cases.size();
+    }
+    const auto& shape = generics.generic_type(std::get<GenericEnumCaseRef>(reference).owner);
+    const auto definition = std::get<GenericNominalApplication>(shape).definition;
+    return std::get<GenericEnumDefinition>(generics.definition(definition)).cases.size();
 }
 
 auto AnalysisModelView::concrete_type(ConstructionTypeRef type) const noexcept
@@ -259,6 +292,57 @@ auto AnalysisModelView::concrete_type(ConstructionTypeRef type) const noexcept
         }
     }
     return std::nullopt;
+}
+
+auto AnalysisModelView::callable_identity(ConstructionTypeRef type) const noexcept
+    -> std::optional<CallableID> {
+    const auto concrete = concrete_type(type);
+    return concrete ? ::callable_identity(program, *concrete) : std::nullopt;
+}
+
+auto AnalysisModelView::callable_adaptation(
+    ConstructionTypeRef from,
+    ConstructionTypeRef to
+) const noexcept -> CallableAdaptation {
+    const auto source_type = concrete_type(from);
+    const auto target_type = concrete_type(to);
+    if (source_type && target_type) {
+        return ::callable_adaptation(program, *source_type, *target_type);
+    }
+    const auto* target = std::get_if<ConstructionCallableViewTypeValue>(&shape(to));
+    if (from == to || !target) {
+        return {.kind = CallableAdaptationKind::CopyTarget, .callable = std::nullopt};
+    }
+    if (const auto* source = std::get_if<ConstructionCallableViewTypeValue>(&shape(from))) {
+        const auto source_failures = failure_closed_set(source->failures);
+        const auto target_failures = failure_closed_set(target->failures);
+        const auto copy = source->failures == target->failures
+            || (source_failures && target_failures && *source_failures == *target_failures)
+            || (target_failures
+                && program.failure_sets().failure_set(*target_failures).members.empty());
+        return {
+            .kind =
+                copy ? CallableAdaptationKind::CopyTarget : CallableAdaptationKind::BorrowObject,
+            .callable = std::nullopt
+        };
+    }
+    const auto callable = callable_identity(from);
+    if (!callable) {
+        invariant_violation("callable adaptation requires a callable source");
+    }
+    if (std::holds_alternative<FunctionTypeValue>(shape(from))) {
+        return {.kind = CallableAdaptationKind::FunctionTarget, .callable = callable};
+    }
+    const auto body = program.declarations().body_for_callable(*callable);
+    if (!body) {
+        invariant_violation("closure adaptation requires a completed body");
+    }
+    return {
+        .kind = program.bodies().body(*body).inputs().captures.empty()
+            ? CallableAdaptationKind::StatelessClosure
+            : CallableAdaptationKind::BorrowObject,
+        .callable = callable
+    };
 }
 
 auto AnalysisModelView::contents(ConstructionTypeRef type) const noexcept -> TypeContents {

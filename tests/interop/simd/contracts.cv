@@ -1,10 +1,10 @@
 import "simd/provider.hpp";
 
-import(cpp) fn simd_float_storage() -> bool;
-import(cpp) fn simd_guard_pages_available() -> bool;
-import(cpp) fn simd_guarded_tails() -> usize;
-import(cpp) fn simd_utf8_encodings() -> bool;
-import(cpp) fn simd_utf8_guarded() -> bool;
+import(cpp) fn simd_float_storage() -> bool = ::simd_float_storage;
+import(cpp) fn simd_guard_pages_available() -> bool = ::simd_guard_pages_available;
+import(cpp) fn simd_guarded_tails() -> usize = ::simd_guarded_tails;
+import(cpp) fn simd_utf8_encodings() -> bool = ::simd_utf8_encodings;
+import(cpp) fn simd_utf8_guarded() -> bool = ::simd_utf8_guarded;
 
 test "Runtime UTF-8: encodings satisfy Unicode bounds across blocks and tails" {
     check(simd_utf8_encodings());

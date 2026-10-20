@@ -13,8 +13,14 @@ const {
     println(
         Values {
             items: [
-                Foo {},
-                Foo {}
+                Foo {
+                    a: 0,
+                    ...
+                },
+                Foo {
+                    b: String {},
+                    ...
+                }
             ],
             enabled: true
         }
@@ -26,8 +32,14 @@ println(Foo {});
 println(
     Values {
         items: [
-            Foo {},
-            Foo {}
+            Foo {
+                a: 0,
+                ...
+            },
+            Foo {
+                b: String {},
+                ...
+            }
         ],
         enabled: true
     }

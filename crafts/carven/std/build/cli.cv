@@ -1,0 +1,117 @@
+import .platform using { run, process_error }
+import std::build using { BuildError, TargetKind, BuildOutput, BuildPlan, build_outputs }
+import std::process using { ProcessError, arguments as process_arguments }
+import std::utf using { starts_with, ends_with }
+
+private struct Command {
+    running: bool,
+    target: String,
+    source: String,
+    arguments: Vector<String>,
+}
+
+private const fn parse(arguments: [String]) -> Command throw BuildError {
+    var command = Command {
+        running: false,
+        target: "",
+        source: "",
+        arguments: [],
+    };
+    if arguments.is_empty() || (arguments[0] != "build" && arguments[0] != "run") {
+        return &&command;
+    }
+    command.running = arguments[0] == "run";
+    var separated = false;
+    for index in 1usize..arguments.length() {
+        let argument = arguments[index];
+        if separated {
+            command.arguments.push(argument);
+        } else if argument == "--" && command.running {
+            separated = true;
+        } else if starts_with(argument, "-") {
+            throw BuildError { message: f"unknown {arguments[0]} option '{argument}'" };
+        } else if index == 1 && ends_with(argument, ".cv") {
+            command.source = argument;
+        } else if index == 1 && command.running {
+            command.target = argument;
+        } else {
+            throw BuildError { message: f"unexpected {arguments[0]} argument '{argument}'" };
+        }
+    }
+    return &&command;
+}
+
+private const fn run_selected(
+    outputs: [BuildOutput],
+    target: str,
+    arguments: [String]
+) throw BuildError {
+    var selected = outputs.length();
+    for index in 0..outputs.length() {
+        if outputs[index].kind != TargetKind::Executable { continue; }
+        if !target.is_empty() {
+            if outputs[index].name == target { selected = index; }
+        } else {
+            if selected != outputs.length() {
+                throw BuildError {
+                    message: "multiple executable targets; use 'carven run <target>'"
+                };
+            }
+            selected = index;
+        }
+    }
+    if selected == outputs.length() {
+        if target.is_empty() { throw BuildError { message: "no executable target to run" }; }
+        throw BuildError { message: f"unknown executable target '{target}'" };
+    }
+    var command: Vector<String> = [outputs[selected].path];
+    command.append(arguments);
+    run(command)?;
+}
+
+private const fn process_command() -> Command throw BuildError {
+    let arguments = try {
+        process_arguments()?
+    } catch {
+        ProcessError(error) => throw process_error("cannot read process arguments", error),
+    };
+    return parse(arguments)?;
+}
+
+private const fn execute(
+    plan: BuildPlan,
+    command: Command
+) -> Vector<BuildOutput> throw BuildError {
+    let outputs = build_outputs(plan)?;
+    if command.running { run_selected(outputs, command.target, command.arguments)?; }
+    return &&outputs;
+}
+
+const fn run_plan(plan: BuildPlan) -> Vector<BuildOutput> throw BuildError {
+    return execute(plan, process_command()?)?;
+}
+
+const fn execute_source() throw BuildError {
+    let command = process_command()?;
+    if command.source.is_empty() { throw BuildError { message: "expected a .cv source file" }; }
+    let bytes = command.source.bytes;
+    var start = 0usize;
+    for index in 0..bytes.length() {
+        if bytes[index] == 0x2f || bytes[index] == 0x5c { start = index + 1; }
+    }
+    let name = str::from_utf8_unchecked(bytes.slice(start, bytes.length() - 3)) as String;
+    execute(
+        {
+            targets: [
+                {
+                    name: name,
+                    kind: TargetKind::Executable,
+                    sources: [command.source],
+                    ...
+                }
+            ],
+            ...
+        },
+        command
+    )?;
+}

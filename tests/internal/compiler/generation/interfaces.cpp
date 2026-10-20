@@ -20,8 +20,8 @@ struct ModuleFixture final {
 
 auto compile_modules(
     std::span<const ModuleFixture> modules,
-    std::string_view linkage_domain = "test:interfaces",
-    TestGenerationMode test_mode = TestGenerationMode::None
+    std::string_view linkage_domain,
+    TestGenerationMode test_mode
 ) noexcept -> GeneratedArtifactSet {
     auto sources = SourceManager();
     auto inputs = std::vector<SourceModuleInput>();
@@ -44,7 +44,7 @@ auto compile_modules(
         }
     );
     require(result.has_value()).note([&] noexcept {
-        return render_diagnostics(result.error(), sources);
+        return render_diagnostics(result.error(), sources, false);
     });
     return std::move(result->value);
 }
@@ -105,11 +105,21 @@ const TestSuite suite([] static noexcept {
             constexpr auto surface_edit = "private fn helper() -> i32 => 1;\n"
                                           "export struct PublicItem { value: i64, }\n";
 
-            const auto stable = compile_modules(std::array {ModuleFixture {"stable", baseline}});
-            const auto stable_private =
-                compile_modules(std::array {ModuleFixture {"stable", private_edit}});
-            const auto stable_surface =
-                compile_modules(std::array {ModuleFixture {"stable", surface_edit}});
+            const auto stable = compile_modules(
+                std::array {ModuleFixture {"stable", baseline}},
+                "test:interfaces",
+                TestGenerationMode::None
+            );
+            const auto stable_private = compile_modules(
+                std::array {ModuleFixture {"stable", private_edit}},
+                "test:interfaces",
+                TestGenerationMode::None
+            );
+            const auto stable_surface = compile_modules(
+                std::array {ModuleFixture {"stable", surface_edit}},
+                "test:interfaces",
+                TestGenerationMode::None
+            );
             const auto& stable_header = interface_for(stable, "stable");
             const auto& private_header = interface_for(stable_private, "stable");
             const auto& surface_header = interface_for(stable_surface, "stable");
@@ -135,14 +145,18 @@ const TestSuite suite([] static noexcept {
                     ModuleFixture {"provider", provider_before},
                     ModuleFixture {"consumer", consumer},
                     ModuleFixture {"unrelated", unrelated},
-                }
+                },
+                "test:interfaces",
+                TestGenerationMode::None
             );
             const auto after = compile_modules(
                 std::array {
                     ModuleFixture {"provider", provider_after},
                     ModuleFixture {"consumer", consumer},
                     ModuleFixture {"unrelated", unrelated},
-                }
+                },
+                "test:interfaces",
+                TestGenerationMode::None
             );
 
             if (!expect_equal(before.entries().size(), after.entries().size())) {
@@ -174,13 +188,17 @@ const TestSuite suite([] static noexcept {
                 std::array {
                     ModuleFixture {"provider", provider},
                     ModuleFixture {"consumer", consumer_used},
-                }
+                },
+                "test:interfaces",
+                TestGenerationMode::None
             );
             const auto unused = compile_modules(
                 std::array {
                     ModuleFixture {"provider", provider},
                     ModuleFixture {"consumer", consumer_unused},
-                }
+                },
+                "test:interfaces",
+                TestGenerationMode::None
             );
 
             if (!expect_equal(interfaces(used).size(), 2uz)) {
@@ -216,7 +234,9 @@ const TestSuite suite([] static noexcept {
                 std::array {
                     ModuleFixture {"provider", provider},
                     ModuleFixture {"consumer", consumer},
-                }
+                },
+                "test:interfaces",
+                TestGenerationMode::None
             );
 
             const auto& provider_header = interface_for(artifacts, "provider");
@@ -233,7 +253,9 @@ const TestSuite suite([] static noexcept {
             std::array {
                 ModuleFixture {"left", left},
                 ModuleFixture {"right", right},
-            }
+            },
+            "test:interfaces",
+            TestGenerationMode::None
         );
 
         if (!expect_equal(interfaces(artifacts).size(), 2uz)) {
@@ -258,7 +280,9 @@ const TestSuite suite([] static noexcept {
             std::array {
                 ModuleFixture {"left", left},
                 ModuleFixture {"right", right},
-            }
+            },
+            "test:interfaces",
+            TestGenerationMode::None
         );
 
         const auto headers = interfaces(artifacts);
@@ -285,7 +309,9 @@ const TestSuite suite([] static noexcept {
                 std::array {
                     ModuleFixture {"api", api},
                     ModuleFixture {"model", model},
-                }
+                },
+                "test:interfaces",
+                TestGenerationMode::None
             );
 
             if (!expect_equal(interfaces(artifacts).size(), 2uz)) {
@@ -311,7 +337,9 @@ const TestSuite suite([] static noexcept {
                     ModuleFixture {"src.api", api},
                     ModuleFixture {"lib.model", model},
                     ModuleFixture {"src.lib.model", shadow},
-                }
+                },
+                "test:interfaces",
+                TestGenerationMode::None
             );
 
             if (!expect_equal(interfaces(artifacts).size(), 3uz)) {
@@ -330,8 +358,8 @@ const TestSuite suite([] static noexcept {
                                            "export struct Failure { code: i32, }\n";
             constexpr auto parameter_types = "export enum Choice { Value(i32), Empty, }\n"
                                              "export enum Code: u8 { Ready = 1, Done, }\n";
-            constexpr auto api = "import outcome_types using { Model, Failure, };\n"
-                                 "import parameter_types using { Choice, Code, };\n"
+            constexpr auto api = "import outcome_types using { Model, Failure, }\n"
+                                 "import parameter_types using { Choice, Code, }\n"
                                  "export fn inspect(\n"
                                  "    model: Model,\n"
                                  "    choice: Choice,\n"
@@ -343,7 +371,9 @@ const TestSuite suite([] static noexcept {
                     ModuleFixture {"api", api},
                     ModuleFixture {"outcome_types", outcome_types},
                     ModuleFixture {"parameter_types", parameter_types},
-                }
+                },
+                "test:interfaces",
+                TestGenerationMode::None
             );
 
             if (!expect_equal(interfaces(artifacts).size(), 3uz)) {
@@ -367,7 +397,9 @@ const TestSuite suite([] static noexcept {
                 std::array {
                     ModuleFixture {"api", api},
                     ModuleFixture {"model", model},
-                }
+                },
+                "test:interfaces",
+                TestGenerationMode::None
             );
 
             const auto& api_header = interface_for(artifacts, "api");
@@ -387,13 +419,17 @@ const TestSuite suite([] static noexcept {
             std::array {
                 ModuleFixture {"a", split_a},
                 ModuleFixture {"b", split_b},
-            }
+            },
+            "test:interfaces",
+            TestGenerationMode::None
         );
         const auto merged = compile_modules(
             std::array {
                 ModuleFixture {"a", merged_a},
                 ModuleFixture {"b", merged_b},
-            }
+            },
+            "test:interfaces",
+            TestGenerationMode::None
         );
 
         if (!expect_equal(interfaces(split).size(), 2uz)) {
@@ -422,8 +458,10 @@ const TestSuite suite([] static noexcept {
                 ModuleFixture {"consumer", consumer},
             };
 
-            const auto first = compile_modules(forward, "test:determinism:first");
-            const auto repeated = compile_modules(reverse, "test:determinism:first");
+            const auto first =
+                compile_modules(forward, "test:determinism:first", TestGenerationMode::None);
+            const auto repeated =
+                compile_modules(reverse, "test:determinism:first", TestGenerationMode::None);
             if (!expect_equal(first.entries().size(), repeated.entries().size())) {
                 return;
             }
@@ -434,7 +472,8 @@ const TestSuite suite([] static noexcept {
                 expect_equal(left.content, right.content);
             }
 
-            const auto other_domain = compile_modules(reverse, "test:determinism:second");
+            const auto other_domain =
+                compile_modules(reverse, "test:determinism:second", TestGenerationMode::None);
             if (!expect_equal(first.entries().size(), other_domain.entries().size())) {
                 return;
             }
@@ -472,7 +511,8 @@ const TestSuite suite([] static noexcept {
                     "export struct AlphaWrap { zeta: ZetaLeaf, }\n"
                 },
             };
-            const auto artifacts = compile_modules(modules);
+            const auto artifacts =
+                compile_modules(modules, "test:interfaces", TestGenerationMode::None);
             const auto& header = interface_for(artifacts, "alpha").content;
             const auto first = header.find("#include \"alpha.hpp\"");
             const auto shared = header.find("#include <shared.hpp>");
@@ -496,7 +536,8 @@ const TestSuite suite([] static noexcept {
             expect(implementation.contains("#line 4 \"alpha.cv\"\n#include \"alpha.hpp\""));
             auto reversed = modules;
             std::ranges::reverse(reversed);
-            const auto reordered = compile_modules(reversed);
+            const auto reordered =
+                compile_modules(reversed, "test:interfaces", TestGenerationMode::None);
             expect_equal(header, interface_for(reordered, "alpha").content);
         };
 
@@ -506,12 +547,13 @@ const TestSuite suite([] static noexcept {
                 ModuleFixture {
                     "provider",
                     "import \"first.hpp\"; import <second.hpp>; import \"first.hpp\";"
-                    "import \"lookup.hpp\" using native::{ Thing, unused };"
+                    "import \"lookup.hpp\" using native::{ Thing, unused }"
                     "fn global(value: ::Point) -> ::Point => value;"
                     "fn scoped(value: Thing) -> Thing => value;"
                 },
             };
-            const auto artifacts = compile_modules(modules);
+            const auto artifacts =
+                compile_modules(modules, "test:interfaces", TestGenerationMode::None);
             const auto& content = interface_for(artifacts, "provider").content;
             const auto first = content.find("#include \"first.hpp\"");
             const auto second = content.find("#include <second.hpp>");
@@ -539,7 +581,8 @@ const TestSuite suite([] static noexcept {
                     "fn point(value: ::Point) -> ::Point => value;"
                 },
             };
-            const auto artifacts = compile_modules(modules);
+            const auto artifacts =
+                compile_modules(modules, "test:interfaces", TestGenerationMode::None);
             const auto& content = interface_for(artifacts, "global_only").content;
             expect(content.contains("#include \"native.hpp\""));
             expect(!content.contains("using ::native::unused;"));

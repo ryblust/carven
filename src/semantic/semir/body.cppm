@@ -127,7 +127,7 @@ struct BindingPattern final {
 };
 
 struct EnumCasePattern final {
-    EnumCaseID enum_case;
+    ConstructionEnumCaseRef enum_case;
     std::vector<PatternID> payload;
 };
 

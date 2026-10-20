@@ -2,7 +2,6 @@ module carven:test.internal.driver.options;
 
 import :backend.generation.request;
 import :driver.options;
-import :source.module_path;
 import :test.harness.framework;
 import std;
 
@@ -147,21 +146,6 @@ const TestSuite suite([] static noexcept {
                 expect((result.error().option == test_case.option));
             });
         };
-
-    "Compilation options: mapped inputs retain source ownership"_test = [] static noexcept {
-        const auto args = std::to_array<std::string>({
-            "--source=app.main=/project/main.cv",
-            "--tests",
-        });
-        const auto request = parse_compilation_options(args, CompilationCommand::Compile);
-        require(request.has_value());
-        require_equal(request->mapped_inputs.size(), 1uz);
-        expect_equal(
-            request->mapped_inputs.front().module_path.value(),
-            std::string_view("app.main")
-        );
-        expect_equal(request->test_mode, TestGenerationMode::RunnerEntryPoint);
-    };
 });
 
 } // namespace

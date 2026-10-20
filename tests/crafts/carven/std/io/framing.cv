@@ -1,11 +1,11 @@
-import std::io using { ByteLines, LineFramer, FrameError, Read };
+import std::io using { ByteLines, LineFramer, LineFrameError, ReadResult }
 import std::utf using to_string;
 
 test "Line framing: every split preserves CRLF and UTF8 records" {
     try {
         let input = "a\r\n世界\n\nlast\r".bytes;
         for split in 0usize..=input.length() {
-            var framer = LineFramer::new(16, true);
+            var framer = LineFramer::new(16, .Strip);
             var output: Vector<String> = [];
             for bytes in framer.feed(input.slice(0, split))? {
                 output.push(to_string(bytes)?);
@@ -13,7 +13,7 @@ test "Line framing: every split preserves CRLF and UTF8 records" {
             for bytes in framer.feed(input.slice(split, input.length()))? {
                 output.push(to_string(bytes)?);
             }
-            let last: Read<Vector<u8>> = framer.finish(true)?;
+            let last: ReadResult<Vector<u8>> = framer.finish(.Return)?;
             match last {
                 .Data(bytes) => output.push(to_string(bytes)?),
                 .End => fail("partial record remains"),
@@ -34,15 +34,15 @@ test "Line framing: every split preserves CRLF and UTF8 records" {
 
 const test "Line framing: exact limit and final record policy" {
     try {
-        var framer = LineFramer::new(2, false);
+        var framer = LineFramer::new(2, .Preserve);
         check(framer.feed("ab\n".bytes)?.length() == 1);
         check(framer.feed("x".bytes)?.is_empty());
         check(
             try {
-                let _ = framer.finish(false)?;
+                let _ = framer.finish(.Reject)?;
                 false
             } catch {
-                FrameError(error) => error == .Truncated
+                LineFrameError(error) => error == .Truncated
             }
         );
     } catch {
@@ -52,13 +52,13 @@ const test "Line framing: exact limit and final record policy" {
 
 test "Line framing: overflow seals the attempt and scanner exposes boundaries" {
     try {
-        var framer = LineFramer::new(2, false);
+        var framer = LineFramer::new(2, .Preserve);
         check(
             try {
                 let _ = framer.feed("abc".bytes)?;
                 false
             } catch {
-                FrameError(error) => match error {
+                LineFrameError(error) => match error {
                     .TooLong(limit) => limit == 2,
                     _ => false
                 }
@@ -69,7 +69,7 @@ test "Line framing: overflow seals the attempt and scanner exposes boundaries" {
                 let _ = framer.feed("\n".bytes)?;
                 false
             } catch {
-                FrameError(error) => error == .Finished
+                LineFrameError(error) => error == .Finished
             }
         );
         var lines = ByteLines::new();

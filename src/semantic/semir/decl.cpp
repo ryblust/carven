@@ -39,6 +39,7 @@ auto require_ids_owner(
 auto validate_construction_type(ConstructionTypeRef type, ProgramIdentity owner) noexcept -> void {
     type.visit([owner](const auto id) noexcept {
         using ID = std::remove_cvref_t<decltype(id)>;
+
         static_assert(
             std::same_as<ID, TypeID>
             || std::same_as<ID, TypeTermID>
@@ -446,6 +447,7 @@ auto DeclarationBuilder::define(ModuleID id, ModuleDeclaration declaration) noex
     for (const auto& item : declaration.items) {
         item.visit([this](const auto item_id) noexcept {
             using ID = std::remove_cvref_t<decltype(item_id)>;
+
             static_assert(
                 std::same_as<ID, FunctionID>
                 || std::same_as<ID, StructID>
@@ -634,7 +636,7 @@ auto DeclarationBuilder::append_function_instance(FunctionDeclaration declaratio
 }
 
 auto DeclarationBuilder::append_nominal_item(
-    ModuleID module,
+    ModuleID module_id,
     NominalDeclarationRef declaration
 ) noexcept -> void {
     require_open_construction();
@@ -644,7 +646,7 @@ auto DeclarationBuilder::append_nominal_item(
             program_identity,
             "module instance item belongs to another program"
         );
-        modules.mutate_defined(module).items.emplace_back(id);
+        modules.mutate_defined(module_id).items.emplace_back(id);
     });
 }
 
@@ -714,13 +716,16 @@ auto DeclarationBuilder::complete_callable(
                 provenance_identity,
                 "C++ import callable used a foreign origin"
             );
-            require_owner(
-                value.target.context_module.owner(),
-                program_identity,
-                "C++ import target used a foreign module"
-            );
-            if (value.target.lookup != CppNameLookup::Global || !valid_cpp_name(value.target)) {
-                invariant_violation("C++ import target must be a global qualified name");
+            if (value.target) {
+                require_owner(
+                    value.target->context_module.owner(),
+                    program_identity,
+                    "C++ import target used a foreign module"
+                );
+                if (value.target->lookup != CppNameLookup::Global
+                    || !valid_cpp_name(*value.target)) {
+                    invariant_violation("C++ import target must be a global qualified name");
+                }
             }
         }
     });

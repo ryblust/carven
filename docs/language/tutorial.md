@@ -28,44 +28,8 @@ before their uses.
 
 ## Prepare the compiler
 
-Use `carven` with its matching Crafts resources. An installed toolchain places
-the executable in `<prefix>/bin/` and its resources in `<prefix>/crafts/carven/`.
-Keep development executables in their source checkout so they can locate its
-`crafts/carven/`.
-
-To build from source, prepare Git, Xmake 3.1.1, and LLVM/Clang with libc++ and
-C++26 support; LLVM 23 is the validated version. On Windows, use LLVM-MinGW and
-add its `bin` directory to `PATH`. Clone the repository and build the compiler:
-
-```sh
-git clone https://github.com/ryblust/carven.git
-cd carven
-./xmakew build
-./xmakew show -t carven
-```
-
-In Windows PowerShell, use `.\xmakew.ps1` instead of `./xmakew`. The `show`
-command reports `targetfile`; its containing directory is
-`build/<platform>/<arch>/<mode>/` by default.
-
-Add the directory containing `carven` (`carven.exe` on Windows) to `PATH`.
-Replace the example path with that directory's absolute path.
-
-On macOS and Linux:
-
-```sh
-export PATH="/absolute/path/to/compiler-directory:$PATH"
-```
-
-In Windows PowerShell:
-
-```powershell
-$env:Path = "C:\path\to\compiler-directory;$env:Path"
-```
-
-These changes apply to the current terminal. To keep them for future terminals,
-add the directory in your shell startup configuration or Windows user `Path`.
-Check that the command is available:
+The commands assume `carven` is on `PATH` with its matching Crafts resources.
+Verify the command:
 
 ```sh
 carven --version
@@ -93,19 +57,19 @@ compiler infer it from returns; a body with no return operands infers `void`.
 The `=>` body returns its expression directly.
 The top-level statements form an implicit program entry, and `answer` is local
 to that entry. You can instead put those statements inside an explicit `fn main()`;
-a compilation may have only one entry.
+a module may have only one entry.
 
 Run from the same directory:
 
 ```sh
-carven main.cv
+carven run main.cv
 carven interpret main.cv
 carven compile --stdout main.cv
 ```
 
-The first execution command compiles and runs a native program using the C++ toolchain.
-The second interprets the same source using the supported semantic subset. Both
-print `42`. The third prints generated C++ and artifact headings for inspection.
+The first command builds and runs a native executable that prints `42`.
+The second interprets the source using the supported semantic subset. The third
+prints generated C++ and artifact headings for inspection.
 Use `carven interpret --trace main.cv` to observe statement locations and calls.
 
 Imports form the start of a source file. Types and constants normally precede
@@ -129,10 +93,10 @@ println(answer());
 ```
 
 Supply both files to the compiler, for example
-`carven compile --stdout main.cv math.cv`. Application files are
-explicit inputs. The commands also collect all `.cv` and `.cpp` files under the
-toolchain's `crafts/carven/` and the working directory's `crafts/`. Imports resolve
-against that source batch and the compiler-provided standard modules.
+`carven compile --stdout main.cv math.cv`. Application and project Craft sources
+are explicit inputs; standard-library dependencies come from the toolchain's
+matching `crafts/carven/`. The command emits C++ artifacts. `std::build` also
+collects the project's `crafts/` sources and compiles the required native providers.
 
 An unprefixed module reference starts at the current craft's root. A leading
 `.` starts in the importing module's directory. `json::parser` selects a module
@@ -455,7 +419,7 @@ publishes a Carven function to a C++ caller:
 ```carven
 import "native/provider.hpp";
 
-private import(cpp) fn native_answer() -> i32;
+private import(cpp) fn native_answer() -> i32 = ::native_answer;
 
 export(cpp) fn answer() -> i32 => native_answer();
 ```
@@ -487,7 +451,8 @@ return `carven::runtime::Outcome<Result, Failure>`. Its Carven declaration is:
 ```carven
 struct InvalidPort {}
 
-import(cpp) fn parse_port_native(text: str, invalid: InvalidPort) -> i32 throw InvalidPort;
+import(cpp) fn parse_port_native(text: str, invalid: InvalidPort) -> i32 throw InvalidPort
+    = ::parse_port_native;
 
 fn port(text: str) -> i32 throw InvalidPort => parse_port_native(text, {})?;
 ```
@@ -570,14 +535,13 @@ test "addition produces the expected value" {
 The optional message of a direct `check` or `require` call is evaluated only
 on failure. A failed `check` reports and continues. A failed `require` reports
 and exits the test. `fail()` reports and exits unconditionally. Tests are analyzed with
-the source. Run ordinary tests natively or in the interpreter's supported subset:
+the source. Run ordinary tests in the interpreter's supported subset:
 
 ```shell
-carven --tests tests.cv
 carven interpret --tests tests.cv
 ```
 
-Both commands select runtime tests and leave the program entry unexecuted.
+This command selects runtime tests and leaves the program entry unexecuted.
 `compile --tests` generates the corresponding C++ test sources. `const` blocks
 and `const test` execute during analysis in all these modes, and with `check`.
 

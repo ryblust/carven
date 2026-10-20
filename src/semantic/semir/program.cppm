@@ -97,6 +97,12 @@ public:
     auto provenance() const noexcept -> CompilationProvenanceView;
     auto types() const noexcept -> const CanonicalTypeStore&;
     auto type_contents(TypeID type) const noexcept -> const TypeContents&;
+    // Stable source identity for a named native leaf and its concrete type arguments.
+    auto native_type_name(TypeID type) const noexcept -> std::optional<std::string>;
+
+    auto callable_contract_identity(CallableSignatureID signature) const noexcept
+        -> std::optional<std::string>;
+
     auto constants() const noexcept -> const ConstantStore&;
     auto failure_sets() const noexcept -> const FailureSetStore&;
     auto callable_signatures() const noexcept -> const CallableSignatureStore&;
@@ -117,6 +123,7 @@ public:
         -> const GenericNominalInstance*;
 
     auto generic_function_instances() const noexcept -> std::span<const GenericFunctionInstance>;
+
     auto generic_function_instance(CallableID callable) const noexcept
         -> const GenericFunctionInstance*;
 
@@ -146,8 +153,9 @@ public:
         -> bool;
 
     auto may_stop_test(CallableID callable_id) const noexcept -> bool;
-    auto may_stop_test(TypeID type) const noexcept -> bool;
-    auto may_stop_test(const SemCall& call) const noexcept -> bool;
+    auto may_stop(CallableID callable_id) const noexcept -> bool;
+    auto may_stop(TypeID type) const noexcept -> bool;
+    auto may_stop(const SemCall& call) const noexcept -> bool;
     auto call_signature(TypeID type) const noexcept -> CallableSignatureID;
     auto call_signature(const SemCall& call) const noexcept -> CallableSignatureID;
 
@@ -175,7 +183,7 @@ private:
         std::vector<GenericDeclarationContract> generic_declarations,
         std::vector<GenericNominalInstance> generic_instances,
         std::vector<GenericFunctionInstance> generic_functions,
-        std::vector<bool> test_stops
+        std::vector<CallStopEffect> call_stops
     ) noexcept;
 
     ProgramIdentity program_identity;
@@ -197,7 +205,7 @@ private:
     std::map<std::pair<FunctionID, std::vector<ConstantID>>, CallableID> static_instance_index;
     std::map<CallableID, std::size_t> instance_callables;
     std::vector<bool> executed_bodies;
-    std::vector<bool> test_stops;
+    std::vector<CallStopEffect> call_stops;
     std::unique_ptr<const AsyncCancellationFacts> cancellation_facts;
     std::vector<TypeContents> contents;
     std::vector<CallableSurface> callable_surfaces;

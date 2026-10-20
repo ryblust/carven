@@ -1,6 +1,7 @@
 module carven:semantic.analysis.ownership.topology.impl;
 
 import :semantic.analysis.ownership.context;
+import :support.function_ref;
 import std;
 
 auto OwnershipBodyAnalyzer::storage_relations() const noexcept -> const OwnershipRegionIndex& {
@@ -225,35 +226,45 @@ auto OwnershipBodyAnalyzer::select_element_storage(
     OwnershipState& state
 ) noexcept -> std::vector<OwnershipPlace> {
     auto result = std::vector<OwnershipPlace>();
-    const auto& shape = analysis.model.shape(sequence);
-    if (std::holds_alternative<ConstructionSliceTypeValue>(shape)) {
-        for (const auto& loan : relationships.view().storage_loans) {
-            if (loan.holder.empty()) {
-                result.push_back(loan.backing);
-            }
-        }
-        index = std::nullopt;
-    } else {
-        result.assign(storage.begin(), storage.end());
-    }
-    auto selected_storage = std::vector<OwnershipPlace>();
-    for (auto selected : result) {
-        if (const auto* owner = std::get_if<GenericVectorType>(&shape)) {
-            selected_storage.append_range(select_owned_storage(
+    const auto select = [&](OwnershipPlace selected,
+                            std::optional<ConstructionTypeRef> owned_element,
+                            std::optional<std::uint64_t> element_index) noexcept {
+        if (owned_element) {
+            result.append_range(select_owned_storage(
                 selected,
-                owner->element,
-                index,
+                *owned_element,
+                element_index,
                 selection,
                 state,
                 false,
                 false
             ));
         } else {
-            selected.path.push_back(index);
-            selected_storage.push_back(std::move(selected));
+            selected.path.push_back(element_index);
+            result.push_back(std::move(selected));
+        }
+    };
+    const auto& shape = analysis.model.shape(sequence);
+    if (const auto* slice = std::get_if<ConstructionSliceTypeValue>(&shape)) {
+        for (const auto& loan : relationships.view().storage_loans) {
+            if (loan.holder.empty()) {
+                const auto owned = loan.sequence_type
+                    && std::holds_alternative<GenericVectorType>(
+                                       analysis.model.shape(*loan.sequence_type)
+                    );
+                select(
+                    loan.backing,
+                    owned ? std::optional(slice->element) : std::nullopt,
+                    std::nullopt
+                );
+            }
+        }
+    } else {
+        const auto* owner = std::get_if<GenericVectorType>(&shape);
+        for (const auto& selected : storage) {
+            select(selected, owner ? std::optional(owner->element) : std::nullopt, index);
         }
     }
-    result = std::move(selected_storage);
     std::ranges::sort(result);
     result.erase(std::ranges::unique(result).begin(), result.end());
     return result;

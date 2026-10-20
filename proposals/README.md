@@ -16,19 +16,48 @@ mechanisms appear only where they explain that remaining scope.
 
 | Proposal | Decision owned here |
 | --- | --- |
-| [Generic extensions](generic-extensions.md) | Static capabilities, associated types, parameterized class operations, and finite boundary extensions |
+| [Generic extensions](generic-extensions.md) | Source-defined static capabilities, associated types, and finite boundary extensions |
 | [Sequence views and pipeline calls](sequence-pipelines.md) | Pipeline call composition, bounded lazy Read sequence APIs, traversal, and static execution |
-| [Operator capabilities](operator-capabilities.md) | Mapping existing tokens to checked operations; consumes generic evidence |
+| [Operator capabilities](operator-capabilities.md) | Mapping existing tokens to checked operations, canonical evidence, and operand/result contracts |
 | [Dynamic values](dynamic-values.md) | Erased holding forms, nominal conformance, and dispatch |
 | [Dynamic ownership](dynamic-ownership.md) | Unique/shared and native resource owners, allocator policy, construction in owned storage, and move-only Vector capabilities |
-| [Semantic execution](semantic-execution.md) | Interpreted closures, additional address observations, retained reference graphs, and host scripting/build-stage execution |
+| [Semantic execution](semantic-execution.md) | Interpreted closures, additional address observations, and retained reference graphs |
+| [Native project queries](project-builds.md) | Shared target declarations, project queries, declaration refresh, and generated-input publication |
 | [Compiler optimization](compiler-optimization.md) | Compiler and workspace-reuse costs, C++ realization, and formatting/output experiments preserving source contracts |
-| [Frontend analysis](frontend-analysis.md) | Recovering syntax, partial semantics, diagnostic ownership, query coordination, publication, and analysis fault isolation |
+| [Frontend analysis](frontend-analysis.md) | Lossless damaged syntax, snapshot-owned partial semantics, query coordination, cancellation, and analysis fault isolation |
 | [Data representation](data-representation.md) | Record, tuple, and enum representations, native-layout boundaries, compact handles, and collection layouts |
 | [Uninitialized storage](uninitialized-storage.md) | Construction destinations, partial initialization, native lifetime, and library storage in constant execution |
 | [Concurrency](concurrency.md) | Cross-thread values, memory ordering, threads, and synchronization |
 | [Structured async](structured-async.md) | Finite runtime-sized operation composition and cleanup |
 | [Documentation comments](doc-comments.md) | Source attachment, retained content, and its artifact consumer |
+
+## Capability boundaries
+
+Separate public API ownership, semantic knowledge, and implementation when
+selecting a delivery:
+
+| Responsibility | Boundary |
+| --- | --- |
+| Builtins | Compiler-owned types or operations with bounded source contracts |
+| Compiler knowledge | Facts used to check and realize type, access, lifetime, failure, and execution contracts, including ordinary source operations |
+| Runtime Craft | Shared native representations and execution mechanisms needed by generated programs |
+| Standard Craft | Public source declarations, reusable source implementations, domain policy, and capability-specific native adapters |
+
+One capability can use all four. A standard-module API may be builtin; a native
+implementation may belong to its Craft. Internal capability facts need public
+syntax or source impl evidence only when an API requires users to express them.
+
+State the contract supplied by each prerequisite. Compare a bounded builtin
+with a general mechanism using concrete consumers and total language, compiler,
+library, and runtime costs. General source-language mechanisms need independent
+source uses; rewriting an existing builtin alone does not select them. Internal
+abstractions are evaluated against their compiler, runtime, or tooling consumers.
+Shared checking and publication retain one semantic authority.
+
+Select delivery slices separately from the design's expressiveness. Record
+which uses a slice supports and the evidence it needs. Keep unresolved and
+deferred directions with their decision criteria; a smaller delivery establishes
+neither a permanent restriction nor a commitment to a particular extension.
 
 ## Status
 

@@ -54,7 +54,7 @@ auto SemanticExecutor::default_value(ConstructionTypeRef reference, ProgramOrigi
             }
             elements.push_back(std::move(*element));
         }
-        co_return bounded_value(
+        co_return constructed_value(
             ExecutionAggregateValue {
                 .type = reference,
                 .elements = std::move(elements),
@@ -74,17 +74,17 @@ auto SemanticExecutor::default_value(ConstructionTypeRef reference, ProgramOrigi
     const auto target = *concrete;
     const auto canonical = values.type_copy(target);
     if (std::holds_alternative<VectorTypeValue>(canonical.value)) {
-        co_return ExecutionAggregateValue {.type = target, .elements = {}, .capacity = 0uz};
+        co_return constructed_value(
+            ExecutionAggregateValue {.type = target, .elements = {}, .capacity = 0uz},
+            origin
+        );
     }
     if (const auto* builtin = std::get_if<BuiltinTypeValue>(&canonical.value)) {
         if (builtin_is_integer(builtin->kind)) {
             co_return ConstantAtom {.type = target, .value = IntegerConstant::zero()};
         }
         if (const auto layout = simd_layout(builtin->kind)) {
-            co_return ConstantAtom {
-                .type = target,
-                .value = SIMDConstant {.lanes = std::vector<std::uint32_t>(layout->width)}
-            };
+            co_return ConstantAtom {.type = target, .value = SIMDConstant {}};
         }
         switch (builtin->kind) {
             case BuiltinType::Bool:
@@ -141,7 +141,7 @@ auto SemanticExecutor::default_value(ConstructionTypeRef reference, ProgramOrigi
             }
             elements.push_back(std::move(*element));
         }
-        co_return bounded_value(
+        co_return constructed_value(
             ExecutionAggregateValue {
                 .type = target,
                 .elements = std::move(elements),

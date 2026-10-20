@@ -102,7 +102,7 @@ test "Interpolation interop: mixed folded failures clean backing before the hand
     check(::interpolation_probe::alive() == 0);
 }
 
-export struct FormatSubject {
+struct FormatSubject {
     format_identity: String
 }
 

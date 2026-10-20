@@ -1,7 +1,7 @@
-import .cross_model using { Payload, Token, Failure };
+import .cross_model using { Payload, Token, Failure }
 import "providers/cross_consumer.hpp";
 
-private import(cpp) fn cross_api_consumer() -> bool;
+private import(cpp) fn cross_api_consumer() -> bool = ::cross_api_consumer;
 
 export(cpp) fn make() -> Payload => { text: "native" };
 

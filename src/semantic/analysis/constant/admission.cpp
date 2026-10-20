@@ -5,6 +5,7 @@ import :diagnostics.code;
 import :semantic.analysis.constant.admission;
 import :semantic.analysis.operations;
 import :semantic.evaluation.admission;
+import :semantic.evaluation.standard;
 import :semantic.semir.body;
 import :semantic.semir.children;
 import :semantic.semir.constant;
@@ -143,7 +144,7 @@ auto ConstFunctionValidator::supported_type(ConstructionTypeRef type) const noex
                 using Value = std::remove_cvref_t<decltype(value)>;
                 if constexpr (std::same_as<Value, GenericCppNamedType>
                               || std::same_as<Value, GenericCppQueryType>) {
-                    return false;
+                    return standard_execution_type(draft, next);
                 } else if constexpr (std::same_as<Value, TypeID>) {
                     pending.emplace_back(value);
                 } else if constexpr (std::same_as<Value, GenericArrayType>) {
@@ -358,6 +359,15 @@ auto ConstFunctionValidator::check_body(const StructuredBodyDraft& body) noexcep
                         return;
                     }
                     if (expression->operation_reachable) {
+                        if ((std::holds_alternative<SemCpp>(expression->value)
+                             || std::holds_alternative<SemCppCall>(expression->value))
+                            && !standard_execution_supported(draft, *expression)) {
+                            reject(
+                                expression->origin,
+                                "native C++ operation has no compile-time implementation"
+                            );
+                            return;
+                        }
                         if (const auto reason = unsupported_execution_expression(*expression)) {
                             reject(expression->origin, std::string(*reason));
                             return;

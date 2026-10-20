@@ -169,31 +169,53 @@ auto BodyRealizer::lower_report(
         );
     }
     if (value.kind == ReportKind::Require || value.kind == ReportKind::Fail) {
-        emit_test_exit(report);
+        emit_stopped(report);
     }
     publish_report();
     co_return {};
 }
 
-auto BodyRealizer::emit_test_exit(LoweringStmtBuilder& destination) noexcept -> void {
+auto BodyRealizer::emit_stopped(LoweringStmtBuilder& destination) noexcept -> void {
     auto result = std::optional<TargetExpr>();
     if (const auto* callable = std::get_if<CallableBodyExit>(&inputs.exit)) {
-        if (!context.semantic().may_stop_test(callable->callable_id)) {
-            invariant_violation("test exit absent from callable transport");
+        if (!is_async() && !context.semantic().may_stop(callable->callable_id)) {
+            invariant_violation("stop exit absent from callable transport");
+        }
+        if (is_async()) {
+            destination.emit(
+                discard_statement(
+                    call_expression(intrinsic_expression(TargetSymbol::RuntimeAsyncRequestStop), {})
+                ),
+                true
+            );
+            if (local_result_exit) {
+                // Leave producer storage before the outer await propagates the
+                // stop. Its check precedes any result access.
+                destination.terminate(
+                    generated_statement(TargetGotoStmt {.label = local_result_exit->exit.label}),
+                    local_result_exit->exit.target
+                );
+                return;
+            }
+            emit_completion(
+                call_expression(
+                    static_member_expression(
+                        completion_type(),
+                        TargetIdentifier::from_spelling("stopped")
+                    ),
+                    {}
+                ),
+                LoweringExitKind::Failure,
+                destination
+            );
+            return;
         }
         result = call_expression(
             static_member_expression(
                 context.callable_result(callable->callable_id),
-                TargetIdentifier::from_spelling("failure")
+                TargetIdentifier::from_spelling("stopped")
             ),
-            target_expressions(
-                TargetExpr {
-                    .value = TargetConstructionExpr {
-                        .type = context.intrinsic_type(TargetSymbol::RuntimeTestStopped, false),
-                        .initializer = {}
-                    }
-                }
-            )
+            {}
         );
     }
     destination.terminate(

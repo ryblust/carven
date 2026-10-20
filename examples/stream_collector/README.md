@@ -5,7 +5,7 @@ removes duplicate records, and returns a structured report.
 
 1. [`main.cpp`](main.cpp) creates two native input streams and calls Carven's exported `collect`.
 2. [`workflow.cv`](workflow.cv) calls the imported C++ `next_record`, keeps unique records, and counts the input and duplicates.
-3. C++ receives the Carven `Report`, reads its fields, and prints the records and statistics.
+3. C++ checks the returned `Outcome<Report>`, reads the successful report's fields, and prints the records and statistics.
 
 The first stream contains `alpha`, `beta`, `alpha`, and `gamma`. The second
 contains `beta`, `delta`, `gamma`, and `delta`. Carven drains the first stream,
@@ -46,8 +46,9 @@ delta
 
 The native declaration uses `std::string_view`; the Carven contract uses `str`.
 The generated API header supplies the complete `Report` representation, including
-its `Vector<String>`. C++ uses `auto` for the returned report, accesses its fields,
-and iterates its records directly. One application target compiles `main.cpp`,
+its `Vector<String>`; `Report` remains a bare project type. The `import(cpp)`
+contract admits stopping, so C++ checks `success_if()` before accessing the report
+and iterating its records. One application target compiles `main.cpp`,
 `workflow.cv`, and `stream.cpp` together. The native behavior test replaces the
 C++ entry with `checks.cpp`, checking record order, counts, and report ownership
 after the input streams are destroyed.

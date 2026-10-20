@@ -4,12 +4,12 @@ This page defines TCP operations and native host responsibilities for `std::net`
 
 ## Source operations
 
-`std::net` provides `ConnectionView`, `NetError`, and cold operations
+`std::net` provides `NetConnectionView`, `NetError`, and cold operations
 over connections supplied by a native host:
 
 | Function | Contract |
 | --- | --- |
-| `read(view, max_bytes)` | Require a positive limit; return `Read<Vector<u8>>::Data` with at least one byte, or `End` for normal receive EOF |
+| `read(view, max_bytes)` | Require a positive limit; return `ReadResult<Vector<u8>>::Data` with at least one byte, or `End` for normal receive EOF |
 | `write(view, &&bytes)` | Consume the buffer and return a possibly short byte count; empty input succeeds with zero |
 | `write_all(view, &&bytes)` | Consume the buffer, retain it through short writes, and complete only after all bytes have been sent |
 
@@ -40,7 +40,7 @@ Destruction requires no pending operations.
 
 Use the generated `<carven/api/crafts/carven/std/net.hpp>` and
 `carven::api::crafts::carven::std::net::borrow({&connection})` to construct
-a Carven `ConnectionView`. Bind the view to a named variable. A null native view
+a Carven `NetConnectionView`. Bind the view to a named variable. A null native view
 reports `Closed` when used for I/O. The source holder is checked across cold and
 active operations; the host must additionally retain its pointed-to connection,
 network, and hidden native state until every provider has finished, including

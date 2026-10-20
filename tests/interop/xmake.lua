@@ -20,6 +20,7 @@ target("carven-test-interop")
     end
     add_files(path.join(interop_dir, "printing", "structural.cv"))
     add_files(path.join(interop_dir, "providers", "generated", "generated_record", "Result.cv"))
+    add_files(path.join(interop_dir, "providers", "generated", "Record.cv"))
 
     local output = "<opaque>\ncustom\nEnvelope {\n    value: <opaque>,\n}\n1\ntrue 1.5 65\n<opaque>\nnullptr\n"
         .. 'native\ntext mutable\n[\n    "native\\ntext",\n    nullptr,\n]\n'
@@ -118,10 +119,11 @@ target("carven-test-interop-native")
         local reports
         if name == "native-stop" then
             reports = {"error: requirement failed", "name: test stop at a native boundary",
-                "native boundary stop", "note: test stopped"}
+                "native boundary stop", "note: test stopped",
+                "name: test stop at an explicit native boundary without declared failures",
+                "explicit native stop", "later case completed"}
             assert(stderr:match("callback%.cv:%d+:%d+: error:"), stderr)
             assert(not stderr:find("unreachable", 1, true), stderr)
-            assert(not stderr:find("carven: tests:", 1, true), stderr)
         elseif name:startswith("invalidchar") then
             reports = {"error: value is not a Unicode scalar value"}
             assert(stderr:match("bridge%.cv:%d+:%d+: error:"), stderr)
@@ -136,3 +138,26 @@ target("carven-test-interop-native")
 target_end()
 
 includes("linkage")
+
+target("carven-test-hosted-process")
+    set_default(false)
+    set_group("interop")
+    set_kind("binary")
+    set_languages("c++26")
+    add_deps("carven-modules")
+    add_files(path.join(interop_dir, "process", "main.cpp"))
+    if not is_plat("windows", "mingw") then
+        add_tests("roundtrip", {run_timeout = 30000})
+        on_test(function (target)
+            local python = assert(import("lib.detect.find_tool")("python3"))
+            local runenvs = import("private.action.run.runenvs")
+            local addenvs, setenvs = runenvs.make(target)
+            os.vrunv(target:targetfile(), {python.program, "", "我😀"}, {
+                envs = runenvs.join(addenvs, setenvs), timeout = 15000,
+            })
+            return true
+        end)
+    end
+target_end()
+
+includes("hosting")

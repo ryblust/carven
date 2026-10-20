@@ -9,6 +9,29 @@ import std;
 namespace {
 
 const TestSuite suite([] static noexcept {
+    "Declaration surfaces: C++ interfaces retain the ordinary module-domain audience"_test =
+        [] static noexcept {
+            constexpr auto signatures = std::to_array<std::string_view>({
+                "fn value(input: Value) -> Value => input;",
+                "fn value(input: [Value; 2]) -> [Value; 2] => input;",
+                "fn value(input: ptr<Value>) -> ptr<Value> => input;",
+                "fn value(input: fn(Value) -> Value) -> Value => input(Value {});",
+                "fn value() => Value {};",
+                "fn value() throw Failure { throw Failure::Invalid; }",
+                "async fn value(input: Value) -> Value throw Failure => input;",
+            });
+            each(signatures, std::identity {}, [&](const auto& signature) noexcept {
+                const auto types = std::string("struct Value {} enum Failure { Invalid, } ");
+                expect(
+                    analyze_test_errors(types + "export(cpp) " + std::string(signature)).empty()
+                );
+                expect_diagnostic(
+                    analyze_test_errors(types + "export " + std::string(signature)),
+                    DiagnosticCode::TypeVisibilityLeak
+                );
+            });
+        };
+
     "Declaration surfaces: function result visibility follows the resolved type"_test =
         [] static noexcept {
             constexpr auto sources = std::array<std::string_view, 4uz> {

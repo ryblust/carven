@@ -1,4 +1,4 @@
-import std::simd.floats using { block_count, load_block };
+import std::simd.floats using { block_count, load_block }
 
 struct Gains {
     voice: f32,

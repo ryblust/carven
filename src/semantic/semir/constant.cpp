@@ -179,6 +179,12 @@ auto ConstantStoreBuilder::intern(ConstantFact fact) noexcept -> ConstantID {
             mix(value.value.index());
         } else if constexpr (std::same_as<Value, VectorConstant>) {
             mix(value.capacity);
+        } else if constexpr (std::same_as<Value, ByteSequenceConstant>) {
+            mix(value.capacity);
+            mix(std::hash<std::string_view>()(std::string_view(
+                reinterpret_cast<const char*>(value.bytes.data()),
+                value.bytes.size()
+            )));
         } else if constexpr (std::same_as<Value, RangeConstant>) {
             mix(value.begin.magnitude());
             mix(value.begin.negative());
@@ -189,7 +195,7 @@ auto ConstantStoreBuilder::intern(ConstantFact fact) noexcept -> ConstantID {
             mix(value.magnitude());
             mix(value.negative());
         } else if constexpr (std::same_as<Value, SIMDConstant>) {
-            for (const auto lane : value.lanes) {
+            for (const auto lane : value.words) {
                 mix(lane);
             }
         } else if constexpr (std::same_as<Value, BooleanConstant>) {
@@ -256,14 +262,37 @@ auto ConstantStoreBuilder::seal() && noexcept -> ConstantStore {
 
 auto matches_simd_constant(BuiltinType owner, const SIMDConstant& value) noexcept -> bool {
     const auto layout = simd_layout(owner);
-    if (!layout || value.lanes.size() != layout->width) {
+    if (!layout) {
+        return false;
+    }
+    const auto element = owner == layout->mask ? BuiltinType::U8 : layout->element;
+    const auto used_words = element == BuiltinType::F32 ? layout->width : (layout->width + 3) / 4;
+    if (!std::ranges::all_of(
+            std::span(value.words).subspan(used_words),
+            [](auto word) static noexcept { return word == 0u; }
+        )) {
         return false;
     }
     if (owner == layout->mask) {
-        return std::ranges::all_of(value.lanes, [](auto lane) static noexcept {
-            return lane == 0u || lane == 255u;
-        });
+        return std::ranges::all_of(
+            value.lanes(element, layout->width),
+            [](auto lane) static noexcept { return lane == 0u || lane == 255u; }
+        );
     }
-    return layout->element == BuiltinType::F32
-        || std::ranges::all_of(value.lanes, [](auto lane) static noexcept { return lane <= 255u; });
+    return true;
+}
+
+auto constant_atom(const ConstantFact& fact) noexcept -> std::optional<ConstantAtom> {
+    return fact.value.visit([&](const auto& value) noexcept -> std::optional<ConstantAtom> {
+        if constexpr (std::constructible_from<ConstantAtomValue, decltype(value)>) {
+            return ConstantAtom {.type = fact.type, .value = value};
+        }
+        return std::nullopt;
+    });
+}
+
+auto constant_fact(const ConstantAtom& atom) noexcept -> ConstantFact {
+    return atom.value.visit([&](const auto& value) noexcept {
+        return ConstantFact {.type = atom.type, .value = value};
+    });
 }

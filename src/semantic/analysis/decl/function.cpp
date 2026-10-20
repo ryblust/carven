@@ -10,7 +10,6 @@ import :frontend.ast.tree;
 import :semantic.analysis.decl.context;
 import :semantic.analysis.decl.resolver;
 import :semantic.analysis.expr.scope;
-import :semantic.analysis.interop;
 import :semantic.analysis.names;
 import :semantic.analysis.nominal.containment;
 import :semantic.analysis.operations;
@@ -34,15 +33,6 @@ auto DeclResolver::resolve_function(
     const ASTFunctionDecl& function,
     Span item_span
 ) noexcept -> AnalysisTask<void> {
-    if (function.type_parameters) {
-        co_return std::unexpected(declaration_failure(
-            draft,
-            symbol.module_id,
-            function.type_parameters->span,
-            DiagnosticCode::TypeGenericDefinition,
-            "type-parameterized function operations are not supported"
-        ));
-    }
     const auto cpp_import = std::holds_alternative<ASTCppImportForm>(function.implementation);
     if (function.async_span && symbol.class_operation && symbol.class_operation->receiver) {
         co_return std::unexpected(declaration_failure(
@@ -91,7 +81,7 @@ auto DeclResolver::resolve_function(
     }
     for (const auto name_span : names) {
         auto name = draft.source_slice_copy(symbol.module_id, name_span);
-        const auto [prior, inserted] = parameter_names.emplace(name, name_span);
+        const auto [prior, inserted] = parameter_names.emplace(std::move(name), name_span);
         if (inserted) {
             continue;
         }
@@ -149,7 +139,9 @@ auto DeclResolver::resolve_function(
                 {.stage = stage,
                  .access = access,
                  .type = draft.intern_type(
-                     {.value = StructTypeValue {.structure = symbol.class_operation->owner}}
+                     {.value = StructTypeValue {
+                          .structure = std::get<StructID>(symbol.class_operation->owner)
+                      }}
                  )}
             );
             continue;
@@ -242,10 +234,6 @@ auto DeclResolver::resolve_function(
             : FailureContractPolicy::UndeclaredExplicit;
     }
 
-    auto head_boundary = validate_cpp_provider(draft, symbol.module_id, function);
-    if (!head_boundary.has_value()) {
-        co_return std::unexpected(head_boundary.error());
-    }
     draft.define_declaration(
         form.function,
         FunctionDeclaration {
@@ -293,19 +281,14 @@ auto DeclResolver::resolve_function(
     }
     if (cpp_import) {
         const auto& imported = std::get<ASTCppImportForm>(function.implementation);
-        auto target = CppNameReference {
-            .context_module = catalog.find_module(symbol.module_id)->declaration,
-            .lookup = CppNameLookup::Global,
-            .components = {symbol.name},
-        };
+        auto target = std::optional<CppNameReference>();
         if (imported.target) {
             auto selected = lookup_cpp_name(
                 draft,
                 catalog,
                 import_usage,
                 symbol.module_id,
-                CppNameLookup::Global,
-                imported.target->components
+                {.global_root = imported.target->span, .components = imported.target->components}
             );
             if (!selected) {
                 co_return std::unexpected(selected.error());

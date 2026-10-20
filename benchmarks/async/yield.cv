@@ -1,12 +1,12 @@
 import std::async using yield_once;
 import "measurement.hpp";
 
-import(cpp) fn cv_async_bench_iterations() -> u64;
-import(cpp) fn cv_async_bench_seed() -> u64;
-import(cpp) fn cv_async_bench_depth() -> u64;
-import(cpp) fn cv_async_bench_begin();
-import(cpp) fn cv_async_bench_finish(checksum: u64);
-import(cpp) fn cv_async_bench_observe_stack();
+import(cpp) fn cv_async_bench_iterations() -> u64 = ::cv_async_bench_iterations;
+import(cpp) fn cv_async_bench_seed() -> u64 = ::cv_async_bench_seed;
+import(cpp) fn cv_async_bench_depth() -> u64 = ::cv_async_bench_depth;
+import(cpp) fn cv_async_bench_begin() = ::cv_async_bench_begin;
+import(cpp) fn cv_async_bench_finish(checksum: u64) = ::cv_async_bench_finish;
+import(cpp) fn cv_async_bench_observe_stack() = ::cv_async_bench_observe_stack;
 
 async fn leaf(value: u64, deferred: bool) -> u64 {
     cv_async_bench_observe_stack();

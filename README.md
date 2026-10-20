@@ -96,27 +96,30 @@ test "twice" {
 }
 
 const answer = twice(21);
+
 println(answer);
 ```
 
 Run the program from that directory:
 
 ```shell
-carven main.cv
+carven run main.cv
 ```
 
-It prints `42`. `answer` is computed during compilation. Bare source invocation
-compiles and runs a native program using a native C++ toolchain.
+It prints `42`. `answer` is computed during compilation. `carven run` builds a
+native program through `std::build`, keeps its output in `build/`, then executes
+it. Project configuration is optional.
 
-Run the same file's tests natively:
+Run the same file's supported tests through interpretation:
 
 ```shell
-carven --tests main.cv
+carven interpret --tests main.cv
 ```
 
-With `--tests`, the driver runs the tests instead of the program entry.
-Compile-time execution and `const test` still run during analysis.
-Add `--timings` to see time spent in each command stage.
+With `interpret --tests`, the driver runs the tests instead of the program entry and
+reports their results. Compile-time execution and
+`const test` still run during analysis. Add `--timings` to see time spent in each
+command stage.
 
 Use `check` for semantic checks and compile-time execution, `interpret` to run
 the supported subset without native compilation, or `compile` to inspect or
@@ -128,16 +131,54 @@ carven interpret main.cv
 carven compile --stdout main.cv
 ```
 
-`compile --stdout` displays generated C++; `compile -o <dir>` writes the artifacts
-to a directory. Commands collect installed and project `crafts/` sources
-automatically. Name other application files explicitly.
-Direct execution uses `CXX`, defaulting to `clang++`;
-arguments after `--` are passed to the program.
+`compile --stdout` displays generated C++; `compile -o <dir>` writes its artifacts
+below the chosen directory. Name all application sources in explicit-file commands.
+`carven build` without sources executes the current directory's `build.cv`.
+Use `carven build main.cv` or `carven run main.cv` for an explicit source.
+Arguments after `carven run ... --` are passed to the program.
+
+## Build a project
+
+With `carven` on `PATH` and a C++20 compiler available, add this
+`build.cv` beside the same `main.cv`:
+
+```cv
+import std::build using build;
+
+build({
+    targets: [{
+        name: "app",
+        kind: .Executable,
+        sources: ["main.cv"],
+        ...
+    }],
+    ...
+})?;
+```
+
+Run from the project directory:
+
+```shell
+carven build
+carven run app
+```
+
+This builds `build/app` (`build/app.exe` on Windows). `carven run app` builds and
+runs it, printing `42`.
+
+`build.cv` uses ordinary top-level statements. The `build` function constructs
+native outputs and, under `carven run`, runs the selected executable before
+returning the output records. Add targets for executables and static libraries,
+and configure native sources, include
+directories, compiler flags, and libraries as needed. Functions, conditions, and
+loops can assemble the same plan; custom tools and code generators run as
+ordinary program statements before building.
 
 ## C++ project integration
 
-For a project build, put the same `main.cv` in a new directory and add this
-`xmake.lua`. Use Xmake 3.1.1 or later and a C++20-capable toolchain:
+To use Carven in an Xmake-managed C++ project, put the same `main.cv` in a new
+directory and add this `xmake.lua`. Use Xmake 3.1.1 or later and a C++20-capable
+toolchain:
 
 ```lua
 add_repositories("carven-xmake-repo https://github.com/ryblust/carven-xmake-repo.git")
@@ -158,11 +199,10 @@ xmake test
 `xmake run app` prints `42`; `xmake test` builds and runs the `twice` test from
 `main.cv`.
 
-The package installs the compiler. The rule runs Carven analysis and C++ generation,
-sharing semantic results and generated C++ for the full installed standard library
-within the configured project. It registers the sources on your target; Xmake
-manages native compilation, linking, and incremental builds. Add your C++ sources,
-include directories, and library dependencies with ordinary Xmake settings.
+The package installs the compiler. The rule generates C++ from the target's Carven
+sources and registers the required implementations; Xmake manages native
+compilation, linking, and incremental builds. Add your C++ sources, include
+directories, and library dependencies with ordinary Xmake settings.
 
 ### Compile generated C++ directly
 
@@ -212,6 +252,7 @@ to the C++ toolchain.
   [Grammar](docs/language/grammar.md), and [Language Reference](docs/language/README.md)
 - **Use the compiler:** [CLI Reference](docs/toolchain/cli.md) and
   [Toolchain and artifacts](docs/toolchain/artifacts.md)
+- **Build projects:** [Build scripts and API](docs/language/build.md)
 - **Understand the implementation:** [Compiler Architecture](docs/compiler/README.md)
   and [C++ Backend](docs/compiler/backend/README.md)
 - **Develop the repository:** [Testing](docs/development/testing.md) and
@@ -240,15 +281,26 @@ Build it before running the test suite:
 ./xmakew test
 ```
 
+Run the built compiler directly through Xmake from the checkout root:
+
+```shell
+./xmakew run carven --version
+./xmakew run carven check examples/hello.cv
+```
+
+This uses the build target without installing it or adding it to `PATH`.
+On Windows, use `.\xmakew.ps1`. Tutorial and example commands use `carven`
+directly and assume it is on `PATH`.
+
 The compiler is written to `build/<platform>/<arch>/<mode>/` by default.
-Run `./xmakew show -t carven` (`.\xmakew.ps1 show -t carven` on Windows) to find
-the `targetfile` for your configuration. Add its containing directory to `PATH`
-as shown in [Run a program](#run-a-program). Keep the executable in the checkout
-so it can locate the matching Crafts resources.
+To use it directly, run `./xmakew show -t carven` to find the `targetfile` for
+your configuration and add its containing directory to `PATH`. Keep the executable
+in the checkout so it can locate the matching Crafts resources.
 
 Format the repository's C++ and Carven sources, or check their formatting:
 
 ```shell
+./xmakew build carven-format
 ./xmakew format
 ./xmakew format-check
 ```

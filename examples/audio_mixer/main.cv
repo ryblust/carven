@@ -1,6 +1,6 @@
-import .mix using { gains, mix, rms, MixError };
+import .mix using { gains, mix, rms, MixError }
 import std::core using NumberParseError;
-import std::utf using { split_once, TextError };
+import std::utf using { split_once, TextError }
 
 enum MixerError {
     UnknownArgument(String),

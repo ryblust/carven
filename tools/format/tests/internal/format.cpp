@@ -19,7 +19,7 @@ auto check_format(std::string_view input, std::string_view expected) noexcept ->
     }
     const auto result = format_source(sources, *id);
     if (!expect(result.has_value()).note([&] noexcept {
-            return render_diagnostics(result.error(), sources);
+            return render_diagnostics(result.error(), sources, false);
         })) {
         return;
     }
@@ -30,7 +30,7 @@ auto check_format(std::string_view input, std::string_view expected) noexcept ->
     }
     const auto repeated = format_source(sources, *formatted_id);
     if (!expect(repeated.has_value()).note([&] noexcept {
-            return render_diagnostics(repeated.error(), sources);
+            return render_diagnostics(repeated.error(), sources, false);
         })) {
         return;
     }
@@ -61,7 +61,7 @@ auto check_format(std::string_view input, std::string_view expected) noexcept ->
     }
     const auto normalized = format_source(sources, *perturbed_id);
     if (!expect(normalized.has_value()).note([&] noexcept {
-            return render_diagnostics(normalized.error(), sources);
+            return render_diagnostics(normalized.error(), sources, false);
         })) {
         return;
     }
@@ -171,6 +171,8 @@ const TestSuite suite([] static noexcept {
         constexpr auto cases = std::to_array<std::pair<std::string_view, std::string_view>>({
             {"Incomplete parameter list", "fn f("},
             {"Invalid character", "@"},
+            {"Semicolon after source import list", "import math using { first };"},
+            {"Semicolon after native import list", "import <vector> using std::{ vector };"},
         });
         each(
             cases,
@@ -201,13 +203,13 @@ const TestSuite suite([] static noexcept {
             prefixes,
             [](std::string_view prefix) static noexcept { return prefix; },
             [&](std::string_view prefix) noexcept {
-                const auto name = std::string(100uz - prefix.size() - 4uz, 'x');
-                const auto fitting = std::string(prefix) + " " + name + " };";
+                const auto name = std::string(100uz - prefix.size() - 3uz, 'x');
+                const auto fitting = std::string(prefix) + " " + name + " }";
                 check_format(fitting, fitting + "\n");
-                check_format(std::string(prefix) + name + ",};", fitting + "\n");
+                check_format(std::string(prefix) + name + ",}", fitting + "\n");
                 check_format(
-                    std::string(prefix) + name + "x};",
-                    std::string(prefix) + "\n    " + name + "x,\n};\n"
+                    std::string(prefix) + name + "x}",
+                    std::string(prefix) + "\n    " + name + "x,\n}\n"
                 );
             }
         );
@@ -222,15 +224,15 @@ const TestSuite suite([] static noexcept {
 
     "Format: import trailing commas follow layout and preserve comments"_test = [] static noexcept {
         constexpr auto cases = std::to_array<std::pair<std::string_view, std::string_view>>({
-            {"import math using {first, second,};", "import math using { first, second };\n"},
-            {"import math using {\nfirst,\nsecond,\n};", "import math using { first, second };\n"},
-            {"import math using {first // last name\n};",
-             "import math using {\n    first, // last name\n};\n"},
-            {"import math using {first, // last comma\n};",
-             "import math using {\n    first, // last comma\n};\n"},
-            {"import math using {first // before comma\n, // after comma\n};",
-             "import math using {\n    first // before comma\n    , // after comma\n};\n"},
-            {"import math using {first\n\n};", "import math using { first };\n"},
+            {"import math using {first, second,}", "import math using { first, second }\n"},
+            {"import math using {\nfirst,\nsecond,\n}", "import math using { first, second }\n"},
+            {"import math using {first // last name\n}",
+             "import math using {\n    first, // last name\n}\n"},
+            {"import math using {first, // last comma\n}",
+             "import math using {\n    first, // last comma\n}\n"},
+            {"import math using {first // before comma\n, // after comma\n}",
+             "import math using {\n    first // before comma\n    , // after comma\n}\n"},
+            {"import math using {first\n\n}", "import math using { first }\n"},
         });
         each(
             cases,
@@ -238,16 +240,22 @@ const TestSuite suite([] static noexcept {
             [](const auto& input) static noexcept { check_format(input.first, input.second); }
         );
         check_format(
-            "import <print> using std::{first, second,};",
-            "import <print> using std::{ first, second };\n"
+            "import <print> using std::{first, second,}",
+            "import <print> using std::{ first, second }\n"
         );
         check_format(
-            "import \"provider.hpp\" using {first, second,};",
-            "import \"provider.hpp\" using { first, second };\n"
+            "import \"provider.hpp\" using {first, second,}",
+            "import \"provider.hpp\" using { first, second }\n"
         );
         check_format(
-            "import math using {first,}; fn f(){call(1,);}",
-            "import math using { first };\n\nfn f() {\n    call(1,);\n}\n"
+            "import math using {first,} fn f(){call(1,);}",
+            "import math using { first }\n\nfn f() {\n    call(1,);\n}\n"
+        );
+        check_format(
+            "import .api using {Value as Model,number as read}"
+            "import <vector> using std::{vector,allocator}import std::core using String;",
+            "import .api using { Value as Model, number as read }\n"
+            "import <vector> using std::{ vector, allocator }\nimport std::core using String;\n"
         );
     };
 

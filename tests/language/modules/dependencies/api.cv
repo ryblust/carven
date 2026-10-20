@@ -1,5 +1,5 @@
 import .implementation using normalize;
-import .model using { Model, make_model };
+import .model using { Model, make_model }
 
-export fn identity(model: Model) -> Model => model;
-export fn build(value: i32) -> Model => make_model(normalize(value));
+fn identity(model: Model) -> Model => model;
+fn build(value: i32) -> Model => make_model(normalize(value));

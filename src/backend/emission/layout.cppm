@@ -107,5 +107,4 @@ private:
     LayoutNodeID empty_id;
 };
 
-auto render_layout(const LayoutDocument& document, std::size_t line_width = 100) noexcept
-    -> std::string;
+auto render_layout(const LayoutDocument& document, std::size_t line_width) noexcept -> std::string;

@@ -40,10 +40,34 @@ struct NullPointerConstant final {
     constexpr auto operator==(const NullPointerConstant&) const noexcept -> bool = default;
 };
 
-// Each lane stores its representation bits. The owning type determines width,
-// element interpretation, and mask semantics.
+// At most 256 representation bits, with unused bits zero. The owning type
+// determines lane width and count; masks use byte lanes. No lane count or
+// allocation is needed in the value itself.
 struct SIMDConstant final {
-    std::vector<std::uint32_t> lanes;
+    std::array<std::uint32_t, 8> words {};
+
+    constexpr auto lane(std::size_t index, BuiltinType element) const noexcept -> std::uint32_t {
+        return element == BuiltinType::F32 ? words[index]
+                                           : (words[index / 4] >> ((index % 4) * 8)) & 255u;
+    }
+
+    constexpr auto set_lane(std::size_t index, BuiltinType element, std::uint32_t bits) noexcept
+        -> void {
+        if (element == BuiltinType::F32) {
+            words[index] = bits;
+        } else {
+            const auto shift = (index % 4) * 8;
+            words[index / 4] = (words[index / 4] & ~(255u << shift)) | ((bits & 255u) << shift);
+        }
+    }
+
+    auto lanes(BuiltinType element, std::size_t count) const noexcept -> auto {
+        return std::views::iota(0uz, count)
+            | std::views::transform([this, element](auto index) noexcept {
+                   return lane(index, element);
+               });
+    }
+
     auto operator==(const SIMDConstant&) const noexcept -> bool = default;
 };
 
@@ -123,6 +147,13 @@ struct SliceConstant final {
     auto operator==(const SliceConstant&) const noexcept -> bool = default;
 };
 
+// Byte vectors and slices retain contiguous contents; their type determines ownership.
+struct ByteSequenceConstant final {
+    std::vector<std::uint8_t> bytes;
+    std::size_t capacity;
+    auto operator==(const ByteSequenceConstant&) const noexcept -> bool = default;
+};
+
 struct TupleConstant final {
     std::vector<ConstantID> elements;
     auto operator==(const TupleConstant&) const noexcept -> bool = default;
@@ -149,6 +180,7 @@ using ConstantValue = std::variant<
     ArrayConstant,
     SliceConstant,
     VectorConstant,
+    ByteSequenceConstant,
     TupleConstant,
     VoidConstant>;
 
@@ -157,6 +189,32 @@ struct ConstantFact final {
     ConstantValue value;
     auto operator==(const ConstantFact&) const noexcept -> bool = default;
 };
+
+// Inline constants have no backing storage. Folding and execution use the same
+// scalar representation; persistent compound facts retain child identities.
+using ConstantAtomValue = std::variant<
+    SIMDConstant,
+    IntegerConstant,
+    RangeConstant,
+    F32Constant,
+    F64Constant,
+    BooleanConstant,
+    CharacterConstant,
+    TextConstant,
+    CStringConstant,
+    NullPointerConstant,
+    NumericEnumConstant,
+    VoidConstant>;
+
+struct ConstantAtom final {
+    TypeID type;
+    ConstantAtomValue value;
+};
+
+static_assert(std::is_trivially_copyable_v<ConstantAtom>);
+
+auto constant_atom(const ConstantFact& fact) noexcept -> std::optional<ConstantAtom>;
+auto constant_fact(const ConstantAtom& atom) noexcept -> ConstantFact;
 
 template<typename Lookup>
 auto simd_static_control_valid(
@@ -288,6 +346,18 @@ auto constant_matches_type(
             }
             const auto expected = fields(record->structure);
             return expected && children_match(value.fields, *expected);
+        } else if constexpr (std::same_as<Value, ByteSequenceConstant>) {
+            const auto* vector = std::get_if<VectorTypeValue>(&type);
+            const auto* slice = std::get_if<SliceTypeValue>(&type);
+            if ((!vector && !slice)
+                || value.capacity < value.bytes.size()
+                || (slice && value.capacity != value.bytes.size())) {
+                return false;
+            }
+            const auto element = types(vector ? vector->element : slice->element);
+            return element
+                && element->value
+                == CanonicalTypeValue {BuiltinTypeValue {.kind = BuiltinType::U8}};
         } else if constexpr (std::same_as<Value, ArrayConstant>
                              || std::same_as<Value, SliceConstant>
                              || std::same_as<Value, VectorConstant>) {
@@ -310,6 +380,14 @@ auto constant_matches_type(
                     return false;
                 }
                 element = slice->element;
+            }
+            if constexpr (!std::same_as<Value, ArrayConstant>) {
+                const auto canonical_element = types(*element);
+                if (!canonical_element
+                    || canonical_element->value
+                        == CanonicalTypeValue {BuiltinTypeValue {.kind = BuiltinType::U8}}) {
+                    return false;
+                }
             }
             for (const auto id : value.elements) {
                 const auto child = constants(id);

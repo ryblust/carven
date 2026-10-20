@@ -86,7 +86,7 @@ const TestSuite suite([] static noexcept {
                 .provider_source = "const shared = 42;\n",
                 .consumer_path = "crafts.alpha.user",
                 .consumer_source = "import api using shared;\n"
-                                   "export fn read() -> i32 { return shared; }\n",
+                                   "fn read() -> i32 { return shared; }\n",
                 .succeeds = true,
             },
             {
@@ -95,7 +95,7 @@ const TestSuite suite([] static noexcept {
                 .provider_source = "const shared = 42;\n",
                 .consumer_path = "crafts.beta.user",
                 .consumer_source = "import alpha::api using shared;\n"
-                                   "export fn read() -> i32 { return shared; }\n",
+                                   "fn read() -> i32 { return shared; }\n",
                 .succeeds = false,
             },
             {
@@ -104,7 +104,7 @@ const TestSuite suite([] static noexcept {
                 .provider_source = "export const shared: i32 = 42;\n",
                 .consumer_path = "crafts.beta.user",
                 .consumer_source = "import alpha::api using shared;\n"
-                                   "export fn read() -> i32 { return shared; }\n",
+                                   "fn read() -> i32 { return shared; }\n",
                 .succeeds = true,
             },
         });

@@ -16,11 +16,46 @@ for _, variant in ipairs({
         add_rules("@carven/carven", {tests = true})
         add_tests("default", {run_timeout = 30000})
         if variant.portable then
-            add_files("carven/std/utf/cases.cv", "carven/std/utf/blocks.cv", "carven/std/json/runs.cv")
+            add_files("carven/std/utf/cases.cv", "carven/std/utf/blocks.cv",
+                "carven/std/utf/text.cv", "carven/std/json/runs.cv")
             add_files("carven/std/simd/bytes.cv", "carven/std/simd/floats.cv",
                 "carven/std/simd/primitives.cv", "carven/std/simd/scan.cv")
         else
-            add_files("carven/**.cv")
+            add_files("carven/**.cv", "fs/bridge.cv")
         end
     target_end()
 end
+
+target("carven-test-native-async")
+    set_default(false)
+    set_group("crafts")
+    set_kind("binary")
+    set_languages("c++20")
+    add_rules("@carven/carven")
+    add_files("async/operations.cv")
+    if not is_plat("windows", "mingw") then
+        add_tests("operations", {run_timeout = 30000})
+    end
+target_end()
+
+-- The public process contract uses the same source as its hosted consumer.
+target("carven-test-native-process")
+    set_default(false)
+    set_group("crafts")
+    set_kind("binary")
+    set_languages("c++20")
+    add_rules("@carven/carven")
+    add_files("process/bridge.cv")
+    if not is_plat("windows", "mingw") then
+        add_tests("roundtrip", {run_timeout = 30000})
+        on_test(function (target)
+            local python = assert(import("lib.detect.find_tool")("python3"))
+            local runenvs = import("private.action.run.runenvs")
+            local addenvs, setenvs = runenvs.make(target)
+            os.vrunv(target:targetfile(), {python.program, "", "我😀"}, {
+                envs = runenvs.join(addenvs, setenvs), timeout = 15000,
+            })
+            return true
+        end)
+    end
+target_end()

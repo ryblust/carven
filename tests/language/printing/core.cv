@@ -49,6 +49,11 @@ fn replace_order(&value: PrintedOrder) -> i32 {
     return 1;
 }
 
+fn replace_money(&value: PrintedMoney) -> i32 {
+    value.cents = 99;
+    return 1;
+}
+
 fn output_number(output: fn(i32) -> void, value: i32) {
     output(value);
 }
@@ -111,6 +116,8 @@ fn main() {
     text = "before";
     println(42, text, replace_text(&text));
     println(18446744073709551615u64, -9223372036854775808i64);
+    var money = PrintedMoney { 1250 };
+    println(money, replace_money(&money), money);
     var order = PrintedOrder {
         PrintedMoney { 1250 },
         ["a", "b\n"]

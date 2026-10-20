@@ -32,9 +32,11 @@ auto count_nodes(std::string source) noexcept -> std::size_t {
     const auto semantic_owner = analyze_test_program(std::move(source));
     const auto compilation = PlannedCompilation::build(
         semantic_owner,
-        {.test_mode = TestGenerationMode::None,
-         .linkage_domain = *LinkageDomain::explicit_value("display"),
-         .library = std::nullopt},
+        {
+            .test_mode = TestGenerationMode::None,
+            .linkage_domain = *LinkageDomain::explicit_value("display"),
+            .library = std::nullopt,
+        },
         {}
     );
     auto query = DisplayQuery {.nodes = 0uz};

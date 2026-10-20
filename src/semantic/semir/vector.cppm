@@ -7,6 +7,7 @@ enum class VectorIntrinsic {
     Length,
     IsEmpty,
     Push,
+    Append,
     Remove,
     Clear,
     Capacity,
@@ -35,6 +36,8 @@ constexpr auto vector_intrinsic_contract(VectorIntrinsic intrinsic) noexcept
         case VectorIntrinsic::IsEmpty:  return {AccessMode::Read, std::nullopt, BuiltinType::Bool};
         case VectorIntrinsic::Push:
             return {AccessMode::Write, VectorIntrinsicArgument::Element, BuiltinType::Void};
+        case VectorIntrinsic::Append:
+            return {AccessMode::Write, VectorIntrinsicArgument::Slice, BuiltinType::Void};
         case VectorIntrinsic::Remove:
             return {
                 AccessMode::Write,

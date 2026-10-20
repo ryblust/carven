@@ -16,8 +16,8 @@ AnalysisCatalogBuilder::AnalysisCatalogBuilder(
         for (auto& symbol : result.symbols) {
             symbol.item_id.reset();
         }
-        for (auto& module : result.modules) {
-            module.items.clear();
+        for (auto& module_decl : result.modules) {
+            module_decl.items.clear();
         }
         seed->catalog.reset();
     }

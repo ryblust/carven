@@ -70,8 +70,8 @@ const TestSuite suite([] static noexcept {
                 parse_program(sources, SourceBatch {.modules = inputs}, {}, retained);
             require(!fresh.has_value());
             require(!reused.has_value());
-            const auto rendered = render_diagnostics(reused.error(), sources);
-            expect_equal(rendered, render_diagnostics(fresh.error(), sources));
+            const auto rendered = render_diagnostics(reused.error(), sources, false);
+            expect_equal(rendered, render_diagnostics(fresh.error(), sources, false));
             expect(rendered.contains("broken.cv"));
             expect(!rendered.contains("unrelated.cv"));
         };

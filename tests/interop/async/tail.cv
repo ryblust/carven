@@ -1,14 +1,41 @@
-import std::async using yield_once;
+import std::async using { cancel_point, yield_once }
 import "async/tail.hpp";
+import "lifetimes/lifetimes.hpp" using lifetime_probe;
 
-import(cpp) fn tail_reset();
-import(cpp) fn tail_mark(digit: i32);
-import(cpp) fn tail_actual(value: i32, digit: i32) -> i32;
-import(cpp) fn tail_trace() -> i32;
-import(cpp) fn tail_owner(digit: i32) -> ::TailOwner;
-import(cpp) fn tail_address(&value: i32);
-import(cpp) fn tail_addresses() -> i32;
-import(cpp) async fn tail_native() -> i32;
+import(cpp) fn tail_reset() = ::tail_reset;
+import(cpp) fn tail_mark(digit: i32) = ::tail_mark;
+import(cpp) fn tail_actual(value: i32, digit: i32) -> i32 = ::tail_actual;
+import(cpp) fn tail_trace() -> i32 = ::tail_trace;
+import(cpp) fn tail_owner(digit: i32) -> ::TailOwner = ::tail_owner;
+import(cpp) fn tail_address(&value: i32) = ::tail_address;
+import(cpp) fn tail_addresses() -> i32 = ::tail_addresses;
+import(cpp) async fn tail_native() -> i32 = ::tail_native;
+
+export(cpp) async fn bounded_tail(depth: i32, accumulator: i32) -> i32 {
+    if depth == 0 { return accumulator; }
+    return await bounded_tail(depth - 1, accumulator + 1);
+}
+
+private async fn yielding_increment(value: i32) -> i32 {
+    await yield_once();
+    await cancel_point();
+    return value + 1;
+}
+
+private async fn retain_actual_owner(value: i32) -> i32 {
+    if !(lifetime_probe::matches("3 13 ") as bool) { return -1; }
+    await yield_once();
+    if !(lifetime_probe::matches("3 13 ") as bool) { return -2; }
+    return value;
+}
+
+export(cpp) async fn bounded_producer(count: i32, seed: i32) -> i32 {
+    var result = seed;
+    for var index = 0; index < count; ++index {
+        result = await yielding_increment(result);
+    }
+    return result;
+}
 
 async fn effects(a: i32, b: i32, depth: i32, _: i32) -> i32 {
     if depth == 0 { return a * 10 + b; }
@@ -109,7 +136,14 @@ async fn discarded_results() {
     assert(tail_trace() == 567);
 }
 
-export async fn run_tail() {
+async fn run_tail() {
+    lifetime_probe::reset();
+    let retained = (
+        await retain_actual_owner(lifetime_probe::Owner { 3 }.probe() as i32),
+        lifetime_probe::matches("3 13 ") as bool
+    );
+    assert(retained == (1, true));
+    assert(lifetime_probe::matches("3 13 -3 ") as bool);
     tail_reset();
     assert((await effects(1, 2, 2, 0), tail_trace()) == (12, 123123));
     tail_reset();

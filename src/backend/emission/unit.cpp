@@ -123,7 +123,7 @@ auto TargetRenderer::render_unit() && noexcept -> LayoutDocument {
                 });
             directives.push_back(directive(text(bytes)));
         }
-        auto rendered_group = stack(directives);
+        auto rendered_group = stack(directives, 0uz);
         if (group.attribution.has_value()) {
             rendered_group = with_attribution(rendered_group, *group.attribution);
         }

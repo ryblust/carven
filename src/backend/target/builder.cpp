@@ -99,6 +99,11 @@ auto TypeLookup::enter_expression(const TargetExpr& expression, TargetExpression
                         mix(argument_value.negative);
                         mix(std::hash<std::uint64_t>()(argument_value.magnitude));
                         mix(static_cast<std::size_t>(argument_value.suffix));
+                    } else if constexpr (std::same_as<Argument, TargetStringLiteral>) {
+                        mix(std::hash<std::string_view>()(argument_value.bytes));
+                        mix(static_cast<std::size_t>(argument_value.kind));
+                    } else if constexpr (std::same_as<Argument, TargetName>) {
+                        this->name(argument_value);
                     }
                 });
             }
@@ -168,11 +173,13 @@ auto target_lowering_item(TargetItemValue value) noexcept -> TargetItem {
 
 auto TargetUnitBuilder::finish(
     TargetUnitSections sections,
-    TargetDirectiveInputs directives
+    TargetDirectiveInputs directives,
+    std::vector<std::string> link_dependencies
 ) && noexcept -> TargetUnit {
     const auto identity = unit_identity;
     auto target_types = std::move(types);
     const auto dependencies = collect_target_dependencies(identity, target_types, sections);
+    auto generated_dependencies = std::move(directives.generated_dependencies);
     auto directive_groups = plan_target_directives(std::move(directives), dependencies);
     return TargetUnit(
         identity,
@@ -181,6 +188,8 @@ auto TargetUnitBuilder::finish(
         TargetUnitContents {
             .directive_groups = std::move(directive_groups),
             .sections = std::move(sections),
+            .generated_dependencies = std::move(generated_dependencies),
+            .link_dependencies = std::move(link_dependencies),
         }
     );
 }

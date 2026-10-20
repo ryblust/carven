@@ -235,7 +235,7 @@ auto lower_cpp_export_header_declaration(ModuleLowering& context, FunctionID fun
             .parameters = std::move(parameters),
             .result = context.lower_signature_result(
                 context.semantic().declarations().callable(source.callable).signature,
-                false,
+                context.semantic().may_stop(source.callable),
                 TypeNameScope::Global
             ),
             .form = TargetFreeFunctionDeclaration {},
@@ -286,12 +286,6 @@ auto lower_cpp_export_facade(ModuleLowering& context, FunctionID function) noexc
         name_expression(context.global_function_name(function)),
         std::move(arguments)
     );
-    if (context.semantic().may_stop_test(source.callable)) {
-        call = call_expression(
-            intrinsic_expression(TargetSymbol::RuntimeNativeTestResult),
-            target_expressions(std::move(call))
-        );
-    }
     auto body = std::vector<TargetStmt>();
     body.push_back(generated_statement(TargetReturnStmt {.expression = std::move(call)}));
     return expansion_item(
@@ -304,7 +298,7 @@ auto lower_cpp_export_facade(ModuleLowering& context, FunctionID function) noexc
             .parameters = std::move(parameters),
             .result = context.lower_signature_result(
                 context.semantic().declarations().callable(source.callable).signature,
-                false,
+                context.semantic().may_stop(source.callable),
                 TypeNameScope::Global
             ),
             .form = TargetFreeFunctionDefinition {.body = std::move(body)},
@@ -579,7 +573,7 @@ auto lower_entry_wrapper(ModuleLowering& context, FunctionID function_id) noexce
     auto status = integer_expression(0);
     if (!may_complete_cancelled
         && context.plan().failure_abi().members(signature.failures).empty()
-        && !context.semantic().may_stop_test(function.callable)) {
+        && !context.semantic().may_stop(function.callable)) {
         body.push_back(generated_statement(TargetExprStmt {.expression = std::move(call)}));
     } else {
         auto names = context.make_callable_name_allocator();

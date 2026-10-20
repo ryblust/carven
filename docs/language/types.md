@@ -105,8 +105,9 @@ The declaration and its ordered canonical type and failure-set arguments
 determine nominal identity;
 repeated applications share that identity.
 Array extents and nominal failure payload types must be independent of type
-parameters. Callable signatures and native template arguments that depend on a
-parameter are not supported.
+parameters. Callable-view signatures may use type and failure-set parameters.
+Named external C++ types may use type parameters as template arguments; native
+operations are checked by C++ after concrete substitution.
 
 Definitions are checked even when unused. Recursive applications may forward
 or permute parameters; a recursive cycle that constructs larger arguments is
@@ -119,9 +120,12 @@ An enum still has no implicit default case. Visibility checks consider both the
 generic declaration, every type argument, and every member of a failure-set
 argument.
 
-Parameterized class operations and numeric enums are not supported.
-A parameterized class without operations uses the same field-type model and
-keeps its representation private.
+Class operations inherit their owner's type and failure-set parameters and lexical
+access to its private representation. An operation may declare additional parameters;
+those follow the owner parameters in its checked generic environment and are inferred
+or supplied at the operation call. Receiver Read, Write, Take, failure, and static
+execution rules are the same as for an ordinary class. Parameterized numeric enums
+are not supported.
 
 Functions support the same parameter kinds and infer omitted arguments from their
 signature, actual argument types, and immediate expected result.

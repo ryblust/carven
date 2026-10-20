@@ -199,6 +199,7 @@ struct BasicCppQueryType final {
         BasicCppUnaryQuery<Type>,
         BasicCppBinaryQuery<Type>>
         expression;
+
     auto operator<=>(const BasicCppQueryType&) const noexcept = default;
 };
 

@@ -110,7 +110,7 @@ public:
     Context reader;
     Context writer;
 
-    explicit Transfer(bool invalid_write = false) noexcept
+    explicit Transfer(bool invalid_write) noexcept
         : reader(queue, input.reader(), read_buffer, reading, read_counts),
           writer(
               queue,
@@ -163,7 +163,7 @@ public:
 };
 
 auto chunks() noexcept -> void {
-    auto transfer = Transfer();
+    auto transfer = Transfer(false);
     transfer.preload();
     {
         const auto cold = api::copy(transfer.reader, transfer.writer);
@@ -215,7 +215,7 @@ public:
 };
 
 auto pending_read() noexcept -> void {
-    auto transfer = Transfer();
+    auto transfer = Transfer(false);
     auto input = ExternalInput(transfer);
     auto result = async::drive_root(api::copy(transfer.reader, transfer.writer), &input);
     check(result.success_if() != nullptr, "pending chunk read resumes through actual poll");
@@ -262,7 +262,7 @@ public:
 };
 
 auto backpressure() noexcept -> void {
-    auto transfer = Transfer();
+    auto transfer = Transfer(false);
     transfer.preload();
     constexpr auto block =
         std::array {std::byte {85}, std::byte {85}, std::byte {85}, std::byte {85}};
@@ -317,7 +317,7 @@ auto failure() noexcept -> void {
 }
 
 auto cancelled_close() noexcept -> void {
-    auto transfer = Transfer();
+    auto transfer = Transfer(false);
     auto result =
         async::drive_root(api::cancel_copy(transfer.reader, transfer.writer), &transfer.queue);
     check(

@@ -665,10 +665,10 @@ auto TargetNamePlan::constant_identifier(ConstantID constant) const noexcept
 }
 
 auto TargetNamePlan::module_support_name(
-    ModuleID module,
+    ModuleID module_id,
     const TargetIdentifier& identifier
 ) const noexcept -> TargetName {
-    const auto prefix = module_names(module).qualified_namespace_name.components();
+    const auto prefix = module_names(module_id).qualified_namespace_name.components();
     auto components = std::vector<TargetIdentifier>(prefix.begin(), prefix.end());
     components.push_back(identifier);
     return TargetName::globally_qualified(std::move(components));

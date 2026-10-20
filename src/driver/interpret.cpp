@@ -1,6 +1,7 @@
 module carven:driver.interpret.impl;
 
 import :diagnostics.builder;
+import :diagnostics.code;
 import :diagnostics.report;
 import :driver.analysis;
 import :driver.diagnostic;
@@ -10,6 +11,7 @@ import :driver.timings;
 import :interpreter.execute;
 import :semantic.evaluation.display;
 import :semantic.evaluation.execution;
+import :semantic.evaluation.value;
 import :semantic.semir.decl;
 import :semantic.semir.program;
 import :source.manager;
@@ -149,10 +151,112 @@ auto report_execution_error(
     );
 }
 
-} // namespace
+auto trace_execution(const SemIRProgram& program, const ExecutionTraceEvent& event) noexcept
+    -> void {
+    const auto provenance = program.provenance();
+    const auto origin = provenance.source_origin(event.origin);
+    const auto& source = provenance.source_snapshot(origin.source_id);
+    const auto kind = event.kind == ExecutionTraceKind::Call ? "call"
+        : event.kind == ExecutionTraceKind::Return           ? "return"
+                                                             : "statement";
+    const auto name = event.function
+        ? provenance.spelling(program.declarations().function(*event.function).name)
+        : std::string_view();
+    std::println(
+        std::cerr,
+        "{}{}:{}: {}{}{}",
+        std::string(event.depth * 2, ' '),
+        source.display_origin(),
+        source.location(origin.span),
+        kind,
+        name.empty() ? "" : " ",
+        name
+    );
+}
 
-auto run_interpret_command(std::string_view executable, std::span<const std::string> args) noexcept
-    -> int {
+auto run_interpreted_root(
+    const SemIRProgram& program,
+    ExecutionOutput output,
+    ExecutionLimits limits,
+    TimingOutput timings,
+    bool trace,
+    std::string_view module_path,
+    std::string_view function_name
+) noexcept -> int {
+    auto diagnostic_sources = std::optional<RestoredSources>();
+    auto entry = std::optional<FunctionID>();
+    for (const auto function : program.declarations().functions()) {
+        const auto selected = module_path.empty()
+            ? function.value.entry_point.has_value()
+            : program.provenance().spelling(function.value.name) == function_name
+                && program.provenance()
+                        .module_record(program.declarations()
+                                           .module_decl(function.value.module_id)
+                                           .provenance_module)
+                        .path.value()
+                    == module_path;
+        if (!selected) {
+            continue;
+        }
+        if (entry) {
+            diagnostic_sources.emplace(restore_sources(program));
+            const auto span = [&](ProgramOriginID origin) noexcept {
+                const auto source = program.provenance().source_origin(origin);
+                return locate(diagnostic_sources->ids[source.source_id.index()], source.span);
+            };
+            auto diagnostic = DiagnosticBuilder(
+                DiagnosticCode::EntryDuplicate,
+                "interpreting a program requires exactly one entry function"
+            );
+            diagnostic.primary(span(function.value.origin), "additional entry");
+            diagnostic.related(span(program.declarations().function(*entry).origin), "first entry");
+            std::print(
+                std::cerr,
+                "{}",
+                render_diagnostic(
+                    diagnostic.build(),
+                    diagnostic_sources->sources,
+                    initialize_diagnostic_color()
+                )
+            );
+            return 1;
+        }
+        entry = function.id;
+    }
+    if (!entry) {
+        if (!module_path.empty()) {
+            return emit_driver_error(
+                std::format("source function '{}.{}' was not found", module_path, function_name)
+            );
+        }
+        return emit_missing_entry_error();
+    }
+    auto options =
+        InterpreterOptions {.limits = limits, .trace = {}, .report = {}, .host_call = {}};
+    const auto trace_event = [&](const ExecutionTraceEvent& event) noexcept {
+        trace_execution(program, event);
+    };
+    if (trace) {
+        options.trace = trace_event;
+    }
+    const auto report_event = [&](std::optional<TestID> id, const ExecutionEvent& event) noexcept {
+        report_execution_error(program, event, diagnostic_sources, true, id);
+    };
+    options.report = report_event;
+    auto execution = TimingScope(timings, TimingStage::Execution);
+    const auto result = interpret(program, *entry, output, options);
+    execution.stop();
+    if (!result) {
+        return 1;
+    }
+    return 0;
+}
+
+auto run_interpret(
+    std::span<const std::string> args,
+    std::string_view module_path,
+    std::string_view function_name
+) noexcept -> int {
     if (args.size() == 1
         && (std::string_view(args[0]) == "--help" || std::string_view(args[0]) == "-h")) {
         std::print(
@@ -165,13 +269,14 @@ auto run_interpret_command(std::string_view executable, std::span<const std::str
             "      --tests                     Run runtime tests instead of the program\n"
             "      --timings                   Show total and stage timings on stderr\n"
             "      --trace                     Show statements, calls, and returns on stderr\n"
-            "      --max-steps <n>             Set the step budget (default: 100000)\n"
+            "      --max-steps <n>             Set an execution step budget\n"
             "  -h, --help                      Show this help\n"
             "\n"
-            "Sources include installed Crafts and optional project Crafts.\n"
-            "Program execution requires top-level statements or a parameterless main.\n"
-            "Arguments after '--' are ignored. Native C++ inputs are not built or run.\n"
-            "Executing a native C++ operation requires compiled execution.\n"
+            "Installed Crafts supply dependencies; pass project Crafts as explicit sources.\n"
+            "Program execution requires exactly one entry: top-level statements or a parameterless main.\n"
+            "Entry parameters are unavailable; std::process queries the host process.\n"
+            "Native C++ inputs are not built or run.\n"
+            "Unregistered native C++ operations require compiled execution.\n"
         );
         return 0;
     }
@@ -179,12 +284,17 @@ auto run_interpret_command(std::string_view executable, std::span<const std::str
     auto trace = false;
     auto tests = false;
     auto show_timings = false;
-    auto limits = static_execution_limits();
+    constexpr auto unlimited = std::numeric_limits<std::size_t>::max();
+    auto limits = ExecutionLimits {
+        .steps = unlimited,
+        .byte_work = unlimited,
+        .aggregate_work = unlimited,
+    };
     auto seen_steps = false;
     for (auto index = 0uz; index < args.size(); ++index) {
         const auto arg = std::string_view(args[index]);
         if (arg == "--") {
-            // A no-argument main ignores process arguments, as in native execution.
+            // Entry parameters are unsupported; host-process queries retain the real arguments.
             break;
         }
         if (arg == "--tests") {
@@ -225,7 +335,7 @@ auto run_interpret_command(std::string_view executable, std::span<const std::str
             paths.push_back(arg);
         }
     }
-    if (paths.empty()) {
+    if (paths.empty() && module_path.empty()) {
         return emit_driver_error("interpret requires at least one source file", "carven interpret");
     }
     auto timings = CommandTimings(show_timings, "interpretation");
@@ -233,87 +343,82 @@ auto run_interpret_command(std::string_view executable, std::span<const std::str
         ExecutionOutput([](ExecutionOutputStream stream, std::string_view bytes) static noexcept {
             std::print(stream == ExecutionOutputStream::Error ? std::cerr : std::cout, "{}", bytes);
         });
-    const auto sources = collect_command_sources(executable, paths, timings.output());
+    auto sources = collect_command_sources(paths, timings.output());
     if (!sources) {
         return emit_driver_error(sources.error());
     }
-    const auto program = load_and_analyze_sources(sources->carven, output, timings.output());
+    if (!module_path.empty()) {
+        const auto source = std::ranges::find_if(sources->carven, [&](const auto& input) noexcept {
+            return input.module_path.value() == module_path;
+        });
+        if (source == sources->carven.end()) {
+            return emit_driver_error(std::format("source module '{}' was not found", module_path));
+        }
+        sources->owned_modules.push_back(source->module_path);
+    }
+    const auto program = load_and_analyze_sources(*sources, output, timings.output());
     if (!program) {
         return 1;
     }
-    auto diagnostic_sources = std::optional<RestoredSources>();
-    auto entry = std::optional<FunctionID>();
-    for (const auto function : program->declarations().functions()) {
-        if (function.value.entry_point) {
-            entry = function.id;
-        }
-    }
-    if (!tests && !entry) {
-        return emit_missing_entry_error();
-    }
-    auto options = InterpreterOptions {.limits = limits, .trace = {}, .report = {}};
-    const auto trace_event = [&](const ExecutionTraceEvent& event) noexcept {
-        const auto provenance = program->provenance();
-        const auto origin = provenance.source_origin(event.origin);
-        const auto& source = provenance.source_snapshot(origin.source_id);
-        const auto kind = event.kind == ExecutionTraceKind::Call ? "call"
-            : event.kind == ExecutionTraceKind::Return           ? "return"
-                                                                 : "statement";
-        const auto name = event.function
-            ? provenance.spelling(program->declarations().function(*event.function).name)
-            : std::string_view();
-        std::println(
-            std::cerr,
-            "{}{}:{}: {}{}{}",
-            std::string(event.depth * 2, ' '),
-            source.display_origin(),
-            source.location(origin.span),
-            kind,
-            name.empty() ? "" : " ",
-            name
+    if (!tests) {
+        const auto status = run_interpreted_root(
+            *program,
+            output,
+            limits,
+            timings.output(),
+            trace,
+            module_path,
+            function_name
         );
+        timings.set_outcome(status == 0 ? "finished" : "failed");
+        return status;
+    }
+    auto diagnostic_sources = std::optional<RestoredSources>();
+    auto options =
+        InterpreterOptions {.limits = limits, .trace = {}, .report = {}, .host_call = {}};
+    const auto trace_event = [&](const ExecutionTraceEvent& event) noexcept {
+        trace_execution(*program, event);
     };
     if (trace) {
         options.trace = trace_event;
     }
     const auto report_event = [&](std::optional<TestID> id, const ExecutionEvent& event) noexcept {
-        report_execution_error(*program, event, diagnostic_sources, !tests, id);
+        report_execution_error(*program, event, diagnostic_sources, false, id);
     };
     options.report = report_event;
     auto execution = TimingScope(timings.output(), TimingStage::Execution);
-    if (tests) {
-        const auto results = interpret_tests(*program, output, options);
-        execution.stop();
-        if (!results) {
-            return 1;
-        }
-        if (results->empty()) {
-            return emit_driver_error("running tests requires at least one runtime test");
-        }
-        const auto failed = std::ranges::count_if(*results, [](const auto& result) static noexcept {
-            return !result.reports.empty();
-        });
-        if (results->back().aborted()) {
-            timings.set_outcome("aborted");
-            return 1;
-        }
-        std::println(
-            std::cerr,
-            "carven: tests: {} passed; {} failed",
-            results->size() - failed,
-            failed
-        );
-        timings.set_outcome(failed == 0 ? "finished" : "failed");
-        return failed == 0 ? 0 : 1;
-    }
-    const auto result = interpret(*program, *entry, output, options);
+    const auto results = interpret_tests(*program, output, options);
     execution.stop();
-    if (!result) {
-        if (result.error().event.termination() == ExecutionTermination::Abort) {
-            timings.set_outcome("aborted");
-        }
+    if (!results) {
         return 1;
     }
-    timings.set_outcome("finished");
-    return 0;
+    if (results->empty()) {
+        return emit_driver_error("running tests requires at least one runtime test");
+    }
+    const auto failed = std::ranges::count_if(*results, [](const auto& result) static noexcept {
+        return !result.reports.empty();
+    });
+    if (results->back().aborted()) {
+        timings.set_outcome("aborted");
+        return 1;
+    }
+    std::println(
+        std::cerr,
+        "carven: tests: {} passed; {} failed",
+        results->size() - failed,
+        failed
+    );
+    timings.set_outcome(failed == 0 ? "finished" : "failed");
+    return failed == 0 ? 0 : 1;
+}
+
+} // namespace
+
+auto run_interpret_command(std::span<const std::string> args) noexcept -> int {
+    return run_interpret(args, {}, {});
+}
+
+auto run_interpret_function(std::string_view module_path, std::string_view function_name) noexcept
+    -> int {
+    return run_interpret({}, module_path, function_name);
 }

@@ -31,20 +31,29 @@ public:
     auto consume_unexecuted_read(Value value, Span span) noexcept
         -> AnalysisResult<SemanticExpression>;
 
-    auto representation_access(StructID owner, Span span) noexcept -> AnalysisResult<void>;
-    auto associated_reference(StructID owner, Span name_span) noexcept -> AnalysisTask<Value>;
+    auto representation_access(ConstructionStructRef owner, Span span) noexcept
+        -> AnalysisResult<void>;
+    auto associated_reference(ConstructionStructRef owner, Span name_span) noexcept
+        -> AnalysisTask<Value>;
+
     auto standard_call(const ASTCallExpr& source, StandardDeclaration function, Span span) noexcept
         -> AnalysisTask<Value>;
+
     auto number_parse_call(const ASTCallExpr& source, BuiltinType number, Span span) noexcept
         -> AnalysisTask<Value>;
+
     auto resolve_number_parser(BuiltinType number, Span span) noexcept -> AnalysisTask<CallableID>;
+
     auto native_associated_reference(ConstructionTypeRef type, Span name_span, Span span) noexcept
         -> Selection;
+
+    auto native_qualified_reference(const ASTMemberExpr& source, Span span) noexcept
+        -> AnalysisResult<std::optional<Selection>>;
 
     auto associated_call(
         const ASTCallExpr& source,
         const ASTMemberExpr& member,
-        StructID owner,
+        ConstructionStructRef owner,
         Span span
     ) noexcept -> AnalysisTask<Value>;
 
@@ -247,11 +256,11 @@ public:
     auto resolve_type_qualifier(ASTExprID id) noexcept
         -> AnalysisTask<std::optional<ConstructionTypeRef>>;
 
-    auto resolve_enum_case(TypeID type, std::string_view name, Span span) noexcept
+    auto resolve_enum_case(ConstructionTypeRef type, std::string_view name, Span span) noexcept
         -> AnalysisTask<ResolvedEnumCase>;
 
     auto interpret_enum_case(
-        TypeID type,
+        ConstructionTypeRef type,
         std::string_view name,
         Span name_span,
         std::span<const ASTExprID> arguments,
@@ -311,7 +320,11 @@ public:
         Span span
     ) noexcept -> AnalysisTask<Value>;
 
-    auto call(const ASTCallExpr& source, Span span) noexcept -> AnalysisTask<Value>;
+    auto call(
+        const ASTCallExpr& source,
+        Span span,
+        std::optional<Selection> callee = std::nullopt
+    ) noexcept -> AnalysisTask<Value>;
 
 private:
     auto finish(

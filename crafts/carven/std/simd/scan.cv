@@ -29,6 +29,14 @@ export const fn set_union(left: ByteSet, right: ByteSet) -> ByteSet {
     return result;
 }
 
+private const fn complement(set: ByteSet) -> ByteSet {
+    var result = ByteSet {};
+    for index in 0usize..4 {
+        result.words[index] = ~set.words[index];
+    }
+    return result;
+}
+
 private const fn contains(set: ByteSet, byte: u8) -> bool {
     return (set.words[(byte >> 6) as usize] & (1u64 << ((byte & 63) as u64))) != 0;
 }
@@ -272,20 +280,8 @@ export const fn prefix_where(bytes: [u8], const set: ByteSet) -> usize {
     return prefix_end(bytes, 0, set);
 }
 
-export const fn prefix_end(bytes: [u8], start: usize, const set: ByteSet) -> usize {
-    assert(start <= bytes.length());
-    const if is_empty(set) { return start; }
-    const if is_complete(set) { return bytes.length(); }
-    if start == bytes.length() || contains_byte(bytes[start], set) == false { return start; }
-    var offset = start;
-    while bytes.length() - offset >= 32 {
-        let rejected = ~match_set(u8x32::load(bytes, offset), set);
-        if rejected.any() { return offset + rejected.first_or(0); }
-        offset += 32;
-    }
-    while offset < bytes.length() {
-        if contains_byte(bytes[offset], set) == false { return offset; }
-        offset += 1;
-    }
-    return offset;
-}
+export const fn prefix_end(bytes: [u8], start: usize, const set: ByteSet) -> usize => find_from(
+    bytes,
+    start,
+    complement(set)
+);

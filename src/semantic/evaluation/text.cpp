@@ -3,6 +3,7 @@ module carven:semantic.evaluation.text.impl;
 import :semantic.evaluation.display;
 import :semantic.evaluation.executor;
 import :semantic.evaluation.limits;
+import :semantic.evaluation.value;
 import :semantic.format.builtin;
 import :semantic.semir.type;
 import :support.utf8;
@@ -103,10 +104,10 @@ auto SemanticExecutor::append_text(
     if (!target) {
         return std::unexpected(std::move(target.error()));
     }
-    if (bytes.size() > maximum_constant_text_bytes - (*target)->bytes().size()) {
+    if (bytes.size() > maximum_constant_bytes - (*target)->bytes().size()) {
         return std::unexpected(fail(origin, ExecutionReason::Limit, "text exceeds 1 MiB"));
     }
-    if (auto checked = account_text(bytes.size(), origin); !checked) {
+    if (auto checked = account_bytes(bytes.size(), origin); !checked) {
         return std::unexpected(std::move(checked.error()));
     }
     (*target)->append(bytes);
@@ -142,7 +143,7 @@ auto SemanticExecutor::text_intrinsic(
             if (!operand) {
                 co_return std::unexpected(std::move(operand.error()));
             }
-            auto fact = read_fact(*operand, origin);
+            auto fact = read_atom(*operand, origin);
             if (!fact) {
                 co_return std::unexpected(std::move(fact.error()));
             }
@@ -187,15 +188,16 @@ auto SemanticExecutor::text_intrinsic(
             if (!operand) {
                 co_return std::unexpected(std::move(operand.error()));
             }
-            auto suffix = std::string();
             if (intrinsic == TextIntrinsic::Append) {
                 auto bytes = text(*operand, origin);
                 if (!bytes) {
                     co_return std::unexpected(std::move(bytes.error()));
                 }
-                suffix = bytes->view();
-            } else if (intrinsic == TextIntrinsic::Push) {
-                auto fact = read_fact(*operand, origin);
+                co_return append_text(*receiver, bytes->view(), origin);
+            }
+            auto suffix = std::string();
+            if (intrinsic == TextIntrinsic::Push) {
+                auto fact = read_atom(*operand, origin);
                 if (!fact) {
                     co_return std::unexpected(std::move(fact.error()));
                 }
@@ -240,12 +242,14 @@ auto SemanticExecutor::text_intrinsic(
         }
     }
     const auto* receiver = std::get_if<ExecutionValue>(&*operand);
+    auto observation = std::optional<ExecutionRead>();
     if (receiver == nullptr) {
-        auto selected = located(std::get<ExecutionPlace>(*operand), origin);
+        auto selected = observed(std::get<ExecutionPlace>(*operand), origin);
         if (!selected) {
             co_return std::unexpected(std::move(selected.error()));
         }
-        receiver = *selected;
+        observation.emplace(std::move(*selected));
+        receiver = &observation->get();
     }
     auto handle = text_handle(*receiver, origin);
     if (!handle) {
@@ -259,7 +263,7 @@ auto SemanticExecutor::text_intrinsic(
     }
     switch (intrinsic) {
         case TextIntrinsic::FromStr: {
-            if (auto checked = account_text(*size, origin); !checked) {
+            if (auto checked = account_bytes(*size, origin); !checked) {
                 co_return std::unexpected(std::move(checked.error()));
             }
             auto bytes = text(*receiver, origin);
@@ -364,7 +368,7 @@ auto SemanticExecutor::format(
             observed.emplace_back();
         }
     }
-    auto result = format_builtin(operation.specification, observed, maximum_constant_text_bytes);
+    auto result = format_builtin(operation.specification, observed, maximum_constant_bytes);
     if (!result) {
         co_return std::unexpected(fail(
             origin,
@@ -373,7 +377,7 @@ auto SemanticExecutor::format(
             std::string(result.error().message)
         ));
     }
-    if (auto checked = account_text(result->size(), origin); !checked) {
+    if (auto checked = account_bytes(result->size(), origin); !checked) {
         co_return std::unexpected(std::move(checked.error()));
     }
     if (destination) {
@@ -399,7 +403,7 @@ auto SemanticExecutor::print(
         ? ExecutionOutputStream::Error
         : ExecutionOutputStream::Standard;
     const auto write = [&](std::string_view bytes) noexcept -> ExecutionResult<void> {
-        if (auto checked = account_text(bytes.size(), origin); !checked) {
+        if (auto checked = account_bytes(bytes.size(), origin); !checked) {
             return checked;
         }
         context.write(stream, bytes);
@@ -408,12 +412,14 @@ auto SemanticExecutor::print(
     for (auto index = 0uz; index < operands.size(); ++index) {
         const auto& operand = operands[index];
         const auto* argument = std::get_if<ExecutionValue>(&operand);
+        auto observation = std::optional<ExecutionRead>();
         if (const auto* place = std::get_if<ExecutionPlace>(&operand)) {
-            auto selected = located(*place, origin);
+            auto selected = observed(*place, origin);
             if (!selected) {
                 co_return std::unexpected(std::move(selected.error()));
             }
-            argument = *selected;
+            observation.emplace(std::move(*selected));
+            argument = &observation->get();
         }
         auto formatted = display_execution_value(values, *argument, false, &memory);
         if (!formatted) {

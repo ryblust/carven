@@ -19,8 +19,8 @@ private:
     const Fixed* construction_address;
 };
 
-// No borrowed source endpoint crosses these native diagnostic calls.
 auto make_fixed() noexcept -> Fixed;
+auto make_fixed_outcome() noexcept -> carven::runtime::Outcome<Fixed>;
 auto fixed_created() noexcept -> std::int32_t;
 auto fixed_destroyed() noexcept -> std::int32_t;
 auto fixed_live() noexcept -> std::int32_t;

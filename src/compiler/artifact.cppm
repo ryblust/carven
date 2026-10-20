@@ -4,11 +4,12 @@ import :semantic.analysis.program.checked;
 import :support.binary;
 import std;
 
-// Generation ownership follows the corresponding provenance module ordinal.
+// Root selection and external implementation ownership follow provenance ordinals.
 // Module identities and source paths remain owned by semantic provenance.
 struct CompilationModuleOwnership final {
     bool owned;
     bool standard;
+    bool external;
 };
 
 // Section borrows remain valid while the encoded artifact storage is alive.

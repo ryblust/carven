@@ -1,0 +1,48 @@
+import std::async using Operation;
+import std::io using ReadResult;
+import <carven/std/channel/native.hpp> using carven::standard::channel;
+
+export enum ChannelReadResult {
+    Pending,
+    Data(Vector<u8>),
+    End
+}
+
+// A bounded, driver-local message queue. Handles share ownership, never borrowed source state.
+export class ByteChannel {
+    native: channel::Handle,
+
+    const fn new(capacity: usize) -> ByteChannel {
+        assert(capacity > 0);
+        return { native: channel::create(capacity) };
+    }
+
+    const fn close(self) {
+        channel::close(self.native);
+    }
+
+    const fn send(self, &&bytes: Vector<u8>) -> Operation<bool> => send_bytes(self.native, &&bytes);
+    const fn receive(self) -> Operation<ReadResult<Vector<u8>>> => receive_bytes(self.native);
+
+    const fn try_receive(self) -> ChannelReadResult {
+        var result = channel::try_receive(self.native);
+        if result.available as bool { return .Data((&result).take_bytes() as Vector<u8>); }
+        return if result.end as bool { .End } else { .Pending };
+    }
+
+    const fn try_send(self, &&bytes: Vector<u8>) -> bool => channel::try_send(self.native, &&bytes)
+        as bool;
+}
+
+private const async fn send_bytes(native: channel::Handle, &&bytes: Vector<u8>) -> bool {
+    let pending = channel::send(native, &&bytes);
+    let result = await pending;
+    return result.available as bool;
+}
+
+private const async fn receive_bytes(native: channel::Handle) -> ReadResult<Vector<u8>> {
+    let pending = channel::receive(native);
+    var result = await pending;
+    if result.end as bool { return .End; }
+    return .Data((&result).take_bytes() as Vector<u8>);
+}

@@ -14,6 +14,7 @@ import :backend.target.origin;
 import :backend.target.stmt;
 import :backend.target.symbol;
 import :semantic.semir.body;
+import :semantic.semir.callable;
 import :semantic.semir.decl;
 import :semantic.semir.delegation;
 import :semantic.semir.ids;
@@ -58,6 +59,9 @@ auto realize_callable_adaptation(
     const PreparedCallableAdaptation& preparation,
     TypeID to
 ) noexcept -> TargetExpr {
+    if (preparation.adaptation.callable) {
+        context.require_callable_reference(*preparation.adaptation.callable);
+    }
     const auto stateless = preparation.adaptation.kind == CallableAdaptationKind::StatelessClosure;
     if (preparation.array) {
         return template_call_expression(
@@ -375,12 +379,14 @@ auto realize_operation(
                 return context.callable_expression(value.callable);
             },
             [&](const SemEnumConstructor& value) noexcept -> TargetExpr {
-                const auto owner =
-                    context.semantic().declarations().enum_case(value.enum_case).owner;
+                const auto owner = context.semantic()
+                                       .declarations()
+                                       .enum_case(concrete_enum_case(value.enum_case))
+                                       .owner;
                 return static_member_expression(
                     context
                         .named_type(context.enumeration_name(owner, TypeNameScope::Module), false),
-                    context.names().enum_case_identifier(value.enum_case)
+                    context.names().enum_case_identifier(concrete_enum_case(value.enum_case))
                 );
             },
             [](const SemArrayAdopt&) static noexcept -> TargetExpr {
@@ -463,7 +469,11 @@ auto realize_operation(
                 };
             },
             [&](const SemEnumCase& value) noexcept -> TargetExpr {
-                return enum_case_expression(context, value.enum_case, std::move(operands));
+                return enum_case_expression(
+                    context,
+                    concrete_enum_case(value.enum_case),
+                    std::move(operands)
+                );
             },
             [&](const SemUnary&) noexcept -> TargetExpr {
                 const auto* plan = std::get_if<PreparedUnary>(preparation);
@@ -471,6 +481,12 @@ auto realize_operation(
                     invariant_violation("unary operation requires preparation");
                 }
                 return realize_unary(context, *plan, std::move(operands[0]));
+            },
+            [&](const SemHash&) noexcept -> TargetExpr {
+                return call_expression(
+                    intrinsic_expression(TargetSymbol::RuntimeHashValue),
+                    target_expressions(std::move(operands[0]))
+                );
             },
             [&](const SemBinary&) noexcept -> TargetExpr {
                 const auto* plan = std::get_if<PreparedBinary>(preparation);
@@ -589,12 +605,30 @@ auto realize_operation(
                     operands = std::move(selected);
                 }
                 for (auto index = 0uz; index < operands.size(); ++index) {
+                    if (prepared != nullptr && prepared->operand_text[index]) {
+                        continue;
+                    }
                     const auto type = value.operands[index].expression.type.resolved();
-                    if (!std::holds_alternative<BuiltinTypeValue>(
-                            context.semantic().types().type(type).value
-                        )) {
-                        operands[index] =
-                            realize_display(context, type, std::move(operands[index]));
+                    const auto* builtin =
+                        std::get_if<BuiltinTypeValue>(&context.semantic().types().type(type).value);
+                    if (builtin == nullptr) {
+                        operands[index] = call_expression(
+                            intrinsic_expression(TargetSymbol::RuntimeDisplayText),
+                            target_expressions(
+                                realize_display(context, type, std::move(operands[index]))
+                            )
+                        );
+                    } else if (builtin->kind != BuiltinType::Str) {
+                        if (builtin->kind != BuiltinType::String) {
+                            operands[index] = call_expression(
+                                intrinsic_expression(TargetSymbol::RuntimeFormatValidUTF8),
+                                target_expressions(
+                                    string_expression("{}", TargetStringLiteralKind::StringView),
+                                    std::move(operands[index])
+                                )
+                            );
+                        }
+                        operands[index] = call_member(std::move(operands[index]), "as_str", {});
                     }
                 }
                 const auto symbol = value.kind == PrintKind::Print ? TargetSymbol::RuntimePrint
@@ -685,6 +719,7 @@ auto realize_operation(
                                     case VectorIntrinsic::Length:       return "size";
                                     case VectorIntrinsic::IsEmpty:      return "empty";
                                     case VectorIntrinsic::Push:         return "push";
+                                    case VectorIntrinsic::Append:       return "append";
                                     case VectorIntrinsic::Remove:       return "remove";
                                     case VectorIntrinsic::Clear:        return "clear";
                                 }
@@ -905,6 +940,10 @@ auto realize_operation(
                         context.callable_expression(*value.target),
                         std::move(operands)
                     );
+                }
+                if (const auto callable =
+                        callable_identity(context.semantic(), value.callee->type.resolved())) {
+                    context.require_callable_reference(*callable);
                 }
                 auto callee = std::move(operands.front());
                 operands.erase(operands.begin());

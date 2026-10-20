@@ -1,10 +1,10 @@
-import .analysis using { analyze, to_json };
-import std::json using ValueError;
+import .analysis using { analyze, to_json }
 import std::io using IOError;
+import std::json using JSONValueError;
 
 enum AnalyzerError {
     Input(IOError),
-    Report(ValueError),
+    Report(JSONValueError),
     UnknownArgument(String)
 }
 
@@ -41,6 +41,6 @@ async fn main(args) throw AnalyzerError {
         }
     } catch {
         IOError(error) => throw AnalyzerError::Input(error),
-        ValueError(error) => throw AnalyzerError::Report(error),
+        JSONValueError(error) => throw AnalyzerError::Report(error),
     }
 }

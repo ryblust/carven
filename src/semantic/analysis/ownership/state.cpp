@@ -232,7 +232,7 @@ auto OwnershipBodyAnalyzer::leave(OwnershipFlow& flow, LifetimeRegionID lifetime
     for (auto& exit : flow.exits) {
         const auto explicit_intent = !std::holds_alternative<OwnershipFailure>(exit.payload)
             && !std::holds_alternative<OwnershipCancelled>(exit.payload)
-            && !std::holds_alternative<OwnershipTestStopped>(exit.payload);
+            && !std::holds_alternative<OwnershipStopped>(exit.payload);
         release(exit.state, explicit_intent);
         if (diagnosing) {
             exit.payload.visit([&](const auto& payload) noexcept {

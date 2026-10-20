@@ -1,4 +1,4 @@
-import std::json using { JSONError, validate_bytes };
+import std::json using { JSONError, validate_bytes }
 import std::utf using UTF8Error;
 
 export(cpp) fn validate_document(bytes: [u8]) -> u64 {

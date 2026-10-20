@@ -1,0 +1,39 @@
+import "document_host.hpp" using documents::Ref;
+
+enum Level: i32 {
+    Low = 3,
+    High = 17
+}
+
+enum Fault {
+    Empty,
+    Data(String, Vector<Level>),
+    Count(i64),
+    Borrowed(Ref)
+}
+
+struct Envelope {
+    values: Vector<Fault>
+}
+
+enum Reference {
+    Object(Ref)
+}
+
+private import(cpp) fn native_failure() -> i32 throw Fault;
+private import(cpp) async fn async_failure() -> i32 throw Fault;
+
+export(cpp) fn reflect(value: Envelope) -> Envelope => value;
+export(cpp) fn numeric(value: Level) -> Level => value;
+export(cpp) async fn cold_reference(_: Reference) -> i32 => 1;
+
+export(cpp) fn reject() -> i32 throw Fault {
+    throw Fault::Data("owned", [Level::High]);
+}
+
+export(cpp) async fn reject_async() -> i32 throw Fault {
+    throw Fault::Count(-9000000000i64);
+}
+
+export(cpp) fn provider_failure() -> i32 throw Fault => native_failure()?;
+export(cpp) async fn provider_async() -> i32 throw Fault => await async_failure()?;

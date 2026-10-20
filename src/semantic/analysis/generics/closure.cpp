@@ -51,6 +51,24 @@ auto ProgramDraft::normalize_generic_environment(
                     {.value = OperationTypeValue {.success = *success, .failures = *effect}}
                 );
             }
+        } else if (const auto* view = std::get_if<GenericCallableViewType>(&shape)) {
+            auto parameters = std::vector<ConstructionCallableParameter>();
+            for (const auto& parameter : view->parameters) {
+                const auto type = self(self, parameter.type);
+                if (!type) {
+                    return std::nullopt;
+                }
+                parameters.push_back(
+                    {.stage = parameter.stage, .access = parameter.access, .type = *type}
+                );
+            }
+            const auto result = self(self, view->result);
+            const auto effect = closed_failure(view->failures);
+            if (result && effect) {
+                return canonicalize_declared_type(
+                    make_callable_view_type(*this, std::move(parameters), *result, *effect)
+                );
+            }
         } else if (const auto* array = std::get_if<GenericArrayType>(&shape)) {
             if (const auto element = self(self, array->element)) {
                 return intern_type(
@@ -200,8 +218,16 @@ auto ProgramDraft::normalize_construction_types(const FailureSolution& failures)
                             );
                         } else {
                             static_assert(std::same_as<Shape, ConstructionCallableViewTypeValue>);
-                            invariant_violation(
-                                "symbolic callable view escaped its source admission boundary"
+                            auto parameters = shape.parameters;
+                            for (auto& parameter : parameters) {
+                                parameter.type = normalize_child(parameter.type);
+                            }
+                            return intern_generic_type(
+                                GenericCallableViewType {
+                                    .parameters = std::move(parameters),
+                                    .result = normalize_child(shape.result),
+                                    .failures = failures.normalize(shape.failures)
+                                }
                             );
                         }
                     });
@@ -251,6 +277,32 @@ auto ProgramDraft::normalize_construction_types(const FailureSolution& failures)
                 // consuming the construction store.
                 return intern_generic_type(
                     GenericOperationType {.success = success, .failures = effect}
+                );
+            } else if constexpr (std::same_as<Shape, GenericCallableViewType>) {
+                auto parameters = shape.parameters;
+                auto closed = true;
+                for (auto& parameter : parameters) {
+                    parameter.type = child(parameter.type);
+                    closed &= std::holds_alternative<TypeID>(parameter.type);
+                }
+                const auto result_type = child(shape.result);
+                const auto effect = failures.normalize(shape.failures);
+                if (closed
+                    && std::holds_alternative<TypeID>(result_type)
+                    && std::holds_alternative<FailureSetID>(effect)) {
+                    return make_callable_view_type(
+                        *this,
+                        std::move(parameters),
+                        result_type,
+                        effect
+                    );
+                }
+                return intern_generic_type(
+                    GenericCallableViewType {
+                        .parameters = std::move(parameters),
+                        .result = result_type,
+                        .failures = effect
+                    }
                 );
             } else if constexpr (std::same_as<Shape, GenericPointerType>) {
                 const auto target = child(shape.target);
@@ -443,7 +495,7 @@ auto ProgramDraft::instantiate_generic_call(
         .origin = expression.origin,
         .constant = std::nullopt,
         .failures = BodyFailures(empty_failure_set()),
-        .exits_test = false,
+        .exits_call = false,
         .operation_reachable = expression.operation_reachable,
         .category = SemanticValueCategory::Value,
         .value = SemCallable {.callable = *target},

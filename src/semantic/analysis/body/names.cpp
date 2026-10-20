@@ -22,6 +22,7 @@ import :semantic.analysis.types;
 import :semantic.analysis.validation;
 import :semantic.evaluation.operation;
 import :semantic.semir.decl;
+import :semantic.semir.generic;
 import :semantic.semir.structured;
 import :semantic.semir.type;
 import :support.invariant;
@@ -70,21 +71,18 @@ auto BodyElaborator::select_name(const ASTNameExpr& name, Span span) noexcept
             .completes = true,
         };
     }
-    if (catalog().lookup(source_module_id, text).empty()) {
-        auto name_reference = lookup_cpp_name(
-            draft(),
-            catalog(),
-            import_usage(),
-            source_module_id,
-            CppNameLookup::ModuleScope,
-            std::span(&name.name_span, 1uz)
-        );
-        if (!name_reference.has_value()) {
-            co_return std::unexpected(name_reference.error());
-        }
-        if (name_reference->has_value()) {
-            co_return CppSelection {.target = std::move(**name_reference), .span = span};
-        }
+    auto name_reference = lookup_cpp_name(
+        draft(),
+        catalog(),
+        import_usage(),
+        source_module_id,
+        {.global_root = std::nullopt, .components = {name.name_span}}
+    );
+    if (!name_reference.has_value()) {
+        co_return std::unexpected(name_reference.error());
+    }
+    if (name_reference->has_value()) {
+        co_return CppSelection {.target = std::move(**name_reference), .span = span};
     }
     auto selected = (co_await find_global(text, name.name_span));
     if (!selected.has_value()) {
@@ -221,6 +219,49 @@ auto BodyElaborator::validate_builtin(
     std::span<const ConstructionCallableParameter> parameters,
     std::span<const Span> argument_spans
 ) noexcept -> AnalysisResult<void> {
+    if (selection.function == BuiltinFunction::Hash
+        || selection.function == BuiltinFunction::Equal) {
+        const auto hashing = selection.function == BuiltinFunction::Hash;
+        if (parameters.size() != (hashing ? 1uz : 2uz)) {
+            return std::unexpected(fail(
+                selection.span,
+                DiagnosticCode::TypeCallArity,
+                hashing ? "Hash::hash requires one argument" : "Equal::equal requires two arguments"
+            ));
+        }
+        const auto capability = hashing ? BuiltinCapability::Hash : BuiltinCapability::Equal;
+        for (const auto& parameter : parameters) {
+            if (parameter.access != AccessMode::Read) {
+                return std::unexpected(fail(
+                    selection.span,
+                    DiagnosticCode::AccessCallMismatch,
+                    "capability operands require Read access"
+                ));
+            }
+            if (!type_satisfies_capability(draft(), parameter.type, capability)) {
+                return std::unexpected(fail(
+                    selection.span,
+                    DiagnosticCode::TypeGenericArguments,
+                    hashing ? "operand does not satisfy Hash" : "operand does not satisfy Equal"
+                ));
+            }
+        }
+        const auto text = [&](ConstructionTypeRef type) noexcept {
+            type = unwrap_type_alias(draft(), type);
+            return type == ConstructionTypeRef(draft().builtin_type(BuiltinType::String))
+                || type == ConstructionTypeRef(draft().builtin_type(BuiltinType::Str));
+        };
+        if (!hashing
+            && !type_shapes_compatible(draft(), parameters[0].type, parameters[1].type)
+            && !(text(parameters[0].type) && text(parameters[1].type))) {
+            return std::unexpected(fail(
+                selection.span,
+                DiagnosticCode::TypeMismatch,
+                "Equal::equal requires compatible operand types"
+            ));
+        }
+        return {};
+    }
     if (selection.function == BuiltinFunction::Addressof) {
         return std::unexpected(fail(
             selection.span,
@@ -296,6 +337,26 @@ auto BodyElaborator::builtin_operation(
     const auto site = origin(selection.span);
     const auto result_type = draft().builtin_type(BuiltinType::Void);
     const auto kind = selection.function;
+    if (kind == BuiltinFunction::Hash) {
+        return builder.make_expression(
+            draft().builtin_type(BuiltinType::U64),
+            builder.lifetime(),
+            site,
+            SemHash {.operand = UniqueIndirect(std::move(operands.front().expression))}
+        );
+    }
+    if (kind == BuiltinFunction::Equal) {
+        return builder.make_expression(
+            draft().builtin_type(BuiltinType::Bool),
+            builder.lifetime(),
+            site,
+            SemBinary {
+                .left = UniqueIndirect(std::move(operands[0].expression)),
+                .operation = BinaryOperator::Equal,
+                .right = UniqueIndirect(std::move(operands[1].expression))
+            }
+        );
+    }
     if (kind == BuiltinFunction::Assert
         || kind == BuiltinFunction::Check
         || kind == BuiltinFunction::Require
@@ -367,11 +428,30 @@ auto BodyElaborator::builtin_callable(
     std::span<const ConstructionCallableParameter> parameters,
     std::span<const Span> argument_spans
 ) noexcept -> AnalysisResult<BuiltExpression> {
-    auto valid = validate_builtin(selection, parameters, argument_spans);
+    auto environment = GenericEnvironment();
+    for (const auto& parameter : parameters) {
+        environment.emplace_back(parameter.type);
+    }
+    const auto site = origin(selection.span);
+    const auto canonical = draft().normalize_generic_environment(environment, site);
+    if (!canonical) {
+        if (const auto failure = draft().diagnostics().failure()) {
+            return std::unexpected(*failure);
+        }
+        return std::unexpected(fail(
+            selection.span,
+            DiagnosticCode::TypeGenericDefinition,
+            "generic function closures require a parameterized callable representation"
+        ));
+    }
+    auto closed_parameters = std::vector(parameters.begin(), parameters.end());
+    for (auto index = 0uz; index < closed_parameters.size(); ++index) {
+        closed_parameters[index].type = std::get<TypeID>((*canonical)[index]);
+    }
+    auto valid = validate_builtin(selection, closed_parameters, argument_spans);
     if (!valid) {
         return std::unexpected(valid.error());
     }
-    const auto site = origin(selection.span);
     auto reservation = draft().reserve_body(BodyKind::Closure);
     const auto body_id = reservation.id();
     auto builder = BodyBuilder(std::move(reservation), draft());
@@ -381,7 +461,7 @@ auto BodyElaborator::builtin_callable(
         builder.add_lifetime_region(lexical, LifetimeRegionKind::FullExpression, site);
     builder.set_lifetime(full);
     auto operands = std::vector<SemCallArgument>();
-    for (const auto& [index, parameter] : std::views::enumerate(parameters)) {
+    for (const auto& [index, parameter] : std::views::enumerate(closed_parameters)) {
         const auto binding = builder.add_parameter(
             draft().intern_spelling(std::format("value{}", index)),
             parameter.type,
@@ -392,17 +472,27 @@ auto BodyElaborator::builtin_callable(
         auto input = builder.binding_expression(binding.binding).expression;
         operands.push_back({.access = parameter.access, .expression = std::move(input)});
     }
-    const auto result_type = draft().builtin_type(BuiltinType::Void);
     const auto failures = draft().add_empty_failure_term();
     auto operation = builtin_operation(builder, selection, std::move(operands));
+    const auto result_type = operation.type.construction();
     auto statements = std::vector<SemanticStatement>();
-    statements.push_back({
-        .origin = site,
-        .lifetime = full,
-        .reachable = true,
-        .value = SemExpressionStatement {.expression = std::move(operation)},
-    });
-    if (selection.function != BuiltinFunction::Fail) {
+    const auto returns_value = !is_void_type(draft(), result_type);
+    if (returns_value) {
+        statements.push_back(
+            {.origin = site,
+             .lifetime = full,
+             .reachable = true,
+             .value = SemReturn {.value = std::move(operation)}}
+        );
+    } else {
+        statements.push_back(
+            {.origin = site,
+             .lifetime = full,
+             .reachable = true,
+             .value = SemExpressionStatement {.expression = std::move(operation)}}
+        );
+    }
+    if (selection.function != BuiltinFunction::Fail && !returns_value) {
         statements.push_back({
             .origin = site,
             .lifetime = full,
@@ -418,14 +508,14 @@ auto BodyElaborator::builtin_callable(
             .result = std::nullopt,
             .result_reachable = false,
             .failures = BodyFailures(failures),
-            .exits_test = false,
+            .exits_call = false,
 
         }
     );
     const auto callable = draft().append_body_callable(
         ConstructionCallableContract {
             .execution = CallableExecutionKind::Synchronous,
-            .parameters = std::vector(parameters.begin(), parameters.end()),
+            .parameters = std::move(closed_parameters),
             .result = result_type,
             .failures = failures,
             .policy = FailureContractPolicy::Declared

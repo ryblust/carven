@@ -11,6 +11,7 @@ auto run_net_cases() noexcept -> void;
 auto run_timer_cases() noexcept -> void;
 auto run_cleanup_cases() noexcept -> void;
 auto run_stop_case() noexcept -> int;
+auto run_async_allocation_cases() noexcept -> void;
 
 #if defined(__unix__) || defined(__APPLE__)
 auto run_pipe_cases() noexcept -> void;
@@ -42,6 +43,7 @@ auto main(int argc, char** argv) noexcept -> int {
         if (result.success_if() == nullptr) {
             return EXIT_FAILURE;
         }
+        run_async_allocation_cases();
 #if defined(__unix__) || defined(__APPLE__)
     } else if (operation == "pipe") {
         run_pipe_cases();

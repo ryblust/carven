@@ -16,7 +16,8 @@ target("carven-test-internal")
     set_default(false)
     set_group("tests/internal")
     set_kind("binary")
-    add_deps("carven-test-fixtures", "carven-test-runner")
+    add_deps("carven-modules", "carven-test-fixtures", "carven-test-runner")
+    add_includedirs(path.join(internal_dir, "../../crafts"))
     add_files(path.join(internal_dir, "**.cpp"))
     local shards = 6
     for index = 1, shards do

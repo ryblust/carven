@@ -1,0 +1,51 @@
+import std::simd.scan using { one_of, byte_range, set_union, find_from, prefix_end }
+import std::toml using { TOMLError, TOMLErrorKind }
+
+const horizontal = one_of([0x20, 0x09]);
+private const comment_stops = set_union(byte_range(0, 0x1f), one_of([0x7f]));
+
+const fn error(kind: TOMLErrorKind, offset: usize) -> TOMLError => {
+    kind: kind,
+    offset: offset,
+};
+
+const fn spaces(bytes: [u8], &offset: usize) {
+    offset = prefix_end(bytes, offset, horizontal);
+}
+
+const fn newline(bytes: [u8], &offset: usize) throw TOMLError {
+    if bytes[offset] == 0x0d {
+        offset += 1;
+        if offset == bytes.length() { throw error(.UnexpectedEnd, offset); }
+        if bytes[offset] != 0x0a { throw error(.UnexpectedByte, offset); }
+    }
+    offset += 1;
+}
+
+const fn comment(bytes: [u8], &offset: usize) throw TOMLError {
+    offset += 1;
+    while {
+        offset = find_from(bytes, offset, comment_stops);
+        if offset == bytes.length() || bytes[offset] == 0x0a || bytes[offset] == 0x0d { return; }
+        if bytes[offset] != 0x09 { throw error(.ControlCharacter, offset); }
+        offset += 1;
+    }
+}
+
+const fn trivia(bytes: [u8], &offset: usize) throw TOMLError {
+    while offset < bytes.length() {
+        spaces(bytes, &offset);
+        if offset == bytes.length() { return; }
+        match bytes[offset] {
+            0x23 => comment(bytes, &offset)?,
+            0x0a | 0x0d => newline(bytes, &offset)?,
+            _ => return,
+        }
+    }
+}
+
+const fn expect(bytes: [u8], &offset: usize, byte: u8) throw TOMLError {
+    if offset == bytes.length() { throw error(.UnexpectedEnd, offset); }
+    if bytes[offset] != byte { throw error(.UnexpectedByte, offset); }
+    offset += 1;
+}

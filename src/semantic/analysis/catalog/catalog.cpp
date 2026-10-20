@@ -256,12 +256,12 @@ auto AnalysisCatalogView::standard_declaration(
 ) const noexcept -> const CatalogSymbol* {
     const auto& contract = ::standard_declaration(declaration);
     const auto module_id =
-        draft.find_program_module(*CanonicalModulePath::from_value(contract.module));
-    const auto* module = module_id ? find_module(*module_id) : nullptr;
-    if (module == nullptr) {
+        draft.find_program_module(*CanonicalModulePath::from_value(contract.module_path));
+    const auto* module_decl = module_id ? find_module(*module_id) : nullptr;
+    if (module_decl == nullptr) {
         return nullptr;
     }
-    for (const auto id : module->symbols) {
+    for (const auto id : module_decl->symbols) {
         const auto& symbol = catalog->symbols[id.index()];
         if (symbol.name != contract.name
             || symbol.visibility != DeclarationVisibility::Compilation) {

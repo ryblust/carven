@@ -1,31 +1,36 @@
 import "providers/contracts.hpp";
 
-export struct Record {
+struct Record {
     text: String,
     count: i32,
 }
 
-export struct Failure {
+struct Failure {
     code: i32
 }
 
-export enum State {
+enum State {
     Ready,
     Done
 }
 
-import(cpp) fn contract_text(value: String) -> String;
-import(cpp) fn contract_replace(&value: String);
-import(cpp) fn contract_take(&&value: ::boundary::Owned) -> ::boundary::Owned;
-import(cpp) fn contract_owner() -> ::boundary::Owned;
-import(cpp) fn contract_pointer(value: ptr<&i32>) -> ptr<&i32>;
-import(cpp) fn contract_record(value: Record) -> Record;
-import(cpp) fn contract_callback(value: fn(i32) -> i32) -> i32;
-import(cpp) fn contract_failure(fail: bool, error: Failure) -> String throw Failure;
-import(cpp) fn contract_identity(value: [i32; 2]) -> [i32; 2];
-import(cpp) fn contract_void(fail: bool, error: Failure) throw Failure;
-import(cpp) fn contract_access(&&value: i32) -> i32;
-import(cpp) fn contract_consumer() -> bool;
+import(cpp) fn contract_text(value: String) -> String = ::contract_text;
+import(cpp) fn contract_replace(&value: String) = ::contract_replace;
+import(cpp) fn contract_take(&&value: ::boundary::Owned) -> ::boundary::Owned = ::contract_take;
+import(cpp) fn contract_owner() -> ::boundary::Owned = ::contract_owner;
+import(cpp) fn contract_pointer(value: ptr<&i32>) -> ptr<&i32> = ::contract_pointer;
+import(cpp) fn contract_record(value: Record) -> Record = ::contract_record;
+import(cpp) fn contract_callback(value: fn(i32) -> i32) -> i32 = ::contract_callback;
+
+import(cpp) fn contract_failure(
+    fail: bool,
+    error: Failure
+) -> String throw Failure = ::contract_failure;
+
+import(cpp) fn contract_identity(value: [i32; 2]) -> [i32; 2] = ::contract_identity;
+import(cpp) fn contract_void(fail: bool, error: Failure) throw Failure = ::contract_void;
+import(cpp) fn contract_access(&&value: i32) -> i32 = ::contract_access;
+import(cpp) fn contract_consumer() -> bool = ::contract_consumer;
 export(cpp) fn make_failure() -> Failure => Failure { 17 };
 export(cpp) fn text() -> String => "owned";
 export(cpp) fn copy(value: String) -> String => contract_text(value);

@@ -513,8 +513,9 @@ auto PatternRealizer::match(
                 co_return result;
             },
             [&](const EnumCasePattern& value) noexcept -> ContinuationTask<PatternSelection> {
-                const auto& declaration =
-                    context.semantic().declarations().enum_case(value.enum_case);
+                const auto& declaration = context.semantic().declarations().enum_case(
+                    concrete_enum_case(value.enum_case)
+                );
                 if (declaration.payload_types.size() != value.payload.size()) {
                     invariant_violation("enum pattern payload does not match its declaration");
                 }
@@ -524,7 +525,7 @@ auto PatternRealizer::match(
                             .enumeration(declaration.owner)
                             .representation
                     )) {
-                    if (single_case(value.enum_case) || accepts_on_entry) {
+                    if (single_case(concrete_enum_case(value.enum_case)) || accepts_on_entry) {
                         co_return finish(LoweringKnownBool {.value = true});
                     }
                     co_return finish(
@@ -532,7 +533,11 @@ auto PatternRealizer::match(
                             .expression = binary_expression(
                                 subject_expression(subject),
                                 TargetBinaryOperator::Equal,
-                                enum_case_expression(context, value.enum_case, {})
+                                enum_case_expression(
+                                    context,
+                                    concrete_enum_case(value.enum_case),
+                                    {}
+                                )
                             )
                         }
                     );
@@ -541,7 +546,8 @@ auto PatternRealizer::match(
                     names.fresh(TargetTemporaryNameKind::SuccessProjection)
                 );
                 projections.push_back(projection);
-                const auto ordinal = enum_case_index(context.semantic(), value.enum_case);
+                const auto ordinal =
+                    enum_case_index(context.semantic(), concrete_enum_case(value.enum_case));
                 destination.declare(
                     TargetVariableStmt {
                         .binding = TargetVariableBinding::ConstValue,
@@ -560,7 +566,7 @@ auto PatternRealizer::match(
                     false
                 );
                 auto predicate = LoweringPredicate(LoweringKnownBool {.value = true});
-                if (!single_case(value.enum_case) && !accepts_on_entry) {
+                if (!single_case(concrete_enum_case(value.enum_case)) && !accepts_on_entry) {
                     predicate = LoweringDynamicBool {
                         .expression = binary_expression(
                             name_expression(projection),
@@ -609,7 +615,9 @@ PatternRealizer::PatternRealizer(
                   -> std::variant<PatternValue, ElaboratedPatternValue> {
                   return this->body.pattern(id).value;
               },
-              .single_case = [this](EnumCaseID id) noexcept { return single_case(id); },
+              .single_case = [this](
+                                 ConstructionEnumCaseRef id
+                             ) noexcept { return single_case(concrete_enum_case(id)); },
           },
           bounds
       ),

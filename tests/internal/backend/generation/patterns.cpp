@@ -40,9 +40,11 @@ const TestSuite suite([] static noexcept {
                 );
                 const auto compilation = PlannedCompilation::build(
                     semantic_owner,
-                    {.test_mode = TestGenerationMode::None,
-                     .linkage_domain = *LinkageDomain::explicit_value("pattern_size"),
-                     .library = std::nullopt},
+                    {
+                        .test_mode = TestGenerationMode::None,
+                        .linkage_domain = *LinkageDomain::explicit_value("pattern_size"),
+                        .library = std::nullopt,
+                    },
                     {}
                 );
 

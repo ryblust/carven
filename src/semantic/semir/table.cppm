@@ -76,8 +76,10 @@ private:
 
     template<typename StoredValue, typename StoredID>
     friend class ImmutableProgramTable;
+
     template<typename StoredValue, typename StoredID>
     friend class ImmutableBodyTable;
+
     template<typename StoredValue, typename StoredID>
     friend class MutableBodyTable;
 };
@@ -135,6 +137,7 @@ private:
 
     template<typename StoredValue, typename StoredID>
     friend class MutableProgramTable;
+
     template<typename StoredValue, typename StoredID>
     friend class ReservedProgramTable;
 };
@@ -397,6 +400,27 @@ public:
 
 private:
     friend class SemanticArtifactAccess;
+    friend class SemIRBody;
+
+    // Final publication remaps the owned tree along with its retained rows.
+    template<typename Predicate>
+    auto retain(Predicate keep) noexcept -> std::vector<std::optional<ID>> {
+        auto mapping = std::vector<std::optional<ID>>(storage.size());
+        auto next = 0uz;
+        for (auto index = 0uz; index < storage.size(); ++index) {
+            const auto source = ID(body_identity, static_cast<std::uint32_t>(index));
+            if (!keep(source)) {
+                continue;
+            }
+            mapping[index] = ID(body_identity, static_cast<std::uint32_t>(next));
+            if (next != index) {
+                storage[next] = std::move(storage[index]);
+            }
+            ++next;
+        }
+        storage.erase(storage.begin() + static_cast<std::ptrdiff_t>(next), storage.end());
+        return mapping;
+    }
 
     ImmutableBodyTable(BodyIdentity identity, std::vector<Value> values) noexcept
         : body_identity(identity),

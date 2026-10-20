@@ -1,0 +1,157 @@
+import .syntax using { error, spaces, newline }
+import std::simd.scan using { one_of, byte_range, set_union, find_from }
+import std::toml using TOMLError;
+
+private const basic_stops = set_union(byte_range(0, 0x1f), one_of([0x22, 0x5c, 0x7f]));
+private const literal_stops = set_union(byte_range(0, 0x1f), one_of([0x27, 0x7f]));
+
+private const fn unicode_escape(
+    bytes: [u8],
+    &offset: usize,
+    const count: usize
+) -> char throw TOMLError {
+    var value: u32 = 0;
+    for _ in 0..count {
+        if offset == bytes.length() { throw error(.UnexpectedEnd, offset); }
+        let digit: u32 = match bytes[offset] {
+            0x30..=0x39 => (bytes[offset] - 0x30) as u32,
+            0x41..=0x46 => (bytes[offset] - 0x41 + 10) as u32,
+            0x61..=0x66 => (bytes[offset] - 0x61 + 10) as u32,
+            _ => throw error(.InvalidUnicode, offset),
+        };
+        value = (value << 4) | digit;
+        offset += 1;
+    }
+    if value > 0x10ffff || (value >= 0xd800 && value <= 0xdfff) {
+        throw error(.InvalidUnicode, offset - count);
+    }
+    return char::from_u32_unchecked(value);
+}
+
+private const fn escape(bytes: [u8], &offset: usize) -> char throw TOMLError {
+    if offset == bytes.length() { throw error(.UnexpectedEnd, offset); }
+    let byte = bytes[offset];
+    offset += 1;
+    return match byte {
+        0x22 => '"',
+        0x5c => '\\',
+        0x62 => '\u{8}',
+        0x74 => '\t',
+        0x6e => '\n',
+        0x66 => '\u{c}',
+        0x72 => '\r',
+        0x75 => unicode_escape(bytes, &offset, 4)?,
+        0x55 => unicode_escape(bytes, &offset, 8)?,
+        _ => throw error(.InvalidEscape, offset - 1),
+    };
+}
+
+private const fn line_continuation(bytes: [u8], &offset: usize) -> bool throw TOMLError {
+    if offset == bytes.length() { return false; }
+    match bytes[offset] {
+        0x20 | 0x09 | 0x0a | 0x0d => {},
+        _ => return false,
+    }
+    spaces(bytes, &offset);
+    if offset == bytes.length() { throw error(.UnexpectedEnd, offset); }
+    if bytes[offset] != 0x0a && bytes[offset] != 0x0d { throw error(.InvalidEscape, offset); }
+    newline(bytes, &offset)?;
+    while offset < bytes.length() {
+        spaces(bytes, &offset);
+        if offset == bytes.length() { break; }
+        if bytes[offset] != 0x0a && bytes[offset] != 0x0d { break; }
+        newline(bytes, &offset)?;
+    }
+    return true;
+}
+
+private const fn read_contents(
+    bytes: [u8],
+    &offset: usize,
+    const quote: u8,
+    const multiline: bool
+) -> String throw TOMLError {
+    var result = String {};
+    while {
+        let start = offset;
+        let end = const if quote == 0x22 {
+            find_from(bytes, offset, basic_stops)
+        } else {
+            find_from(bytes, offset, literal_stops)
+        };
+        result.append(str::from_utf8_unchecked(bytes.slice(start, end)));
+        offset = end;
+        if offset == bytes.length() { throw error(.UnexpectedEnd, offset); }
+        let byte = bytes[offset];
+        if byte == quote {
+            const if !multiline {
+                offset += 1;
+                return &&result;
+            } else {
+                var count: usize = 0;
+                while offset < bytes.length() && bytes[offset] == quote {
+                    offset += 1;
+                    count += 1;
+                }
+                if count > 5 { throw error(.UnexpectedByte, offset - count + 5); }
+                let retained = if count >= 3 { count - 3 } else { count };
+                for _ in 0..retained {
+                    result.push(char::from_u32_unchecked(quote as u32));
+                }
+                if count >= 3 { return &&result; }
+                continue;
+            }
+        }
+        const if quote == 0x22 {
+            if byte == 0x5c {
+                offset += 1;
+                const if multiline {
+                    if line_continuation(bytes, &offset)? { continue; }
+                }
+                result.push(escape(bytes, &offset)?);
+                continue;
+            }
+        }
+        if byte == 0x09 {
+            result.push('\t');
+            offset += 1;
+            continue;
+        }
+        const if multiline {
+            if byte == 0x0a || byte == 0x0d {
+                newline(bytes, &offset)?;
+                result.push('\n');
+                continue;
+            }
+        }
+        throw error(.ControlCharacter, offset);
+    }
+}
+
+private const fn read_quoted(
+    bytes: [u8],
+    &offset: usize,
+    const quote: u8,
+    const multiline_allowed: bool
+) -> String throw TOMLError {
+    offset += 1;
+    const if multiline_allowed {
+        if bytes.length() - offset >= 2 && bytes[offset] == quote && bytes[offset + 1] == quote {
+            offset += 2;
+            if offset < bytes.length() && (bytes[offset] == 0x0a || bytes[offset] == 0x0d) {
+                newline(bytes, &offset)?;
+            }
+            return read_contents(bytes, &offset, quote, true)?;
+        }
+    }
+    return read_contents(bytes, &offset, quote, false)?;
+}
+
+const fn read_string(
+    bytes: [u8],
+    &offset: usize,
+    const multiline_allowed: bool
+) -> String throw TOMLError {
+    if bytes[offset] == 0x22 { return read_quoted(bytes, &offset, 0x22, multiline_allowed)?; }
+    return read_quoted(bytes, &offset, 0x27, multiline_allowed)?;
+}

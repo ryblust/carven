@@ -91,16 +91,6 @@ auto AnalysisCatalogBuilder::collect_declarations() noexcept -> void {
 
     result.modules.reserve(module_count);
     result.visible_candidates.reserve(module_count);
-    auto first_entry = std::optional<SourceSpan>();
-    for (const auto& symbol : result.symbols) {
-        if (const auto* function = std::get_if<CatalogFunctionForm>(&symbol.form)) {
-            const auto declaration = draft.function_declaration_copy(function->function);
-            if (declaration.entry_point) {
-                first_entry = draft.source_span(declaration.origin);
-            }
-        }
-    }
-
     for (auto module_index = 0uz; module_index < module_count; ++module_index) {
         const auto module_id = draft.provenance_module_at(module_index);
         if (draft.imported(module_id)) {
@@ -125,12 +115,13 @@ auto AnalysisCatalogBuilder::collect_declarations() noexcept -> void {
             std::flat_map<std::string, std::vector<CatalogLookupCandidate>, std::less<>>();
         const auto provided = find_provided_module(draft.module_path_copy(module_id).value());
         for (const auto& entry : provided_exports()) {
-            if (provided == entry.module) {
+            if (provided == entry.provider) {
                 local_candidates[std::string(entry.name)].push_back(
                     {.entity = entry.identity, .import_binding = std::nullopt}
                 );
             }
         }
+        auto first_entry = std::optional<SourceSpan>();
         for (const auto item_id : ast_module.items) {
             const auto& item = ast.item(item_id);
             if (const auto* function = std::get_if<ASTFunctionDecl>(&item.value)) {
@@ -147,7 +138,7 @@ auto AnalysisCatalogBuilder::collect_declarations() noexcept -> void {
                     if (first_entry.has_value()) {
                         auto diagnostic = DiagnosticBuilder(
                             DiagnosticCode::EntryDuplicate,
-                            "a program may define only one entry function"
+                            "a module may define only one entry function"
                         );
                         diagnostic.primary(current, "duplicate entry");
                         diagnostic.related(*first_entry, "first entry");
@@ -247,7 +238,7 @@ auto AnalysisCatalogBuilder::collect_declarations() noexcept -> void {
                                 invariant_violation("semantic generic reservation is not aligned");
                             }
                             result.generic_symbols.push_back(symbol_id);
-                            return CatalogGenericForm {.definition = definition};
+                            return CatalogGenericForm {.definition = definition, .operations = {}};
                         }
                         const auto function = draft.reserve_function_declaration();
                         result.function_symbols.resize(function.index() + 1uz);
@@ -264,7 +255,7 @@ auto AnalysisCatalogBuilder::collect_declarations() noexcept -> void {
                                 invariant_violation("semantic generic reservation is not aligned");
                             }
                             result.generic_symbols.push_back(symbol_id);
-                            return CatalogGenericForm {.definition = definition};
+                            return CatalogGenericForm {.definition = definition, .operations = {}};
                         }
                         const auto structure = draft.reserve_struct_declaration();
                         result.struct_symbols.resize(structure.index() + 1uz);
@@ -281,7 +272,7 @@ auto AnalysisCatalogBuilder::collect_declarations() noexcept -> void {
                                 invariant_violation("semantic generic reservation is not aligned");
                             }
                             result.generic_symbols.push_back(symbol_id);
-                            return CatalogGenericForm {.definition = definition};
+                            return CatalogGenericForm {.definition = definition, .operations = {}};
                         }
                         const auto enumeration = draft.reserve_enum_declaration();
                         result.enum_symbols.resize(enumeration.index() + 1uz);
@@ -354,18 +345,22 @@ auto AnalysisCatalogBuilder::collect_declarations() noexcept -> void {
                 }
             );
 
-            if (std::holds_alternative<CatalogGenericForm>(
-                    result.symbols[symbol_id.index()].form
-                )) {
-                continue;
-            }
             if (const auto* record = std::get_if<ASTRecordDecl>(&item.value)) {
                 auto member_names = std::flat_set<std::string>();
                 for (const auto& field : record->fields) {
                     member_names.insert(draft.source_slice_copy(module_id, field.name_span));
                 }
-                const auto owner =
-                    std::get<CatalogStructForm>(result.symbols[symbol_id.index()].form).structure;
+                const auto owner = std::holds_alternative<CatalogGenericForm>(
+                                       result.symbols[symbol_id.index()].form
+                                   )
+                    ? ClassDeclarationRef(
+                          std::get<CatalogGenericForm>(result.symbols[symbol_id.index()].form)
+                              .definition
+                      )
+                    : ClassDeclarationRef(
+                          std::get<CatalogStructForm>(result.symbols[symbol_id.index()].form)
+                              .structure
+                      );
                 for (const auto operation_id : record->operations) {
                     const auto& operation = std::get<ASTFunctionDecl>(ast.item(operation_id).value);
                     auto member_name = draft.source_slice_copy(module_id, operation.name_span);
@@ -380,8 +375,24 @@ auto AnalysisCatalogBuilder::collect_declarations() noexcept -> void {
                     const auto member_id = CatalogSymbolID::from_index(
                         static_cast<std::uint32_t>(result.symbols.size())
                     );
-                    const auto function = draft.reserve_function_declaration();
-                    const auto callable = draft.reserve_callable_declaration();
+                    const auto generic = record->type_parameters.has_value()
+                        || operation.type_parameters.has_value();
+                    auto operation_form = [&]() noexcept -> CatalogSymbolForm {
+                        if (generic) {
+                            const auto definition = draft.reserve_generic_declaration();
+                            result.generic_symbols.push_back(member_id);
+                            return CatalogGenericForm {.definition = definition, .operations = {}};
+                        } else {
+                            const auto function = draft.reserve_function_declaration();
+                            const auto callable = draft.reserve_callable_declaration();
+                            result.function_symbols.resize(function.index() + 1uz);
+                            result.function_symbols[function.index()] = member_id;
+                            catalog_module.items.push_back(
+                                {.item_id = operation_id, .form = function}
+                            );
+                            return CatalogFunctionForm {.function = function, .callable = callable};
+                        }
+                    }();
                     const auto private_member =
                         std::holds_alternative<ASTPrivateDeclarationVisibility>(
                             operation.visibility
@@ -392,14 +403,12 @@ auto AnalysisCatalogBuilder::collect_declarations() noexcept -> void {
                                binding_target_span(operation.parameters.front().target)
                            ) == "self";
                     const auto audience = result.symbols[symbol_id.index()].visibility;
-                    result.function_symbols.resize(function.index() + 1uz);
-                    result.function_symbols[function.index()] = member_id;
                     result.symbols.push_back({
                         .symbol_id = member_id,
                         .module_id = module_id,
                         .item_id = operation_id,
                         .name = std::move(member_name),
-                        .form = CatalogFunctionForm {.function = function, .callable = callable},
+                        .form = std::move(operation_form),
                         .visibility = private_member ? DeclarationVisibility::Module : audience,
                         .declaration_span = operation.name_span,
                         .class_operation = ClassOperation {
@@ -409,13 +418,17 @@ auto AnalysisCatalogBuilder::collect_declarations() noexcept -> void {
                             .receiver = receiver
                         },
                     });
-                    std::get<CatalogStructForm>(result.symbols[symbol_id.index()].form)
-                        .operations.push_back(function);
-                    catalog_module.items.push_back({.item_id = operation_id, .form = function});
+                    if (std::holds_alternative<GenericDeclarationID>(owner)) {
+                        std::get<CatalogGenericForm>(result.symbols[symbol_id.index()].form)
+                            .operations.push_back(member_id);
+                    } else {
+                        std::get<CatalogStructForm>(result.symbols[symbol_id.index()].form)
+                            .operations.push_back(member_id);
+                    }
                 }
             }
             const auto* enumeration = std::get_if<ASTEnumDecl>(&item.value);
-            if (enumeration == nullptr) {
+            if (enumeration == nullptr || enumeration->type_parameters) {
                 continue;
             }
             for (auto case_index = 0uz; case_index < enumeration->cases.size(); ++case_index) {

@@ -150,7 +150,7 @@ auto ModuleLowering::lower_parameter(
 
 auto ModuleLowering::function_ref_type(
     CallableSignatureID id,
-    bool stops_test,
+    bool stops_call,
     TypeNameScope scope,
     std::optional<CallableID> callable
 ) noexcept -> TargetType {
@@ -169,7 +169,7 @@ auto ModuleLowering::function_ref_type(
         .value =
             TargetFunctionRefType {
                 .parameters = std::move(parameters),
-                .result = lower_signature_result(id, stops_test, scope),
+                .result = lower_signature_result(id, stops_call, scope),
             },
         .const_qualified = false,
     };
@@ -207,7 +207,7 @@ auto ModuleLowering::callable_completion(CallableID callable_id) noexcept -> Tar
 
 auto ModuleLowering::lower_signature_result(
     CallableSignatureID id,
-    bool stops_test,
+    bool stops_call,
     TypeNameScope scope
 ) noexcept -> TargetTypeID {
     if (id.owner() != semantic().identity()
@@ -215,7 +215,7 @@ auto ModuleLowering::lower_signature_result(
         invariant_violation("module lowering received an unknown callable signature");
     }
     const auto [entry, inserted] =
-        signature_result_cache.try_emplace(std::tuple(id, stops_test, scope));
+        signature_result_cache.try_emplace(std::tuple(id, stops_call, scope));
     auto& state = entry->second;
     if (const auto* complete = std::get_if<TargetTypeID>(&state)) {
         return *complete;
@@ -227,9 +227,6 @@ auto ModuleLowering::lower_signature_result(
     const auto failures = plan().failure_abi().members(signature.failures);
     const auto result = [&]() noexcept -> TargetTypeID {
         if (signature.execution == CallableExecutionKind::Async) {
-            if (stops_test) {
-                invariant_violation("async callable retained test-stop effects");
-            }
             return async_type(
                 TargetSymbol::RuntimeAsyncOperation,
                 signature.result,
@@ -237,7 +234,7 @@ auto ModuleLowering::lower_signature_result(
                 scope
             );
         }
-        if (failures.empty() && !stops_test) {
+        if (failures.empty() && !stops_call) {
             return is_void(signature.result) ? intrinsic_type(TargetSymbol::Void, false)
                                              : lower_type(signature.result, scope);
         }
@@ -246,9 +243,6 @@ auto ModuleLowering::lower_signature_result(
                                       : lower_type(signature.result, scope)
         };
         arguments.reserve(failures.size() + 2);
-        if (stops_test) {
-            arguments.push_back(intrinsic_type(TargetSymbol::RuntimeTestStopped, false));
-        }
         for (const auto member : failures) {
             arguments.push_back(lower_type(member, scope));
         }
@@ -268,7 +262,7 @@ auto ModuleLowering::lower_signature_result(
 auto ModuleLowering::callable_result(CallableID callable_id) noexcept -> TargetTypeID {
     return lower_signature_result(
         semantic().declarations().callable(callable_id).signature,
-        semantic().may_stop_test(callable_id),
+        semantic().may_stop(callable_id),
         TypeNameScope::Module
     );
 }
@@ -276,7 +270,7 @@ auto ModuleLowering::callable_result(CallableID callable_id) noexcept -> TargetT
 auto ModuleLowering::call_result(const SemCall& call) noexcept -> TargetTypeID {
     return lower_signature_result(
         semantic().call_signature(call),
-        semantic().may_stop_test(call),
+        semantic().may_stop(call),
         TypeNameScope::Module
     );
 }
@@ -493,7 +487,7 @@ auto ModuleLowering::lower_type(TypeID id, TypeNameScope scope) noexcept -> Targ
                 const auto& callable = semantic().declarations().callable(value.callable);
                 return function_ref_type(
                     callable.signature,
-                    semantic().may_stop_test(value.callable),
+                    semantic().may_stop(value.callable),
                     scope,
                     value.callable
                 );

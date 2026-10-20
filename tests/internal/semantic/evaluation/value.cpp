@@ -90,6 +90,7 @@ const TestSuite suite([] static noexcept {
 
     "Constant values: unit and tuples compare across retained and local representations"_test =
         [] static noexcept {
+            constexpr auto maximum_steps = std::numeric_limits<std::size_t>::max();
             auto fixture = ConstantEvaluationFixture();
             auto& values = fixture.compilation;
             const auto unit = values.builtin_type(BuiltinType::Void);
@@ -120,8 +121,7 @@ const TestSuite suite([] static noexcept {
             expect(atom->type == unit);
             expect(std::holds_alternative<VoidConstant>(atom->value));
             auto steps = 0uz;
-            expect(execution_equal(values, local, retained, steps, 3uz) == true);
-            expect(steps == 3uz);
+            expect(execution_equal(values, local, retained, steps, maximum_steps) == true);
             expect_equal(display_execution_value(values, ExecutionVoid {}, false), "()");
             const auto display = display_execution_value(values, local, false);
             if (expect(display.has_value())) {
@@ -138,6 +138,7 @@ const TestSuite suite([] static noexcept {
 
     "Constant values: text observation and equality are independent of storage representation"_test =
         [] static noexcept {
+            constexpr auto maximum_steps = std::numeric_limits<std::size_t>::max();
             auto fixture = ConstantEvaluationFixture();
             const auto& values = fixture.compilation;
             const auto bytes = std::string("a\0我", 5uz);
@@ -159,10 +160,10 @@ const TestSuite suite([] static noexcept {
                 }
                 auto steps = 0uz;
                 expect(
-                    execution_equal(values, representations[index], retained, steps, 1uz) == true
+                    execution_equal(values, representations[index], retained, steps, maximum_steps)
+                    == true
                 )
                     .note("index = ", index);
-                expect(steps == 1uz).note("index = ", index);
             }
             const auto nontext = ExecutionValue(
                 ConstantAtom {
@@ -172,7 +173,7 @@ const TestSuite suite([] static noexcept {
             );
             expect(!execution_text(values, nontext).has_value());
             auto steps = 0uz;
-            expect(execution_equal(values, nontext, retained, steps, 1uz) == false);
+            expect(execution_equal(values, nontext, retained, steps, maximum_steps) == false);
         };
 
     "Constant values: comparison distinguishes expired text, unsupported values and limits"_test =

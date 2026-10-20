@@ -15,9 +15,6 @@ adapters could manage progress and cleanup. Names such as `Uninit<T>`, `construc
 and `assume_init` are conceptual. The public surface and checking rules remain open.
 Evaluate candidates with concrete synchronous native adapters.
 
-An implementation experiment selects a complete adapter and any consumers
-needed to establish its shared interface.
-
 The intended result is direct construction in final storage, preserving evaluation
 and destruction while avoiding redundant initialization, temporaries, and state.
 Runtime progress remains explicit when the operation needs it, such as a count of
@@ -41,6 +38,8 @@ lifetime checks.
 The backend already constructs results in final storage and uses `DeferredResult`
 for delayed construction and cleanup. Recursive tuples directly initialize
 immovable elements, and fallible delivery can construct a success in its carrier.
+Synchronous outcomes and async completions share payload storage; carrier handoff
+and fresh-result bindings retain that payload without reconstructing its value.
 Source-level raw storage, completion assertions, and library-defined cleanup
 protocols remain unimplemented. Generated C++ has a C++20 baseline.
 
@@ -49,7 +48,33 @@ failure barrier cannot then be transferred into the final aggregate. Existing
 operand storage does not model partial-object initialization and cleanup. This
 boundary is a concrete use case for explicit construction destinations.
 
+The proposed destination API must select a source or library consumer beyond
+existing result delivery. External C++ by-value construction and unmodeled output
+validity remain provider and caller obligations.
+
 ## Design
+
+### Ownership and first experiment
+
+Select one synchronous byte-output or object-output adapter with a complete
+construction and failure contract. Compare a concrete native adapter with bounded
+builtin destination operations before selecting public raw storage. The comparison
+includes caller ergonomics, checked facts, native obligations, and runtime state.
+Expose reusable source primitives when the selected API needs callers or source
+algorithms to compose construction themselves.
+
+Compiler knowledge tracks modeled availability, initialization, backing, and
+cleanup; builtin storage or completion operations provide the selected source
+contract. Runtime Craft supplies shared native construction and destruction.
+Standard Craft owns buffer APIs, progress policy, container algorithms, and
+capability-specific native adapters. An adapter can contain its native validity
+assertions and return an ordinary checked result.
+
+Final-storage delivery does not itself select public `Uninit<T>`, user lifecycle
+hooks, or generic container operations. A source-defined container requires the
+parameterized operations and capabilities it uses. Constant execution is a
+separate admission decision for the selected operations, with typed initialization
+state and retained-result checks.
 
 ### Candidate contracts
 
@@ -113,8 +138,7 @@ access at the final location and extraction into another owner. Native exception
 recovery occurs before a `noexcept` boundary.
 
 The chosen source contract determines the semantic facts and checks needed by
-analysis, publication, and realization. Shared native lifetime mechanisms belong
-to runtime support; buffer policy and container algorithms belong to their craft.
+analysis, publication, and realization.
 Each selected use must account for empty, partial, live, and consumed states,
 completion evidence, and cleanup ownership on every supported exit. A direct
 delivery experiment preserves operand evaluation and destruction order, including
@@ -152,7 +176,8 @@ container or native adapter, including partial failure and unsupported operation
 - **Status:** Active
 - **Question:** Builtin storage, semantic operations wrapped by a craft, or concrete native adapters first?
 - **Required decision:** Empty/live/consumed states, cleanup ownership, Copy and Take, address stability, and native type capabilities.
-- **Evidence:** Accepted and rejected examples for the selected consumer,
+- **Evidence:** Compare the concrete-adapter and builtin-operation candidates on
+  accepted and rejected examples for the selected consumer,
   including final-location construction of an immovable object for object output.
   State generic prerequisites and any additional consumers needed to establish
   the shared interface.

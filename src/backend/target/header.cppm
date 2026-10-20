@@ -5,8 +5,7 @@ import std;
 enum class TargetHeaderDelimiter { AngleBrackets, Quotes };
 enum class TargetHeaderGroup {
     Associated,
-    Runtime,
-    Generated,
+    Project,
     StandardLibrary,
 };
 

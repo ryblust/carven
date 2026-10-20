@@ -25,6 +25,8 @@ public:
     auto type_count() const noexcept -> std::size_t;
     auto directive_groups() const noexcept -> std::span<const TargetDirectiveGroup>;
     auto sections() const noexcept -> const TargetUnitSections&;
+    auto generated_dependencies() const noexcept -> std::span<const TargetArtifactID>;
+    auto link_dependencies() const noexcept -> std::span<const std::string>;
 
 private:
     friend class TargetUnitBuilder;

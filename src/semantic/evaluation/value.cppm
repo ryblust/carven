@@ -6,28 +6,15 @@ import :semantic.semir.constant_access;
 import :support.input;
 import std;
 
-// Execution atoms contain no aggregate storage; compounds have explicit owners below.
-using ConstantAtomValue = std::variant<
-    SIMDConstant,
-    IntegerConstant,
-    RangeConstant,
-    F32Constant,
-    F64Constant,
-    BooleanConstant,
-    CharacterConstant,
-    TextConstant,
-    CStringConstant,
-    NullPointerConstant,
-    NumericEnumConstant,
-    VoidConstant>;
-
-struct ConstantAtom final {
-    TypeID type;
-    ConstantAtomValue value;
-};
-
-auto constant_atom(const ConstantFact& fact) noexcept -> std::optional<ConstantAtom>;
-auto constant_fact(const ConstantAtom& atom) noexcept -> ConstantFact;
+// These shared entities keep global-module identity; their definitions must be
+// reachable after import std when this partition is imported indirectly.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Winclude-angled-in-module-purview"
+extern "C++" {
+#include <carven/runtime/collection/vector.hpp>
+#include <carven/runtime/hosting/object.hpp>
+}
+#pragma clang diagnostic pop
 
 struct ExecutionVoid final {};
 
@@ -57,11 +44,12 @@ struct ExecutionPlace final {
     auto operator==(const ExecutionPlace&) const -> bool = default;
 };
 
-// A slice borrows elements of one live array, Vector, or text backing. Copying it copies the coordinate,
-// not its backing storage. A sub-slice advances offset within the same owner.
+// A slice borrows elements of one live array, Vector, or text backing. Copying it
+// copies the coordinate, not its storage. A statically empty slice has no backing
+// and zero offset and extent; a dynamically empty view retains its original borrow.
 struct ExecutionSlice final {
     ConstructionTypeRef type;
-    ExecutionPlace backing;
+    std::optional<ExecutionPlace> backing;
     std::size_t offset;
     std::size_t extent;
 };
@@ -146,6 +134,7 @@ public:
     auto operator=(ExecutionOwnedText&&) -> ExecutionOwnedText& = default;
     ~ExecutionOwnedText() = default;
     auto bytes() const noexcept -> std::string_view;
+    auto into_utf8() && noexcept -> std::string;
     auto borrow() const noexcept -> ExecutionText;
     // Callers account for produced bytes before mutation; input must be disjoint.
     auto append(std::string_view bytes) noexcept -> void;
@@ -165,13 +154,40 @@ struct ExecutionFunction final {
     CallableID callable;
 };
 
+// A host reference transports native identity and optional shared native ownership.
+// It contains no execution storage or source-dereferenceable address; adapters resolve it.
+struct ExecutionHostObject final {
+    ConstructionTypeRef type;
+    carven::runtime::hosting::ObjectRef<void> reference;
+    bool read_borrows;
+
+    ExecutionHostObject(
+        ConstructionTypeRef type,
+        carven::runtime::hosting::ObjectRef<void> reference,
+        bool read_borrows
+    ) noexcept;
+
+    ExecutionHostObject(const ExecutionHostObject& other) noexcept;
+    ExecutionHostObject(ExecutionHostObject&&) noexcept = default;
+    auto operator=(const ExecutionHostObject& other) noexcept -> ExecutionHostObject&;
+    auto operator=(ExecutionHostObject&&) noexcept -> ExecutionHostObject& = default;
+};
+
 struct ExecutionValue;
 
+// Constructed aggregates recursively own their storage-bearing children.
+// Retained scalars and borrowed views keep their existing representations.
 struct ExecutionAggregateValue final {
     ConstructionTypeRef type;
     std::vector<ExecutionValue> elements;
     // Logical capacity for growable owners; host vector allocation is not observable.
     std::size_t capacity;
+};
+
+struct ExecutionBytes final {
+    ConstructionTypeRef type;
+    TypeID element;
+    carven::runtime::Vector<std::uint8_t> bytes;
 };
 
 struct ExecutionEnumValue final {
@@ -180,6 +196,7 @@ struct ExecutionEnumValue final {
     std::vector<ExecutionValue> payload;
 };
 
+class ExecutionExternalOperation;
 struct ExecutionColdOperation;
 
 // IDs borrow retained inputs; newly computed facts and text remain execution-local.
@@ -193,8 +210,10 @@ struct ExecutionValue final : std::variant<
                                   ExecutionPointer,
                                   ExecutionSlice,
                                   ExecutionFunction,
+                                  ExecutionHostObject,
                                   std::unique_ptr<ExecutionColdOperation>,
                                   ExecutionAggregateValue,
+                                  ExecutionBytes,
                                   ExecutionEnumValue> {
     using variant::variant;
     using variant::operator=;
@@ -231,15 +250,26 @@ struct ExecutionTimerAction final {
 };
 
 struct ExecutionColdOperation final {
-    ConstructionTypeRef type;
-    std::variant<
+    using Action = std::variant<
         CallableID,
         AsyncIntrinsic,
         ExecutionCompositionAction,
         ExecutionTimeoutAction,
         ExecutionInputAction,
-        ExecutionTimerAction>
-        action;
+        ExecutionTimerAction,
+        std::unique_ptr<ExecutionExternalOperation>>;
+
+    ExecutionColdOperation(
+        ConstructionTypeRef type,
+        Action action,
+        std::vector<std::variant<ExecutionValue, ExecutionPlace>> arguments
+    ) noexcept;
+
+    ExecutionColdOperation(ExecutionColdOperation&&) noexcept;
+    ~ExecutionColdOperation() noexcept;
+
+    ConstructionTypeRef type;
+    Action action;
     std::vector<std::variant<ExecutionValue, ExecutionPlace>> arguments;
 };
 
@@ -276,6 +306,11 @@ struct ExecutionByteView final {
 };
 
 using ExecutionSequenceView = std::variant<std::span<const ExecutionValue>, ExecutionByteView>;
+
+auto execution_slice_view(
+    const ExecutionSlice& slice,
+    const ExecutionMemory* memory = nullptr
+) noexcept -> std::optional<ExecutionSequenceView>;
 
 auto transfer_owned_text(ExecutionValue& value) noexcept -> void;
 

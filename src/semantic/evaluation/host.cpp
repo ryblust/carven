@@ -2,6 +2,7 @@ module carven:semantic.evaluation.host.impl;
 
 import :semantic.evaluation.executor;
 import :semantic.evaluation.limits;
+import :semantic.evaluation.value;
 import :semantic.semir.type;
 import :support.clock;
 import :support.input;
@@ -48,26 +49,21 @@ auto SemanticExecutor::provided_call(
                 case 2:  mode = HostInputMode::All; break;
                 default: invariant_violation("standard input selected an unknown read mode");
             }
-            co_return std::make_unique<ExecutionColdOperation>(ExecutionColdOperation {
-                .type = result,
-                .action =
-                    ExecutionInputAction {
-                        .mode = mode,
-                        .limit = static_cast<std::size_t>(scalar(1).magnitude())
-                    },
-                .arguments = {}
-            });
+            co_return std::make_unique<ExecutionColdOperation>(
+                result,
+                ExecutionInputAction {
+                    .mode = mode,
+                    .limit = static_cast<std::size_t>(scalar(1).magnitude())
+                },
+                std::vector<ExecutionOperand>()
+            );
         }
         case ProvidedFunction::WaitUntil:
-            co_return std::make_unique<ExecutionColdOperation>(ExecutionColdOperation {
-                .type = result,
-                .action =
-                    ExecutionTimerAction {
-                        .deadline = *scalar(0).as_signed(),
-                        .failure = std::nullopt
-                    },
-                .arguments = {}
-            });
+            co_return std::make_unique<ExecutionColdOperation>(
+                result,
+                ExecutionTimerAction {.deadline = *scalar(0).as_signed(), .failure = std::nullopt},
+                std::vector<ExecutionOperand>()
+            );
     }
     std::unreachable();
 }
@@ -119,7 +115,7 @@ SemanticExecutor::InputWait::InputWait(
       user_limit(action.limit),
       request {
           .mode = action.mode,
-          .limit = std::min(action.limit, maximum_constant_aggregate_elements),
+          .limit = std::min(action.limit, maximum_constant_bytes),
           .scanned = 0uz
       },
       work(std::nullopt),
@@ -172,7 +168,77 @@ auto SemanticExecutor::host_clock(ProgramOriginID origin) noexcept
     return host_monotonic_now();
 }
 
+SemanticExecutor::ExternalWait::ExternalWait(
+    SemanticExecutor& executor,
+    std::unique_ptr<ExecutionExternalOperation> operation,
+    ProgramOriginID origin
+) noexcept
+    : executor(executor),
+      operation(std::move(operation)),
+      origin(origin),
+      registration(std::nullopt),
+      work(std::nullopt),
+      result(std::nullopt),
+      cancelled(false) {}
+
+SemanticExecutor::ExternalWait::~ExternalWait() noexcept {
+    if (registration) {
+        executor.external_requests.erase(*registration);
+    }
+    operation->cancel();
+}
+
+auto SemanticExecutor::ExternalWait::await_ready() noexcept -> bool {
+    cancelled = executor.cancel_requested();
+    if (cancelled) {
+        operation->cancel();
+        return true;
+    }
+    result = operation->poll();
+    return result.has_value();
+}
+
+auto SemanticExecutor::ExternalWait::suspend(
+    ContinuationTaskLoop& loop,
+    std::coroutine_handle<> continuation
+) noexcept -> void {
+    if (&loop != &executor.current->loop) {
+        invariant_violation("external wait parked in another task");
+    }
+    work = ExecutionWork {.task = executor.current, .continuation = continuation};
+    executor.external_requests.push_back(this);
+    registration = std::prev(executor.external_requests.end());
+}
+
+auto SemanticExecutor::ExternalWait::await_resume() noexcept
+    -> std::expected<ExecutionValue, ExecutionCallFailure> {
+    if (cancelled) {
+        return std::unexpected(ExecutionCallFailure {executor.cancelled(origin)});
+    }
+    if (!result) {
+        invariant_violation("external wait resumed without completion");
+    }
+    return std::move(*result);
+}
+
 auto SemanticExecutor::poll_host() noexcept -> void {
+    for (auto iterator = external_requests.begin(); iterator != external_requests.end();) {
+        auto& waiting = **iterator;
+        if (task_cancel_requested(*waiting.work->task)) {
+            waiting.cancelled = true;
+            waiting.operation->cancel();
+        } else {
+            waiting.result = waiting.operation->poll();
+        }
+        if (waiting.cancelled || waiting.result) {
+            iterator = external_requests.erase(iterator);
+            waiting.registration.reset();
+            ready.push_back(*waiting.work);
+        } else {
+            ++iterator;
+        }
+    }
+
     // Commit cancellation before expiry and input readiness, matching the native driver.
     for (auto it = timers.begin(); it != timers.end();) {
         auto& waiting = **it;
@@ -234,16 +300,28 @@ auto SemanticExecutor::poll_host() noexcept -> void {
 }
 
 auto SemanticExecutor::wait_host() noexcept -> bool {
+    auto deadline = timers.empty() ? std::nullopt : std::optional(timers.front()->deadline);
+    const auto sources = external_requests.size() + !input_requests.empty() + !timers.empty();
+    if (!external_requests.empty() && sources > 1uz) {
+        // Independent native roots and input sources share bounded idle waits.
+        const auto poll_deadline = host_monotonic_now() + 10'000'000;
+        if (!deadline || poll_deadline < *deadline) {
+            deadline = poll_deadline;
+        }
+    }
+    for (auto* waiting : external_requests) {
+        if (waiting->operation->wait(deadline)) {
+            return true;
+        }
+    }
     if (!input_requests.empty()) {
-        HostInputCursor::process().wait(
-            timers.empty() ? std::nullopt : std::optional(timers.front()->deadline)
-        );
+        HostInputCursor::process().wait(deadline);
         return true;
     }
     if (timers.empty()) {
         return false;
     }
-    host_monotonic_wait(timers.front()->deadline);
+    host_monotonic_wait(*deadline);
     return true;
 }
 
@@ -260,7 +338,7 @@ auto SemanticExecutor::source_failure(
     ExecutionValue payload,
     ProgramOriginID origin
 ) noexcept -> ExecutionFailure {
-    auto checked = bounded_value(std::move(payload), origin);
+    auto checked = constructed_value(std::move(payload), origin);
     if (!checked) {
         return std::move(checked.error());
     }
@@ -334,31 +412,20 @@ auto SemanticExecutor::input_value(const HostInputResult& response, const InputW
         }
         limited = true;
     }
-    if (auto checked = account_aggregate(bytes.size(), origin); !checked) {
+    if (auto checked = account_bytes(bytes.size(), origin); !checked) {
         return std::unexpected(std::move(checked.error()));
     }
     if (auto checked = account_aggregate(4uz, origin); !checked) {
         return std::unexpected(std::move(checked.error()));
     }
-    auto elements = std::vector<ExecutionValue>();
-    elements.reserve(bytes.size());
-    for (const auto byte : bytes) {
-        if (auto checked = step(origin); !checked) {
-            return std::unexpected(std::move(checked.error()));
-        }
-        elements.emplace_back(
-            ConstantAtom {
-                .type = values.builtin_type(BuiltinType::U8),
-                .value = IntegerConstant::from_parts(byte, false)
-            }
-        );
-    }
     auto result = std::vector<ExecutionValue>();
     result.emplace_back(
-        ExecutionAggregateValue {
+        ExecutionBytes {
             .type = fields[0],
-            .elements = std::move(elements),
-            .capacity = bytes.size()
+            .element = values.builtin_type(BuiltinType::U8),
+            .bytes = carven::runtime::Vector<std::uint8_t>::from_slice(
+                carven::runtime::Slice<std::uint8_t>(bytes)
+            )
         }
     );
     result.emplace_back(ConstantAtom {.type = fields[1], .value = BooleanConstant {.value = end}});
@@ -368,7 +435,7 @@ auto SemanticExecutor::input_value(const HostInputResult& response, const InputW
     result.emplace_back(
         ConstantAtom {.type = fields[3], .value = BooleanConstant {.value = limited}}
     );
-    return bounded_value(
+    return constructed_value(
         ExecutionAggregateValue {
             .type = result_type,
             .elements = std::move(result),

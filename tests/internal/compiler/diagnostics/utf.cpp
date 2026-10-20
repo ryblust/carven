@@ -53,8 +53,8 @@ const TestSuite suite([] static noexcept {
 
     "UTF craft: cursor fields protect their input backing"_test = [] static noexcept {
         with_compiled_source(
-            "import std::utf using { SplitCursor, TextError }; "
-            "fn bad() throw TextError { var text: String = \"a b\"; var cursor = SplitCursor::new(); "
+            "import std::utf using { TextSplitCursor, TextError } "
+            "fn bad() throw TextError { var text: String = \"a b\"; var cursor = TextSplitCursor::new(); "
             "let field = cursor.next(text, \" \")?; text.clear(); println(field); }",
             [](const auto&, const auto& result) static noexcept {
                 if (expect(!result.has_value())) {
@@ -67,7 +67,7 @@ const TestSuite suite([] static noexcept {
 
     "UTF craft: encoded views protect encoding storage from mutation"_test = [] static noexcept {
         with_compiled_source(
-            "import std::utf using { encode_utf8, encoded_bytes }; "
+            "import std::utf using { encode_utf8, encoded_bytes } "
             "fn bad() { var encoded = encode_utf8('a'); let bytes = encoded_bytes(encoded); "
             "encoded = encode_utf8('b'); }",
             [](const auto& sources, const auto& result) static noexcept {

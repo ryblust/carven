@@ -114,7 +114,7 @@ auto TargetRenderer::braced_block(std::span<const LayoutNodeID> body) noexcept -
     }
     return concat({
         text("{"),
-        builder.indent(indent_width, concat({builder.line(), stack(body)})),
+        builder.indent(indent_width, concat({builder.line(), stack(body, 0uz)})),
         builder.line(),
         text("}"),
     });

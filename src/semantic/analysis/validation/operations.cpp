@@ -1,7 +1,9 @@
 module carven:semantic.analysis.validation.operations.impl;
 
 import :semantic.analysis.coverage;
+import :semantic.analysis.operations;
 import :semantic.analysis.validation.context;
+import :semantic.evaluation.standard;
 import :semantic.format;
 import :semantic.semir.format;
 import :semantic.semir.initialization;
@@ -63,6 +65,13 @@ auto BodyContractVerifier::verify_expression(
                     value.operand->type.resolved()
                 );
             },
+            [&](const SemHash& value) noexcept {
+                if (!type_supports_hash(program.types(), value.operand->type.resolved())
+                    || require_type(source.type.resolved()).value
+                        != CanonicalTypeValue {BuiltinTypeValue {.kind = BuiltinType::U64}}) {
+                    invariant_violation("semantic hash has an incompatible operand or result");
+                }
+            },
             [&](const SemBinary& value) noexcept {
                 check_result(
                     decide_binary_operator(
@@ -112,7 +121,7 @@ auto BodyContractVerifier::verify_expression(
                 }
             },
             [&](const SemUnreachable&) noexcept {
-                if (source.constant || source.exits_test || source.operation_reachable) {
+                if (source.constant || source.exits_call || source.operation_reachable) {
                     invariant_violation("unreachable projection carries a completion fact");
                 }
             },
@@ -196,8 +205,30 @@ auto BodyContractVerifier::verify_expression(
                 };
                 const auto* actual =
                     std::get_if<CppTypeValue>(&require_type(source.type.resolved()).value);
-                if (!valid_cpp_type(expected) || actual == nullptr || *actual != expected) {
-                    invariant_violation("C++ call differs from its result query");
+                const auto values = PublishedConstantValues(program);
+                const auto native =
+                    standard_native_result(values, std::get<CppQueryType>(expected.form));
+                const auto projected = native
+                    && module_id
+                    && standard_native_result_matches(
+                                           values,
+                                           *native,
+                                           source.type.resolved(),
+                                           *module_id
+                    );
+                // An explicit source completion contract constrains an unknown
+                // native producer; C++ checks its return type against that contract.
+                const auto delegated_operation = !native
+                    && std::holds_alternative<OperationTypeValue>(
+                        require_type(source.type.resolved()).value
+                    );
+                if (!valid_cpp_type(expected)
+                    || (!projected
+                        && !delegated_operation
+                        && (actual == nullptr || *actual != expected))) {
+                    invariant_violation(
+                        "C++ call differs from its result query or operation contract"
+                    );
                 }
                 if (const auto* name = cpp_type_name(expected)) {
                     static_cast<void>(program.declarations().module_decl(name->context_module));
@@ -471,7 +502,7 @@ auto BodyContractVerifier::verify_expression(
             [&](const SemEnumCase& value) noexcept {
                 const auto& type = require_type(source.type.resolved());
                 const auto* enumeration = std::get_if<EnumTypeValue>(&type.value);
-                const auto& member = require_enum_case(value.enum_case);
+                const auto& member = require_enum_case(concrete_enum_case(value.enum_case));
                 if (enumeration == nullptr
                     || enumeration->enumeration != member.owner
                     || value.payload.size() != member.payload_types.size()) {
@@ -732,6 +763,16 @@ auto BodyContractVerifier::verify_expression(
                                             && operand.access != AccessMode::Take)) {
                                         invariant_violation(
                                             "Vector push element contract mismatch"
+                                        );
+                                    }
+                                } else if (*contract.argument == VectorIntrinsicArgument::Slice) {
+                                    if (operand.access != AccessMode::Read
+                                        || require_type(operand.expression.type.resolved()).value
+                                            != CanonicalTypeValue {
+                                                SliceTypeValue {.element = sequence->element}
+                                            }) {
+                                        invariant_violation(
+                                            "Vector slice argument contract mismatch"
                                         );
                                     }
                                 } else {

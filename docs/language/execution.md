@@ -8,10 +8,11 @@ This page defines program entry, test execution, assertions, and language diagno
 
 ## Entry points
 
-A compilation may contain zero or one program entry. A function named `main`
+A module may contain zero or one program entry. A function named `main`
 and a file containing top-level executable statements each define an entry.
-Multiple entries are diagnosed at their source locations. Generating C++ does
-not require an entry; executing a program requires one.
+Checking and generating C++ may process several modules with their own entries
+in one source batch. Each executable links one entry and its dependencies;
+interpreted program execution requires exactly one entry in its input batch.
 
 Top-level statements execute in source order as one implicit entry body. Module
 declarations may appear between them and retain their usual meaning: in

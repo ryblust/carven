@@ -1,6 +1,6 @@
 import "demo/native.hpp";
 
-private import(cpp) fn native_answer() -> i32;
+private import(cpp) fn native_answer() -> i32 = ::native_answer;
 
 private fn parse(text: str) -> i32 => i32::parse(text)?;
 

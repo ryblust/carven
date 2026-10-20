@@ -148,14 +148,14 @@ template<typename Visitor, typename Node>
 auto traverse_target_expression(
     Node& expression,
     Visitor& visitor,
-    TargetExpressionRole role = TargetExpressionRole::Operand
+    TargetExpressionRole role
 ) noexcept -> bool;
 
 template<typename Edge, typename Visitor>
 auto traverse_target_owned_expression(
     Edge& edge,
     Visitor& visitor,
-    TargetExpressionRole role = TargetExpressionRole::Operand
+    TargetExpressionRole role
 ) noexcept -> bool {
     if constexpr (requires { Visitor::cleanup_edges; }) {
         if constexpr (Visitor::cleanup_edges) {
@@ -177,7 +177,11 @@ auto visit_target_type_children(const TargetTypeValue& value, Visitor& visitor) 
     return value.visit(
         Overloaded {
             [&](const TargetDecltypeType& deduced) noexcept {
-                return traverse_target_expression(deduced.expression(), visitor);
+                return traverse_target_expression(
+                    deduced.expression(),
+                    visitor,
+                    TargetExpressionRole::Operand
+                );
             },
             [&](const TargetNamedType& named) noexcept {
                 if (!visit_types(named.type_argument_ids)) {
@@ -221,7 +225,7 @@ auto traverse_target_statements(Range& statements, Visitor& visitor) noexcept ->
 template<typename Visitor, typename Range>
 auto traverse_target_expressions(Range& expressions, Visitor& visitor) noexcept -> bool {
     return std::ranges::all_of(expressions, [&](auto& expression) noexcept {
-        return traverse_target_expression(expression, visitor);
+        return traverse_target_expression(expression, visitor, TargetExpressionRole::Operand);
     });
 }
 
@@ -271,19 +275,47 @@ auto traverse_target_expression_impl(
                 );
             },
             [&](TargetTraversalNode<Node, TargetCoAwaitExpr>& value) noexcept {
-                return traverse_target_owned_expression(value.operand, visitor);
+                return traverse_target_owned_expression(
+                    value.operand,
+                    visitor,
+                    TargetExpressionRole::Operand
+                );
             },
             [&](TargetTraversalNode<Node, TargetBinaryExpr>& value) noexcept {
-                return traverse_target_owned_expression(value.left, visitor)
-                    && traverse_target_owned_expression(value.right, visitor);
+                return traverse_target_owned_expression(
+                           value.left,
+                           visitor,
+                           TargetExpressionRole::Operand
+                       )
+                    && traverse_target_owned_expression(
+                           value.right,
+                           visitor,
+                           TargetExpressionRole::Operand
+                    );
             },
             [&](TargetTraversalNode<Node, TargetConditionalExpr>& value) noexcept {
-                return traverse_target_owned_expression(value.condition, visitor)
-                    && traverse_target_owned_expression(value.true_value, visitor)
-                    && traverse_target_owned_expression(value.false_value, visitor);
+                return traverse_target_owned_expression(
+                           value.condition,
+                           visitor,
+                           TargetExpressionRole::Operand
+                       )
+                    && traverse_target_owned_expression(
+                           value.true_value,
+                           visitor,
+                           TargetExpressionRole::Operand
+                    )
+                    && traverse_target_owned_expression(
+                           value.false_value,
+                           visitor,
+                           TargetExpressionRole::Operand
+                    );
             },
             [&](TargetTraversalNode<Node, TargetTemplateNameExpr>& value) noexcept {
-                return traverse_target_owned_expression(value.operand, visitor)
+                return traverse_target_owned_expression(
+                           value.operand,
+                           visitor,
+                           TargetExpressionRole::Operand
+                       )
                     && std::ranges::all_of(
                            value.arguments,
                            [&](const TargetTemplateArgument& argument) noexcept {
@@ -293,13 +325,22 @@ auto traverse_target_expression_impl(
                     );
             },
             [&](TargetTraversalNode<Node, TargetCallExpr>& value) noexcept {
-                return traverse_target_owned_expression(value.callee, visitor)
+                return traverse_target_owned_expression(
+                           value.callee,
+                           visitor,
+                           TargetExpressionRole::Operand
+                       )
                     && traverse_target_expressions(value.arguments, visitor);
             },
             [&](TargetTraversalNode<Node, TargetArrayExpr>& value) noexcept {
+                auto* elements = std::get_if<std::vector<TargetExpr>>(&value.elements);
                 return visit_target_type(visitor, value.element_type_id)
-                    && traverse_target_owned_expression(value.extent, visitor)
-                    && traverse_target_expressions(value.elements, visitor);
+                    && traverse_target_owned_expression(
+                           value.extent,
+                           visitor,
+                           TargetExpressionRole::Operand
+                    )
+                    && (!elements || traverse_target_expressions(*elements, visitor));
             },
             [&](TargetTraversalNode<Node, TargetConstructionExpr>& value) noexcept {
                 if (!visit_target_type(visitor, value.type)) {
@@ -315,28 +356,52 @@ auto traverse_target_expression_impl(
                             TargetTraversalNode<Node, std::vector<TargetFieldInitializer>>& fields
                         ) noexcept {
                             return std::ranges::all_of(fields, [&](auto& field) noexcept {
-                                return traverse_target_owned_expression(field.value, visitor);
+                                return traverse_target_owned_expression(
+                                    field.value,
+                                    visitor,
+                                    TargetExpressionRole::Operand
+                                );
                             });
                         },
                     }
                 );
             },
             [&](TargetTraversalNode<Node, TargetIndexExpr>& value) noexcept {
-                return traverse_target_owned_expression(value.operand, visitor)
-                    && traverse_target_owned_expression(value.index, visitor);
+                return traverse_target_owned_expression(
+                           value.operand,
+                           visitor,
+                           TargetExpressionRole::Operand
+                       )
+                    && traverse_target_owned_expression(
+                           value.index,
+                           visitor,
+                           TargetExpressionRole::Operand
+                    );
             },
             [&](TargetTraversalNode<Node, TargetMemberExpr>& value) noexcept {
-                return traverse_target_owned_expression(value.operand, visitor);
+                return traverse_target_owned_expression(
+                    value.operand,
+                    visitor,
+                    TargetExpressionRole::Operand
+                );
             },
             [&](TargetTraversalNode<Node, TargetScopeMemberExpr>& value) noexcept {
-                return traverse_target_owned_expression(value.operand, visitor);
+                return traverse_target_owned_expression(
+                    value.operand,
+                    visitor,
+                    TargetExpressionRole::Operand
+                );
             },
             [&](TargetTraversalNode<Node, TargetStaticMemberExpr>& value) noexcept {
                 return visit_target_type(visitor, value.owner);
             },
             [&](TargetTraversalNode<Node, TargetStaticCastExpr>& value) noexcept {
                 return visit_target_type(visitor, value.type)
-                    && traverse_target_owned_expression(value.operand, visitor);
+                    && traverse_target_owned_expression(
+                           value.operand,
+                           visitor,
+                           TargetExpressionRole::Operand
+                    );
             },
             [&](TargetTraversalNode<Node, TargetLambdaExpr>& value) noexcept {
                 return std::ranges::all_of(
@@ -364,18 +429,22 @@ template<typename Visitor, typename Value>
 auto traverse_target_for_clause(Value& value, Visitor& visitor) noexcept -> bool {
     using Clause = std::remove_cvref_t<Value>;
     if constexpr (std::same_as<Clause, TargetExprStmt> || std::same_as<Clause, TargetDiscardStmt>) {
-        return traverse_target_expression(value.expression, visitor);
+        return traverse_target_expression(value.expression, visitor, TargetExpressionRole::Operand);
     } else if constexpr (std::same_as<Clause, TargetVariableStmt>) {
         return visit_target_variable(visitor, value)
             && visit_target_type(visitor, value.type)
-            && traverse_target_expression(value.initializer, visitor);
+            && traverse_target_expression(
+                   value.initializer,
+                   visitor,
+                   TargetExpressionRole::Operand
+            );
     } else if constexpr (std::same_as<Clause, TargetAssignmentStmt>) {
         return traverse_target_expression(
                    value.target,
                    visitor,
                    TargetExpressionRole::MutationTarget
                )
-            && traverse_target_expression(value.value, visitor);
+            && traverse_target_expression(value.value, visitor, TargetExpressionRole::Operand);
     } else if constexpr (std::same_as<Clause, TargetUpdateStmt>) {
         return traverse_target_expression(
             value.target,
@@ -396,22 +465,42 @@ auto traverse_target_statement_impl(Node& statement, Visitor& visitor) noexcept 
     const auto children = statement.value.visit(
         Overloaded {
             [&](TargetTraversalNode<Node, TargetExprStmt>& value) noexcept {
-                return traverse_target_expression(value.expression, visitor);
+                return traverse_target_expression(
+                    value.expression,
+                    visitor,
+                    TargetExpressionRole::Operand
+                );
             },
             [&](TargetTraversalNode<Node, TargetDiscardStmt>& value) noexcept {
-                return traverse_target_expression(value.expression, visitor);
+                return traverse_target_expression(
+                    value.expression,
+                    visitor,
+                    TargetExpressionRole::Operand
+                );
             },
             [&](TargetTraversalNode<Node, TargetReturnStmt>& value) noexcept {
                 return !value.expression.has_value()
-                    || traverse_target_expression(*value.expression, visitor);
+                    || traverse_target_expression(
+                        *value.expression,
+                        visitor,
+                        TargetExpressionRole::Operand
+                    );
             },
             [&](TargetTraversalNode<Node, TargetCoReturnStmt>& value) noexcept {
-                return traverse_target_expression(value.expression, visitor);
+                return traverse_target_expression(
+                    value.expression,
+                    visitor,
+                    TargetExpressionRole::Operand
+                );
             },
             [&](TargetTraversalNode<Node, TargetVariableStmt>& value) noexcept {
                 return visit_target_variable(visitor, value)
                     && visit_target_type(visitor, value.type)
-                    && traverse_target_expression(value.initializer, visitor);
+                    && traverse_target_expression(
+                           value.initializer,
+                           visitor,
+                           TargetExpressionRole::Operand
+                    );
             },
             [&](TargetTraversalNode<Node, TargetBlockStmt>& value) noexcept {
                 return with_target_scope(visitor, TargetTraversalScope::Block, [&]() noexcept {
@@ -424,7 +513,11 @@ auto traverse_target_statement_impl(Node& statement, Visitor& visitor) noexcept 
                            visitor,
                            TargetExpressionRole::MutationTarget
                        )
-                    && traverse_target_expression(value.value, visitor);
+                    && traverse_target_expression(
+                           value.value,
+                           visitor,
+                           TargetExpressionRole::Operand
+                    );
             },
             [&](TargetTraversalNode<Node, TargetUpdateStmt>& value) noexcept {
                 return traverse_target_expression(
@@ -441,7 +534,11 @@ auto traverse_target_statement_impl(Node& statement, Visitor& visitor) noexcept 
             [](TargetTraversalNode<Node, TargetGotoStmt>&) static noexcept { return true; },
             [](TargetTraversalNode<Node, TargetLabelStmt>&) static noexcept { return true; },
             [&](TargetTraversalNode<Node, TargetIfStmt>& value) noexcept {
-                if (!traverse_target_expression(value.condition, visitor)
+                if (!traverse_target_expression(
+                        value.condition,
+                        visitor,
+                        TargetExpressionRole::Operand
+                    )
                     || !with_target_scope(
                         visitor,
                         TargetTraversalScope::ConditionalBranch,
@@ -459,14 +556,22 @@ auto traverse_target_statement_impl(Node& statement, Visitor& visitor) noexcept 
                     );
             },
             [&](TargetTraversalNode<Node, TargetWhileStmt>& value) noexcept {
-                return traverse_target_expression(value.condition, visitor)
+                return traverse_target_expression(
+                           value.condition,
+                           visitor,
+                           TargetExpressionRole::Operand
+                       )
                     && with_target_scope(visitor, TargetTraversalScope::Loop, [&]() noexcept {
                            return traverse_target_statements(value.body, visitor);
                        });
             },
             [&](TargetTraversalNode<Node, TargetRangeForStmt>& value) noexcept {
                 return visit_target_type(visitor, value.type)
-                    && traverse_target_expression(value.range, visitor)
+                    && traverse_target_expression(
+                           value.range,
+                           visitor,
+                           TargetExpressionRole::Operand
+                    )
                     && with_target_scope(visitor, TargetTraversalScope::Loop, [&]() noexcept {
                            return visit_target_variable(visitor, value)
                                && traverse_target_statements(value.body, visitor);
@@ -481,7 +586,11 @@ auto traverse_target_statement_impl(Node& statement, Visitor& visitor) noexcept 
                         return false;
                     }
                     if (value.condition.has_value()
-                        && !traverse_target_expression(*value.condition, visitor)) {
+                        && !traverse_target_expression(
+                            *value.condition,
+                            visitor,
+                            TargetExpressionRole::Operand
+                        )) {
                         return false;
                     }
                     for (auto& step : value.steps) {
@@ -509,7 +618,11 @@ auto traverse_target_parameter(const TargetParameter& parameter, Visitor& visito
     }
     return visit_target_type(visitor, parameter.type)
         && (!parameter.default_value.has_value()
-            || traverse_target_expression(*parameter.default_value, visitor));
+            || traverse_target_expression(
+                *parameter.default_value,
+                visitor,
+                TargetExpressionRole::Operand
+            ));
 }
 
 template<typename Visitor>
@@ -595,7 +708,11 @@ auto traverse_target_declaration(const TargetDecl& declaration, Visitor& visitor
             },
             [&](const TargetVariableDecl& value) noexcept {
                 return visit_target_type(visitor, value.type)
-                    && traverse_target_expression(value.initializer, visitor);
+                    && traverse_target_expression(
+                           value.initializer,
+                           visitor,
+                           TargetExpressionRole::Operand
+                    );
             },
             [&](const TargetOutOfClassMemberDefinition& value) noexcept {
                 return traverse_target_parameters(value.parameters, visitor)
@@ -611,7 +728,11 @@ auto traverse_target_declaration(const TargetDecl& declaration, Visitor& visitor
             [&](const TargetEnumDecl& value) noexcept {
                 return visit_target_type(visitor, value.underlying_type)
                     && std::ranges::all_of(value.cases, [&](const auto& item) noexcept {
-                           return traverse_target_expression(item.value, visitor);
+                           return traverse_target_expression(
+                               item.value,
+                               visitor,
+                               TargetExpressionRole::Operand
+                           );
                        });
             },
             [&](const TargetEnumForwardDecl& value) noexcept {

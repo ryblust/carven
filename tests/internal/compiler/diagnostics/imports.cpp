@@ -22,16 +22,14 @@ const TestSuite suite([] static noexcept {
             auto sources = SourceManager();
             const auto used_provider = *sources.append_virtual(
                 "used-provider.cv",
-                "export fn selected() -> i32 { return 1; }\n"
-                "export fn selected_peer() -> i32 { return 3; }\n"
+                "fn selected() -> i32 { return 1; }\n"
+                "fn selected_peer() -> i32 { return 3; }\n"
             );
-            const auto unused_provider = *sources.append_virtual(
-                "unused-provider.cv",
-                "export fn spare() -> i32 { return 2; }\n"
-            );
+            const auto unused_provider =
+                *sources.append_virtual("unused-provider.cv", "fn spare() -> i32 { return 2; }\n");
             const auto app = *sources.append_virtual(
                 "app.cv",
-                "import used_provider using { selected, selected_peer, };\n"
+                "import used_provider using { selected, selected_peer, }\n"
                 "import unused_provider using spare;\n"
                 "fn read() -> i32 { return selected(); }\n"
             );
@@ -82,9 +80,9 @@ const TestSuite suite([] static noexcept {
         [] static noexcept {
             auto sources = SourceManager();
             const auto first =
-                *sources.append_virtual("first.cv", "export fn value() -> i32 { return 1; }\n");
+                *sources.append_virtual("first.cv", "fn value() -> i32 { return 1; }\n");
             const auto second =
-                *sources.append_virtual("second.cv", "export fn value() -> i32 { return 2; }\n");
+                *sources.append_virtual("second.cv", "fn value() -> i32 { return 2; }\n");
             const auto app = *sources.append_virtual(
                 "app.cv",
                 "import first using *;\n"

@@ -12,7 +12,6 @@ constexpr auto json_modules = std::to_array<std::string_view>({
     "core",
     "json",
     "json.node",
-    "json.parse",
     "json.serialize",
     "json.string",
     "json.syntax",
@@ -23,14 +22,14 @@ constexpr auto json_modules = std::to_array<std::string_view>({
     "utf.scan",
 });
 
-constexpr auto json_imports = "import std::json using { Value, ValueError }; ";
+constexpr auto json_imports = "import std::json using { JSONValue, JSONValueError } ";
 
 const TestSuite suite([] static noexcept {
     "JSON craft: borrowed keys prevent removing object members"_test = [] static noexcept {
         with_compiled_source(
             std::string(json_imports)
-                + "fn invalid() throw ValueError { "
-                  "var value = Value::object(); value.set(\"key\", &&Value::null())?; "
+                + "fn invalid() throw JSONValueError { "
+                  "var value = JSONValue::object(); value.set(\"key\", &&JSONValue::null())?; "
                   "let key = value.key_at(0)?; value.erase(\"key\")?; }",
             [](const auto&, const auto& result) static noexcept {
                 if (!expect(!result.has_value())) {

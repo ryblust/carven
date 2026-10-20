@@ -236,6 +236,11 @@ auto NullabilityBodyAnalyzer::expression(const SemanticExpression& source, NullS
                 set_value({});
                 co_return {};
             },
+            [&](const SemHash& value) noexcept -> ContinuationTask<std::monostate> {
+                static_cast<void>((co_await evaluate(*value.operand)));
+                set_value({});
+                co_return {};
+            },
             [&](const SemBinary& value) noexcept -> ContinuationTask<std::monostate> {
                 static_cast<void>((co_await evaluate(*value.left)));
                 static_cast<void>((co_await evaluate(*value.right)));

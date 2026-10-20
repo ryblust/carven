@@ -2,6 +2,7 @@ module carven:semantic.evaluation.simd.impl;
 
 import :semantic.evaluation.executor;
 import :semantic.evaluation.operation;
+import :semantic.evaluation.value;
 import :semantic.semir.simd;
 import std;
 
@@ -48,7 +49,7 @@ auto SemanticExecutor::simd(
             "SIMD index or memory range is out of bounds"
         );
     };
-    const auto scalar = [&](const ConstantFact& fact) noexcept -> Lane {
+    const auto scalar = [&](const ConstantAtom& fact) noexcept -> Lane {
         if (floating) {
             return std::bit_cast<std::uint32_t>(std::get<F32Constant>(fact.value).value);
         } else {
@@ -82,7 +83,7 @@ auto SemanticExecutor::simd(
             if (!input) {
                 co_return std::unexpected(std::move(input.error()));
             }
-            auto fact = read_fact(*input, origin);
+            auto fact = read_atom(*input, origin);
             if (!fact) {
                 co_return std::unexpected(std::move(fact.error()));
             }
@@ -96,24 +97,40 @@ auto SemanticExecutor::simd(
             || (intrinsic != SIMDIntrinsic::LoadPartial && sequence->extent - offset < width)) {
             co_return std::unexpected(bounds_failure());
         }
-        auto result = Vector {.lanes = std::vector<std::uint32_t>(width)};
-        std::ranges::fill(result.lanes, fill);
+        const auto elements = execution_slice_view(*sequence, &memory);
+        if (!elements) {
+            co_return std::unexpected(
+                fail(origin, ExecutionReason::Evaluation, "slice backing is no longer alive")
+            );
+        }
+        auto result = Vector {};
+        for (auto index = 0uz; index < width; ++index) {
+            result.set_lane(index, layout.element, fill);
+        }
         const auto count = std::min<std::uint64_t>(width, sequence->extent - offset);
-        for (auto index = 0uz; index < count; ++index) {
-            auto selected =
-                slice_element(*sequence, static_cast<std::size_t>(offset) + index, origin);
-            if (!selected) {
-                co_return std::unexpected(std::move(selected.error()));
+        auto loaded = elements->visit([&](const auto children) noexcept -> ExecutionResult<void> {
+            for (auto index = 0uz; index < count; ++index) {
+                const auto position = static_cast<std::size_t>(offset) + index;
+                if constexpr (std::same_as<
+                                  std::remove_cvref_t<decltype(children)>,
+                                  ExecutionByteView>) {
+                    result.set_lane(
+                        index,
+                        layout.element,
+                        static_cast<unsigned char>(children.bytes[position])
+                    );
+                } else {
+                    auto fact = read_atom(children[position], origin);
+                    if (!fact) {
+                        return std::unexpected(std::move(fact.error()));
+                    }
+                    result.set_lane(index, layout.element, scalar(*fact));
+                }
             }
-            auto input = located(*selected, origin);
-            if (!input) {
-                co_return std::unexpected(std::move(input.error()));
-            }
-            auto fact = read_fact(**input, origin);
-            if (!fact) {
-                co_return std::unexpected(std::move(fact.error()));
-            }
-            result.lanes[index] = scalar(*fact);
+            return {};
+        });
+        if (!loaded) {
+            co_return std::unexpected(std::move(loaded.error()));
         }
         co_return ConstantAtom {.type = *target, .value = result};
     }
@@ -122,26 +139,26 @@ auto SemanticExecutor::simd(
         if (!input) {
             co_return std::unexpected(std::move(input.error()));
         }
-        auto fact = read_fact(*input, origin);
+        auto fact = read_atom(*input, origin);
         if (!fact) {
             co_return std::unexpected(std::move(fact.error()));
         }
-        const auto& lanes = std::get<Vector>(fact->value).lanes;
+        const auto& lanes = std::get<Vector>(fact->value);
         auto indices = co_await sequence_view(frame, operation.operands[1].expression, origin);
         if (!indices) {
             co_return std::unexpected(std::move(indices.error()));
         }
-        auto result = Vector {.lanes = std::vector<std::uint32_t>(width)};
+        auto result = Vector {};
         for (auto index = 0uz; index < width; ++index) {
             auto selected = slice_element(*indices, index, origin);
             if (!selected) {
                 co_return std::unexpected(std::move(selected.error()));
             }
-            auto control = located(*selected, origin);
+            auto control = observed(*selected, origin);
             if (!control) {
                 co_return std::unexpected(std::move(control.error()));
             }
-            auto control_fact = read_fact(**control, origin);
+            auto control_fact = read_atom(control->get(), origin);
             if (!control_fact) {
                 co_return std::unexpected(std::move(control_fact.error()));
             }
@@ -149,25 +166,26 @@ auto SemanticExecutor::simd(
             if (position >= width) {
                 co_return std::unexpected(bounds_failure());
             }
-            result.lanes[index] = lanes[position];
+            result.set_lane(index, layout.element, lanes.lane(position, layout.element));
         }
-        co_return ConstantAtom {.type = *target, .value = std::move(result)};
+        co_return ConstantAtom {.type = *target, .value = result};
     }
-    auto inputs = std::vector<ConstantFact>();
+    auto inputs = std::vector<ConstantAtom>();
     for (const auto& operand : operation.operands) {
         auto input = (co_await this->value(frame, operand.expression));
         if (!input) {
             co_return std::unexpected(std::move(input.error()));
         }
-        auto fact = read_fact(*input, origin);
+        auto fact = read_atom(*input, origin);
         if (!fact) {
             co_return std::unexpected(std::move(fact.error()));
         }
-        inputs.push_back(std::move(*fact));
+        inputs.push_back(*fact);
     }
     if (intrinsic == SIMDIntrinsic::ToArray) {
         auto elements = std::vector<ExecutionValue>();
-        for (const auto lane : std::get<SIMDConstant>(inputs.front().value).lanes) {
+        for (const auto lane :
+             std::get<SIMDConstant>(inputs.front().value).lanes(layout.element, width)) {
             elements.emplace_back(atom(lane));
         }
         co_return ExecutionAggregateValue {
@@ -182,5 +200,5 @@ auto SemanticExecutor::simd(
             operation_failure(output.error(), origin, "unsupported SIMD operation")
         );
     }
-    co_return *constant_atom(*output);
+    co_return *output;
 }

@@ -61,6 +61,19 @@ The selected consumer determines the facts that need a durable interface. Themes
 hosting, runtime reflection, and private compiler containers are outside that
 source contract.
 
+### Ownership and first consumer
+
+Compiler knowledge covers documentation forms, syntax attachment, source ranges,
+and declaration identity. Select retained text and attachment facts for one
+editor or documentation-output consumer. Use line comments and retained Markdown
+as the baseline when comparing source forms and markup; add structured tags or
+compiler-resolved references when the consumer needs their meaning.
+
+Rendering, navigation presentation, and publishing belong to tooling. A source
+implementation can live in a Craft using admitted metadata APIs. Source attachment
+requires compiler and tooling facts; runtime representation and builtin reflection
+would require a consumer needing those capabilities.
+
 ## Open decisions
 
 ### OPEN-04 — Which artifact first consumes documentation?
@@ -109,7 +122,9 @@ source contract.
   consumer requirements from `OPEN-04`.
 - **Question:** Markup controls portability between tools and determines
   whether the compiler must understand references inside documentation.
-- **Constraints:** Tools need one stable interpretation of links and code blocks.
+- **Constraints:** Define retained text and any compiler-recognized references;
+  the selected output tool specifies its markup interpretation, including links
+  and code blocks.
 - **Options:** A — preserve Markdown and leave rendering to tools; B — parse a
   fixed vocabulary of structured tags; C — preserve Markdown while extracting
   a small compiler-known set of references.

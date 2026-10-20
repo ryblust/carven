@@ -1,7 +1,7 @@
 import std::io using IOError;
 import std::utf using UTF8ErrorKind;
 
-export const async fn verify_utf_errors() throw IOError {
+const async fn verify_utf_errors() throw IOError {
     let kinds: [UTF8ErrorKind; 6] = [
         .InvalidLead,
         .InvalidContinuation,

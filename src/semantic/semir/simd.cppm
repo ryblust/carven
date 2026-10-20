@@ -63,6 +63,7 @@ auto simd_contract(
     BuiltinType owner,
     std::optional<BuiltinType> lookup_indices = std::nullopt
 ) noexcept -> SIMDContract;
+
 auto simd_member(BuiltinType type, std::string_view name, bool factory) noexcept
     -> std::optional<SIMDIntrinsic>;
 

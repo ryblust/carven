@@ -1,5 +1,6 @@
 module;
 
+
 #if !defined(_WIN32)
 #include <cerrno>
 #include <csignal>
@@ -139,9 +140,13 @@ const TestSuite suite([] static noexcept {
                     limited = limited || event.reason() == ExecutionReason::Limit;
                 };
                 auto limits = static_execution_limits();
-                limits.steps = 2000;
-                const auto options =
-                    InterpreterOptions {.limits = limits, .trace = {}, .report = report};
+                limits.byte_work = 1024;
+                const auto options = InterpreterOptions {
+                    .limits = limits,
+                    .trace = {},
+                    .report = report,
+                    .host_call = {}
+                };
                 const auto ran = run_program(
                     R"(
 import std::io using IOError;
@@ -208,14 +213,14 @@ async fn main() throw IOError {
                 };
                 const auto ran = run_program(
                     R"(
-import std::io using { IOError, Read };
-import std::time using { RangeError, Timeout, timeout };
+import std::io using { IOError, ReadResult }
+import std::time using { TimeRangeError, Timeout, timeout }
 const async fn one() -> String throw IOError {
     return match await stdin().read_line()? { .Data(text) => text, .End => "" };
 }
-const async fn capture() -> String throw IOError + RangeError {
+const async fn capture() -> String throw IOError + TimeRangeError {
     let expired = try { let _ = await timeout(one(), 1ms)?; false }
-        catch { Timeout(_) => true, IOError(_) => false, RangeError(_) => false };
+        catch { Timeout(_) => true, IOError(_) => false, TimeRangeError(_) => false };
     assert(expired);
     println("expired");
     return await one()?;
@@ -228,7 +233,8 @@ async fn main() throw IOError { println("runtime", await one()?); }
                     InterpreterOptions {
                         .limits = static_execution_limits(),
                         .trace = {},
-                        .report = {}
+                        .report = {},
+                        .host_call = {}
                     }
                 );
                 writer.request_stop();
@@ -274,7 +280,8 @@ async fn main() { assert(await probe()); println("runtime system"); }
                     InterpreterOptions {
                         .limits = static_execution_limits(),
                         .trace = {},
-                        .report = {}
+                        .report = {},
+                        .host_call = {}
                     }
                 );
                 return ran && observed == "static system\nruntime system\n" ? 0 : 1;

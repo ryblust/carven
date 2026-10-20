@@ -1,9 +1,9 @@
-import std::async using { yield_once, when_all };
-import std::json using { JSONError, ValueError, Value };
+import std::async using { yield_once, when_all }
+import std::json using { JSONError, JSONValueError, JSONValue }
 
-async fn parse_owned(&&text: String) -> Value throw JSONError {
+async fn parse_owned(&&text: String) -> JSONValue throw JSONError {
     await yield_once();
-    return Value::parse(text.as_str())?;
+    return JSONValue::parse(text.as_str())?;
 }
 
 async fn products() -> Vector<(i32, void)> {
@@ -22,7 +22,7 @@ async fn units() -> Vector<void> {
     return &&values;
 }
 
-async fn exercise() -> bool throw JSONError + ValueError {
+async fn exercise() -> bool throw JSONError + JSONValueError {
     let text: String = "[41,42]";
     let (document, values, empty_values) = await when_all(
         parse_owned(&&text),
@@ -44,7 +44,7 @@ async fn run_containers() {
         await exercise()?
     } catch {
         JSONError(_) => false,
-        ValueError(_) => false,
+        JSONValueError(_) => false,
     };
     assert(result);
 }

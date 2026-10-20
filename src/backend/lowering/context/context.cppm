@@ -49,6 +49,7 @@ public:
 
 private:
     auto require_interface(ModuleID provider) noexcept -> void;
+    auto require_implementation(ModuleID provider) noexcept -> void;
     auto require_callable(ModuleID owner, CallableID id) noexcept -> void;
 
     const PlannedCompilation& planned_compilation;
@@ -56,6 +57,7 @@ private:
     TargetUnitBuilder target_builder;
     ConstantStorage cstrings;
     std::flat_set<TargetArtifactID> lowering_dependencies;
+    std::flat_set<std::string> link_dependencies;
     std::flat_map<ModuleID, CppEnvironmentRequirement> cpp_environments;
     std::set<CallableID> required_definitions;
     std::deque<CallableID> pending_definitions;
@@ -102,6 +104,7 @@ public:
 
     auto closure_type_name(CallableID id, TypeNameScope scope) noexcept -> TargetName;
 
+    auto require_callable_reference(CallableID id) noexcept -> void;
     auto require_callable(CallableID id) noexcept -> void;
     auto payload_enum(EnumID id) noexcept -> const TargetPayloadEnumNames&;
 
@@ -151,7 +154,7 @@ public:
 
     auto lower_signature_result(
         CallableSignatureID signature,
-        bool stops_test,
+        bool stops_call,
         TypeNameScope scope
     ) noexcept -> TargetTypeID;
 
@@ -171,7 +174,7 @@ private:
 
     auto function_ref_type(
         CallableSignatureID signature,
-        bool stops_test,
+        bool stops_call,
         TypeNameScope scope,
         std::optional<CallableID> callable = std::nullopt
     ) noexcept -> TargetType;
@@ -199,14 +202,18 @@ auto name_expression(TargetLocalID local) noexcept -> TargetExpr;
 auto intrinsic_expression(TargetSymbol symbol) noexcept -> TargetExpr;
 auto target_expressions(TargetExpr value) noexcept -> std::vector<TargetExpr>;
 auto target_expressions(TargetExpr first, TargetExpr second) noexcept -> std::vector<TargetExpr>;
+
 auto target_expressions(TargetExpr first, TargetExpr second, TargetExpr third) noexcept
     -> std::vector<TargetExpr>;
+
 auto member_expression(TargetExpr operand, TargetMemberName member) noexcept -> TargetExpr;
 auto scope_member_expression(TargetExpr operand, TargetMemberName member) noexcept -> TargetExpr;
 auto static_member_expression(TargetTypeID owner, TargetIdentifier member) noexcept -> TargetExpr;
 auto transfer_expression(TargetExpr value) noexcept -> TargetExpr;
+
 auto native_take_expression(ModuleLowering& context, TypeID type, TargetExpr value) noexcept
     -> TargetExpr;
+
 auto address_expression(TargetExpr operand) noexcept -> TargetExpr;
 auto dereference_expression(TargetExpr operand) noexcept -> TargetExpr;
 auto integer_expression(std::uint64_t value) noexcept -> TargetExpr;

@@ -1,0 +1,395 @@
+import .platform using {
+    read_text,
+    cached_text,
+    write_text,
+    directory,
+    run_to,
+    fingerprint,
+    fingerprints,
+    environment,
+}
+
+import std::build using BuildError;
+import std::collections using { HashMap, HashSet, Lookup }
+import std::compiler using CompiledImplementation;
+import std::process using { ProcessGroup, ProcessError, available_parallelism }
+import std::simd.scan using { one_of, set_union, find_from, prefix_end }
+import std::utf using ends_with;
+
+struct Objects {
+    files: Vector<ObjectFile>,
+    compiled: usize,
+}
+
+struct ObjectFile {
+    source: String,
+    path: String,
+    command: Vector<String>,
+    dependencies: Vector<String>,
+    record: String,
+}
+
+private const dependency_spaces = one_of([0x20, 0x09, 0x0d, 0x0a]);
+private const dependency_stops = set_union(dependency_spaces, one_of([0x5c, 0x24]));
+
+// -MD emits one rule with the fixed target name "object". Decode escaped paths
+// and line continuations; missing or incomplete records cannot be reused.
+private const fn dependencies(path: str) -> Vector<String> {
+    let text = cached_text(path);
+    let bytes = text.bytes;
+    var offset = find_from(bytes, 0, one_of([0x3a]));
+    if offset == bytes.length() { return []; }
+    offset += 1;
+    var paths: Vector<String> = [];
+    var token = String {};
+    while offset < bytes.length() {
+        match bytes[offset] {
+            0x20 | 0x09 | 0x0d | 0x0a => {
+                if !token.is_empty() {
+                    paths.push(&&token);
+                    token = String {};
+                }
+                offset = prefix_end(bytes, offset, dependency_spaces);
+            },
+            0x5c => {
+                offset += 1;
+                if offset == bytes.length() { return []; }
+                if bytes[offset] == 0x0a {
+                    offset += 1;
+                } else if bytes[offset]
+                    == 0x0d
+                    && offset + 1 < bytes.length()
+                    && bytes[offset + 1] == 0x0a {
+                    offset += 2;
+                } else {
+                    let escaped_end = find_from(bytes, offset + 1, dependency_stops);
+                    token.append(str::from_utf8_unchecked(bytes.slice(offset, escaped_end)));
+                    offset = escaped_end;
+                }
+            },
+            0x24 => {
+                token.push('$');
+                offset += 1;
+                if offset < bytes.length() && bytes[offset] == 0x24 { offset += 1; }
+            },
+            _ => {
+                let end = find_from(bytes, offset, dependency_stops);
+                token.append(str::from_utf8_unchecked(bytes.slice(offset, end)));
+                offset = end;
+            },
+        }
+    }
+    if !token.is_empty() { paths.push(&&token); }
+    return &&paths;
+}
+
+struct ImplementationIndex {
+    sources: HashMap<String, usize>,
+    files: HashMap<String, usize>,
+}
+
+const fn index_implementations(implementations: [CompiledImplementation]) -> ImplementationIndex {
+    var sources = HashMap<String, usize>::with_capacity(implementations.length());
+    var files = HashMap<String, usize>::with_capacity(implementations.length());
+    for index in 0..implementations.length() {
+        let source = implementations[index].source;
+        let file = implementations[index].file;
+        let source_row = index;
+        let file_row = index;
+        sources.insert(&&source, &&source_row);
+        files.insert(&&file, &&file_row);
+    }
+    return {
+        sources: &&sources,
+        files: &&files
+    };
+}
+
+// The generated calls, including concrete generic instances, supply
+// implementation edges. Type-only imports do not require an object file.
+const fn required_implementations(
+    sources: [String],
+    implementations: [CompiledImplementation],
+    index: ImplementationIndex
+) -> Vector<String> throw BuildError {
+    var selected: Vector<bool> = [];
+    for _ in implementations {
+        selected.push(false);
+    }
+    var pending: Vector<usize> = [];
+    for source in sources {
+        let found = index.sources.find(source);
+        if found == nullptr {
+            throw BuildError { message: f"missing implementation for '{source}'" };
+        }
+        let row = *found;
+        if !selected[row] {
+            selected[row] = true;
+            pending.push(row);
+        }
+    }
+    var paths: Vector<String> = [];
+    var next = 0usize;
+    while next < pending.length() {
+        let current = pending[next];
+        next += 1;
+        paths.push(implementations[current].file);
+        for path in implementations[current].dependencies {
+            let found = index.files.find(path);
+            if found == nullptr {
+                throw BuildError { message: f"missing implementation '{path}'" };
+            }
+            let row = *found;
+            if !selected[row] {
+                selected[row] = true;
+                pending.push(row);
+            }
+        }
+    }
+    return &&paths;
+}
+
+const fn append_paths(&paths: HashSet<String>, additions: [String]) {
+    for path in additions {
+        if paths.contains(path) { continue; }
+        let owned = path;
+        paths.insert(&&owned);
+    }
+}
+
+const fn object_path(root: str, source: str) -> String {
+    let id = fingerprint([], [source as String]);
+    return f"{root}/{id}.o";
+}
+
+// Installed native providers pair a .hpp interface with its sibling .cpp.
+const fn index_providers(candidates: [String]) -> HashMap<String, usize> {
+    var index = HashMap<String, usize>::with_capacity(candidates.length());
+    for row in 0..candidates.length() {
+        let source = candidates[row].as_str();
+        let stem = str::from_utf8_unchecked(source.bytes.slice(0, source.byte_length() - 4));
+        let key = f"{stem}.hpp";
+        let value = row;
+        index.insert(&&key, &&value);
+    }
+    return &&index;
+}
+
+// C++ dependency records join native providers to the same implementation graph.
+const fn record_providers(
+    objects: [ObjectFile],
+    candidates: [String],
+    providers: HashMap<String, usize>,
+    &implementations: Vector<CompiledImplementation>,
+    &index: ImplementationIndex
+) -> Vector<String> {
+    var selected: Vector<String> = [];
+    for object in objects {
+        var implementation: Lookup<usize> = .Missing;
+        let found = index.files.find(object.source);
+        if found != nullptr { implementation = .Found(*found); }
+        var dependencies = HashSet<String>::new();
+        match implementation {
+            .Missing => {},
+            .Found(row) => append_paths(&dependencies, implementations[row].dependencies),
+        }
+        for dependency in object.dependencies {
+            if !ends_with(dependency, ".hpp") { continue; }
+            let found_provider = providers.find(dependency);
+            if found_provider == nullptr { continue; }
+            let provider = *found_provider;
+            if candidates[provider] == object.source { continue; }
+            append_paths(&dependencies, [candidates[provider]]);
+            if !index.files.contains(candidates[provider]) {
+                let source = candidates[provider];
+                let file = candidates[provider];
+                let source_row = implementations.length();
+                let file_row = source_row;
+                index.files.insert(&&file, &&file_row);
+                index.sources.insert(&&source, &&source_row);
+                implementations.push(
+                    {
+                        file: candidates[provider],
+                        source: candidates[provider],
+                        dependencies: []
+                    }
+                );
+                selected.push(candidates[provider]);
+            }
+        }
+        match implementation {
+            .Missing => {},
+            .Found(row) => {
+                implementations[row].dependencies = Vector<String>::from_slice(
+                    dependencies.values()
+                );
+            },
+        }
+    }
+    return &&selected;
+}
+
+// The driver environment changes implicit include, SDK, and library selection.
+const fn native_identity(cxx: String, root: str) -> String throw BuildError {
+    directory(f"{root}/.carven")?;
+    run_to([cxx, "--version"], f"{root}/.carven/cxx-version")?;
+    run_to([cxx, "-dumpmachine"], f"{root}/.carven/cxx-target")?;
+    run_to([cxx, "-print-search-dirs"], f"{root}/.carven/cxx-search")?;
+    var values: Vector<String> = [
+        "native-v2",
+        read_text(f"{root}/.carven/cxx-version")?,
+        read_text(f"{root}/.carven/cxx-target")?,
+        read_text(f"{root}/.carven/cxx-search")?
+    ];
+    for name in [
+            "PATH",
+            "CPATH",
+            "CPLUS_INCLUDE_PATH",
+            "C_INCLUDE_PATH",
+            "LIBRARY_PATH",
+            "COMPILER_PATH",
+            "GCC_EXEC_PREFIX",
+            "SDKROOT",
+            "DEVELOPER_DIR",
+            "MACOSX_DEPLOYMENT_TARGET",
+            "INCLUDE",
+            "LIB",
+            "LIBPATH",
+            "CCC_OVERRIDE_OPTIONS"
+        ] {
+        values.push(f"{name}={environment(name)?}");
+    }
+    let key = fingerprint([cxx], values);
+    if key.is_empty() { throw BuildError { message: "cannot fingerprint C++ compiler" }; }
+    return &&key;
+}
+
+private const fn refresh_objects(&objects: Vector<ObjectFile>, selected: [usize], identity: str) {
+    if selected.is_empty() { return; }
+    var groups: Vector<Vector<String>> = [];
+    for index in selected {
+        objects[index].dependencies = dependencies(f"{objects[index].path}.d");
+        var paths = objects[index].dependencies;
+        if !paths.is_empty() {
+            paths.push(objects[index].path);
+            paths.push(f"{objects[index].path}.d");
+        }
+        groups.push(&&paths);
+    }
+    let contents = fingerprints(groups);
+    for index in 0..selected.length() {
+        let object_index = selected[index];
+        if objects[object_index].dependencies.is_empty() || contents[index].is_empty() {
+            objects[object_index].record = "";
+            continue;
+        }
+        var values = objects[object_index].command;
+        values.append([identity as String, contents[index]]);
+        objects[object_index].record = fingerprint([], values);
+    }
+}
+
+private const fn reap_processes(active: ProcessGroup, count: usize) {
+    for _ in 0..count {
+        try {
+            active.wait()?;
+        } catch {
+            ProcessError(_) => { return; },
+        }
+    }
+}
+
+// One queue entry and writer per object. Pending records are cleared before
+// work. Publication reads a fresh dependency batch after all children succeed.
+const fn compile_objects(
+    arguments: Vector<String>,
+    sources: Vector<String>,
+    root: str,
+    identity: str,
+    reusable: bool
+) -> Objects throw BuildError {
+    directory(root)?;
+    var objects: Vector<ObjectFile> = [];
+    var object_paths = HashSet<String>::with_capacity(sources.length());
+    var candidates: Vector<usize> = [];
+    for source in sources {
+        let object = object_path(root, source);
+        let path = object;
+        if !object_paths.insert(&&path) { continue; }
+        var command = arguments;
+        command.append(["-MD", "-MF", f"{object}.d", "-MT", "object", "-c", source, "-o", object]);
+        candidates.push(objects.length());
+        objects.push(
+            {
+                source: source,
+                path: &&object,
+                command: &&command,
+                dependencies: [],
+                record: ""
+            }
+        );
+    }
+    if reusable { refresh_objects(&objects, candidates, identity); }
+    var jobs: Vector<usize> = [];
+    for index in candidates {
+        let state = f"{objects[index].path}.state";
+        let previous = cached_text(state);
+        if !reusable || previous.is_empty() || objects[index].record != previous {
+            write_text(state, "")?;
+            jobs.push(index);
+        }
+    }
+    let limit = available_parallelism();
+    let active = ProcessGroup::new();
+    var running: Vector<usize> = [];
+    var next = 0usize;
+    try {
+        while next < jobs.length() || !running.is_empty() {
+            while next < jobs.length() && running.length() < limit {
+                let job = jobs[next];
+                let command: [String] = objects[job].command;
+                active.spawn_inherited(command[0], command.slice(1, command.length()))?;
+                running.push(job);
+                next += 1;
+            }
+            let finished = active.wait()?;
+            let job = running.remove(finished.index);
+            if finished.status != 0 {
+                throw BuildError {
+                    message: f"compiling '{objects[
+                            job
+                        ].path}' failed with exit code {finished.status}"
+                };
+            }
+        }
+    } catch {
+        ProcessError(error) => {
+            reap_processes(active, running.length());
+            let code = match error {
+                .System(code) => code
+            };
+            throw BuildError { message: f"compiler process failed with system error {code}" };
+        },
+        BuildError(error) => {
+            reap_processes(active, running.length());
+            throw error;
+        },
+    }
+    refresh_objects(&objects, jobs, identity);
+    for index in jobs {
+        if objects[index].record.is_empty() {
+            throw BuildError {
+                message: f"cannot fingerprint '{objects[index].path}' and its dependencies"
+            };
+        }
+    }
+    if reusable {
+        for index in jobs {
+            write_text(f"{objects[index].path}.state", objects[index].record)?;
+        }
+    }
+    return {
+        files: &&objects,
+        compiled: jobs.length()
+    };
+}

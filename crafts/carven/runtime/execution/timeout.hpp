@@ -14,6 +14,9 @@ namespace detail {
 template<typename Result, typename Timeout>
 auto timeout_timer(std::int64_t deadline) noexcept -> AsyncOperation<Result, Timeout> {
     const auto completion = co_await sleep_until(deadline);
+    if (completion.is_stopped()) {
+        co_return Completion<Result, Timeout>::stopped();
+    }
     if (completion.is_cancelled()) {
         co_return Completion<Result, Timeout>::cancelled();
     }

@@ -22,23 +22,21 @@ auto expected_expression_enum(
     Site& site,
     std::optional<ConstructionTypeRef> expected,
     Span span
-) noexcept -> AnalysisResult<TypeID> {
-    const auto* type = expected.has_value() ? std::get_if<TypeID>(&*expected) : nullptr;
-    if (type == nullptr
-        || !std::holds_alternative<EnumTypeValue>(site.draft().type_copy(*type).value)) {
+) noexcept -> AnalysisResult<ConstructionTypeRef> {
+    if (!expected || !enum_owner(site.draft(), *expected)) {
         return std::unexpected(site.fail(
             span,
             DiagnosticCode::TypeEnumContext,
             "contextual enum case requires an expected enum type"
         ));
     }
-    return *type;
+    return *expected;
 }
 
 template<typename Site>
 auto interpret_enum_case(
     Site& site,
-    TypeID type,
+    ConstructionTypeRef type,
     std::string_view name,
     Span name_span,
     std::span<const ASTExprID> arguments,
@@ -51,7 +49,21 @@ auto interpret_enum_case(
     }
     if (!called) {
         if (selected->payload_types.empty()) {
-            co_return site.constant(*selected->constant, span);
+            if (selected->constant) {
+                co_return site.constant(*selected->constant, span);
+            }
+            co_return construct_enum_value(site, type, selected->id, {}, std::nullopt, span);
+        }
+        for (const auto payload : selected->payload_types) {
+            if (!type_supports_copy(site.draft(), payload)) {
+                co_return std::unexpected(site.fail(
+                    span,
+                    std::holds_alternative<GenericTypeID>(payload)
+                        ? DiagnosticCode::TypeGenericDefinition
+                        : DiagnosticCode::AsyncOwnership,
+                    "a Read constructor callable requires proven Copy for its payload values"
+                ));
+            }
         }
         co_return site.enum_constructor(*selected, span);
     }
@@ -87,11 +99,15 @@ auto interpret_enum_case(
         payload.push_back(std::move(*value));
     }
     auto known = std::optional<ConstantID>();
-    if (constants.size() == payload.size()) {
+    if (std::holds_alternative<TypeID>(type)
+        && std::holds_alternative<EnumCaseID>(selected->id)
+        && constants.size() == payload.size()) {
         known = site.draft().intern_constant(
-            {.type = type,
-             .value =
-                 PayloadEnumConstant {.enum_case = selected->id, .payload = std::move(constants)}}
+            {.type = std::get<TypeID>(type),
+             .value = PayloadEnumConstant {
+                 .enum_case = concrete_enum_case(selected->id),
+                 .payload = std::move(constants)
+             }}
         );
     }
     co_return construct_enum_value(site, type, selected->id, std::move(payload), known, span);
@@ -128,6 +144,13 @@ template<typename Site>
 auto interpret_member(Site& site, const ASTMemberExpr& source, Span span) noexcept
     -> AnalysisTask<typename Site::Selection> {
     if (source.op == ASTMemberOperator::Scope) {
+        auto native = site.native_qualified_reference(source, span);
+        if (!native) {
+            co_return std::unexpected(native.error());
+        }
+        if (*native) {
+            co_return std::move(**native);
+        }
         auto type = (co_await site.resolve_type_qualifier(source.operand_id));
         if (!type.has_value()) {
             co_return std::unexpected(type.error());
@@ -137,6 +160,20 @@ auto interpret_member(Site& site, const ASTMemberExpr& source, Span span) noexce
         }
         if (site.external(**type)) {
             co_return site.native_associated_reference(**type, source.name_span, span);
+        }
+        if (const auto structure = record_shape(site.draft(), **type)) {
+            co_return co_await site.associated_reference(structure->owner, source.name_span);
+        }
+        if (enum_owner(site.draft(), **type)) {
+            co_return co_await interpret_enum_case(
+                site,
+                **type,
+                site.spelling(source.name_span),
+                source.name_span,
+                {},
+                span,
+                false
+            );
         }
         const auto concrete = site.draft().try_canonicalize_declared_type(**type);
         if (!concrete) {
@@ -149,9 +186,6 @@ auto interpret_member(Site& site, const ASTMemberExpr& source, Span span) noexce
                 DiagnosticCode::TypeMethodCall,
                 "builtin factories must be called directly"
             ));
-        }
-        if (const auto* record = std::get_if<StructTypeValue>(&canonical.value)) {
-            co_return (co_await site.associated_reference(record->structure, source.name_span));
         }
         co_return (co_await interpret_enum_case(
             site,

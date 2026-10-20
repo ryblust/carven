@@ -39,15 +39,19 @@ auto make_diagnostic(
     };
 }
 
-auto render_diagnostic(const Diagnostic& diagnostic, SourceView source) noexcept -> std::string {
+auto render_diagnostic(const Diagnostic& diagnostic, SourceView source, bool use_color) noexcept
+    -> std::string {
     auto sources = SourceManager();
     const auto source_id =
         *sources.append_virtual(std::string(source.origin), std::string(source.text));
-    return ::render_diagnostic(localized(diagnostic, source_id), sources);
+    return ::render_diagnostic(localized(diagnostic, source_id), sources, use_color);
 }
 
-auto render_diagnostics(std::span<const Diagnostic> diagnostics, SourceView source) noexcept
-    -> std::string {
+auto render_diagnostics(
+    std::span<const Diagnostic> diagnostics,
+    SourceView source,
+    bool use_color
+) noexcept -> std::string {
     auto sources = SourceManager();
     const auto source_id =
         *sources.append_virtual(std::string(source.origin), std::string(source.text));
@@ -56,5 +60,5 @@ auto render_diagnostics(std::span<const Diagnostic> diagnostics, SourceView sour
     for (const auto& diagnostic : diagnostics) {
         values.push_back(localized(diagnostic, source_id));
     }
-    return ::render_diagnostics(values, sources);
+    return ::render_diagnostics(values, sources, use_color);
 }

@@ -1,0 +1,49 @@
+import "document_host.hpp" using documents::Ref;
+
+struct ReadError {
+    code: i32
+}
+
+struct Selection {
+    documents: Vector<Ref>
+}
+
+struct Texts {
+    first: String,
+    second: ::std::string
+}
+
+private import(cpp) fn alive(document: Ref) -> bool;
+private import(cpp) fn read(document: Ref) -> String throw ReadError;
+private import(cpp) fn publish(document: Ref, text: String) -> bool;
+private import(cpp) fn native_text() -> ::std::string;
+private import(cpp) fn consume(&&text: ::std::string) -> String;
+private import(cpp) fn inspect(accepted: bool) -> ReadError throw ReadError;
+private import(cpp) fn token() -> ::documents::Token;
+
+fn render(document: Ref, index: i32) -> bool {
+    if !alive(document) { return false; }
+    let text = try {
+        read(document)?
+    } catch {
+        ReadError(error) => f"unavailable {error.code}",
+    };
+    return publish(document, f"updated {index}: {text}");
+}
+
+fn read_checked(document: Ref) -> String throw ReadError => read(document)?;
+
+fn selected(selection: Selection) -> Ref => selection.documents[0];
+
+fn copied_text() -> String {
+    let original = native_text();
+    let copy = original;
+    consume(&&original);
+    return consume(&&copy);
+}
+
+fn texts(value: Texts) -> Texts => value;
+
+fn inspection(accepted: bool) -> ReadError throw ReadError => inspect(accepted)?;
+
+fn make_token() -> ::documents::Token => token();

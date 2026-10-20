@@ -16,10 +16,6 @@ Views describe demand-driven traversal. `collect` creates an owning result;
 `fold` performs ordered accumulation. Use ordinary `for` bodies for imperative
 processing at the consumption site.
 
-The design assigns the five API identities, concrete source and callback checks,
-and view type derivation to the compiler. Ordinary functions package processing
-rules.
-
 Source semantics are independent of target APIs. Ordinary nested calls and
 pipeline calls provide the same checked contracts to semantic execution and
 C++ generation.
@@ -62,6 +58,26 @@ existing mutation, control flow, and failure handling.
 
 Custom iterable protocols, mutable or consuming views, fallible or asynchronous
 traversal, additional combinators, and ECS facilities are outside this version.
+
+### Ownership and delivery
+
+The five APIs are builtins in `std::sequence`. Compiler knowledge supplies
+concrete view and result types, callback admission, retained backing, and stage
+checks. Pipeline syntax elaborates to ordinary calls. Standard Craft and user
+functions package processing rules using these calls; no public iterator or
+higher-order generic protocol is required by this delivery. Shared native view
+storage and traversal support belong to Runtime Craft, with realization using
+the published concrete shape.
+
+The accepted contract includes reusable returned views and view-containing
+Vector elements. Assess their implementation costs separately: direct and
+returned views need descriptor/capture ownership and cross-module publication;
+collection-held views additionally need typed element selections, unknown-index
+joins, and contained callable/loan tracking. Select implementation slices from
+those examples and existing ownership support. Record supported storage positions
+for each slice and require its complete lifetime contract before admission.
+The design's collection-held view semantics remain accepted; completion of a
+smaller slice is partial implementation of this proposal.
 
 ### Source design
 
@@ -132,7 +148,7 @@ The APIs belong to `std::sequence` and use existing import selection rules:
 
 ```carven
 import std::sequence using map;
-import std::sequence using { filter, map, take, collect, fold };
+import std::sequence using { filter, map, take, collect, fold }
 ```
 
 Single-name selections may omit braces; multiple-name selections require them.
@@ -370,7 +386,7 @@ the existing function, aggregate, ownership, and static-execution rules.
 #### Reusable data processing
 
 ```carven
-import std::sequence using { filter, map, take, collect };
+import std::sequence using { filter, map, take, collect }
 
 struct Reading {
     valid: bool,
@@ -423,7 +439,7 @@ start a separate traversal.
 #### Views and unit values as elements
 
 ```carven
-import std::sequence using { map, take, collect };
+import std::sequence using { map, take, collect }
 
 const fn prefix(limit: i32) => (0..limit) |> take(2);
 const fn discard(_: i32) -> void => ();
@@ -446,7 +462,7 @@ let units = (0..3) |> map(discard) |> collect();
 #### Static consumption
 
 ```carven
-import std::sequence using { filter, map, take, fold };
+import std::sequence using { filter, map, take, fold }
 
 const fn even(value: i32) -> bool => value % 2 == 0;
 const fn square(value: i32) -> i32 => value * value;
@@ -602,6 +618,11 @@ threshold or particular optimization.
 | `OPEN-03` | Closed: use `std::sequence`, inferred concrete view types including Vector elements, ordinary copying and borrowing, source-shape diagnostics, and existing publication gates |
 
 ## Implementation
+
+Use direct traversal, a returned reusable view, and a Vector of views to identify
+shared work and storage-specific work before selecting the first implementation
+slice. Interpreted closure execution supplies concrete closure construction and
+calls; named-function traversal can be implemented independently.
 
 Add a `|>` token and the defined expression level to the lexer, parser, and
 formatter. Elaborate pipeline forms into ordinary checked calls with source

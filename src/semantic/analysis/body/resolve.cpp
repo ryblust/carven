@@ -17,14 +17,16 @@ public:
     BodyResolver(
         const TypeResolution& types,
         const CanonicalTypeStore& canonical_types,
-        const std::vector<bool>& test_stops,
+        const std::vector<CallStopEffect>& call_stops,
         const FailureSolution& failures,
         const FailureSetStore& failure_sets,
         CompilationProvenanceReader provenance,
         AnalysisDiagnostics diagnostics
     ) noexcept;
+
     auto warning(DiagnosticCode code, std::string message, ProgramOriginID origin) const noexcept
         -> void;
+
     auto operator()(ConstructionTypeRef type) const noexcept -> TypeID;
     auto operator()(BodyType& type) const noexcept -> void;
     auto operator()(BodyFailures& term) const noexcept -> void;
@@ -40,7 +42,7 @@ public:
 private:
     const TypeResolution& types;
     const CanonicalTypeStore& canonical_types;
-    const std::vector<bool>& test_stops;
+    const std::vector<CallStopEffect>& call_stops;
     const FailureSolution& failures;
     const FailureSetStore& failure_sets;
     CompilationProvenanceReader provenance;
@@ -50,7 +52,7 @@ private:
 BodyResolver::BodyResolver(
     const TypeResolution& types,
     const CanonicalTypeStore& canonical_types,
-    const std::vector<bool>& test_stops,
+    const std::vector<CallStopEffect>& call_stops,
     const FailureSolution& failures,
     const FailureSetStore& failure_sets,
     CompilationProvenanceReader provenance,
@@ -58,7 +60,7 @@ BodyResolver::BodyResolver(
 ) noexcept
     : types(types),
       canonical_types(canonical_types),
-      test_stops(test_stops),
+      call_stops(call_stops),
       failures(failures),
       failure_sets(failure_sets),
       provenance(provenance),
@@ -87,7 +89,7 @@ auto BodyResolver::operator()(BodyFailures& term) const noexcept -> void {
 }
 
 auto BodyResolver::operator()(SemanticExpression& value) noexcept -> void {
-    value.exits_test = false;
+    value.exits_call = false;
     (*this)(value.type);
     (*this)(value.failures);
     while (auto* adoption = std::get_if<SemArrayAdopt>(&value.value)) {
@@ -100,21 +102,26 @@ auto BodyResolver::operator()(SemanticExpression& value) noexcept -> void {
         value.constant = source.constant;
         value.value = std::move(source.value);
     }
+    if (std::holds_alternative<SemAwait>(value.value)
+        || std::holds_alternative<SemWaitReady>(value.value)
+        || std::holds_alternative<SemCloseChild>(value.value)) {
+        value.exits_call = true;
+    }
     if (const auto* report = std::get_if<SemReport>(&value.value)) {
-        value.exits_test = report->kind == ReportKind::Require || report->kind == ReportKind::Fail;
+        value.exits_call = report->kind == ReportKind::Require || report->kind == ReportKind::Fail;
     }
     if (auto* call = std::get_if<SemCall>(&value.value)) {
         (*this)(call->callee_failures);
         const auto& type =
             canonical_types.type(types.resolve(call->callee->type.construction())).value;
         if (call->target) {
-            value.exits_test = test_stops[call->target->index()];
+            value.exits_call = call_stops[call->target->index()] != CallStopEffect::None;
         } else if (const auto* function = std::get_if<FunctionTypeValue>(&type)) {
-            value.exits_test = test_stops[function->callable.index()];
+            value.exits_call = call_stops[function->callable.index()] != CallStopEffect::None;
         } else if (const auto* closure = std::get_if<ClosureTypeValue>(&type)) {
-            value.exits_test = test_stops[closure->callable.index()];
+            value.exits_call = call_stops[closure->callable.index()] != CallStopEffect::None;
         } else if (std::holds_alternative<CallableViewTypeValue>(type)) {
-            value.exits_test = true;
+            value.exits_call = true;
         }
     }
     if (auto* composition = std::get_if<SemColdCompose>(&value.value)) {
@@ -127,29 +134,29 @@ auto BodyResolver::operator()(SemanticExpression& value) noexcept -> void {
 
 auto BodyResolver::leave(SemanticExpression& value) noexcept -> void {
     visit_evaluation_children(value.value, [&](const auto& child) noexcept {
-        value.exits_test |= child.exits_test;
+        value.exits_call |= child.exits_call;
     });
 }
 
 auto BodyResolver::child_stops(const SemanticStatement& value) const noexcept -> bool {
     auto stops = false;
     visit_evaluation_children(value.value, [&](const auto& child) noexcept {
-        stops |= child.exits_test;
+        stops |= child.exits_call;
     });
     return stops;
 }
 
 auto BodyResolver::leave(SemanticRegion& value) noexcept -> void {
     for (const auto& statement : value.statements) {
-        value.exits_test |= child_stops(statement);
+        value.exits_call |= child_stops(statement);
     }
     if (value.result) {
-        value.exits_test |= value.result->exits_test;
+        value.exits_call |= value.result->exits_call;
     }
 }
 
 auto BodyResolver::operator()(SemanticRegion& value) const noexcept -> void {
-    value.exits_test = false;
+    value.exits_call = false;
     (*this)(value.failures);
 }
 
@@ -242,7 +249,7 @@ auto resolve_body(
     StructuredBodyDraft body,
     const TypeResolution& types,
     const CanonicalTypeStore& canonical_types,
-    const std::vector<bool>& test_stops,
+    const std::vector<CallStopEffect>& call_stops,
     const FailureSolution& failures,
     const FailureSetStore& failure_sets,
     CompilationProvenanceReader provenance,
@@ -251,7 +258,7 @@ auto resolve_body(
     const auto resolve = BodyResolver(
         types,
         canonical_types,
-        test_stops,
+        call_stops,
         failures,
         failure_sets,
         provenance,

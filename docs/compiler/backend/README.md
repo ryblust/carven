@@ -44,7 +44,9 @@ lifetime contracts; native compilation checks delegated C++ operations.
 `TargetUnitBuilder::finish` collects header requirements and plans directives
 from artifact references and ordered native
 imports. Runtime symbols, including async facilities, use shared header-provider
-metadata. Rendering serializes the finished tree and directives. Filesystem output
+metadata. Finished units retain generated artifact identities alongside the derived
+include directives; generation uses those identities for artifact and link closure.
+Rendering serializes the finished tree and directives. Filesystem output
 and native compilation consume the resulting artifacts separately.
 
 ## Realization contracts
@@ -56,7 +58,8 @@ exit receivers; semantic analysis supplies residual pattern coverage. Derive fac
 at their owning stage and consume them downstream.
 
 Resolved Carven calls use qualified target names. Import bridges call the native
-target retained by semantic analysis. Argument-dependent lookup adds no candidates
+target retained by semantic analysis, or the generated provider entry selected
+by source identity. Argument-dependent lookup adds no candidates
 to resolved Carven calls.
 
 Static instances arrive as ordinary residual regions with selected static arms,

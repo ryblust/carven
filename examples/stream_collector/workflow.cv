@@ -1,8 +1,8 @@
 import "stream.hpp" using collector::Stream;
 
-private import(cpp) fn next_record(&stream: Stream) -> str;
+private import(cpp) fn next_record(&stream: Stream) -> str = ::next_record;
 
-export struct Report {
+struct Report {
     records: Vector<String>,
     total: usize,
     duplicates: usize

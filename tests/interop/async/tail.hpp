@@ -21,3 +21,5 @@ auto tail_trace() noexcept -> std::int32_t;
 auto tail_address(std::int32_t& value) noexcept -> void;
 auto tail_addresses() noexcept -> std::int32_t;
 auto tail_native() noexcept -> carven::runtime::execution::AsyncOperation<std::int32_t>;
+
+auto run_async_allocation_cases() noexcept -> void;

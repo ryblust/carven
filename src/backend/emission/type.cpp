@@ -15,7 +15,9 @@ auto TargetRenderer::render_type_node(TargetTypeID id, bool constant) noexcept -
         Overloaded {
             [&](const TargetDecltypeType& deduced) noexcept {
                 return concat(
-                    {text("decltype(("), render_expression(deduced.expression()), text("))")}
+                    {text("decltype(("),
+                     render_expression(deduced.expression(), TargetPrecedence::Lowest),
+                     text("))")}
                 );
             },
             [&](const TargetNamedType& named) noexcept {
@@ -28,7 +30,7 @@ auto TargetRenderer::render_type_node(TargetTypeID id, bool constant) noexcept -
                     auto argument_layout_ids = std::vector<LayoutNodeID> {};
                     argument_layout_ids.reserve(type_argument_ids.size());
                     for (const auto argument_type_id : type_argument_ids) {
-                        argument_layout_ids.push_back(render_type(argument_type_id));
+                        argument_layout_ids.push_back(render_type(argument_type_id, false));
                     }
                     const auto arguments_layout = delimited_list(argument_layout_ids, "<", ">");
                     return concat({segment_name, arguments_layout});
@@ -50,7 +52,7 @@ auto TargetRenderer::render_type_node(TargetTypeID id, bool constant) noexcept -
                     auto argument_layout_ids = std::vector<LayoutNodeID> {};
                     argument_layout_ids.reserve(intrinsic.type_argument_ids.size());
                     for (const auto argument_type_id : intrinsic.type_argument_ids) {
-                        argument_layout_ids.push_back(render_type(argument_type_id));
+                        argument_layout_ids.push_back(render_type(argument_type_id, false));
                     }
                     result = concat({result, delimited_list(argument_layout_ids, "<", ">")});
                 }
@@ -58,7 +60,7 @@ auto TargetRenderer::render_type_node(TargetTypeID id, bool constant) noexcept -
             },
             [&](const TargetArrayType& array) noexcept {
                 const auto arguments = std::array {
-                    render_type(array.element_type_id),
+                    render_type(array.element_type_id, false),
                     text(std::to_string(array.extent.magnitude))
                 };
                 return concat(
@@ -67,10 +69,10 @@ auto TargetRenderer::render_type_node(TargetTypeID id, bool constant) noexcept -
                 );
             },
             [&](const TargetFunctionRefType& function_ref) noexcept {
-                const auto result = render_type(function_ref.result);
+                const auto result = render_type(function_ref.result, false);
                 auto parameters = std::vector<LayoutNodeID> {};
                 for (const auto parameter : function_ref.parameters) {
-                    parameters.push_back(render_type(parameter));
+                    parameters.push_back(render_type(parameter, false));
                 }
                 const auto signature =
                     concat({result, delimited_list(parameters, "(", ")"), text(" noexcept")});
@@ -81,7 +83,7 @@ auto TargetRenderer::render_type_node(TargetTypeID id, bool constant) noexcept -
                 );
             },
             [&](const TargetPointerType& pointer) noexcept {
-                return concat({render_type(pointer.pointee), text("*")});
+                return concat({render_type(pointer.pointee, false), text("*")});
             },
             [&](const TargetReferenceType& reference) noexcept {
                 const auto referent = render_type(reference.referent, reference.const_qualified);

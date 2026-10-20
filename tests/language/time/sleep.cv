@@ -1,14 +1,14 @@
-import std::async using { Operation, yield_once, wait_ready, close };
-import std::time using { TimePoint, RangeError, sleep, sleep_until };
+import std::async using { Operation, yield_once, wait_ready, close }
+import std::time using { TimePoint, TimeRangeError, sleep, sleep_until }
 
-fn local_wait() -> Operation<void> throw RangeError {
+fn local_wait() -> Operation<void> throw TimeRangeError {
     let point = TimePoint::after(-1ns)?;
     return point.wait();
 }
 
-fn temporary_wait() -> Operation<void> throw RangeError => TimePoint::after(-1ns)?.wait();
+fn temporary_wait() -> Operation<void> throw TimeRangeError => TimePoint::after(-1ns)?.wait();
 
-async fn run_sleep() throw RangeError {
+async fn run_sleep() throw TimeRangeError {
     await sleep(0ns)?;
     await sleep(-1ns)?;
     await sleep(-9223372036854775808ns)?;

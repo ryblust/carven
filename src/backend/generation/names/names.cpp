@@ -1,6 +1,8 @@
 module carven:backend.generation.names.impl;
 
 import :backend.generation.names;
+import :semantic.semir.decl;
+import :source.provenance;
 import std;
 
 namespace {
@@ -16,7 +18,7 @@ auto standard_stream_macro(std::string_view spelling) noexcept -> bool {
     return spelling == "stdin" || spelling == "stdout" || spelling == "stderr";
 }
 
-auto encoded_identifier(std::string_view spelling, std::string_view prefix = "cv_name_") noexcept
+auto encoded_identifier(std::string_view spelling, std::string_view prefix) noexcept
     -> std::string {
     static constexpr auto digits = std::string_view("0123456789abcdef");
     auto escaped = std::string(prefix);
@@ -30,7 +32,11 @@ auto encoded_identifier(std::string_view spelling, std::string_view prefix = "cv
 }
 
 auto generated_content_identifier(std::string_view spelling) noexcept -> bool {
-    return spelling == "CarvenQuery"
+    return spelling == "carven_type_name"
+        || spelling == "carven_fields"
+        || spelling == "carven_cases"
+        || spelling == "carven_enum_storage"
+        || spelling == "CarvenQuery"
         || spelling == "CarvenDisplay"
         || spelling == "carven_constant"
         || spelling == "carven_inline_value"
@@ -47,7 +53,7 @@ auto source_identifier(std::string_view spelling, std::string_view enclosing_cla
             && !generated_content_identifier(spelling)
             && !spelling.starts_with("cv_name_")
         ? std::string(spelling)
-        : encoded_identifier(spelling);
+        : encoded_identifier(spelling, "cv_name_");
     if (result == enclosing_class) {
         return encoded_identifier(spelling, "cv_name_member_");
     }
@@ -338,4 +344,24 @@ auto claim_content_identifiers(
         result.push_back(std::move(*name));
     }
     return result;
+}
+
+auto cpp_contract_namespace(const SemIRProgram& semantic, FunctionID id) noexcept -> TargetName {
+    const auto& function = semantic.declarations().function(id);
+    const auto& module_decl = semantic.declarations().module_decl(function.module_id);
+    const auto& path = semantic.provenance().module_record(module_decl.provenance_module).path;
+    auto components = std::vector<TargetIdentifier> {
+        TargetIdentifier::from_spelling("carven"),
+        TargetIdentifier::from_spelling(
+            cpp_import_form_origin(semantic.declarations().callable(function.callable))
+                ? "providers"
+                : "api"
+        )
+    };
+    for (const auto& component : path.components()) {
+        components.push_back(public_target_identifier(component));
+    }
+    components.push_back(TargetIdentifier::from_spelling("cv_escaped_functions"));
+    components.push_back(public_target_identifier(semantic.provenance().spelling(function.name)));
+    return TargetName::from_components(std::move(components));
 }

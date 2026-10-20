@@ -254,8 +254,8 @@ FailureTypeDiagnosticNames::FailureTypeDiagnosticNames(
 }
 
 auto FailureTypeDiagnosticNames::name(TypeID type) const noexcept -> std::string {
-    const auto qualify = [&](ModuleID module, ProgramSpellingID name) noexcept {
-        const auto module_decl = declarations.module_decl(module);
+    const auto qualify = [&](ModuleID module_id, ProgramSpellingID name) noexcept {
+        const auto module_decl = declarations.module_decl(module_id);
         return std::format(
             "{}.{}",
             provenance.module_path_copy(module_decl.provenance_module).value(),

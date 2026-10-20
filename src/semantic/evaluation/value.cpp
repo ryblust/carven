@@ -1,8 +1,14 @@
+module;
+
+#include <carven/runtime/hosting/object.hpp>
+
 module carven:semantic.evaluation.value.impl;
 
+import :semantic.evaluation.execution;
 import :semantic.evaluation.memory;
 import :semantic.evaluation.operation;
 import :semantic.evaluation.value;
+import :semantic.semir.type;
 import :support.invariant;
 import std;
 
@@ -15,19 +21,28 @@ auto ExecutionIdentity::fresh() noexcept -> ExecutionIdentity {
     return ExecutionIdentity(value);
 }
 
-auto constant_atom(const ConstantFact& fact) noexcept -> std::optional<ConstantAtom> {
-    return fact.value.visit([&](const auto& value) noexcept -> std::optional<ConstantAtom> {
-        if constexpr (std::constructible_from<ConstantAtomValue, decltype(value)>) {
-            return ConstantAtom {.type = fact.type, .value = value};
-        }
-        return std::nullopt;
-    });
-}
+ExecutionHostObject::ExecutionHostObject(
+    ConstructionTypeRef type,
+    carven::runtime::hosting::ObjectRef<void> reference,
+    bool read_borrows
+) noexcept
+    : type(type),
+      reference(std::move(reference)),
+      read_borrows(read_borrows) {}
 
-auto constant_fact(const ConstantAtom& atom) noexcept -> ConstantFact {
-    return atom.value.visit([&](const auto& value) noexcept {
-        return ConstantFact {.type = atom.type, .value = value};
-    });
+ExecutionHostObject::ExecutionHostObject(const ExecutionHostObject& other) noexcept
+    : type(other.type),
+      reference(carven::runtime::hosting::detail::ObjectAccess::copy_value(other.reference)),
+      read_borrows(other.read_borrows) {}
+
+auto ExecutionHostObject::operator=(const ExecutionHostObject& other) noexcept
+    -> ExecutionHostObject& {
+    if (this != &other) {
+        type = other.type;
+        reference = carven::runtime::hosting::detail::ObjectAccess::copy_value(other.reference);
+        read_borrows = other.read_borrows;
+    }
+    return *this;
 }
 
 auto execution_value_type(const ConstantValueReader& values, const ExecutionValue& value) noexcept
@@ -47,6 +62,9 @@ auto execution_value_type(const ConstantValueReader& values, const ExecutionValu
     if (const auto* function = std::get_if<ExecutionFunction>(&value)) {
         return function->type;
     }
+    if (const auto* object = std::get_if<ExecutionHostObject>(&value)) {
+        return object->type;
+    }
     if (const auto* operation = std::get_if<std::unique_ptr<ExecutionColdOperation>>(&value)) {
         if (!*operation) {
             invariant_violation("consumed cold operation has no execution value type");
@@ -64,6 +82,9 @@ auto execution_value_type(const ConstantValueReader& values, const ExecutionValu
     }
     if (const auto* aggregate = std::get_if<ExecutionAggregateValue>(&value)) {
         return aggregate->type;
+    }
+    if (const auto* bytes = std::get_if<ExecutionBytes>(&value)) {
+        return bytes->type;
     }
     return values.builtin_type(
         std::holds_alternative<ExecutionOwnedText>(value) ? BuiltinType::String : BuiltinType::Void
@@ -173,7 +194,7 @@ auto ExecutionText::size(const ExecutionMemory* memory) const noexcept
 
 auto ExecutionText::alive(const ExecutionMemory* memory) const noexcept -> bool {
     if (const auto* borrowed = slice()) {
-        return memory && memory->view(*borrowed).has_value();
+        return execution_slice_view(*borrowed, memory).has_value();
     }
     return bool(lock());
 }
@@ -194,7 +215,7 @@ auto ExecutionText::observe(
     }
     count = std::min(count, *extent - offset);
     if (const auto* borrowed = slice()) {
-        const auto elements = memory ? memory->view(*borrowed) : std::nullopt;
+        const auto elements = execution_slice_view(*borrowed, memory);
         if (!elements) {
             return std::nullopt;
         }
@@ -228,6 +249,16 @@ auto ExecutionOwnedText::bytes() const noexcept -> std::string_view {
     return storage->view();
 }
 
+auto ExecutionOwnedText::into_utf8() && noexcept -> std::string {
+    auto* owned = std::get_if<std::string>(&storage->bytes);
+    if (owned == nullptr) {
+        invariant_violation("owning execution text has no owned bytes");
+    }
+    auto result = std::move(*owned);
+    storage.reset();
+    return result;
+}
+
 auto ExecutionOwnedText::borrow() const noexcept -> ExecutionText {
     return ExecutionText(std::weak_ptr<const ExecutionTextStorage>(storage));
 }
@@ -237,9 +268,8 @@ auto ExecutionOwnedText::append(std::string_view bytes) noexcept -> void {
     if (owned == nullptr) {
         invariant_violation("owning execution text has no owned bytes");
     }
-    auto replacement = std::move(*owned);
-    replacement += bytes;
-    storage = std::make_shared<ExecutionTextStorage>(std::move(replacement));
+    owned->append(bytes);
+    storage = std::make_shared<ExecutionTextStorage>(std::move(*owned));
 }
 
 auto ExecutionOwnedText::transfer() noexcept -> void {
@@ -376,17 +406,19 @@ auto execution_equal(
         || (rhs_fact && std::holds_alternative<CStringConstant>(rhs_fact->value))) {
         return std::unexpected(ExecutionComparisonFailure::Unsupported);
     }
-    return lhs_fact
-        && rhs_fact
-        && constant_value_equal(
-               values,
-               constant_fact(*lhs_fact).value,
-               constant_fact(*rhs_fact).value
-        );
+    return lhs_fact && rhs_fact && constant_value_equal(values, lhs_fact->value, rhs_fact->value);
 }
 
 auto ExecutionCompoundView::size() const noexcept -> std::size_t {
     return elements.visit([](const auto children) static noexcept { return children.size(); });
+}
+
+auto execution_slice_view(const ExecutionSlice& slice, const ExecutionMemory* memory) noexcept
+    -> std::optional<ExecutionSequenceView> {
+    if (!slice.backing) {
+        return std::span<const ExecutionValue>();
+    }
+    return memory ? memory->view(*slice.backing, slice.offset, slice.extent) : std::nullopt;
 }
 
 auto execution_compound_view(
@@ -395,7 +427,7 @@ auto execution_compound_view(
     const ExecutionMemory* memory
 ) noexcept -> std::optional<ExecutionCompoundView> {
     if (const auto* slice = std::get_if<ExecutionSlice>(&value)) {
-        const auto children = memory ? memory->view(*slice) : std::nullopt;
+        const auto children = execution_slice_view(*slice, memory);
         if (!children) {
             return std::nullopt;
         }
@@ -416,6 +448,19 @@ auto execution_compound_view(
             .elements = std::span<const ExecutionValue>(local->elements)
         };
     }
+    if (const auto* local = std::get_if<ExecutionBytes>(&value)) {
+        return ExecutionCompoundView {
+            .type = local->type,
+            .enum_case = std::nullopt,
+            .elements = ExecutionByteView {
+                .element = local->element,
+                .bytes = std::string_view(
+                    reinterpret_cast<const char*>(local->bytes.begin()),
+                    local->bytes.size()
+                )
+            }
+        };
+    }
     if (const auto* local = std::get_if<ExecutionEnumValue>(&value)) {
         return ExecutionCompoundView {
             .type = local->type,
@@ -427,6 +472,32 @@ auto execution_compound_view(
     const auto* fact = retained ? &values.constant(*retained) : nullptr;
     if (!fact) {
         return std::nullopt;
+    }
+    if (const auto* bytes = std::get_if<ByteSequenceConstant>(&fact->value)) {
+        const auto canonical = values.type_copy(fact->type);
+        const auto element =
+            canonical.value.visit([](const auto& shape) static noexcept -> std::optional<TypeID> {
+                using Shape = std::remove_cvref_t<decltype(shape)>;
+                if constexpr (std::same_as<Shape, VectorTypeValue>
+                              || std::same_as<Shape, SliceTypeValue>) {
+                    return shape.element;
+                }
+                return std::nullopt;
+            });
+        if (!element) {
+            invariant_violation("byte sequence constant has no sequence type");
+        }
+        return ExecutionCompoundView {
+            .type = fact->type,
+            .enum_case = std::nullopt,
+            .elements = ExecutionByteView {
+                .element = *element,
+                .bytes = std::string_view(
+                    reinterpret_cast<const char*>(bytes->bytes.data()),
+                    bytes->bytes.size()
+                )
+            }
+        };
     }
     const auto children = constant_children(fact->value);
     if (!children) {
@@ -449,3 +520,15 @@ auto execution_elements(ExecutionValue& value) noexcept -> std::span<ExecutionVa
     }
     return {};
 }
+
+ExecutionColdOperation::ExecutionColdOperation(
+    ConstructionTypeRef type,
+    Action action,
+    std::vector<std::variant<ExecutionValue, ExecutionPlace>> arguments
+) noexcept
+    : type(type),
+      action(std::move(action)),
+      arguments(std::move(arguments)) {}
+
+ExecutionColdOperation::ExecutionColdOperation(ExecutionColdOperation&&) noexcept = default;
+ExecutionColdOperation::~ExecutionColdOperation() noexcept = default;

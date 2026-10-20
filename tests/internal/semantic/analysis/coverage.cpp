@@ -37,7 +37,7 @@ struct CoverageFixture final {
     EnumCaseID empty_case;
 };
 
-auto fixture(SourceManager& sources, DiagnosticSink& diagnostics, std::size_t width = 2uz) noexcept
+auto fixture(SourceManager& sources, DiagnosticSink& diagnostics, std::size_t width) noexcept
     -> CoverageFixture {
     const auto source = sources.append_virtual("coverage-fixture.cv", "");
     require(source.has_value());
@@ -212,7 +212,7 @@ const TestSuite suite([] static noexcept {
         [] static noexcept {
             auto sources = SourceManager();
             auto diagnostics = DiagnosticSink();
-            auto source = fixture(sources, diagnostics);
+            auto source = fixture(sources, diagnostics, 2uz);
             auto body = BodyBuilder(std::move(source.reservation), source.compilation);
             const auto true_pattern = boolean_literal(source, body, true);
             const auto first_pair = enum_case(
@@ -270,7 +270,7 @@ const TestSuite suite([] static noexcept {
         [] static noexcept {
             auto sources = SourceManager();
             auto diagnostics = DiagnosticSink();
-            auto source = fixture(sources, diagnostics);
+            auto source = fixture(sources, diagnostics, 2uz);
             auto body = BodyBuilder(std::move(source.reservation), source.compilation);
             const auto true_pattern = boolean_literal(source, body, true);
             const auto arms = std::array {
@@ -301,7 +301,7 @@ const TestSuite suite([] static noexcept {
     "Pattern coverage: an alternative covered by a union is redundant"_test = [] static noexcept {
         auto sources = SourceManager();
         auto diagnostics = DiagnosticSink();
-        auto source = fixture(sources, diagnostics);
+        auto source = fixture(sources, diagnostics, 2uz);
         auto body = BodyBuilder(std::move(source.reservation), source.compilation);
         const auto true_pattern = boolean_literal(source, body, true);
         const auto false_pattern = boolean_literal(source, body, false);
@@ -351,7 +351,7 @@ const TestSuite suite([] static noexcept {
         [] static noexcept {
             auto sources = SourceManager();
             auto diagnostics = DiagnosticSink();
-            auto source = fixture(sources, diagnostics);
+            auto source = fixture(sources, diagnostics, 2uz);
             auto body = BodyBuilder(std::move(source.reservation), source.compilation);
             const auto true_pattern = boolean_literal(source, body, true);
             const auto first_row = enum_case(
@@ -382,7 +382,7 @@ const TestSuite suite([] static noexcept {
     "Pattern coverage: an enum with no constructors is exhaustive"_test = [] static noexcept {
         auto sources = SourceManager();
         auto diagnostics = DiagnosticSink();
-        auto source = fixture(sources, diagnostics);
+        auto source = fixture(sources, diagnostics, 2uz);
         const auto body = BodyBuilder(std::move(source.reservation), source.compilation);
         constexpr auto arms = std::array<PatternCoverageArm, 0> {};
         auto coverage = compute_pattern_coverage(
@@ -444,7 +444,7 @@ const TestSuite suite([] static noexcept {
         [] static noexcept {
             auto sources = SourceManager();
             auto diagnostics = DiagnosticSink();
-            auto source = fixture(sources, diagnostics);
+            auto source = fixture(sources, diagnostics, 2uz);
             auto body = BodyBuilder(std::move(source.reservation), source.compilation);
             const auto empty = enum_case(source, body, source.empty_case, {});
             const auto arms = std::array {
@@ -502,7 +502,7 @@ const TestSuite suite([] static noexcept {
         [] static noexcept {
             auto sources = SourceManager();
             auto diagnostics = DiagnosticSink();
-            auto source = fixture(sources, diagnostics);
+            auto source = fixture(sources, diagnostics, 2uz);
             auto body = BodyBuilder(std::move(source.reservation), source.compilation);
             const auto fields = std::array {
                 boolean_literal(source, body, false),

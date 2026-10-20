@@ -1,0 +1,105 @@
+import std::collections using { HashMap, HashSet, hash_bytes, hash_text }
+
+private enum Value {
+    Number(i32)
+}
+
+private const fn expect_value(map: HashMap<String, usize>, key: String, expected: usize) {
+    let value = map.find(key);
+    assert(value != nullptr);
+    if value != nullptr { assert(*value == expected); }
+}
+
+private const fn check_collections() {
+    var map = HashMap<String, usize>::with_capacity(2);
+    assert(map.is_empty() && map.find("missing") == nullptr);
+    var key: String = "first";
+    let owned_key = key;
+    assert(map.insert(&&owned_key, &&7));
+    key.append(" changed");
+    expect_value(map, "first", 7);
+    assert(!map.contains(key));
+    assert(!map.insert(&&("first" as String), &&11));
+    expect_value(map, "first", 7);
+    assert(map.length() == 1);
+    assert(map.insert(&&("" as String), &&0));
+    assert(map.insert(&&("é\0key" as String), &&19));
+    expect_value(map, "", 0);
+    expect_value(map, "é\0key", 19);
+    assert(!map.contains("e\0key"));
+    for number in 0usize..12usize {
+        assert(map.insert(&&f"key-{number}", &&(number + 0)));
+    }
+    for number in 0usize..12usize {
+        expect_value(map, f"key-{number}", number);
+    }
+    var copied = map;
+    assert(copied.insert(&&("only in copy" as String), &&23));
+    assert(!map.contains("only in copy"));
+    expect_value(copied, "only in copy", 23);
+    assert(map.remove("first") == .Found(7));
+    assert(map.remove("first") == .Missing);
+    expect_value(map, "key-11", 11);
+    var total = 0usize;
+    for entry in map.entries() {
+        total += entry.value;
+    }
+    assert(total == 85);
+    map.clear();
+    assert(map.is_empty() && !map.contains("key-11"));
+    assert(map.insert(&&("after clear" as String), &&42));
+    expect_value(map, "after clear", 42);
+    let writable = map.find_mut("after clear");
+    if writable != nullptr { *writable = 43; }
+    expect_value(map, "after clear", 43);
+
+    var values = HashMap<i32, Value>::new();
+    assert(values.insert(&&1, &&Value::Number(42)));
+    let result = values.remove(1);
+    match result {
+        .Missing => assert(false),
+        .Found(value) => match value {
+            .Number(number) => assert(number == 42),
+        },
+    }
+
+    var set = HashSet<i32>::with_capacity(2);
+    assert(set.is_empty());
+    for number in 0..12 {
+        assert(set.insert(&&(number + 0)));
+    }
+    assert(!set.insert(&&5) && set.length() == 12);
+    assert(set.remove(4) == .Found(4));
+    assert(set.remove(4) == .Missing);
+    assert(set.contains(11) && !set.contains(4));
+    var sum = 0;
+    for number in set.values() {
+        sum += number;
+    }
+    assert(sum == 62);
+    set.clear();
+    assert(set.is_empty() && !set.contains(11));
+    assert(set.insert(&&42) && set.contains(42));
+
+    const expected_hash = Hash::hash(([20, 22], true));
+    let compound_key: ([i32; 2], bool) = ([20, 22], true);
+    assert(Hash::hash(compound_key) == expected_hash);
+    var compound = HashSet<([i32; 2], bool)>::new();
+    let first_key = compound_key;
+    let same_key = compound_key;
+    assert(compound.insert(&&first_key));
+    assert(!compound.insert(&&same_key));
+    assert(compound.contains(compound_key) && !compound.contains(([22, 20], true)));
+
+    let text = "é\0key";
+    assert(hash_text(text) == hash_bytes(text.bytes));
+    assert(hash_text("") == hash_bytes([]));
+}
+
+const test "Collections constant: owned maps and sets" {
+    check_collections();
+}
+
+test "Collections runtime: owned maps and sets" {
+    check_collections();
+}

@@ -24,14 +24,17 @@ auto unsupported_vector_element_shape(const Shape& value) noexcept
                          || std::same_as<Shape, GenericOperationType>
                          || std::same_as<Shape, ConstructionOperationTypeValue>) {
         return "Vector elements cannot contain async operations";
-    } else if constexpr (std::same_as<Shape, CppTypeValue>
-                         || std::same_as<Shape, GenericCppNamedType>
-                         || std::same_as<Shape, GenericCppQueryType>) {
-        return "Vector elements require Carven-defined value semantics";
+    } else if constexpr (std::same_as<Shape, CppTypeValue>) {
+        if (!std::holds_alternative<CppNamedType>(value.form)) {
+            return "Vector native elements require a named storage type";
+        }
+    } else if constexpr (std::same_as<Shape, GenericCppQueryType>) {
+        return "Vector native elements require a named storage type";
     } else if constexpr (std::same_as<Shape, ClosureTypeValue>
                          || std::same_as<Shape, FunctionTypeValue>
                          || std::same_as<Shape, CallableViewTypeValue>
-                         || std::same_as<Shape, ConstructionCallableViewTypeValue>) {
+                         || std::same_as<Shape, ConstructionCallableViewTypeValue>
+                         || std::same_as<Shape, GenericCallableViewType>) {
         return "Vector elements cannot contain callable values";
     }
     return std::nullopt;
@@ -168,6 +171,11 @@ auto ProgramDraft::validate_vector_elements() noexcept -> AnalysisResult<void> {
                     self(shape.element, false, origin, depth + 1uz);
                 } else if constexpr (std::same_as<Shape, GenericPointerType>) {
                     self(shape.target, false, origin, depth + 1uz);
+                } else if constexpr (std::same_as<Shape, GenericCallableViewType>) {
+                    for (const auto& parameter : shape.parameters) {
+                        self(parameter.type, false, origin, depth + 1uz);
+                    }
+                    self(shape.result, false, origin, depth + 1uz);
                 } else if constexpr (std::same_as<Shape, GenericNominalApplication>) {
                     const auto key =
                         Application {shape.definition, shape.arguments, element_storage};

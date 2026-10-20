@@ -212,7 +212,7 @@ auto ProgramDraft::take_generic_analysis_snapshot(
         .bodies = std::move(storage.generic_function_bodies),
         .records = std::move(storage.generic_record_shapes),
         .enum_payloads = std::move(storage.generic_enum_shapes),
-        .test_stops = {},
+        .call_stops = {},
         .failures = failures,
     };
     const auto normalize = [&](ConstructionTypeRef& type) noexcept {
@@ -240,6 +240,12 @@ auto ProgramDraft::take_generic_analysis_snapshot(
                 normalize(shape.target);
             } else if constexpr (std::same_as<Shape, GenericOperationType>) {
                 normalize(shape.success);
+                shape.failures = failures->normalize(shape.failures);
+            } else if constexpr (std::same_as<Shape, GenericCallableViewType>) {
+                for (auto& parameter : shape.parameters) {
+                    normalize(parameter.type);
+                }
+                normalize(shape.result);
                 shape.failures = failures->normalize(shape.failures);
             } else if constexpr (std::same_as<Shape, GenericCppNamedType>) {
                 for (auto& argument : shape.arguments) {
@@ -273,6 +279,20 @@ auto ProgramDraft::take_generic_analysis_snapshot(
             }
         }
     }
+    const auto normalize_case = [&](ConstructionEnumCaseRef& reference) noexcept {
+        auto* generic = std::get_if<GenericEnumCaseRef>(&reference);
+        if (!generic) {
+            return;
+        }
+        const auto selected = *generic;
+        const auto owner = types.normalize(selected.owner);
+        if (const auto* concrete = std::get_if<TypeID>(&owner)) {
+            const auto nominal = std::get<EnumTypeValue>(type_copy(*concrete).value).enumeration;
+            reference = enum_cases(nominal)[selected.index];
+        } else {
+            generic->owner = std::get<GenericTypeID>(owner);
+        }
+    };
     const auto normalize_body_type = [&](BodyType& type) noexcept {
         auto ref = type.construction();
         normalize(ref);
@@ -304,6 +324,9 @@ auto ProgramDraft::take_generic_analysis_snapshot(
             std::move(body->patterns)
                 .transform<ElaboratedPattern>([&](PatternID, ElaboratedPattern value) noexcept {
                     normalize(value.type);
+                    if (auto* selected = std::get_if<EnumCasePattern>(&value.value)) {
+                        normalize_case(selected->enum_case);
+                    }
                     if (auto* constraint =
                             std::get_if<ElaboratedTypeConstraintPattern>(&value.value)) {
                         normalize(constraint->type);
@@ -314,6 +337,12 @@ auto ProgramDraft::take_generic_analysis_snapshot(
             [&](SemanticExpression& expression) noexcept {
                 normalize_body_type(expression.type);
                 normalize_failure(expression.failures);
+                if (auto* selected = std::get_if<SemEnumCase>(&expression.value)) {
+                    normalize_case(selected->enum_case);
+                }
+                if (auto* selected = std::get_if<SemEnumConstructor>(&expression.value)) {
+                    normalize_case(selected->enum_case);
+                }
                 if (auto* native = std::get_if<SemCpp>(&expression.value)) {
                     if (auto* construction =
                             std::get_if<CppConstructOperation>(&native->operation)) {

@@ -78,6 +78,14 @@ auto select_structure_initializers(
         }
         for (auto index = 0uz; index < fields.size(); ++index) {
             if (!initialized[index]) {
+                if (named->defaults) {
+                    result.push_back(
+                        {.declaration_index = static_cast<std::uint32_t>(index),
+                         .expression = std::nullopt,
+                         .name = std::nullopt}
+                    );
+                    continue;
+                }
                 return fail(
                     named->span,
                     DiagnosticCode::TypeConstructArity,
@@ -173,6 +181,87 @@ auto record_shape(ProgramDraft& draft, ConstructionTypeRef type) noexcept
         .name = record->contract.name,
         .fields = std::move(fields)
     };
+}
+
+auto enum_owner(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
+    -> std::optional<ConstructionEnumRef> {
+    type = unwrap_type_alias(draft, type);
+    if (const auto* concrete = std::get_if<TypeID>(&type)) {
+        const auto shape = draft.type_copy(*concrete);
+        const auto* nominal = std::get_if<EnumTypeValue>(&shape.value);
+        return nominal ? std::optional<ConstructionEnumRef>(nominal->enumeration) : std::nullopt;
+    }
+    const auto* generic = std::get_if<GenericTypeID>(&type);
+    if (!generic) {
+        return std::nullopt;
+    }
+    const auto expression = draft.generic_type_copy(*generic);
+    const auto* application = std::get_if<GenericNominalApplication>(&expression);
+    if (!application
+        || !std::holds_alternative<GenericEnumDefinition>(
+            draft.generic_declaration_copy(application->definition)
+        )) {
+        return std::nullopt;
+    }
+    return *generic;
+}
+
+auto enum_shape(ProgramDraft& draft, ConstructionTypeRef type) noexcept
+    -> std::optional<EnumShape> {
+    const auto owner = enum_owner(draft, type);
+    if (!owner) {
+        return std::nullopt;
+    }
+    if (const auto* concrete = std::get_if<EnumID>(&*owner)) {
+        const auto declaration = draft.enum_declaration_copy(*concrete);
+        auto cases = std::vector<EnumCaseShape>();
+        for (const auto id : declaration.cases) {
+            const auto item = draft.construction_enum_case_declaration_copy(id);
+            cases.push_back(
+                {.reference = id,
+                 .name = item.name,
+                 .payload_types = item.payload_types,
+                 .constant = item.constant}
+            );
+        }
+        return EnumShape {.owner = *concrete, .cases = std::move(cases)};
+    }
+    const auto generic = std::get<GenericTypeID>(*owner);
+    const auto application = std::get<GenericNominalApplication>(draft.generic_type_copy(generic));
+    const auto enumeration =
+        std::get<GenericEnumDefinition>(draft.generic_declaration_copy(application.definition));
+    auto cases = std::vector<EnumCaseShape>();
+    auto effects = draft.make_failure_instantiation(application.definition, application.arguments);
+    for (const auto [index, item] : std::views::enumerate(enumeration.cases)) {
+        auto payload = std::vector<ConstructionTypeRef>();
+        for (const auto field : item.payload_types) {
+            payload.push_back(draft.substitute_generic_type(
+                field,
+                application.definition,
+                application.arguments,
+                &effects
+            ));
+        }
+        cases.push_back(
+            {.reference =
+                 GenericEnumCaseRef {.owner = generic, .index = static_cast<std::uint32_t>(index)},
+             .name = item.name,
+             .payload_types = std::move(payload),
+             .constant = std::nullopt}
+        );
+    }
+    return EnumShape {.owner = generic, .cases = std::move(cases)};
+}
+
+auto enum_case_count(const ProgramDraft& draft, ConstructionEnumCaseRef reference) noexcept
+    -> std::size_t {
+    if (const auto* concrete = std::get_if<EnumCaseID>(&reference)) {
+        return draft.enum_cases(draft.construction_enum_case_declaration_copy(*concrete).owner)
+            .size();
+    }
+    const auto shape = draft.generic_type_copy(std::get<GenericEnumCaseRef>(reference).owner);
+    const auto definition = std::get<GenericNominalApplication>(shape).definition;
+    return std::get<GenericEnumDefinition>(draft.generic_declaration_copy(definition)).cases.size();
 }
 
 // Copy is a value construction capability, independently of Read forwarding.

@@ -355,8 +355,11 @@ auto BodyExprSite::resolve_type_qualifier(ASTExprID id) noexcept
     co_return (co_await body.resolve_type_qualifier(id));
 }
 
-auto BodyExprSite::resolve_enum_case(TypeID type, std::string_view name, Span span) noexcept
-    -> AnalysisTask<ResolvedEnumCase> {
+auto BodyExprSite::resolve_enum_case(
+    ConstructionTypeRef type,
+    std::string_view name,
+    Span span
+) noexcept -> AnalysisTask<ResolvedEnumCase> {
     co_return (co_await body.resolve_constant_enum_case(type, name, span));
 }
 
@@ -399,23 +402,15 @@ auto BodyExprSite::member_call(
     Value operand,
     Span span
 ) noexcept -> AnalysisTask<Value> {
-    const auto type = operand.type();
-    if (const auto* concrete = std::get_if<TypeID>(&type)) {
-        const auto canonical = draft().type_copy(*concrete);
-        if (const auto* record = std::get_if<StructTypeValue>(&canonical.value)) {
-            const auto declaration =
-                draft().construction_struct_declaration_copy(record->structure);
-            const auto name = spelling(member.name_span);
-            const auto field =
-                std::ranges::find_if(declaration.fields, [&](const auto& value) noexcept {
-                    return draft().spelling(value.name) == name;
-                });
-            if (declaration.kind == RecordKind::Class && field == declaration.fields.end()) {
-                co_return (
-                    co_await body
-                        .class_call(source, member, record->structure, std::move(operand), span)
-                );
-            }
+    const auto structure = record_shape(draft(), operand.type());
+    if (structure && structure->kind == RecordKind::Class) {
+        const auto name = spelling(member.name_span);
+        const auto field = std::ranges::find_if(structure->fields, [&](const auto& value) noexcept {
+            return draft().spelling(value.name) == name;
+        });
+        if (field == structure->fields.end()) {
+            co_return co_await body
+                .class_call(source, member, structure->owner, std::move(operand), span);
         }
     }
     auto callee = construct_member_expression(
@@ -430,8 +425,12 @@ auto BodyExprSite::member_call(
     co_return (co_await body.call_expression(source, span, std::move(*callee)));
 }
 
-auto BodyExprSite::call(const ASTCallExpr& source, Span span) noexcept -> AnalysisTask<Value> {
-    co_return (co_await body.call_expression(source, span));
+auto BodyExprSite::call(
+    const ASTCallExpr& source,
+    Span span,
+    std::optional<Selection> callee
+) noexcept -> AnalysisTask<Value> {
+    co_return (co_await body.call_expression(source, span, std::move(callee)));
 }
 
 auto BodyExprSite::finish(
@@ -657,7 +656,7 @@ auto BodyExprSite::operand_state() noexcept -> OperandState {
     return {.pending = {}, .completes = true};
 }
 
-auto BodyExprSite::representation_access(StructID owner, Span span) noexcept
+auto BodyExprSite::representation_access(ConstructionStructRef owner, Span span) noexcept
     -> AnalysisResult<void> {
     return check_class_representation_access(
         draft(),
@@ -671,13 +670,13 @@ auto BodyExprSite::representation_access(StructID owner, Span span) noexcept
 auto BodyExprSite::associated_call(
     const ASTCallExpr& source,
     const ASTMemberExpr& member,
-    StructID owner,
+    ConstructionStructRef owner,
     Span span
 ) noexcept -> AnalysisTask<Value> {
     co_return (co_await body.class_call(source, member, owner, std::nullopt, span));
 }
 
-auto BodyExprSite::associated_reference(StructID owner, Span name_span) noexcept
+auto BodyExprSite::associated_reference(ConstructionStructRef owner, Span name_span) noexcept
     -> AnalysisTask<Value> {
     co_return (co_await body.class_operation(owner, spelling(name_span), false, name_span));
 }
@@ -734,6 +733,69 @@ auto BodyExprSite::number_parse_call(
 auto BodyExprSite::resolve_number_parser(BuiltinType number, Span span) noexcept
     -> AnalysisTask<CallableID> {
     co_return co_await body.resolve_number_parser(number, span);
+}
+
+auto BodyExprSite::native_qualified_reference(const ASTMemberExpr& source, Span span) noexcept
+    -> AnalysisResult<std::optional<Selection>> {
+    auto path = source_name_path(syntax(), source.operand_id);
+    if (!path) {
+        return std::nullopt;
+    }
+    const auto root = spelling(path->components.front());
+    if (!path->global_root
+        && (body.find_local(root) != nullptr
+            || generic_parameter_index(
+                draft(),
+                body.generic_context ? &*body.generic_context : nullptr,
+                root
+            ))) {
+        return std::nullopt;
+    }
+    if (!path->global_root
+        && path->components.size() == 1uz
+        && !catalog().lookup(module_id(), root).empty()) {
+        auto selected = select_catalog_entity(
+            draft(),
+            catalog(),
+            body.import_usage(),
+            module_id(),
+            root,
+            path->components.front(),
+            nullptr,
+            DiagnosticCode::NameUnresolved
+        );
+        if (!selected) {
+            return std::unexpected(selected.error());
+        }
+        if (const auto* provided = std::get_if<ProvidedExport>(&*selected);
+            provided && (*provided == ProvidedExport::Hash || *provided == ProvidedExport::Equal)) {
+            const auto hashing = *provided == ProvidedExport::Hash;
+            if (spelling(source.name_span) != (hashing ? "hash" : "equal")) {
+                return std::unexpected(fail(
+                    source.name_span,
+                    DiagnosticCode::TypeMemberUnresolved,
+                    "capability has no operation with this name"
+                ));
+            }
+            return Selection(
+                BuiltinSelection {
+                    .function = hashing ? BuiltinFunction::Hash : BuiltinFunction::Equal,
+                    .span = span,
+                    .condition_source = std::nullopt,
+                    .operand_sources = std::nullopt
+                }
+            );
+        }
+    }
+    path->components.push_back(source.name_span);
+    auto reference = lookup_cpp_name(draft(), catalog(), body.import_usage(), module_id(), *path);
+    if (!reference) {
+        return std::unexpected(reference.error());
+    }
+    if (!*reference) {
+        return std::nullopt;
+    }
+    return Selection(CppSelection {.target = std::move(**reference), .span = span});
 }
 
 auto BodyExprSite::native_associated_reference(

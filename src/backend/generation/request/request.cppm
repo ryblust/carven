@@ -32,7 +32,7 @@ private:
 };
 
 // A closed source library has one native identity independent of the consuming
-// program's test mode. Only owned modules emit implementations and runtime tests.
+// program's test mode. Only owned modules emit implementations.
 struct SourceLibrary final {
     std::vector<CanonicalModulePath> modules;
     LinkageDomain linkage_domain;
@@ -43,4 +43,6 @@ struct TargetPlanningRequest final {
     TestGenerationMode test_mode;
     LinkageDomain linkage_domain;
     std::optional<SourceLibrary> library;
+    // Omission selects all owned modules. An empty selection emits no module tests.
+    std::optional<std::span<const CanonicalModulePath>> test_modules = std::nullopt;
 };

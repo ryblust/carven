@@ -65,6 +65,10 @@ completion and does not add a nominal type to the failure set. Await is admitted
 in async bodies and static roots, blocks, and tests. Structured expressions,
 arguments, returns, and loop steps may contain await and preserve source evaluation order.
 
+Host execution errors stop the whole invocation, close its children, and return
+the execution error to its owner. A stopped child cannot become a successful
+candidate or a cancelled fallback. Source `catch` handles declared failures only.
+
 ## Cold composition
 
 The builtin composition operations `when_all`, `when_any`, and
@@ -112,7 +116,7 @@ selected nominal failure, or cancellation if every candidate cancelled.
 A pending parent cancellation is accepted before startup and before outward
 commitment. Every composite closes its children before delivering the selected
 outcome. Cancellation requests alone do not release borrowed backing. After
-commitment, later cancellation and loser failures do not replace the outcome.
+commitment, later cancellation and nominal loser failures do not replace the outcome.
 Result assembly follows ordinary value-transfer requirements.
 
 ## Lexical children and cancellation
@@ -172,7 +176,7 @@ children belonging to the current activation. They cannot be stored as operation
 values. Candidates may have different result types and declared failure sets.
 
 ```carven
-import std::async using { wait_ready, close };
+import std::async using { wait_ready, close }
 
 async let first = next(4);
 async let second = next(8);
@@ -294,6 +298,27 @@ All tasks in a static root share its execution limits and memory domain. Builtin
 input, clocks, and waits use the compiler host and the ordinary cold-operation,
 cancellation, and failure contracts. Native C++ provider bodies remain outside semantic
 execution capability. Runtime calls to the same source definition use C++ coroutines.
+
+## Native header operations
+
+An ordinary header call can initialize an explicitly typed `Operation<T, throw Error>`.
+The annotation supplies the source completion contract; C++ checks that the native
+return type matches its `AsyncOperation<T, Error>` representation. Construct the
+operation directly from the call. Creation evaluates the arguments and calls the
+native factory; `await` starts its cold body. The operation cannot be copied.
+
+```carven
+let pending: Operation<i32> = ::carven::standard::io::write_output(&&bytes);
+let code = await pending;
+```
+
+Inputs follow the ordinary async ownership rules. Native implementations retain
+or own their required arguments until completion. Interpreted execution retains
+typed call storage and drives the existing native operation without encoding it
+as an ordinary native value. Cancellation closes started work before releasing
+its storage. Interpreted native operations currently drive self-registering waits;
+operations requiring a host-supplied external event source use an explicit host
+contract. The host retains its resources through completion and child closure.
 
 ## Native providers and hosts
 

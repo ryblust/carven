@@ -1,7 +1,7 @@
 import .left using Left;
 
-export struct Right {
+struct Right {
     value: i32,
 }
 
-export fn read_left(_: Left) -> i32 => 22;
+fn read_left(_: Left) -> i32 => 22;

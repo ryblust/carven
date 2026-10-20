@@ -1,1 +1,1 @@
-export fn root_value() -> i32 => 22;
+fn root_value() -> i32 => 22;

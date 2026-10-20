@@ -9,6 +9,10 @@ struct AFailure {
     code: i32,
 }
 
+struct TextFailure {
+    message: String,
+}
+
 fn narrow(value: i32) -> i32 throw ZFailure {
     return match value {
         ..0 => throw ZFailure { code: -value },
@@ -29,8 +33,18 @@ fn narrow_void(fail: bool) throw ZFailure {
 }
 
 fn widened_void(fail: bool) throw ZFailure + AFailure {
-    narrow_void(fail)?;
+    return narrow_void(fail)?;
 }
+
+fn narrow_text(fail: bool) -> String throw TextFailure {
+    if fail { throw TextFailure { message: "owned failure" }; }
+    return "owned success" as String;
+}
+
+fn widened_text(fail: bool) -> String throw TextFailure + AFailure => narrow_text(fail)?;
+
+const fn known_value() -> i32 throw ZFailure => 59;
+fn widened_known_value() -> i32 throw ZFailure + AFailure => known_value()?;
 
 fn invoke_exact(callback: fn(i32) -> i32 throw ZFailure, value: i32) -> i32 throw ZFailure {
     return callback(value)?;
@@ -84,6 +98,13 @@ test "Failure transport: raw carriers widen consistently across callable forms" 
     check(recover_selected(false) == 43);
     check(recover_void(false) == 53);
     check(recover_void(true) == 47);
+    let known = try {
+        widened_known_value()?
+    } catch {
+        ZFailure(_) => -1,
+        AFailure(_) => -2,
+    };
+    check(known == 59);
 
     let exact_function: fn(i32) -> i32 throw ZFailure = narrow;
     let wide_function: fn(i32) -> i32 throw ZFailure + AFailure = narrow;
@@ -136,4 +157,16 @@ test "Failure transport: raw carriers widen consistently across callable forms" 
         AFailure(_) => -2,
     };
     check(temporary_result == 29);
+}
+
+test "Failure transport: widening preserves owned success and failure payloads" {
+    for rejected in [false, true] {
+        let result = try {
+            widened_text(rejected)?
+        } catch {
+            TextFailure(error) => error.message,
+            AFailure(_) => "unexpected failure" as String,
+        };
+        check(result == if rejected { "owned failure" } else { "owned success" });
+    }
 }

@@ -1,0 +1,204 @@
+import std::toml using { parse, parse_bytes, validate, TOMLError, TOMLValueError, TOMLValue }
+import std::utf using UTF8Error;
+
+private const fn copied_child() -> TOMLValue throw TOMLError + TOMLValueError {
+    let document = parse(
+        "title='demo'\n[[items]]\nname='first'\nvalues=[1,2]\n[[items]]\nname='second'\nvalues=[]"
+    )?;
+    let members = document.members()?;
+    check(members.length() == 2);
+    check(members[0].0.as_str() == "title" && members[0].1.as_str()? == "demo");
+    var names = String {};
+    var total: i64 = 0;
+    for (key, value) in members {
+        if key == "items" {
+            let items = value.elements()?;
+            check(items.length() == 2);
+            for item in items {
+                for (field, child) in item.members()? {
+                    if field == "name" { names.append(child.as_str()?); }
+                    if field == "values" {
+                        for number in child.elements()? {
+                            total += number.as_i64()?;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    check(names.as_str() == "firstsecond" && total == 3);
+    check(parse("")?.members()?.is_empty());
+    check(
+        try {
+            let _ = document.elements()?;
+            false
+        } catch {
+            TOMLValueError(error) => error == .WrongKind,
+        }
+    );
+    check(
+        try {
+            let _ = members[0].1.members()?;
+            false
+        } catch {
+            TOMLValueError(error) => error == .WrongKind,
+        }
+    );
+    return members[1].1;
+}
+
+private const fn check_borrowed_traversal() {
+    try {
+        let copied = copied_child()?;
+        check(copied.at(1)?.get("name")?.as_str()? == "second");
+    } catch {
+        TOMLError(_) => fail("borrowed traversal input must parse"),
+        TOMLValueError(_) => fail("borrowed traversal must retain nested values"),
+    }
+}
+
+const test "TOML: static traversal borrows nested collections" {
+    check_borrowed_traversal();
+}
+
+test "TOML: traversal borrows nested collections" {
+    check_borrowed_traversal();
+}
+
+const test "TOML: static parsing owns nested values" {
+    try {
+        let document = parse("project.name=\"\\u0041\\U0001F600\"\ndate=2024-02-29")?;
+        check(document.get("project")?.get("name")?.as_str()? == "A😀");
+        check(document.get("date")?.kind() == .LocalDate);
+        let strings = parse(
+            "basic=\"line\\ntext\"\nliteral='line\\ntext'\nbasic_multi=\"\"\"\r\none\\\r\n  two\r\nthree\"\"\"\nliteral_multi='''\r\none\\\r\ntwo'''"
+        )?;
+        check(strings.get("basic")?.as_str()? == "line\ntext");
+        check(strings.get("literal")?.as_str()? == r"line\ntext");
+        check(strings.get("basic_multi")?.as_str()? == "onetwo\nthree");
+        check(strings.get("literal_multi")?.as_str()? == "one\\\ntwo");
+    } catch {
+        TOMLError(_) => fail("static configuration must parse"),
+        TOMLValueError(_) => fail("static fields must retain their values"),
+    }
+}
+
+test "TOML: project configuration and ordinary values" {
+    try {
+        let document = parse(
+            "# minimal project\n[project]\nname='hello'\nversion='0.1.0'\n[options]\nenabled=true\ncount=0x2a\nratio=1_2.5e+1\nitems=[1, 'two', false,]\npoint={x=1, nested.y=2}\ndate=2000-02-29\ntime=07:32:00.123\nstamp=1979-05-27 07:32:00Z"
+        )?;
+        let project = document.get("project")?;
+        check(project.length()? == 2 && project.key_at(0)? == "name");
+        check(project.get("name")?.as_str()? == "hello");
+        check(project.get("version")?.as_str()? == "0.1.0");
+        check(project.has("name")? && !project.has("missing")?);
+        let options = document.get("options")?;
+        check(options.get("enabled")?.as_bool()?);
+        check(options.get("count")?.as_i64()? == 42);
+        check(options.get("ratio")?.as_f64()? == 125.0);
+        check(options.get("items")?.at(1)?.as_str()? == "two");
+        check(options.get("point")?.get("nested")?.get("y")?.as_i64()? == 2);
+        check(options.get("date")?.kind() == .LocalDate);
+        check(options.get("time")?.kind() == .LocalTime);
+        check(options.get("stamp")?.kind() == .OffsetDateTime);
+        check(options.get("stamp")?.date_time_text()? == "1979-05-27 07:32:00Z");
+        check(parse_bytes("x=true".bytes)?.get("x")?.as_bool()?);
+        check(parse("")?.length()? == 0);
+    } catch {
+        TOMLError(error) => fail(f"configuration failed at {error.offset}"),
+        TOMLValueError(_) => fail("parsed fields must have their expected values"),
+        UTF8Error(_) => fail("ASCII input is valid UTF-8"),
+    }
+}
+
+test "TOML: strings namespaces and table arrays" {
+    try {
+        let document = parse(
+            "\"\"=''\n'quoted.key'='C:\\tools'\ntext=\"\\u4F60\\U0001F600\"\nmulti=\"\"\"\r\none\\\r\n  two\r\nthree\"\"\"\nfruit.apple.color='red'\n[[items]]\nname='first'\n[items.detail]\nvalue=1\n[[items]]\nname='second'"
+        )?;
+        check(document.get("")?.as_str()? == "");
+        check(document.get("quoted.key")?.as_str()? == r"C:\tools");
+        check(document.get("text")?.as_str()? == "你😀");
+        check(document.get("multi")?.as_str()? == "onetwo\nthree");
+        check(document.get("fruit")?.get("apple")?.get("color")?.as_str()? == "red");
+        let items = document.get("items")?;
+        check(items.length()? == 2);
+        check(items.at(0)?.get("detail")?.get("value")?.as_i64()? == 1);
+        check(items.at(1)?.get("name")?.as_str()? == "second");
+        var long: String = "# ";
+        for _ in 0..70 {
+            long.push('x');
+        }
+        long.append("\nkey = '\u{4f60}");
+        for _ in 0..70 {
+            long.push('a');
+        }
+        long.push('\'');
+        check(parse(long)?.get("key")?.as_str()?.byte_length() == 73);
+    } catch {
+        TOMLError(error) => fail(f"valid syntax failed at {error.offset}"),
+        TOMLValueError(_) => fail("nested values must retain their owners"),
+    }
+}
+
+test "TOML: invalid input and field queries report typed failures" {
+    for text in [
+            "x=1\nx=2",
+            "x=01",
+            "x=1__0",
+            "x=9223372036854775808",
+            "x='unfinished",
+            "x=\"\\uD800\"",
+            "x=1900-02-29",
+            "x={a=1,}",
+            "x={a=1}\nx.b=2",
+            "[a]\n[a]"
+        ] {
+        let rejected = try {
+            validate(text)?;
+            false
+        } catch {
+            TOMLError(error) => error.offset <= text.byte_length(),
+        };
+        check(rejected, text);
+    }
+    try {
+        let document = parse("x=1")?;
+        check(
+            try {
+                let _ = document.get("missing")?;
+                false
+            } catch {
+                TOMLValueError(error) => error == .MissingKey,
+            }
+        );
+        check(
+            try {
+                let _ = document.get("x")?.as_bool()?;
+                false
+            } catch {
+                TOMLValueError(error) => error == .WrongKind,
+            }
+        );
+    } catch {
+        TOMLError(_) => fail("valid input must parse"),
+    }
+    check(
+        try {
+            validate("x=")?;
+            false
+        } catch {
+            TOMLError(error) => error.kind == .UnexpectedEnd && error.offset == 2,
+        }
+    );
+    check(
+        try {
+            let _ = parse_bytes([0xffu8])?;
+            false
+        } catch {
+            UTF8Error(error) => error.offset == 0,
+            TOMLError(_) => false,
+        }
+    );
+}

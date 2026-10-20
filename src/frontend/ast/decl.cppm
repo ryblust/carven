@@ -1,6 +1,7 @@
 module carven:frontend.ast.decl;
 
 import :frontend.ast.ids;
+import :frontend.ast.imports;
 import :frontend.ast.interop;
 import :frontend.ast.literal;
 import :frontend.ast.type;
@@ -27,26 +28,6 @@ struct ASTTupleBindingTarget final {
 };
 
 auto binding_target_span(const ASTBindingTarget& target) noexcept -> Span;
-
-struct ASTImportItem final {
-    Span name_span;
-    std::optional<Span> alias_span;
-};
-
-struct ASTSingleImport final {
-    ASTImportItem item;
-};
-
-struct ASTWildcardImport final {};
-
-struct ASTImportList final {
-    std::vector<ASTImportItem> names;
-};
-
-struct ASTImportSelection final {
-    Span span;
-    std::variant<ASTSingleImport, ASTWildcardImport, ASTImportList> value;
-};
 
 struct ASTDomainRootModuleReference final {
     std::vector<Span> components;
@@ -104,6 +85,7 @@ struct ASTEnumCase final {
 struct ASTGenericParameter final {
     Span name_span;
     ASTGenericParameterKind kind;
+    std::vector<ASTTypeID> bounds;
 };
 
 struct ASTTypeParameterClause final {
@@ -198,6 +180,7 @@ struct ASTTestDecl final {
 
 struct ASTItem final {
     Span span;
+
     std::variant<
         ASTEnumDecl,
         ASTRecordDecl,

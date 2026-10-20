@@ -1,4 +1,4 @@
-import std::async using { Operation, cancel_point, yield_once, wait_ready, close };
+import std::async using { Operation, cancel_point, yield_once, wait_ready, close }
 
 const fn inspect(&pending: Operation<void>) {}
 
@@ -76,7 +76,7 @@ async fn aggregate() -> bool {
     return current == 1;
 }
 
-export async fn run_owners() {
+async fn run_owners() {
     await equivalent();
     assert(await read_temporary_owners());
     assert(await replacement() && await cancellation() && await aggregate());

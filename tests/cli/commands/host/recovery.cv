@@ -1,4 +1,4 @@
-import std::io using { IOError, Read };
+import std::io using { IOError, ReadResult }
 import std::utf using UTF8ErrorKind;
 
 const async fn recover() -> String throw IOError {

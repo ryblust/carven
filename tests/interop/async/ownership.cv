@@ -1,10 +1,10 @@
-import .fixed using { run_fixed, ParentFailure };
+import .fixed using { run_fixed, ParentFailure }
 import .tail using run_tail;
 import .tracked using run_tracked;
 
-import std::time using { RangeError, Timeout };
+import std::time using { TimeRangeError, Timeout }
 
-export(cpp) async fn run_ownership() throw ParentFailure + Timeout + RangeError {
+export(cpp) async fn run_ownership() throw ParentFailure + Timeout + TimeRangeError {
     await run_fixed()?;
     await run_tracked();
     await run_tail();

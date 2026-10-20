@@ -1,4 +1,4 @@
-import .helper using { DisplayCell, show_cells };
+import .helper using { DisplayCell, show_cells }
 
 struct Money {
     cents: i64

@@ -5,6 +5,7 @@ import :backend.generation.plan;
 import :backend.lowering.context;
 import :backend.preparation.body;
 import :backend.realization.decl;
+import :backend.realization.expr;
 import :backend.realization.realizer;
 import :backend.target.expr;
 import :backend.target.origin;
@@ -32,7 +33,9 @@ auto BodyRealizer::emit_return(
     if (!destination.continues()) {
         return;
     }
-    if (local_result_exit && std::holds_alternative<LoweringReturnResult>(result)) {
+    if (local_result_exit
+        && !std::holds_alternative<LoweringInitializeResult>(local_result_exit->result)
+        && std::holds_alternative<LoweringReturnResult>(result)) {
         if (std::holds_alternative<LoweringDiscardResult>(local_result_exit->result)) {
             if (value) {
                 destination.emit(discard_statement(std::move(*value)), true);
@@ -59,7 +62,7 @@ auto BodyRealizer::emit_return(
             );
             if (async_return
                 || !context.plan().failure_abi().members(signature.failures).empty()
-                || context.semantic().may_stop_test(callable->callable_id)) {
+                || context.semantic().may_stop(callable->callable_id)) {
                 auto arguments = std::vector<TargetExpr>();
                 const auto& type = context.semantic().types().type(signature.result).value;
                 const auto* builtin = std::get_if<BuiltinTypeValue>(&type);
@@ -402,70 +405,87 @@ auto BodyRealizer::result_expression(
         }
         co_return {};
     }
-    if (is_async()
-        && !local_result_exit
-        && std::holds_alternative<LoweringReturnResult>(result)
-        && std::holds_alternative<SemAwait>(preparation.operation(source).value)) {
-        auto completion = destination.accept((co_await expression(
-            source,
-            ConstantLiteralContext::Exact,
-            ResultDemand::AdoptSuccess,
-            delivered_region
-        )));
-        if (completion) {
-            emit_completion(
-                require_expression(std::move(*completion)),
-                LoweringExitKind::FunctionReturn,
-                destination
-            );
-        }
+    if (const auto* initialize = std::get_if<LoweringInitializeResult>(&result);
+        initialize != nullptr && initialize->retain_success) {
+        (co_await ExpressionBuilder(*this, source, delivered_region)
+             .initialize_success(source, initialize->storage, destination));
         co_return {};
     }
     const auto& expression_source = preparation.operation(source);
     const auto transport = fallible(expression_source);
     const auto* callable = std::get_if<CallableBodyExit>(&inputs.exit);
-    if (!is_async()
+    const auto* signature = callable != nullptr
+        ? std::addressof(context.semantic().callable_signatures().signature(
+              context.semantic().declarations().callable(callable->callable_id).signature
+          ))
+        : nullptr;
+    const auto carried_result = signature != nullptr
+        && (is_async()
+            || context.semantic().may_stop(callable->callable_id)
+            || !context.plan().failure_abi().members(signature->failures).empty());
+    if ((!local_result_exit
+         || std::holds_alternative<LoweringInitializeResult>(local_result_exit->result))
+        && carried_result
         && std::holds_alternative<LoweringReturnResult>(result)
-        && callable != nullptr
-        && transport
-        && !transport->destination
-        && context.call_result(transport->call) == context.callable_result(callable->callable_id)) {
-        auto value = destination.accept((co_await expression(
+        && (std::holds_alternative<SemAwait>(expression_source.value) || transport.has_value())) {
+        const auto call_forward = !is_async()
+            && transport
+            && !transport->destination
+            // Folded calls deliver their known source value through success construction.
+            && preparation.summary(source).executes_operation
+            && expression_source.type.resolved() == signature->result
+            && std::ranges::all_of(
+                context.plan().failure_abi().members(transport->failures),
+                [&](TypeID type) noexcept {
+                    return std::ranges::contains(
+                        context.plan().failure_abi().members(signature->failures),
+                        type
+                    );
+                }
+            );
+        const auto* awaited = std::get_if<SemAwait>(&expression_source.value);
+        const auto* operation = awaited != nullptr
+            ? std::get_if<OperationTypeValue>(
+                  &context.semantic().types().type(awaited->operand->type.resolved()).value
+              )
+            : nullptr;
+        const auto await_forward = is_async()
+            && !current_failure
+            && operation != nullptr
+            && expression_source.type.resolved() == signature->result
+            && context.async_type(
+                   TargetSymbol::RuntimeAsyncCompletion,
+                   operation->success,
+                   operation->failures,
+                   TypeNameScope::Module
+               ) == completion_type();
+        auto completion = destination.accept((co_await expression(
             source,
             ConstantLiteralContext::Exact,
-            ResultDemand::PropagateOutcome,
+            call_forward || await_forward ? ResultDemand::ForwardResult
+                                          : ResultDemand::AdoptSuccess,
             delivered_region
         )));
-        if (value) {
-            if (!context.plan().failure_abi().members(transport->failures).empty()) {
-                destination.record_exits(
-                    LoweringExitSummary {
-                        .entries = {
-                            {.target = {LoweringExitKind::Failure, 0}, .needs_cleanup = false}
-                        }
-                    }
+        if (completion) {
+            if (is_async()) {
+                emit_completion(
+                    require_expression(std::move(*completion)),
+                    LoweringExitKind::FunctionReturn,
+                    destination
+                );
+            } else {
+                destination.terminate(
+                    generated_statement(
+                        TargetReturnStmt {.expression = require_expression(std::move(*completion))}
+                    ),
+                    {LoweringExitKind::FunctionReturn, 0}
                 );
             }
-            destination.terminate(
-                generated_statement(
-                    TargetReturnStmt {.expression = require_expression(std::move(*value))}
-                ),
-                LoweringExitTarget {.kind = LoweringExitKind::FunctionReturn, .identity = 0uz}
-            );
         }
         co_return {};
     }
-    const auto native_result = callable != nullptr
-        && context.plan()
-               .failure_abi()
-               .members(context.semantic()
-                            .callable_signatures()
-                            .signature(context.semantic()
-                                           .declarations()
-                                           .callable(callable->callable_id)
-                                           .signature)
-                            .failures)
-               .empty();
+    const auto native_result =
+        signature != nullptr && context.plan().failure_abi().members(signature->failures).empty();
     auto literal = ConstantLiteralContext::Exact;
     if (returns_result(result)
         && (std::holds_alternative<LoweringYieldResult>(result) || native_result)) {
@@ -480,7 +500,7 @@ auto BodyRealizer::result_expression(
         && std::holds_alternative<LoweringReturnResult>(result)
         && callable != nullptr
         && native_result
-        && !context.semantic().may_stop_test(callable->callable_id)) {
+        && !context.semantic().may_stop(callable->callable_id)) {
         demand = ResultDemand::DirectReturn;
     }
     auto value =

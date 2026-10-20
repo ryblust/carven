@@ -38,7 +38,8 @@ auto valid_query(const TargetExpr& expression) noexcept -> bool {
             [](const TargetPrefixExpr& value) static noexcept {
                 return (value.op == TargetPrefixOperator::Negate
                         || value.op == TargetPrefixOperator::LogicalNot
-                        || value.op == TargetPrefixOperator::BitwiseNot)
+                        || value.op == TargetPrefixOperator::BitwiseNot
+                        || value.op == TargetPrefixOperator::AddressOf)
                     && valid_query(*value.operand);
             },
             [](const TargetBinaryExpr& value) static noexcept {

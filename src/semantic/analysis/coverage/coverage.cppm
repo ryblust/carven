@@ -28,7 +28,7 @@ struct PatternCoverage final {
 };
 
 auto compute_pattern_coverage(
-    const ProgramDraft& draft,
+    ProgramDraft& draft,
     const MutableBodyTable<ElaboratedPattern, PatternID>& patterns,
     ConstructionTypeRef subject_type,
     std::span<const PatternCoverageArm> arms

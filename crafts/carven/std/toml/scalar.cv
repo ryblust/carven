@@ -1,0 +1,217 @@
+import .node using { Node, DateTimeKind }
+import .syntax using error;
+import std::core using NumberParseError;
+import std::toml using TOMLError;
+
+private const fn digit(byte: u8) -> u32 {
+    return match byte {
+        0x30..=0x39 => (byte - 0x30) as u32,
+        0x41..=0x46 => (byte - 0x41 + 10) as u32,
+        0x61..=0x66 => (byte - 0x61 + 10) as u32,
+        _ => 16,
+    };
+}
+
+private const fn digits(
+    bytes: [u8],
+    &offset: usize,
+    base: u32,
+    &clean: String
+) -> usize throw TOMLError {
+    let start = offset;
+    var count: usize = 0;
+    while offset < bytes.length() {
+        let byte = bytes[offset];
+        if digit(byte) >= base { break; }
+        clean.push(char::from_u32_unchecked(byte as u32));
+        count += 1;
+        offset += 1;
+        if offset < bytes.length() && bytes[offset] == 0x5f {
+            offset += 1;
+            if offset == bytes.length() || digit(bytes[offset]) >= base {
+                throw error(.InvalidNumber, offset - 1);
+            }
+        }
+    }
+    if count == 0 { throw error(.InvalidNumber, start); }
+    return count;
+}
+
+private const fn number(text: str, start: usize) -> Node throw TOMLError {
+    let bytes = text.bytes;
+    var offset: usize = 0;
+    var clean = String {};
+    var negative = false;
+    if bytes[offset] == 0x2b || bytes[offset] == 0x2d {
+        negative = bytes[offset] == 0x2d;
+        if negative { clean.push('-'); }
+        offset += 1;
+    }
+    if offset == bytes.length() { throw error(.InvalidNumber, start + offset); }
+    let unsigned_text = str::from_utf8_unchecked(bytes.slice(offset, bytes.length()));
+    if unsigned_text == "inf" {
+        let value = 1.0f64 / 0.0;
+        return .Float(if negative { -value } else { value });
+    }
+    if unsigned_text == "nan" { return .Float(0.0f64 / 0.0); }
+    var base: u32 = 10;
+    if bytes.length() - offset >= 2 && bytes[offset] == 0x30 {
+        base = match bytes[offset + 1] {
+            0x78 => 16,
+            0x6f => 8,
+            0x62 => 2,
+            _ => 10,
+        };
+        if base != 10 {
+            if offset != 0 { throw error(.InvalidNumber, start); }
+            offset += 2;
+        }
+    }
+    let first = offset;
+    let count = try {
+        digits(bytes, &offset, base, &clean)?
+    } catch {
+        TOMLError(failure) => throw error(failure.kind, start + failure.offset),
+    };
+    if base == 10 && count > 1 && bytes[first] == 0x30 {
+        throw error(.InvalidNumber, start + first + 1);
+    }
+    var real = false;
+    if base == 10 && offset < bytes.length() && bytes[offset] == 0x2e {
+        real = true;
+        clean.push('.');
+        offset += 1;
+        try {
+            let _ = digits(bytes, &offset, 10, &clean)?;
+        } catch {
+            TOMLError(failure) => throw error(failure.kind, start + failure.offset),
+        }
+    }
+    if base == 10 && offset < bytes.length() && (bytes[offset] == 0x65 || bytes[offset] == 0x45) {
+        real = true;
+        clean.push('e');
+        offset += 1;
+        if offset < bytes.length() && (bytes[offset] == 0x2b || bytes[offset] == 0x2d) {
+            clean.push(char::from_u32_unchecked(bytes[offset] as u32));
+            offset += 1;
+        }
+        try {
+            let _ = digits(bytes, &offset, 10, &clean)?;
+        } catch {
+            TOMLError(failure) => throw error(failure.kind, start + failure.offset),
+        }
+    }
+    if offset != bytes.length() { throw error(.InvalidNumber, start + offset); }
+    if real {
+        return try {
+            .Float(f64::parse(clean)?)
+        } catch {
+            NumberParseError(_) => throw error(.InvalidNumber, start),
+        };
+    }
+    let limit = if negative { 9223372036854775808u64 } else { 9223372036854775807u64 };
+    var value: u64 = 0;
+    for byte in clean.bytes {
+        if byte == 0x2d { continue; }
+        let next = digit(byte) as u64;
+        if value > (limit - next) / (base as u64) { throw error(.InvalidNumber, start); }
+        value = value * (base as u64) + next;
+    }
+    if negative && value != 0 { return .Integer(-((value - 1) as i64) - 1); }
+    return .Integer(value as i64);
+}
+
+private const fn decimal(
+    bytes: [u8],
+    offset: usize,
+    count: usize,
+    start: usize
+) -> u32 throw TOMLError {
+    if offset > bytes.length() || bytes.length() - offset < count {
+        throw error(.InvalidDateTime, start + bytes.length());
+    }
+    var value: u32 = 0;
+    for index in offset..offset + count {
+        let next = digit(bytes[index]);
+        if next >= 10 { throw error(.InvalidDateTime, start + index); }
+        value = value * 10 + next;
+    }
+    return value;
+}
+
+private const fn date_time(text: str, start: usize, const date: bool) -> Node throw TOMLError {
+    let bytes = text.bytes;
+    var offset: usize = 0;
+    var kind: DateTimeKind = .LocalTime;
+    const if date {
+        let year = decimal(bytes, 0, 4, start)?;
+        let month = decimal(bytes, 5, 2, start)?;
+        let day = decimal(bytes, 8, 2, start)?;
+        if month == 0 || month > 12 { throw error(.InvalidDateTime, start + 5); }
+        var days: u32 = match month {
+            4 | 6 | 9 | 11 => 30,
+            2 => 28,
+            _ => 31,
+        };
+        if month == 2 && year % 4 == 0 && (year % 100 != 0 || year % 400 == 0) { days = 29; }
+        if day == 0 || day > days { throw error(.InvalidDateTime, start + 8); }
+        if bytes.length() == 10 { return .DateTime(text as String, .LocalDate); }
+        if bytes[10] != 0x54 && bytes[10] != 0x74 && bytes[10] != 0x20 {
+            throw error(.InvalidDateTime, start + 10);
+        }
+        offset = 11;
+        kind = .LocalDateTime;
+    }
+    let hour = decimal(bytes, offset, 2, start)?;
+    let minute = decimal(bytes, offset + 3, 2, start)?;
+    let second = decimal(bytes, offset + 6, 2, start)?;
+    if bytes[offset + 2]
+        != 0x3a
+        || bytes[offset + 5] != 0x3a
+        || hour > 23
+        || minute > 59
+        || second > 60 {
+        throw error(.InvalidDateTime, start + offset);
+    }
+    offset += 8;
+    if offset < bytes.length() && bytes[offset] == 0x2e {
+        offset += 1;
+        let first = offset;
+        while offset < bytes.length() && digit(bytes[offset]) < 10 {
+            offset += 1;
+        }
+        if offset == first { throw error(.InvalidDateTime, start + offset); }
+    }
+    if date && offset < bytes.length() {
+        kind = .OffsetDateTime;
+        if bytes[offset] == 0x5a || bytes[offset] == 0x7a {
+            offset += 1;
+        } else {
+            if bytes[offset] != 0x2b && bytes[offset] != 0x2d {
+                throw error(.InvalidDateTime, start + offset);
+            }
+            offset += 1;
+            let zone_hour = decimal(bytes, offset, 2, start)?;
+            let zone_minute = decimal(bytes, offset + 3, 2, start)?;
+            if bytes[offset + 2] != 0x3a || zone_hour > 23 || zone_minute > 59 {
+                throw error(.InvalidDateTime, start + offset);
+            }
+            offset += 5;
+        }
+    }
+    if offset != bytes.length() { throw error(.InvalidDateTime, start + offset); }
+    return .DateTime(text as String, kind);
+}
+
+const fn scalar(text: str, start: usize) -> Node throw TOMLError {
+    if text == "true" { return .Boolean(true); }
+    if text == "false" { return .Boolean(false); }
+    let bytes = text.bytes;
+    if bytes.length() >= 10 && bytes[4] == 0x2d && bytes[7] == 0x2d {
+        return date_time(text, start, true)?;
+    }
+    if bytes.length() >= 8 && bytes[2] == 0x3a && bytes[5] == 0x3a {
+        return date_time(text, start, false)?;
+    }
+    return number(text, start)?;
+}

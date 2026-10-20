@@ -283,7 +283,7 @@ auto BodyElaborator::compute_static_binding(LocalBindingID binding) noexcept
         .result = std::nullopt,
         .result_reachable = false,
         .failures = initializer.failures,
-        .exits_test = initializer.exits_test,
+        .exits_call = initializer.exits_call,
     };
     const auto active = batch->active_builders.find(binding.owner());
     if (active == batch->active_builders.end()) {
@@ -347,9 +347,9 @@ auto BodyElaborator::resolve_type_qualifier(ASTExprID expression) noexcept
     }
     if (const auto* application =
             std::get_if<ASTTypeApplicationExpr>(&ast.expression(current_id).value)) {
-        if (const auto* name =
-                std::get_if<ASTNameExpr>(&ast.expression(application->operand_id).value);
-            name && find_local(spelling(name->name_span)) != nullptr) {
+        if (const auto path = source_name_path(ast, application->operand_id); path
+            && !path->global_root
+            && find_local(spelling(path->components.front())) != nullptr) {
             co_return std::optional<TypeID>();
         }
         const auto extent = [&](ASTExprID expression) noexcept {
@@ -420,35 +420,36 @@ auto BodyElaborator::resolve_type_qualifier(ASTExprID expression) noexcept
 }
 
 auto BodyElaborator::resolve_constant_enum_case(
-    TypeID type,
+    ConstructionTypeRef type,
     std::string_view name,
     Span span
 ) noexcept -> AnalysisTask<ResolvedEnumCase> {
-    const auto canonical = draft().type_copy(type);
-    const auto* nominal = std::get_if<EnumTypeValue>(&canonical.value);
-    if (nominal == nullptr) {
+    auto prepared = co_await construction_requests().ensure_type(type, source_module_id, span);
+    if (!prepared) {
+        co_return std::unexpected(prepared.error());
+    }
+    const auto shape = enum_shape(draft(), type);
+    if (!shape) {
         co_return std::unexpected(fail(
             span,
             DiagnosticCode::TypeEnumContext,
             "scope qualifier does not name an enum or class type"
         ));
     }
-    auto prepared = co_await construction_requests().ensure_type(type, source_module_id, span);
-    if (!prepared) {
-        co_return std::unexpected(prepared.error());
-    }
-    if (const auto case_id = find_enum_case(nominal->enumeration, name, span)) {
-        const auto declaration = draft().construction_enum_case_declaration_copy(*case_id);
-        const auto reference_type =
-            enum_case_reference_type(draft(), type, declaration.payload_types);
-        observe_source(span, std::nullopt, reference_type);
-        co_return ResolvedEnumCase {
-            .id = *case_id,
-            .owner = declaration.owner,
-            .reference_type = reference_type,
-            .payload_types = declaration.payload_types,
-            .constant = declaration.constant,
-        };
+    auto names = std::vector<std::string>();
+    for (const auto& item : shape->cases) {
+        const auto case_name = draft().spelling(item.name);
+        if (case_name == name) {
+            const auto reference_type = enum_case_reference_type(draft(), type, item.payload_types);
+            observe_source(span, std::nullopt, reference_type);
+            co_return ResolvedEnumCase {
+                .id = item.reference,
+                .reference_type = reference_type,
+                .payload_types = item.payload_types,
+                .constant = item.constant
+            };
+        }
+        names.emplace_back(case_name);
     }
     co_return std::unexpected(fail(
         span,
@@ -457,7 +458,7 @@ auto BodyElaborator::resolve_constant_enum_case(
             "enum '{}' has no case named '{}'{}",
             type_display_name(draft(), type, catalog()),
             name,
-            spelling_suggestion(name, draft().enum_case_names(nominal->enumeration))
+            spelling_suggestion(name, names)
         )
     ));
 }
@@ -600,18 +601,19 @@ auto BodyBatchElaborator::evaluate_constant_expression(
     const GenericTypeContext* generic_context,
     BodyElaborator* enclosing
 ) noexcept -> AnalysisTask<std::optional<ConstantID>> {
-    const auto* module = catalog_data.find_module(module_id);
+    const auto* module_decl = catalog_data.find_module(module_id);
     auto elaborator = BodyElaborator(
         *this,
         module_id,
-        module->declaration,
+        module_decl->declaration,
         draft->syntax_tree(module_id).view(),
         draft->reserve_body(BodyKind::ConstBlock),
         expected,
         draft->add_empty_failure_term(),
         false,
         false,
-        generic_context ? std::optional(*generic_context) : std::nullopt
+        generic_context ? std::optional(*generic_context) : std::nullopt,
+        true
     );
     elaborator.static_body = true;
     if (enclosing) {

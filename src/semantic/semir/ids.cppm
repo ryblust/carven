@@ -40,10 +40,13 @@ private:
     friend class ProgramDraft;
     friend class SemIRProgram;
     friend class ConstantStoreBuilder;
+
     template<typename Value, typename ID>
     friend class MutableProgramTable;
+
     template<typename Value, typename ID>
     friend class ReservedProgramTable;
+
     template<typename ID, typename Value, typename Identity>
     friend class IDTableEntries;
 };
@@ -71,8 +74,10 @@ private:
 
     template<typename Value, typename ID>
     friend class MutableBodyTable;
+
     template<typename ID, typename Value, typename Identity>
     friend class IDTableEntries;
+
     template<typename Value, typename ID>
     friend class ImmutableBodyTable;
 };

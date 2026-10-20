@@ -1,5 +1,5 @@
-import std::async using { cancel_requested, yield_once, wait_ready, close };
-import std::time using { TimePoint, RangeError, Timeout, sleep, timeout };
+import std::async using { cancel_requested, yield_once, wait_ready, close }
+import std::time using { TimePoint, TimeRangeError, Timeout, sleep, timeout }
 
 const async fn cooperative(&started: i32, &closed: i32) -> i32 {
     ++started;
@@ -10,7 +10,7 @@ const async fn cooperative(&started: i32, &closed: i32) -> i32 {
     return 7;
 }
 
-const async fn exercise() throw RangeError {
+const async fn exercise() throw TimeRangeError {
     let deferred = sleep(2ms);
     await sleep(3ms)?;
     let earliest = TimePoint::after(2ms)?;
@@ -31,7 +31,7 @@ const async fn exercise() throw RangeError {
         false
     } catch {
         Timeout(_) => true,
-        RangeError(_) => false
+        TimeRangeError(_) => false
     };
     assert(expired && started == 1 && closed == 1);
 
@@ -40,19 +40,19 @@ const async fn exercise() throw RangeError {
         false
     } catch {
         Timeout(_) => false,
-        RangeError(_) => true
+        TimeRangeError(_) => true
     };
     assert(overflow && started == 1);
     let sleep_overflow = try {
         await sleep(9223372036854775807ns)?;
         false
     } catch {
-        RangeError(_) => true
+        TimeRangeError(_) => true
     };
     assert(sleep_overflow);
 }
 
-async fn main() throw RangeError {
+async fn main() throw TimeRangeError {
     await exercise()?;
     println("runtime timers");
 }

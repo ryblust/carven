@@ -38,10 +38,12 @@ auto TargetRenderer::render_member_function_name(const TargetMemberFunctionName&
 
 auto TargetRenderer::render_parameter(const TargetParameter& value) noexcept -> LayoutNodeID {
     auto result = !value.local.has_value()
-        ? render_type(value.type)
-        : concat({render_type(value.type), text(" "), render_identifier(*value.local)});
+        ? render_type(value.type, false)
+        : concat({render_type(value.type, false), text(" "), render_identifier(*value.local)});
     if (value.default_value.has_value()) {
-        result = concat({result, text(" = "), render_expression(*value.default_value)});
+        result = concat(
+            {result, text(" = "), render_expression(*value.default_value, TargetPrecedence::Lowest)}
+        );
     }
     return result;
 }
@@ -92,7 +94,10 @@ auto TargetRenderer::render_record_member(const TargetRecordMember& value) noexc
         Overloaded {
             [&](const TargetStructField& field) noexcept {
                 return concat(
-                    {render_type(field.type), text(" "), render_identifier(field.name), text(";")}
+                    {render_type(field.type, false),
+                     text(" "),
+                     render_identifier(field.name),
+                     text(";")}
                 );
             },
             [&](const TargetMemberFunctionDecl& function) noexcept {
@@ -119,7 +124,7 @@ auto TargetRenderer::render_member_function(const TargetMemberFunctionDecl& func
     }
     const auto function_name = render_member_function_name(function.name);
     const auto reference = text(function.result_reference ? "&" : "");
-    const auto result = concat({render_type(function.result), reference});
+    const auto result = concat({render_type(function.result, false), reference});
     const auto signature = render_function_declarator(
         prefix,
         function_name,
@@ -172,7 +177,7 @@ auto TargetRenderer::render_class_member(const TargetClassMember& value) noexcep
                     {text("using "),
                      render_identifier(alias.name),
                      text(" = "),
-                     render_type(alias.type),
+                     render_type(alias.type, false),
                      text(";")}
                 );
             },
@@ -191,7 +196,7 @@ auto TargetRenderer::render_declaration(const TargetDecl& value) noexcept -> Lay
                     {text("using "),
                      render_identifier(alias.name),
                      text(" = "),
-                     render_type(alias.type),
+                     render_type(alias.type, false),
                      text(";")}
                 );
             },
@@ -205,11 +210,13 @@ auto TargetRenderer::render_declaration(const TargetDecl& value) noexcept -> Lay
                 }
                 const auto left = concat({
                     text(prefix),
-                    render_type(variable.type),
+                    render_type(variable.type, false),
                     text(" "),
                     render_identifier(variable.name),
                 });
-                const auto right = concat({text("= "), render_expression(variable.initializer)});
+                const auto right = concat(
+                    {text("= "), render_expression(variable.initializer, TargetPrecedence::Lowest)}
+                );
                 return concat({
                     choice({
                         concat({left, text(" "), right}),
@@ -235,7 +242,8 @@ auto TargetRenderer::render_declaration(const TargetDecl& value) noexcept -> Lay
                     prefix,
                     render_name(function.name),
                     function.parameters,
-                    render_type(function.result)
+                    render_type(function.result, false),
+                    false
                 );
                 return function.form.visit(
                     Overloaded {
@@ -257,7 +265,7 @@ auto TargetRenderer::render_declaration(const TargetDecl& value) noexcept -> Lay
                     function.inline_specifier ? "inline " : "",
                     name,
                     function.parameters,
-                    render_type(function.result),
+                    render_type(function.result, false),
                     function.const_qualified
                 );
                 return concat({signature, text(" "), render_statement_block(function.body)});
@@ -285,7 +293,7 @@ auto TargetRenderer::render_declaration(const TargetDecl& value) noexcept -> Lay
                     cases.push_back(concat(
                         {render_identifier(enum_case.name),
                          text(" = "),
-                         render_expression(enum_case.value),
+                         render_expression(enum_case.value, TargetPrecedence::Lowest),
                          text(",")}
                     ));
                 }
@@ -293,7 +301,7 @@ auto TargetRenderer::render_declaration(const TargetDecl& value) noexcept -> Lay
                     {text("enum class "),
                      render_identifier(enumeration.name),
                      text(" : "),
-                     render_type(enumeration.underlying_type),
+                     render_type(enumeration.underlying_type, false),
                      text(" "),
                      braced_block(cases),
                      text(";")}
@@ -304,7 +312,7 @@ auto TargetRenderer::render_declaration(const TargetDecl& value) noexcept -> Lay
                     {text("enum class "),
                      render_identifier(enumeration.name),
                      text(" : "),
-                     render_type(enumeration.underlying_type),
+                     render_type(enumeration.underlying_type, false),
                      text(";")}
                 );
             },
@@ -317,7 +325,8 @@ auto TargetRenderer::render_declaration(const TargetDecl& value) noexcept -> Lay
                     }
                     sections.push_back(concat(
                         {text(class_access_spelling(section.access)),
-                         builder.indent(indent_width, concat({builder.line(), stack(members)}))}
+                         builder
+                             .indent(indent_width, concat({builder.line(), stack(members, 0uz)}))}
                     ));
                 }
                 return concat(

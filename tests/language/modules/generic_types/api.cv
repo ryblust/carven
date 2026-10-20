@@ -1,8 +1,15 @@
-export struct Box<T> {
+struct Box<T> {
     value: T,
 }
 
-export enum Maybe<T> {
+enum Maybe<T> {
     None,
     Some(T),
+}
+
+class Owned<T> {
+    value: T,
+
+    const fn new(&&value: T) -> Owned<T> => { value: &&value };
+    const fn release(&&self) -> T => (&&self).value;
 }

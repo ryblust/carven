@@ -19,8 +19,10 @@ import :semantic.analysis.coverage;
 import :semantic.analysis.expr.scope;
 import :semantic.analysis.operations;
 import :semantic.analysis.types;
+import :semantic.analysis.types.display;
 import :semantic.analysis.validation;
 import :semantic.semir.completion;
+import :semantic.semir.generic;
 import :semantic.semir.body;
 import :semantic.semir.decl;
 import :semantic.semir.structured;
@@ -345,40 +347,47 @@ auto BodyElaborator::build_pattern(
                 };
             },
             [&](const ASTCasePattern& case_pattern) noexcept -> AnalysisTask<BuiltPattern> {
-                const auto* concrete = std::get_if<TypeID>(&type);
-                if (concrete == nullptr) {
-                    co_return std::unexpected(fail(
-                        source.span,
-                        DiagnosticCode::TypeMatchPattern,
-                        "enum case pattern requires a concrete enum subject"
-                    ));
-                }
-                const auto canonical = draft().type_copy(*concrete);
-                const auto* subject_enum = std::get_if<EnumTypeValue>(&canonical.value);
-                if (subject_enum == nullptr) {
+                const auto shape = enum_shape(draft(), type);
+                if (!shape) {
                     co_return std::unexpected(fail(
                         source.span,
                         DiagnosticCode::TypeMatchPattern,
                         "case pattern requires an enum subject"
                     ));
                 }
-                const auto owner = subject_enum->enumeration;
                 if (const auto* qualified =
                         std::get_if<ASTQualifiedCaseQualifier>(&case_pattern.qualifier)) {
                     if (qualified->components.empty()) {
                         invariant_violation("qualified case pattern has no qualifier");
                     }
-                    const auto qualifier_name = spelling(qualified->components.back());
-                    auto selected =
-                        (co_await find_global(qualifier_name, qualified->components.back()));
-                    if (!selected.has_value()) {
+                    auto selected = co_await find_global(
+                        spelling(qualified->components.back()),
+                        qualified->components.back()
+                    );
+                    if (!selected) {
                         co_return std::unexpected(selected.error());
                     }
-                    const auto* selected_symbol = catalog().symbol(*selected);
-                    const auto* enumeration =
-                        (selected_symbol ? std::get_if<CatalogEnumForm>(&selected_symbol->form)
-                                         : nullptr);
-                    if (enumeration == nullptr || enumeration->enumeration != owner) {
+                    const auto* symbol = catalog().symbol(*selected);
+                    auto matches = false;
+                    if (const auto* concrete = std::get_if<EnumID>(&shape->owner)) {
+                        if (const auto* form =
+                                symbol ? std::get_if<CatalogEnumForm>(&symbol->form) : nullptr) {
+                            matches = form->enumeration == *concrete;
+                        } else if (const auto* form = symbol
+                                       ? std::get_if<CatalogGenericForm>(&symbol->form)
+                                       : nullptr) {
+                            const auto instance = draft().generic_nominal_instance_copy(*concrete);
+                            matches = instance && instance->definition == form->definition;
+                        }
+                    } else if (const auto* form = symbol
+                                   ? std::get_if<CatalogGenericForm>(&symbol->form)
+                                   : nullptr) {
+                        const auto application = std::get<GenericNominalApplication>(
+                            draft().generic_type_copy(std::get<GenericTypeID>(shape->owner))
+                        );
+                        matches = application.definition == form->definition;
+                    }
+                    if (!matches) {
                         co_return std::unexpected(fail(
                             qualified->span,
                             DiagnosticCode::TypeMatchPattern,
@@ -387,20 +396,23 @@ auto BodyElaborator::build_pattern(
                     }
                 }
                 const auto case_name = spelling(case_pattern.name_span);
-                const auto selected_id = find_enum_case(owner, case_name, case_pattern.name_span);
-                auto selected = std::optional<ConstructionEnumCaseDeclaration>();
-                if (selected_id.has_value()) {
-                    selected = draft().construction_enum_case_declaration_copy(*selected_id);
-                }
-                if (!selected.has_value()) {
+                const auto selected =
+                    std::ranges::find_if(shape->cases, [&](const auto& item) noexcept {
+                        return draft().spelling(item.name) == case_name;
+                    });
+                if (selected == shape->cases.end()) {
+                    auto names = std::vector<std::string>();
+                    for (const auto& item : shape->cases) {
+                        names.push_back(draft().spelling_copy(item.name));
+                    }
                     co_return std::unexpected(fail(
                         case_pattern.name_span,
                         DiagnosticCode::TypeMatchPattern,
                         std::format(
                             "enum '{}' has no case named '{}'{}",
-                            draft().spelling(draft().enum_declaration_copy(owner).name),
+                            type_display_name(draft(), type, catalog()),
                             case_name,
-                            spelling_suggestion(case_name, draft().enum_case_names(owner))
+                            spelling_suggestion(case_name, names)
                         )
                     ));
                 }
@@ -445,7 +457,7 @@ auto BodyElaborator::build_pattern(
                 co_return BuiltPattern {
                     .pattern =
                         add(EnumCasePattern {
-                            .enum_case = *selected_id,
+                            .enum_case = selected->reference,
                             .payload = std::move(payload),
                         }),
                     .bindings = std::move(result_bindings),

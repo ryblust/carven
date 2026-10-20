@@ -1,0 +1,45 @@
+# Project build scripts
+
+The two self-contained projects use the same `std::build` API. Commands assume
+`carven` is on `PATH` and a C++20 toolchain is available.
+
+## declarative
+
+`declarative/build.cv` describes two executable targets in one call to `build`.
+Both use `src/catalog.cv`, listed once in `shared_sources`, and each supplies
+its own entry.
+
+Run in `declarative/`:
+
+```sh
+carven build
+carven run inventory
+carven run inventory-check
+```
+
+The application prints two stock counts; the checker prints
+`Checked 2 catalog items`.
+
+## imperative
+
+`imperative/build.cv` uses top-level statements to read `settings.toml`, generate
+`build/generated/settings.cv`, and assemble a `BuildPlan`. A loop adds targets;
+`include_checks` selects the checker, and `optimize` adds `-O2`. The script calls
+`build(plan)`, prints the output names and paths, and runs the checker with
+`std::process.run` when enabled.
+
+`settings.toml` is data read by the script. Its `minimum_stock` becomes a constant
+in the generated source.
+
+Run in `imperative/`:
+
+```sh
+carven build
+./build/stock-report
+```
+
+On Windows, run `build\stock-report.exe` for the second command.
+With the supplied settings, the report prints only the pencil stock, which meets
+the generated minimum of 20. Set `include_checks` to `false` to omit the checker,
+or change `minimum_stock` and run `carven build` again to update the threshold.
+All outputs, including generated sources, stay under `build/`.

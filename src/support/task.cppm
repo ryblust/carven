@@ -3,8 +3,8 @@ module carven:support.task;
 import :support.invariant;
 import std;
 
-// A root drives its dependencies through a depth-first continuation loop.
-// Awaiting a dependency yields to that loop; it never resumes a child inline.
+// A root drives suspended dependencies through a depth-first continuation loop.
+// Completed results need no turn; awaiting a coroutine never resumes it inline.
 struct ContinuationTaskLoop final {
     std::coroutine_handle<> next;
 
@@ -19,68 +19,77 @@ public:
     using Handle = std::coroutine_handle<Promise>;
 
     explicit ContinuationTask(Handle handle) noexcept
-        : handle(handle) {}
+        : ready(false),
+          state(handle) {}
+
+    // A completed operation needs neither a coroutine frame nor a scheduling turn.
+    explicit ContinuationTask(Value&& result) noexcept
+        : ready(true),
+          state(std::move(result)) {}
 
     ContinuationTask(const ContinuationTask&) = delete;
 
     ContinuationTask(ContinuationTask&& other) noexcept
-        : handle(std::exchange(other.handle, {})) {}
+        : ready(other.ready),
+          state(Handle {}) {
+        if (ready) {
+            std::construct_at(std::addressof(state.value), std::move(other.state.value));
+        } else {
+            state.handle = std::exchange(other.state.handle, {});
+        }
+    }
 
     auto operator=(const ContinuationTask&) -> ContinuationTask& = delete;
     auto operator=(ContinuationTask&&) -> ContinuationTask& = delete;
 
     ~ContinuationTask() noexcept {
-        if (handle) {
-            handle.destroy();
+        if (ready) {
+            std::destroy_at(std::addressof(state.value));
+        } else if (state.handle) {
+            state.handle.destroy();
         }
     }
 
     class Awaiter final {
     public:
-        explicit Awaiter(Handle handle) noexcept
-            : handle(handle) {}
+        explicit Awaiter(ContinuationTask& task) noexcept
+            : task(task) {}
 
-        Awaiter(const Awaiter&) = delete;
-
-        Awaiter(Awaiter&& other) noexcept
-            : handle(std::exchange(other.handle, {})) {}
-
-        auto operator=(const Awaiter&) -> Awaiter& = delete;
-        auto operator=(Awaiter&&) -> Awaiter& = delete;
-
-        ~Awaiter() noexcept {
-            if (handle) {
-                handle.destroy();
-            }
-        }
-
-        auto await_ready() const noexcept -> bool { return false; }
+        auto await_ready() const noexcept -> bool { return task.done(); }
 
         template<typename Parent>
         auto await_suspend(std::coroutine_handle<Parent> parent) noexcept -> void {
+            const auto handle = task.state.handle;
             auto& promise = handle.promise();
             promise.attach(parent.promise().task_loop(), parent);
             promise.task_loop().next = handle;
         }
 
-        auto await_resume() noexcept -> Value { return handle.promise().take_result(); }
+        // The task owns the result through the consuming full expression.
+        // Forwarding to another promise need not construct an intermediate value.
+        auto await_resume() noexcept -> Value&& { return task.result_value(); }
 
     private:
-        Handle handle;
+        ContinuationTask& task;
     };
 
-    auto operator co_await() && noexcept -> Awaiter { return Awaiter(std::exchange(handle, {})); }
+    auto operator co_await() && noexcept -> Awaiter { return Awaiter(*this); }
 
     auto start(ContinuationTaskLoop& loop) noexcept -> void {
-        handle.promise().attach(loop, {});
-        loop.next = handle;
+        loop.next = {};
+        if (!ready) {
+            state.handle.promise().attach(loop, {});
+            loop.next = state.handle;
+        }
     }
 
-    auto done() const noexcept -> bool { return handle.done(); }
+    auto done() const noexcept -> bool { return ready || state.handle.done(); }
 
-    auto result() const noexcept -> const Value& { return handle.promise().result_view(); }
+    auto result() const noexcept -> const Value& {
+        return ready ? state.value : state.handle.promise().result_view();
+    }
 
-    auto take_result() noexcept -> Value { return handle.promise().take_result(); }
+    auto take_result() noexcept -> Value { return result_value(); }
 
     // Synchronous entry points drive a root task. Dependencies await their children.
     auto run() && noexcept -> Value {
@@ -89,7 +98,7 @@ public:
         while (loop.next) {
             loop.resume_one();
         }
-        return handle.promise().take_result();
+        return result_value();
     }
 
     class Promise final {
@@ -114,9 +123,13 @@ public:
 
         auto final_suspend() const noexcept -> Completion { return {}; }
 
-        auto return_value(const Value& value) noexcept -> void { result.emplace(value); }
-
         auto return_value(Value&& value) noexcept -> void { result.emplace(std::move(value)); }
+
+        template<typename Result>
+            requires std::constructible_from<Value, Result&&>
+        auto return_value(Result&& value) noexcept -> void {
+            result.emplace(std::forward<Result>(value));
+        }
 
         auto unhandled_exception() const noexcept -> void { std::terminate(); }
 
@@ -143,7 +156,7 @@ public:
             return *result;
         }
 
-        auto take_result() noexcept -> Value {
+        auto take_result() noexcept -> Value&& {
             if (!result) {
                 invariant_violation("continuation task completed without a result");
             }
@@ -157,5 +170,24 @@ public:
     };
 
 private:
-    Handle handle;
+    auto result_value() noexcept -> Value&& {
+        return ready ? std::move(state.value) : state.handle.promise().take_result();
+    }
+
+    // The tag is fixed at construction. Only the selected member has a lifetime.
+    union State {
+        explicit State(Handle handle) noexcept
+            : handle(handle) {}
+
+        explicit State(Value&& value) noexcept
+            : value(std::move(value)) {}
+
+        ~State() noexcept {}
+
+        Handle handle;
+        Value value;
+    };
+
+    bool ready;
+    State state;
 };

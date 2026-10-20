@@ -28,7 +28,7 @@ auto OwnershipBodyAnalyzer::opaque_callable_targets(
                 self(element);
                 path.pop_back();
             }
-        } else if (std::holds_alternative<CallableViewTypeValue>(shape)
+        } else if (std::holds_alternative<ConstructionCallableViewTypeValue>(shape)
                    || std::holds_alternative<ClosureTypeValue>(shape)) {
             result.edit().callable_loans.push_back(
                 OwnershipCallableLoan {
@@ -498,7 +498,8 @@ auto OwnershipBodyAnalyzer::expression(
                                 .holder = {},
                                 .backing = place,
                                 .origin = argument.expression.origin,
-                                .protection = OwnershipLoanProtection::Lifetime
+                                .protection = OwnershipLoanProtection::Lifetime,
+                                .sequence_type = std::nullopt
                             }
                         );
                     }
@@ -577,6 +578,10 @@ auto OwnershipBodyAnalyzer::expression(
                     co_return {};
                 },
                 [&](const SemUnary& value) noexcept -> ContinuationTask<std::monostate> {
+                    static_cast<void>((co_await evaluate(*value.operand, false)));
+                    co_return {};
+                },
+                [&](const SemHash& value) noexcept -> ContinuationTask<std::monostate> {
                     static_cast<void>((co_await evaluate(*value.operand, false)));
                     co_return {};
                 },
@@ -714,7 +719,7 @@ auto OwnershipBodyAnalyzer::expression(
                         if (flow.normal && value.kind != ReportKind::Assert) {
                             flow.exits.push_back(
                                 OwnershipExit {
-                                    .payload = OwnershipTestStopped {},
+                                    .payload = OwnershipStopped {},
                                     .state = flow.normal->state
                                 }
                             );
@@ -771,7 +776,8 @@ auto OwnershipBodyAnalyzer::expression(
                                         .holder = {},
                                         .backing = backing,
                                         .origin = operand.expression.origin,
-                                        .protection = OwnershipLoanProtection::Contents
+                                        .protection = OwnershipLoanProtection::Contents,
+                                        .sequence_type = std::nullopt
                                     }
                                 );
                             }
@@ -815,13 +821,13 @@ auto OwnershipBodyAnalyzer::expression(
                             [&](const SliceIntrinsicOperation& family) noexcept
                                 -> ContinuationTask<std::monostate> {
                                 const auto previous_readers = storage_readers.size();
+                                const auto source_type =
+                                    value.operands.front().expression.type.construction();
                                 auto relationships =
                                     (co_await evaluate(value.operands.front().expression, false));
                                 if (family.intrinsic == SliceIntrinsic::View
                                     && !std::holds_alternative<ConstructionSliceTypeValue>(
-                                        analysis.model.shape(
-                                            value.operands.front().expression.type.construction()
-                                        )
+                                        analysis.model.shape(source_type)
                                     )) {
                                     // A slice refers to backing storage; nested relationships remain
                                     // on that storage and are selected only when an element is read.
@@ -833,7 +839,8 @@ auto OwnershipBodyAnalyzer::expression(
                                                     .holder = {},
                                                     .backing = backing,
                                                     .origin = source.origin,
-                                                    .protection = OwnershipLoanProtection::Contents
+                                                    .protection = OwnershipLoanProtection::Contents,
+                                                    .sequence_type = source_type
                                                 }
                                             );
                                         }
@@ -954,7 +961,8 @@ auto OwnershipBodyAnalyzer::expression(
                                                         .backing = backing,
                                                         .origin = source.origin,
                                                         .protection =
-                                                            OwnershipLoanProtection::Contents
+                                                            OwnershipLoanProtection::Contents,
+                                                        .sequence_type = std::nullopt
                                                     }
                                                 );
                                             }
@@ -1025,15 +1033,14 @@ auto OwnershipBodyAnalyzer::expression(
                             }
                             return;
                         }
-                        const auto source_type = analysis.model.concrete_type(from);
-                        const auto target_type = analysis.model.concrete_type(to);
-                        if (!source_type || !target_type) {
-                            invariant_violation(
-                                "callable adoption requires a concrete leaf contract"
+                        const auto adaptation = analysis.model.callable_adaptation(from, to);
+                        if (adaptation.kind == CallableAdaptationKind::CopyTarget) {
+                            merge_relationships(
+                                flow.normal->value,
+                                nest_relationships(project_relationships(original, path), path)
                             );
+                            return;
                         }
-                        const auto adaptation =
-                            callable_adaptation(program, *source_type, *target_type);
                         if (!adaptation.borrows_storage()) {
                             flow.normal->value.edit().callable_loans.push_back(
                                 OwnershipCallableLoan {
@@ -1080,10 +1087,9 @@ auto OwnershipBodyAnalyzer::expression(
                     co_return {};
                 },
                 [&](const SemBorrowCallable& value) noexcept -> ContinuationTask<std::monostate> {
-                    const auto adaptation = callable_adaptation(
-                        program,
-                        value.source->type.resolved(),
-                        source.type.resolved()
+                    const auto adaptation = analysis.model.callable_adaptation(
+                        value.source->type.construction(),
+                        source.type.construction()
                     );
                     if (std::holds_alternative<SemTake>(value.source->value)
                         && analysis.contents(value.source->type.construction())
@@ -1409,7 +1415,8 @@ auto OwnershipBodyAnalyzer::expression(
                 [&](const SemCall& value) noexcept -> ContinuationTask<std::monostate> {
                     const auto previous = accesses.size();
                     const auto previous_readers = storage_readers.size();
-                    const auto concrete = callable_identity(program, value.callee->type.resolved());
+                    const auto concrete =
+                        analysis.model.callable_identity(value.callee->type.construction());
                     const auto body_known =
                         concrete && program.declarations().body_for_callable(*concrete).has_value();
                     auto callee = OwnershipRelationships {};
@@ -1509,30 +1516,25 @@ auto OwnershipBodyAnalyzer::expression(
                                 } else if (loan.callable.has_value()) {
                                     (co_await self({}, loan.callable, std::nullopt));
                                 } else {
-                                    const auto signature = [&]() noexcept {
-                                        if (function) {
-                                            return program.declarations()
-                                                .callable(*function)
-                                                .signature;
-                                        }
-                                        const auto* view = std::get_if<CallableViewTypeValue>(
-                                            &program.types()
-                                                 .type(value.callee->type.resolved())
-                                                 .value
+                                    const auto apply_contract = [&](const auto& contract) noexcept {
+                                        return call_contract(
+                                            contract,
+                                            parameters,
+                                            flow.normal->state,
+                                            source.origin
                                         );
-                                        if (!view) {
-                                            invariant_violation(
-                                                "opaque call requires a callable view"
-                                            );
-                                        }
-                                        return view->signature;
-                                    }();
-                                    auto next = call_contract(
-                                        program.callable_signatures().signature(signature),
-                                        parameters,
-                                        flow.normal->state,
-                                        source.origin
-                                    );
+                                    };
+                                    auto next = function
+                                        ? apply_contract(program.callable_signatures().signature(
+                                              program.declarations().callable(*function).signature
+                                          ))
+                                        : apply_contract(
+                                              std::get<ConstructionCallableViewTypeValue>(
+                                                  analysis.model.shape(
+                                                      value.callee->type.construction()
+                                                  )
+                                              )
+                                          );
                                     join_normal_ownership(invoked.normal, next.normal);
                                     append_ownership_exits(invoked, next);
                                 }

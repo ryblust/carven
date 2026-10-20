@@ -214,6 +214,12 @@ auto ProgramDraft::validate_generic_definitions(std::optional<GenericDeclaration
                     [&](const GenericOperationType& operation) noexcept {
                         self(self, operation.success, true, result);
                     },
+                    [&](const GenericCallableViewType& view) noexcept {
+                        for (const auto& parameter : view.parameters) {
+                            self(self, parameter.type, true, result);
+                        }
+                        self(self, view.result, true, result);
+                    },
                     [&](const GenericCppNamedType& native) noexcept {
                         for (const auto argument : native.arguments) {
                             self(self, argument, true, result);
@@ -270,6 +276,12 @@ auto ProgramDraft::validate_generic_definitions(std::optional<GenericDeclaration
                     [&](const GenericOperationType& operation) noexcept {
                         self(self, operation.success);
                     },
+                    [&](const GenericCallableViewType& view) noexcept {
+                        for (const auto& parameter : view.parameters) {
+                            self(self, parameter.type);
+                        }
+                        self(self, view.result);
+                    },
                     [&](const GenericCppNamedType& native) noexcept {
                         for (const auto argument : native.arguments) {
                             self(self, argument);
@@ -282,6 +294,14 @@ auto ProgramDraft::validate_generic_definitions(std::optional<GenericDeclaration
                     },
                     [&](const GenericNominalApplication& application) noexcept {
                         const auto target = generic_declaration_copy(application.definition);
+                        auto bounds = check_generic_bounds(
+                            application.definition,
+                            application.arguments,
+                            contract.origin
+                        );
+                        if (!bounds) {
+                            failure = bounds.error();
+                        }
                         const auto target_count = definition_contract(target).parameters.size();
                         if (target_count != application.arguments.size()) {
                             diagnose(
@@ -474,6 +494,16 @@ auto ProgramDraft::validate_generic_definitions(std::optional<GenericDeclaration
                 },
                 [&](const GenericOperationType& operation) noexcept {
                     self(self, operation.success, false, origin);
+                },
+                [&](const GenericCallableViewType&) noexcept {
+                    if (owns_storage) {
+                        diagnose(
+                            DiagnosticCode::TypeCallableViewEscape,
+                            "callable views cannot be held by owning aggregate storage",
+                            origin,
+                            "this field or payload contains a callable view"
+                        );
+                    }
                 },
                 [&](const GenericCppNamedType& native) noexcept {
                     for (const auto argument : native.arguments) {

@@ -1,0 +1,227 @@
+import <carven/std/collections/native.hpp> using carven::standard::collections;
+
+export const fn hash_bytes(bytes: [u8]) -> u64 => collections::hash_bytes(bytes);
+
+export const fn hash_text(text: str) -> u64 => hash_bytes(text.bytes);
+
+private struct HashBucket {
+    hash: u64,
+    record: usize
+}
+
+// Zero marks an empty bucket; occupied buckets hold a one-based dense position.
+private class HashIndex {
+    buckets: Vector<HashBucket>,
+
+    const fn new() -> HashIndex => { buckets: [] };
+
+    const fn with_capacity(records: usize) -> HashIndex {
+        var index = HashIndex::new();
+        if records != 0 {
+            var capacity = 8usize;
+            while records > capacity - capacity / 4 {
+                let grown = capacity * 2;
+                assert(grown > capacity);
+                capacity = grown;
+            }
+            index.grow(capacity);
+        }
+        return &&index;
+    }
+
+    private const fn probe(self, hash: u64, start: usize) -> usize {
+        if self.buckets.is_empty() { return 0; }
+        var position = start & (self.buckets.length() - 1);
+        while self.buckets[position].record != 0 {
+            if self.buckets[position].hash == hash { return position; }
+            position = (position + 1) & (self.buckets.length() - 1);
+        }
+        return self.buckets.length();
+    }
+
+    private const fn grow(&self, capacity: usize) {
+        var buckets = Vector<HashBucket>::with_capacity(capacity);
+        for _ in 0..capacity {
+            buckets.push(HashBucket {});
+        }
+        for bucket in self.buckets {
+            if bucket.record == 0 { continue; }
+            var position = (bucket.hash as usize) & (capacity - 1);
+            while buckets[position].record != 0 {
+                position = (position + 1) & (capacity - 1);
+            }
+            buckets[position] = bucket;
+        }
+        self.buckets = &&buckets;
+    }
+
+    const fn insert(&self, hash: u64, record: usize) {
+        if self.buckets.is_empty() {
+            self.grow(8);
+        } else if record + 1 > self.buckets.length() - self.buckets.length() / 4 {
+            let capacity = self.buckets.length() * 2;
+            assert(capacity > self.buckets.length());
+            self.grow(capacity);
+        }
+        var position = (hash as usize) & (self.buckets.length() - 1);
+        while self.buckets[position].record != 0 {
+            position = (position + 1) & (self.buckets.length() - 1);
+        }
+        self.buckets[position] = {
+            hash: hash,
+            record: record + 1
+        };
+    }
+
+    const fn remove(&self, record: usize) {
+        let removed = record + 1;
+        for position in 0..self.buckets.length() {
+            if self.buckets[position].record == removed {
+                self.buckets[position].record = 0;
+            } else if self.buckets[position].record > removed {
+                self.buckets[position].record -= 1;
+            }
+        }
+        let capacity = self.buckets.length();
+        self.grow(capacity);
+    }
+
+    const fn end(self) -> usize => self.buckets.length();
+    const fn first(self, hash: u64) -> usize => self.probe(hash, hash as usize);
+    const fn next(self, hash: u64, bucket: usize) -> usize => self.probe(hash, bucket + 1);
+    const fn record(self, bucket: usize) -> usize => self.buckets[bucket].record - 1;
+}
+
+export enum Lookup<T> {
+    Missing,
+    Found(T)
+}
+
+export struct MapEntry<K, V> {
+    key: K,
+    value: V
+}
+
+export class HashMap<K: Hash + Equal, V> {
+    hashes: HashIndex,
+    items: Vector<MapEntry<K, V>>,
+
+    const fn new() -> HashMap<K, V> => {
+        hashes: HashIndex::new(),
+        items: []
+    };
+
+    const fn with_capacity(capacity: usize) -> HashMap<K, V> => {
+        hashes: HashIndex::with_capacity(capacity),
+        items: Vector<MapEntry<K, V>>::with_capacity(capacity)
+    };
+
+    const fn length(self) -> usize => self.items.length();
+    const fn is_empty(self) -> bool => self.items.is_empty();
+    const fn entries(self) -> [MapEntry<K, V>] => self.items;
+
+    private const fn find_position(self, key: K, hash: u64) -> usize {
+        var bucket = self.hashes.first(hash);
+        while bucket != self.hashes.end() {
+            let position = self.hashes.record(bucket);
+            if Equal::equal(self.items[position].key, key) { return position; }
+            bucket = self.hashes.next(hash, bucket);
+        }
+        return self.items.length();
+    }
+
+    const fn find(self, key: K) -> ptr<V> {
+        let position = self.find_position(key, Hash::hash(key));
+        if position == self.items.length() { return nullptr; }
+        return addressof(self.items[position].value);
+    }
+
+    const fn find_mut(&self, key: K) -> ptr<&V> {
+        let position = self.find_position(key, Hash::hash(key));
+        if position == self.items.length() { return nullptr; }
+        return addressof(&self.items[position].value);
+    }
+
+    const fn contains(self, key: K) -> bool => self.find_position(key, Hash::hash(key))
+        != self.items.length();
+
+    // Insertion preserves the first value associated with a key.
+    const fn insert(&self, &&key: K, &&value: V) -> bool {
+        let hash = Hash::hash(key);
+        if self.find_position(key, hash) != self.items.length() { return false; }
+        self.hashes.insert(hash, self.items.length());
+        self.items.push(
+            {
+                key: &&key,
+                value: &&value
+            }
+        );
+        return true;
+    }
+
+    const fn remove(&self, key: K) -> Lookup<V> {
+        let position = self.find_position(key, Hash::hash(key));
+        if position == self.items.length() { return .Missing; }
+        let item = self.items.remove(position);
+        self.hashes.remove(position);
+        return .Found((&&item).value);
+    }
+
+    const fn clear(&self) {
+        self.items.clear();
+        self.hashes = HashIndex::new();
+    }
+}
+
+export class HashSet<T: Hash + Equal> {
+    hashes: HashIndex,
+    items: Vector<T>,
+
+    const fn new() -> HashSet<T> => {
+        hashes: HashIndex::new(),
+        items: []
+    };
+
+    const fn with_capacity(capacity: usize) -> HashSet<T> => {
+        hashes: HashIndex::with_capacity(capacity),
+        items: Vector<T>::with_capacity(capacity)
+    };
+
+    const fn length(self) -> usize => self.items.length();
+    const fn is_empty(self) -> bool => self.items.is_empty();
+    const fn values(self) -> [T] => self.items;
+
+    private const fn find_position(self, key: T, hash: u64) -> usize {
+        var bucket = self.hashes.first(hash);
+        while bucket != self.hashes.end() {
+            let position = self.hashes.record(bucket);
+            if Equal::equal(self.items[position], key) { return position; }
+            bucket = self.hashes.next(hash, bucket);
+        }
+        return self.items.length();
+    }
+
+    const fn contains(self, key: T) -> bool => self.find_position(key, Hash::hash(key))
+        != self.items.length();
+
+    const fn insert(&self, &&key: T) -> bool {
+        let hash = Hash::hash(key);
+        if self.find_position(key, hash) != self.items.length() { return false; }
+        self.hashes.insert(hash, self.items.length());
+        self.items.push(&&key);
+        return true;
+    }
+
+    const fn remove(&self, key: T) -> Lookup<T> {
+        let position = self.find_position(key, Hash::hash(key));
+        if position == self.items.length() { return .Missing; }
+        let item = self.items.remove(position);
+        self.hashes.remove(position);
+        return .Found(&&item);
+    }
+
+    const fn clear(&self) {
+        self.items.clear();
+        self.hashes = HashIndex::new();
+    }
+}

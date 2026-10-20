@@ -17,7 +17,7 @@ class Box {
     fn read(self) -> i32 => self.hidden.value;
 }
 
-export class Indirect {
+class Indirect {
     hidden: ptr<PointerOnly>,
     mode: Mode,
 }
@@ -34,7 +34,7 @@ private fn local_failure() -> i32 throw LocalFailure {
     throw LocalFailure { value: 7 };
 }
 
-export class Opaque {
+class Opaque {
     local: ptr<Local>,
     callback: ptr<fn() -> i32 throw LocalFailure>,
 
@@ -54,4 +54,4 @@ export class Opaque {
     }
 }
 
-export fn opaque() -> Opaque => Opaque::new();
+fn opaque() -> Opaque => Opaque::new();

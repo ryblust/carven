@@ -22,13 +22,13 @@ auto integer_value(TypeID type, std::int64_t value) noexcept -> ExecutionValue {
 
 auto check_integer(
     const ConstantValueReader& values,
-    const ExecutionValue* value,
+    const std::optional<ExecutionRead>& value,
     std::int64_t expected
 ) noexcept -> void {
-    if (!expect(value != nullptr)) {
+    if (!expect(value.has_value())) {
         return;
     }
-    const auto atom = execution_atom(values, *value);
+    const auto atom = execution_atom(values, value->get());
     if (!expect(atom.has_value())) {
         return;
     }
@@ -83,10 +83,10 @@ const TestSuite suite([] static noexcept {
             auto memory = ExecutionMemory();
 
             const auto scalar = memory.create(integer_value(integer, 1));
-            if (!expect(memory.assign(scalar, integer_value(integer, 2)))) {
+            if (!expect(memory.assign(values, scalar, integer_value(integer, 2)))) {
                 return;
             }
-            check_integer(values, memory.resolve(scalar), 2);
+            check_integer(values, memory.read(scalar), 2);
 
             const auto aggregate = memory.create(pair_value(pair, integer, 3, 4));
             const auto first_field = memory.project(aggregate, 0uz);
@@ -97,16 +97,16 @@ const TestSuite suite([] static noexcept {
             if (!expect(second_field.has_value())) {
                 return;
             }
-            if (!expect(memory.assign(aggregate, pair_value(pair, integer, 5, 6)))) {
+            if (!expect(memory.assign(values, aggregate, pair_value(pair, integer, 5, 6)))) {
                 return;
             }
-            check_integer(values, memory.resolve(*first_field), 5);
-            check_integer(values, memory.resolve(*second_field), 6);
-            if (!expect(memory.assign(*first_field, integer_value(integer, 8)))) {
+            check_integer(values, memory.read(*first_field), 5);
+            check_integer(values, memory.read(*second_field), 6);
+            if (!expect(memory.assign(values, *first_field, integer_value(integer, 8)))) {
                 return;
             }
-            check_integer(values, memory.resolve(*first_field), 8);
-            check_integer(values, memory.resolve(*second_field), 6);
+            check_integer(values, memory.read(*first_field), 8);
+            check_integer(values, memory.read(*second_field), 6);
         };
 
     "Execution memory: product bindings retain slots with independent lifetimes"_test =
@@ -129,25 +129,25 @@ const TestSuite suite([] static noexcept {
             const auto first = memory.adopt_projection(*first_slot);
             const auto second = memory.adopt_projection(*second_slot);
             const auto pointer = ExecutionPointer {.type = pointer_type, .target = first};
-            check_integer(values, memory.resolve(*pointer.target), 3);
+            check_integer(values, memory.read(*pointer.target), 3);
             expect(memory.resolve(first) == memory.resolve(*first_slot));
-            if (!expect(memory.assign(first, integer_value(integer, 8)))) {
+            if (!expect(memory.assign(values, first, integer_value(integer, 8)))) {
                 return;
             }
-            check_integer(values, memory.resolve(*pointer.target), 8);
-            check_integer(values, memory.resolve(*first_slot), 8);
-            check_integer(values, memory.resolve(second), 4);
+            check_integer(values, memory.read(*pointer.target), 8);
+            check_integer(values, memory.read(*first_slot), 8);
+            check_integer(values, memory.read(second), 4);
 
             memory.release(first);
             expect(memory.resolve(*pointer.target) == nullptr);
-            expect(!memory.assign(first, integer_value(integer, 9)));
+            expect(!memory.assign(values, first, integer_value(integer, 9)));
             expect(memory.resolve(parent) != nullptr);
-            check_integer(values, memory.resolve(*first_slot), 8);
-            check_integer(values, memory.resolve(second), 4);
+            check_integer(values, memory.read(*first_slot), 8);
+            check_integer(values, memory.read(second), 4);
             const auto replacement = memory.adopt_projection(*first_slot);
             expect(replacement.object != first.object);
             expect(memory.resolve(*pointer.target) == nullptr);
-            check_integer(values, memory.resolve(replacement), 8);
+            check_integer(values, memory.read(replacement), 8);
 
             memory.release(parent);
             expect(memory.resolve(replacement) == nullptr);
@@ -191,13 +191,13 @@ const TestSuite suite([] static noexcept {
                 return;
             }
             const auto leaf = memory.adopt_projection(*nested_slot);
-            if (!expect(memory.assign(leaf, integer_value(integer, 7)))) {
+            if (!expect(memory.assign(values, leaf, integer_value(integer, 7)))) {
                 return;
             }
-            check_integer(values, memory.resolve(*original), 7);
-            check_integer(values, memory.resolve(*nested_slot), 7);
-            check_integer(values, memory.resolve(*nested_sibling), 1);
-            check_integer(values, memory.resolve(*outer_sibling), 3);
+            check_integer(values, memory.read(*original), 7);
+            check_integer(values, memory.read(*nested_slot), 7);
+            check_integer(values, memory.read(*nested_sibling), 1);
+            check_integer(values, memory.read(*outer_sibling), 3);
 
             memory.release(parent);
             expect(memory.resolve(nested) == nullptr);
@@ -205,7 +205,7 @@ const TestSuite suite([] static noexcept {
             expect(memory.resolve(*nested_slot) == nullptr);
             expect(memory.resolve(*nested_sibling) == nullptr);
             expect(memory.resolve(*original) == nullptr);
-            expect(!memory.assign(leaf, integer_value(integer, 8)));
+            expect(!memory.assign(values, leaf, integer_value(integer, 8)));
         };
 
     "Execution memory: enum payload projections preserve mutation and lifetime"_test =
@@ -222,9 +222,9 @@ const TestSuite suite([] static noexcept {
             const auto object = memory.create(enum_value(enum_type, member, integer, 1));
             const auto selected = memory.project(object, 0uz);
             require(selected.has_value());
-            check_integer(values, memory.resolve(*selected), 1);
-            expect(memory.assign(*selected, integer_value(integer, 7)));
-            check_integer(values, memory.resolve(*selected), 7);
+            check_integer(values, memory.read(*selected), 1);
+            expect(memory.assign(values, *selected, integer_value(integer, 7)));
+            check_integer(values, memory.read(*selected), 7);
             expect(!memory.project(object, 1uz));
             memory.release(object);
             expect(memory.resolve(*selected) == nullptr);
@@ -259,7 +259,7 @@ const TestSuite suite([] static noexcept {
             if (!expect(selected.has_value())) {
                 return;
             }
-            check_integer(values, memory.resolve(*selected), 4);
+            check_integer(values, memory.read(*selected), 4);
             if (!expect(display_execution_value(values, slice, false, &memory).has_value())) {
                 return;
             }
@@ -289,13 +289,80 @@ const TestSuite suite([] static noexcept {
             const auto new_object = first_memory.create(integer_value(integer, 1));
             expect(new_object != old_object);
             expect(first_memory.resolve(old_object) == nullptr);
-            check_integer(fixture.compilation, first_memory.resolve(new_object), 1);
+            check_integer(fixture.compilation, first_memory.read(new_object), 1);
 
             auto second_memory = ExecutionMemory();
             expect(second_memory.resolve(new_object) == nullptr);
             const auto other_object = second_memory.create(integer_value(integer, 1));
             expect(other_object != new_object);
             expect(first_memory.resolve(other_object) == nullptr);
+        };
+
+    "Execution memory: byte storage shares projections and bounds their lifetime"_test =
+        [] static noexcept {
+            auto fixture = ConstantEvaluationFixture();
+            auto& values = fixture.compilation;
+            const auto byte = values.builtin_type(BuiltinType::U8);
+            const auto vector = values.intern_type({.value = VectorTypeValue {.element = byte}});
+            const auto slice = values.intern_type({.value = SliceTypeValue {.element = byte}});
+            const auto product =
+                values.intern_type({.value = TupleTypeValue {.elements = {vector}}});
+            auto storage = ExecutionBytes {.type = vector, .element = byte, .bytes = {}};
+            storage.bytes.push(0);
+            storage.bytes.push(255);
+            auto elements = std::vector<ExecutionValue>();
+            elements.push_back(std::move(storage));
+            auto memory = ExecutionMemory();
+            const auto owner = memory.create(
+                ExecutionAggregateValue {
+                    .type = product,
+                    .elements = std::move(elements),
+                    .capacity = 0uz
+                }
+            );
+            const auto slot = memory.project(owner, 0uz);
+            if (!expect(slot.has_value())) {
+                return;
+            }
+            const auto binding = memory.adopt_projection(*slot);
+            const auto first = memory.project(binding, 0uz);
+            const auto second = memory.project(binding, 1uz);
+            if (!expect(first.has_value()) || !expect(second.has_value())) {
+                return;
+            }
+            const auto observed = memory.read(*second);
+            check_integer(values, observed, 255);
+            expect(memory.same_address(values, *first, *second) == false);
+            const auto addressed = memory.access_address(values, *second, byte);
+            expect(addressed && memory.same_address(values, *addressed, *second) == true);
+            const auto replacement = values.intern_constant(
+                {.type = byte, .value = IntegerConstant::from_parts(17u, false)}
+            );
+            expect(memory.assign(values, *second, replacement));
+            check_integer(values, memory.read(*second), 17);
+            check_integer(values, observed, 255);
+            const auto borrowed =
+                ExecutionSlice {.type = slice, .backing = binding, .offset = 0uz, .extent = 2uz};
+            const auto view = execution_slice_view(borrowed, &memory);
+            if (!expect(view.has_value())) {
+                return;
+            }
+            const auto* bytes = std::get_if<ExecutionByteView>(&*view);
+            if (!expect(bytes != nullptr)) {
+                return;
+            }
+            expect(bytes->bytes == std::string_view("\0\x11", 2uz));
+            expect(!memory.project(binding, 2uz));
+            memory.release(binding);
+            expect(!memory.read(*first));
+            expect(!execution_slice_view(borrowed, &memory));
+            const auto live = memory.project(*slot, 1uz);
+            if (!expect(live.has_value())) {
+                return;
+            }
+            check_integer(values, memory.read(*live), 17);
+            memory.release(owner);
+            expect(!memory.read(*live));
         };
 
     "Execution memory: UTF text observes the borrowed byte range until release"_test =
@@ -327,7 +394,7 @@ const TestSuite suite([] static noexcept {
             if (!expect(selected.has_value())) {
                 return;
             }
-            expect(memory.assign(*selected, integer_value(byte, 'c')));
+            expect(memory.assign(values, *selected, integer_value(byte, 'c')));
             expect(execution_text(values, borrowed, &memory) == "ac");
             expect(display_execution_value(values, borrowed, false, &memory) == "ac");
             auto steps = 0uz;
@@ -388,7 +455,7 @@ const TestSuite suite([] static noexcept {
             if (!expect(element.has_value())) {
                 return;
             }
-            check_integer(values, memory.resolve(*element), 98);
+            check_integer(values, memory.read(*element), 98);
             const auto view = execution_compound_view(values, slice, &memory);
             if (!expect(view.has_value())) {
                 return;
@@ -397,12 +464,12 @@ const TestSuite suite([] static noexcept {
                 return;
             }
             expect(execution_text(values, borrowed) == "ab");
-            if (!expect(memory.assign(owner, ExecutionOwnedText("cd")))) {
+            if (!expect(memory.assign(values, owner, ExecutionOwnedText("cd")))) {
                 return;
             }
             expect(!(execution_text(values, borrowed).has_value()));
-            expect(memory.resolve(*element) == nullptr);
-            expect(!(memory.view(slice).has_value()));
+            expect(!memory.read(*element));
+            expect(!(execution_slice_view(slice, &memory).has_value()));
 
             const auto* replacement = std::get_if<ExecutionOwnedText>(memory.resolve(owner));
             if (!expect(replacement != nullptr)) {
@@ -418,7 +485,7 @@ const TestSuite suite([] static noexcept {
                 return;
             }
             memory.release(owner);
-            expect(memory.resolve(*new_element) == nullptr);
+            expect(!memory.read(*new_element));
         };
 
     "Execution memory: taking String invalidates byte coordinates and preserves content"_test =
@@ -447,7 +514,7 @@ const TestSuite suite([] static noexcept {
             transfer_owned_text(*value);
             const auto moved = memory.create(std::move(*value));
             memory.release(owner);
-            expect(memory.resolve(*old_element) == nullptr);
+            expect(!memory.read(*old_element));
             const auto* moved_text = std::get_if<ExecutionOwnedText>(memory.resolve(moved));
             if (!expect(moved_text != nullptr)) {
                 return;
@@ -461,7 +528,7 @@ const TestSuite suite([] static noexcept {
             if (!expect(element.has_value())) {
                 return;
             }
-            check_integer(values, memory.resolve(*element), 98);
+            check_integer(values, memory.read(*element), 98);
         };
 
     "Execution memory: dead domains and expired text cannot acquire new storage"_test =
@@ -514,14 +581,14 @@ const TestSuite suite([] static noexcept {
             if (!expect(second_byte.has_value())) {
                 return;
             }
-            check_integer(values, first.resolve(*first_byte), 97);
-            check_integer(values, second.resolve(*second_byte), 97);
-            expect(first.resolve(*second_byte) == nullptr);
-            expect(second.resolve(*first_byte) == nullptr);
+            check_integer(values, first.read(*first_byte), 97);
+            check_integer(values, second.read(*second_byte), 97);
+            expect(!first.read(*second_byte));
+            expect(!second.read(*first_byte));
             text.reset();
             expect(!(execution_text(values, borrowed).has_value()));
-            expect(first.resolve(*first_byte) == nullptr);
-            expect(second.resolve(*second_byte) == nullptr);
+            expect(!first.read(*first_byte));
+            expect(!second.read(*second_byte));
             expect(!(first.text_bytes(borrowed, byte).has_value()));
             expect(!(second.text_bytes(borrowed, byte).has_value()));
         };

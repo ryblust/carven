@@ -9,9 +9,7 @@ import std;
 // coverage; value-dependent failures remain runtime checks.
 template<typename Operation>
 constexpr auto unsupported_execution_operation() noexcept -> std::optional<std::string_view> {
-    if constexpr (std::same_as<Operation, SemCpp> || std::same_as<Operation, SemCppCall>) {
-        return "native C++ operation requires compiled execution";
-    } else if constexpr (std::same_as<Operation, SemClosure>) {
+    if constexpr (std::same_as<Operation, SemClosure>) {
         return "closure execution is not supported";
     } else if constexpr (std::same_as<Operation, SemEnumConstructor>) {
         return "operation is not supported in execution";

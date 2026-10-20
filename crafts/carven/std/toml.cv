@@ -1,0 +1,443 @@
+import .toml.node using { Node, Table, Sequence, TableOrigin, DateTimeKind, find_member }
+import .toml.scalar using scalar;
+import .toml.key using key_path;
+import .toml.string using read_string;
+import .toml.syntax using { error, spaces, newline, comment, trivia, expect }
+import std::simd.scan using { one_of, find_from }
+import std::utf using UTF8Error;
+
+export enum TOMLErrorKind {
+    UnexpectedEnd,
+    UnexpectedByte,
+    InvalidKey,
+    InvalidEscape,
+    InvalidUnicode,
+    ControlCharacter,
+    InvalidNumber,
+    InvalidDateTime,
+    DuplicateKey,
+    TableRedefined,
+    DepthLimit,
+}
+
+// Zero-based UTF-8 byte offset; an incomplete input points at its length.
+export struct TOMLError {
+    kind: TOMLErrorKind,
+    offset: usize,
+}
+
+export enum TOMLValueError {
+    WrongKind,
+    MissingKey,
+    IndexOutOfBounds,
+}
+
+export enum TOMLValueKind {
+    String,
+    Integer,
+    Float,
+    Boolean,
+    OffsetDateTime,
+    LocalDateTime,
+    LocalDate,
+    LocalTime,
+    Array,
+    Table,
+}
+
+private const scalar_end = one_of([0x20, 0x09, 0x0a, 0x0d, 0x23, 0x2c, 0x5d, 0x7d]);
+
+// Child queries copy; text and collection views borrow this value.
+export class TOMLValue {
+    node: Node,
+
+    const fn parse(text: str) -> TOMLValue throw TOMLError => {
+        node: TOMLValue::parse_document(text)?
+    };
+
+    const fn parse_bytes(bytes: [u8]) -> TOMLValue throw TOMLError + UTF8Error => TOMLValue::parse(
+        str::from_utf8(bytes)?
+    )?;
+
+    const fn kind(self) -> TOMLValueKind {
+        return match self.node {
+            .Text(_) => .String,
+            .Integer(_) => .Integer,
+            .Float(_) => .Float,
+            .Boolean(_) => .Boolean,
+            .DateTime(_, kind) => match kind {
+                .OffsetDateTime => .OffsetDateTime,
+                .LocalDateTime => .LocalDateTime,
+                .LocalDate => .LocalDate,
+                .LocalTime => .LocalTime,
+            },
+            .Array(_) => .Array,
+            .Table(_) => .Table,
+        };
+    }
+
+    const fn as_str(self) -> str throw TOMLValueError {
+        match self.node {
+            .Text(text) => return text.as_str(),
+            _ => throw TOMLValueError::WrongKind,
+        }
+    }
+
+    const fn as_i64(self) -> i64 throw TOMLValueError {
+        match self.node {
+            .Integer(value) => return value,
+            _ => throw TOMLValueError::WrongKind,
+        }
+    }
+
+    const fn as_f64(self) -> f64 throw TOMLValueError {
+        match self.node {
+            .Float(value) => return value,
+            _ => throw TOMLValueError::WrongKind,
+        }
+    }
+
+    const fn as_bool(self) -> bool throw TOMLValueError {
+        match self.node {
+            .Boolean(value) => return value,
+            _ => throw TOMLValueError::WrongKind,
+        }
+    }
+
+    const fn date_time_text(self) -> str throw TOMLValueError {
+        match self.node {
+            .DateTime(text, _) => return text.as_str(),
+            _ => throw TOMLValueError::WrongKind,
+        }
+    }
+
+    const fn length(self) -> usize throw TOMLValueError {
+        return match self.node {
+            .Array(sequence) => sequence.items.length(),
+            .Table(table) => table.members.length(),
+            _ => throw TOMLValueError::WrongKind,
+        };
+    }
+
+    const fn elements(self) -> [TOMLValue] throw TOMLValueError {
+        match self.node {
+            .Array(sequence) => return sequence.items,
+            _ => throw TOMLValueError::WrongKind,
+        }
+    }
+
+    const fn members(self) -> [(String, TOMLValue)] throw TOMLValueError {
+        match self.node {
+            .Table(table) => return table.members,
+            _ => throw TOMLValueError::WrongKind,
+        }
+    }
+
+    const fn at(self, index: usize) -> TOMLValue throw TOMLValueError {
+        match self.node {
+            .Array(sequence) => {
+                if index >= sequence.items.length() { throw TOMLValueError::IndexOutOfBounds; }
+                return sequence.items[index];
+            },
+            _ => throw TOMLValueError::WrongKind,
+        }
+    }
+
+    const fn has(self, key: str) -> bool throw TOMLValueError {
+        match self.node {
+            .Table(table) => return find_member(table.members, key) != table.members.length(),
+            _ => throw TOMLValueError::WrongKind,
+        }
+    }
+
+    const fn get(self, key: str) -> TOMLValue throw TOMLValueError {
+        match self.node {
+            .Table(table) => {
+                let index = find_member(table.members, key);
+                if index == table.members.length() { throw TOMLValueError::MissingKey; }
+                return table.members[index].1;
+            },
+            _ => throw TOMLValueError::WrongKind,
+        }
+    }
+
+    const fn key_at(self, index: usize) -> str throw TOMLValueError {
+        match self.node {
+            .Table(table) => {
+                if index >= table.members.length() { throw TOMLValueError::IndexOutOfBounds; }
+                return table.members[index].0.as_str();
+            },
+            _ => throw TOMLValueError::WrongKind,
+        }
+    }
+
+    const fn member_value_at(self, index: usize) -> TOMLValue throw TOMLValueError {
+        match self.node {
+            .Table(table) => {
+                if index >= table.members.length() { throw TOMLValueError::IndexOutOfBounds; }
+                return table.members[index].1;
+            },
+            _ => throw TOMLValueError::WrongKind,
+        }
+    }
+
+    private const fn empty_table(origin: TableOrigin) -> Table => {
+        members: [],
+        origin: origin
+    };
+
+    private const fn assign_node(
+        &node: Node,
+        path: Vector<String>,
+        index: usize,
+        context: usize,
+        &&value: Node,
+        offset: usize
+    ) -> void throw TOMLError {
+        match node {
+            .Table(&table) => {
+                if table.origin == .Inline { throw error(.TableRedefined, offset); }
+                if index > context {
+                    if table.origin == .Explicit { throw error(.TableRedefined, offset); }
+                    table.origin = .Dotted;
+                }
+                TOMLValue::assign(&table, path, index, context, &&value, offset)?;
+            },
+            .Array(&sequence) => {
+                if !sequence.tables || index > context { throw error(.TableRedefined, offset); }
+                let last = sequence.items.length() - 1;
+                TOMLValue::assign_node(
+                    &sequence.items[last].node,
+                    path,
+                    index,
+                    context,
+                    &&value,
+                    offset
+                )?;
+            },
+            _ => throw error(.TableRedefined, offset),
+        }
+    }
+
+    private const fn assign(
+        &table: Table,
+        path: Vector<String>,
+        index: usize,
+        context: usize,
+        &&value: Node,
+        offset: usize
+    ) -> void throw TOMLError {
+        let key = path[index].as_str();
+        let member = find_member(table.members, key);
+        if index + 1 == path.length() {
+            if member != table.members.length() { throw error(.DuplicateKey, offset); }
+            let child = TOMLValue { node: &&value };
+            let entry = (key as String, &&child);
+            table.members.push(&&entry);
+            return;
+        }
+        if member == table.members.length() {
+            let child = TOMLValue { node: .Table(TOMLValue::empty_table(.Dotted)) };
+            let entry = (key as String, &&child);
+            table.members.push(&&entry);
+        }
+        TOMLValue::assign_node(
+            &table.members[member].1.node,
+            path,
+            index + 1,
+            context,
+            &&value,
+            offset
+        )?;
+    }
+
+    private const fn header_node(
+        &node: Node,
+        path: Vector<String>,
+        index: usize,
+        array: bool,
+        offset: usize
+    ) -> void throw TOMLError {
+        match node {
+            .Table(&table) => {
+                if table.origin == .Inline { throw error(.TableRedefined, offset); }
+                TOMLValue::header(&table, path, index, array, offset)?;
+            },
+            .Array(&sequence) => {
+                if !sequence.tables { throw error(.TableRedefined, offset); }
+                let last = sequence.items.length() - 1;
+                TOMLValue::header_node(&sequence.items[last].node, path, index, array, offset)?;
+            },
+            _ => throw error(.TableRedefined, offset),
+        }
+    }
+
+    private const fn header(
+        &table: Table,
+        path: Vector<String>,
+        index: usize,
+        array: bool,
+        offset: usize
+    ) -> void throw TOMLError {
+        let key = path[index].as_str();
+        let member = find_member(table.members, key);
+        let last = index + 1 == path.length();
+        if member == table.members.length() {
+            var node = Node::Table(
+                TOMLValue::empty_table(if last { .Explicit } else { .Implicit })
+            );
+            if last && array {
+                var sequence = Sequence {
+                    items: [],
+                    tables: true
+                };
+                let child = TOMLValue { node: &&node };
+                sequence.items.push(&&child);
+                node = .Array(&&sequence);
+            }
+            let child = TOMLValue { node: &&node };
+            let entry = (key as String, &&child);
+            table.members.push(&&entry);
+            if last { return; }
+        } else if last {
+            match table.members[member].1.node {
+                .Table(&existing) => {
+                    if array || existing.origin != .Implicit {
+                        throw error(.TableRedefined, offset);
+                    }
+                    existing.origin = .Explicit;
+                },
+                .Array(&sequence) => {
+                    if !array || !sequence.tables { throw error(.TableRedefined, offset); }
+                    let node = Node::Table(TOMLValue::empty_table(.Explicit));
+                    let child = TOMLValue { node: &&node };
+                    sequence.items.push(&&child);
+                },
+                _ => throw error(.TableRedefined, offset),
+            }
+            return;
+        }
+        TOMLValue::header_node(&table.members[member].1.node, path, index + 1, array, offset)?;
+    }
+
+    private const fn read_value(bytes: [u8], &offset: usize, depth: usize) -> Node throw TOMLError {
+        if offset == bytes.length() { throw error(.UnexpectedEnd, offset); }
+        match bytes[offset] {
+            0x22 | 0x27 => return .Text(read_string(bytes, &offset, true)?),
+            0x5b => {
+                if depth >= 64 { throw error(.DepthLimit, offset); }
+                offset += 1;
+                var sequence = Sequence {
+                    items: [],
+                    tables: false
+                };
+                trivia(bytes, &offset)?;
+                while offset < bytes.length() && bytes[offset] != 0x5d {
+                    let node = TOMLValue::read_value(bytes, &offset, depth + 1)?;
+                    let child = TOMLValue { node: &&node };
+                    sequence.items.push(&&child);
+                    trivia(bytes, &offset)?;
+                    if offset == bytes.length() || bytes[offset] != 0x2c { break; }
+                    offset += 1;
+                    trivia(bytes, &offset)?;
+                }
+                expect(bytes, &offset, 0x5d)?;
+                return .Array(&&sequence);
+            },
+            0x7b => {
+                if depth >= 64 { throw error(.DepthLimit, offset); }
+                offset += 1;
+                var table = TOMLValue::empty_table(.Explicit);
+                spaces(bytes, &offset);
+                while offset < bytes.length() && bytes[offset] != 0x7d {
+                    let start = offset;
+                    let path = key_path(bytes, &offset)?;
+                    if depth + path.length() > 64 { throw error(.DepthLimit, start); }
+                    expect(bytes, &offset, 0x3d)?;
+                    spaces(bytes, &offset);
+                    let node = TOMLValue::read_value(bytes, &offset, depth + path.length())?;
+                    TOMLValue::assign(&table, path, 0, 0, &&node, start)?;
+                    spaces(bytes, &offset);
+                    if offset == bytes.length() || bytes[offset] != 0x2c { break; }
+                    offset += 1;
+                    spaces(bytes, &offset);
+                    if offset < bytes.length() && bytes[offset] == 0x7d {
+                        throw error(.UnexpectedByte, offset);
+                    }
+                }
+                expect(bytes, &offset, 0x7d)?;
+                table.origin = .Inline;
+                return .Table(&&table);
+            },
+            _ => {},
+        }
+        let start = offset;
+        offset = find_from(bytes, offset, scalar_end);
+        // RFC 3339 also permits a single space between the date and the time.
+        if offset
+            - start
+            == 10
+            && bytes[start + 4] == 0x2d
+            && bytes[start + 7] == 0x2d
+            && bytes.length() - offset >= 4
+            && bytes[offset] == 0x20
+            && bytes[offset + 3] == 0x3a {
+            offset = find_from(bytes, offset + 1, scalar_end);
+        }
+        if offset == start { throw error(.UnexpectedByte, offset); }
+        return scalar(str::from_utf8_unchecked(bytes.slice(start, offset)), start)?;
+    }
+
+    private const fn parse_document(text: str) -> Node throw TOMLError {
+        let bytes = text.bytes;
+        var offset: usize = 0;
+        var root = TOMLValue::empty_table(.Explicit);
+        var context: Vector<String> = [];
+        while {
+            trivia(bytes, &offset)?;
+            if offset == bytes.length() { return .Table(&&root); }
+            let start = offset;
+            if bytes[offset] == 0x5b {
+                offset += 1;
+                let array = offset < bytes.length() && bytes[offset] == 0x5b;
+                if array { offset += 1; }
+                let path = key_path(bytes, &offset)?;
+                expect(bytes, &offset, 0x5d)?;
+                if array { expect(bytes, &offset, 0x5d)?; }
+                TOMLValue::header(&root, path, 0, array, start)?;
+                context = path;
+            } else {
+                let relative = key_path(bytes, &offset)?;
+                expect(bytes, &offset, 0x3d)?;
+                spaces(bytes, &offset);
+                var path = context;
+                path.append(relative);
+                if path.length() > 64 { throw error(.DepthLimit, start); }
+                let node = TOMLValue::read_value(bytes, &offset, path.length())?;
+                TOMLValue::assign(&root, path, 0, context.length(), &&node, start)?;
+            }
+            spaces(bytes, &offset);
+            if offset < bytes.length() && bytes[offset] == 0x23 { comment(bytes, &offset)?; }
+            if offset < bytes.length() {
+                if bytes[offset] != 0x0a && bytes[offset] != 0x0d {
+                    throw error(.UnexpectedByte, offset);
+                }
+                newline(bytes, &offset)?;
+            }
+        }
+    }
+}
+
+export const fn parse(text: str) -> TOMLValue throw TOMLError => TOMLValue::parse(text)?;
+
+export const fn parse_bytes(
+    bytes: [u8]
+) -> TOMLValue throw TOMLError + UTF8Error => TOMLValue::parse_bytes(bytes)?;
+
+export const fn validate(text: str) throw TOMLError {
+    let _ = TOMLValue::parse(text)?;
+}
+
+export const fn validate_bytes(bytes: [u8]) throw TOMLError + UTF8Error => validate(
+    str::from_utf8(bytes)?
+)?;

@@ -1,18 +1,27 @@
-import std::json using { JSONError, ValueError, decode_string, Value };
+import std::json using { JSONError, JSONValueError, decode_string, JSONValue }
 import std::utf using UTF8Error;
 
-private const fn edited_document(text: str) -> String throw JSONError + ValueError {
-    var document = Value::parse(text)?;
+private const fn edited_document(text: str) -> String throw JSONError + JSONValueError {
+    var document = JSONValue::parse(text)?;
+    var count: usize = 0;
+    for (key, value) in document.members()? {
+        if key == "items" {
+            for _ in value.elements()? {
+                count += 1;
+            }
+        }
+    }
+    assert(count == 2);
     var items = document.get("items")?;
     let snapshot = items;
-    items.set_at(0, &&Value::string("你好😀"))?;
-    items.push(&&Value::integer(42))?;
+    items.set_at(0, &&JSONValue::string("你好😀"))?;
+    items.push(&&JSONValue::integer(42))?;
     items.remove_at(1)?;
     assert(snapshot.length()? == 2);
     assert(snapshot.at(0)?.number_text()? == "1E400");
     document.set("items", &&items)?;
-    document.append_member("enabled", &&Value::boolean(false))?;
-    document.set("enabled", &&Value::boolean(true))?;
+    document.append_member("enabled", &&JSONValue::boolean(false))?;
+    document.set("enabled", &&JSONValue::boolean(true))?;
     assert(document.has("enabled")?);
     assert(document.get("enabled")?.as_bool()?);
     assert(document.key_at(0)? == "items");
@@ -25,8 +34,8 @@ private const input = r#"{"items":[1E400,null],"old":1,"old":2}"#;
 private const expected = r#"{"items":["你好😀",42],"enabled":true}"#;
 private const edited = edited_document(input)?;
 private const decoded = decode_string(r#""a\u0000\uD83D\uDE00""#)?;
-private const compact = Value::parse_bytes(r#"{ "valid": true }"#.bytes)?.to_json()?;
-private const number = Value::parse("1.25e2")?.as_f64()?;
+private const compact = JSONValue::parse_bytes(r#"{ "valid": true }"#.bytes)?.to_json()?;
+private const number = JSONValue::parse("1.25e2")?.as_f64()?;
 
 const test "JSON constant: parsing and owned edits produce frozen text" {
     check(edited == expected);
@@ -38,7 +47,7 @@ const test "JSON constant: parsing and owned edits produce frozen text" {
 const test "JSON constant: syntax encoding and conversion failures retain their types" {
     var syntax_rejected = false;
     try {
-        let _ = Value::parse("[1,]")?;
+        let _ = JSONValue::parse("[1,]")?;
     } catch {
         JSONError(error) => {
             syntax_rejected = error.kind == .UnexpectedByte && error.offset == 3;
@@ -48,18 +57,18 @@ const test "JSON constant: syntax encoding and conversion failures retain their 
     let bytes = [0x5bu8, 0x31, 0x2c, 0x5d, 0xff];
     var encoding_rejected = false;
     try {
-        let _ = Value::parse_bytes(bytes)?;
+        let _ = JSONValue::parse_bytes(bytes)?;
     } catch {
         UTF8Error(error) => { encoding_rejected = error.offset == 4; },
         JSONError(_) => {},
     }
     check(encoding_rejected);
     let conversion_rejected = try {
-        let _ = Value::parse("1e400")?.as_f64()?;
+        let _ = JSONValue::parse("1e400")?.as_f64()?;
         false
     } catch {
         JSONError(_) => false,
-        ValueError(error) => error == .NumberConversion,
+        JSONValueError(error) => error == .NumberConversion,
     };
     check(conversion_rejected);
 }

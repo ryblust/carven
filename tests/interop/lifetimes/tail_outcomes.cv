@@ -6,8 +6,9 @@ import "lifetimes/tail_outcomes.hpp" using tail_outcome_probe::{
     Guard,
     reset,
     matches,
+    matches_value_lifetime,
     move_count,
-};
+}
 
 private struct Failure {}
 
@@ -40,11 +41,16 @@ test "Tail outcomes: success payloads retain their original construction identit
         return self_result()?;
     };
     try {
-        check(!(forward_self()?.at_construction_address() as bool));
-        check(!(closure()?.at_construction_address() as bool));
+        check(forward_self()?.at_construction_address() as bool);
+        check(closure()?.at_construction_address() as bool);
     } catch {
         Failure(_) => fail("unexpected failure"),
     }
+    let original = Self {};
+    let copied = original;
+    let taken = &&original;
+    check(!(copied.at_construction_address() as bool));
+    check(!(taken.at_construction_address() as bool));
 }
 
 private fn tracked_result(value: i32) -> Tracked throw Failure => Tracked { value };
@@ -61,7 +67,7 @@ test "Tail outcomes: success transfer preserves source and function-local cleanu
     } catch {
         Failure(_) => fail("unexpected failure"),
     }
-    check(matches("G1 c41 m41 s-41 g1 r41 d41 "));
+    check(matches_value_lifetime("G1 c41 g1 r41 d41 "));
 
     reset();
     let captured = 43;
@@ -74,7 +80,17 @@ test "Tail outcomes: success transfer preserves source and function-local cleanu
     } catch {
         Failure(_) => fail("unexpected failure"),
     }
-    check(matches("G2 c43 m43 s-43 g2 r43 d43 "));
+    check(matches_value_lifetime("G2 c43 g2 r43 d43 "));
+
+    reset();
+    if true {
+        let original = Tracked { 61 };
+        let copied = original;
+        check(copied.get() == 61);
+        let taken = &&original;
+        check(taken.get() == 61);
+    }
+    check(matches("c61 p61 r61 m61 r61 d61 d61 s-61 "));
 }
 
 private fn borrowed_result(guard: Guard, value: i32) -> Tracked throw Failure {
@@ -93,7 +109,7 @@ test "Tail outcomes: borrowed argument temporaries outlive result transfer" {
     } catch {
         Failure(_) => fail("unexpected failure"),
     }
-    check(matches("G1 G2 c47 m47 s-47 g2 g1 r47 d47 "));
+    check(matches_value_lifetime("G1 G2 c47 g2 g1 r47 d47 "));
 }
 
 private fn rejected_result(guard: Guard, value: i32) -> i32 throw PayloadFailure {
@@ -114,7 +130,7 @@ test "Tail outcomes: Read catch borrowing preserves failure transfer and argumen
         PayloadFailure(error) => check(error.payload.get() == 53),
     }
     // The Read catch binding observes the delivered failure without copying it.
-    check(matches("G1 G2 c53 m53 s-53 m53 s-53 g2 g1 m53 s-53 r53 d53 "));
+    check(matches_value_lifetime("G1 G2 c53 g2 g1 r53 d53 "));
 }
 
 private fn take_copy(&&value: CopyTrivial) -> i32 => value.get();
@@ -139,7 +155,7 @@ test "Failure slots: Read guards and rethrow preserve the original payload" {
         PayloadFailure(error) => error.payload.get(),
     };
     check(value == 59);
-    check(matches("G3 c59 m59 s-59 m59 s-59 g3 r59 m59 s-59 m59 s-59 r59 d59 "));
+    check(matches_value_lifetime("G3 c59 g3 r59 r59 d59 "));
 }
 
 test "Callable delivery: values and widened results preserve trivial copying" {

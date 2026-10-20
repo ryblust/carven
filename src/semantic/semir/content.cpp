@@ -31,6 +31,7 @@ private:
     auto signature(CallableSignatureID id) noexcept -> ContentTask;
     auto name(const CppNameReference& value) noexcept -> void;
     auto operand(const CppTypeOperand& value) noexcept -> ContentTask;
+
     template<typename Value>
     auto query_expression(const Value& value, std::uint64_t index) noexcept -> ContentTask;
 
@@ -229,6 +230,23 @@ auto ContentWriter::name(const CppNameReference& value) noexcept -> void {
     // The declaration environment is part of a native reference's semantics,
     // including globally rooted names.
     module_path(value.context_module);
+    const auto& environment = program.declarations().module_decl(value.context_module);
+    number(environment.cpp_headers.size());
+    for (const auto& header : environment.cpp_headers) {
+        number(static_cast<std::uint64_t>(header.delimiter));
+        token(provenance.spelling(header.name));
+        number(header.namespace_opening.has_value());
+        if (header.namespace_opening) {
+            number(header.namespace_opening->components.size());
+            for (const auto component : header.namespace_opening->components) {
+                token(provenance.spelling(component));
+            }
+        }
+    }
+    number(environment.cpp_source_fragments.size());
+    for (const auto& fragment : environment.cpp_source_fragments) {
+        token(provenance.slice(fragment.payload_origin));
+    }
     number(value.components.size());
     for (const auto& part : value.components) {
         token(part);
@@ -380,6 +398,14 @@ auto ContentWriter::constant(ConstantID id) noexcept -> ContentTask {
                 token(provenance.spelling(value.value));
             } else if constexpr (std::same_as<Value, VectorConstant>) {
                 number(value.capacity);
+            } else if constexpr (std::same_as<Value, ByteSequenceConstant>) {
+                number(value.capacity);
+                token(
+                    std::string_view(
+                        reinterpret_cast<const char*>(value.bytes.data()),
+                        value.bytes.size()
+                    )
+                );
             } else if constexpr (std::same_as<Value, IntegerConstant>) {
                 integer(value);
             } else if constexpr (std::same_as<Value, RangeConstant>) {
@@ -387,8 +413,7 @@ auto ContentWriter::constant(ConstantID id) noexcept -> ContentTask {
                 integer(value.end);
                 number(value.inclusive);
             } else if constexpr (std::same_as<Value, SIMDConstant>) {
-                number(value.lanes.size());
-                for (const auto lane : value.lanes) {
+                for (const auto lane : value.words) {
                     number(lane);
                 }
             } else if constexpr (std::same_as<Value, BooleanConstant>) {

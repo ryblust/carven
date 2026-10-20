@@ -36,6 +36,10 @@ public:
     static auto from_components(std::span<const std::string_view> components) noexcept
         -> std::expected<CanonicalModulePath, CanonicalModulePathError>;
 
+    // Derive identity lexically from a selected root-relative UTF-8 .cv path.
+    static auto from_source_path(std::string_view path) noexcept
+        -> std::expected<CanonicalModulePath, std::string>;
+
     auto value() const noexcept -> std::string_view;
     auto components() const noexcept -> std::span<const std::string>;
     auto module_domain_prefix() const noexcept -> ModuleDomainPrefix;

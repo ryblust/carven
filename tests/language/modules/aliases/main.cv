@@ -1,6 +1,6 @@
-import .api using { Value as Model, number as read };
+import .api using { Value as Model, number as read }
 import carven::std.core using String as OtherText;
-import std::core using { String as Text, Vector as Items, assert as verify };
+import std::core using { String as Text, Vector as Items, assert as verify }
 import std::simd using u8x16 as Bytes;
 
 struct String {

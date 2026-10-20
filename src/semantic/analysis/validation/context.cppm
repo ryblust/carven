@@ -45,4 +45,5 @@ private:
     auto verify_region(const SemanticRegion& source, bool executable) const noexcept -> void;
     const SemIRBody& body;
     const SemIRProgram& program;
+    std::optional<ModuleID> module_id;
 };

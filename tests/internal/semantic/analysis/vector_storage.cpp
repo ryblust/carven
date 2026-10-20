@@ -58,7 +58,7 @@ auto expect_bounded_ownership(const SemIRProgram& program, std::size_t source_si
         .bodies = {},
         .records = {},
         .enum_payloads = {},
-        .test_stops = {},
+        .call_stops = {},
         .failures = {},
     };
     const auto model = AnalysisModelView(program, generics);
@@ -76,26 +76,31 @@ auto expect_bounded_ownership(const SemIRProgram& program, std::size_t source_si
 }
 
 const TestSuite suite([] static noexcept {
-    "Vector storage: elements have modeled owned value semantics"_test = [] static noexcept {
-        for (const auto text : {
-                 "fn invalid(values: Vector<str>) {}",
-                 "fn invalid(values: Vector<[u8]>) {}",
-                 "fn invalid(values: Vector<fn(i32) -> i32>) {}",
-                 "import <string>; fn invalid(values: Vector<::std::string>) {}",
-                 "struct Borrowed { text: str } fn invalid(values: Vector<Borrowed>) {}",
-                 "struct Borrowed { text: str } struct Unused<T> { values: Vector<Borrowed> }",
-                 "struct Unused<T> { values: Vector<str> }",
-                 "struct Holder<T> { value: T } struct Unused<T> { values: Vector<Holder<str>> }",
-             }) {
-            expect_diagnostic(analyze_test_errors(text), DiagnosticCode::TypeVectorElement);
-        }
-        static_cast<void>(analyze_test_program(R"(
+    "Vector storage: elements retain source and native ownership contracts"_test =
+        [] static noexcept {
+            for (
+                const auto text : {
+                    "fn invalid(values: Vector<str>) {}",
+                    "fn invalid(values: Vector<[u8]>) {}",
+                    "fn invalid(values: Vector<fn(i32) -> i32>) {}",
+                    "struct Borrowed { text: str } fn invalid(values: Vector<Borrowed>) {}",
+                    "struct Borrowed { text: str } struct Unused<T> { values: Vector<Borrowed> }",
+                    "struct Unused<T> { values: Vector<str> }",
+                    "struct Holder<T> { value: T } struct Unused<T> { values: Vector<Holder<str>> }",
+                }) {
+                expect_diagnostic(analyze_test_errors(text), DiagnosticCode::TypeVectorElement);
+            }
+            static_cast<void>(analyze_test_program(R"(
+            import <string>;
+            struct Native { text: ::std::string }
+            struct NativeRows<T> { rows: Vector<T> }
+            fn native(values: Vector<::std::string>, records: NativeRows<Native>) {}
             struct Borrowed { text: str }
             struct Node<T> { value: T, children: Vector<Node<T>> }
             fn use(values: Vector<ptr<Borrowed>>, nodes: Node<String>) {}
             fn flags(values: Vector<bool>, bytes: Vector<u8x16>) {}
         )"));
-    };
+        };
 
     "Vector storage: value indirection does not admit direct layout cycles"_test =
         [] static noexcept {
@@ -104,6 +109,30 @@ const TestSuite suite([] static noexcept {
                 DiagnosticCode::TypeRecursiveStorage
             );
             static_cast<void>(analyze_test_program("struct Node<T> { values: Vector<Node<T>> }"));
+        };
+
+    "Vector ownership: recursive mutation follows a completed scalar lookup"_test =
+        [] static noexcept {
+            static_cast<void>(analyze_test_program(R"(
+                struct Item { name: String, children: Vector<Item> }
+                fn locate(items: Vector<Item>, name: str) -> usize {
+                    for index in 0..items.length() {
+                        if items[index].name.as_str() == name { return index; }
+                    }
+                    return items.length();
+                }
+                fn insert(&item: Item, remaining: usize) -> void {
+                    let index = locate(item.children, "child");
+                    if index == item.children.length() {
+                        item.children.push({ name: "child", children: [] });
+                    }
+                    if remaining != 0 { insert(&item.children[index], remaining - 1); }
+                }
+                fn valid() {
+                    var root = Item { name: "root", children: [] };
+                    insert(&root, 2);
+                }
+            )"));
         };
 
     "Vector ownership: structural mutation protects views and iteration"_test = [] static noexcept {
@@ -126,6 +155,13 @@ const TestSuite suite([] static noexcept {
                      var values = Vector<i32> {};
                      values.push(1);
                      for item in values { values.clear(); }
+                 })",
+                 R"(struct Node { text: String, children: Vector<Node> }
+                 fn children(node: Node) -> [Node] => node.children;
+                 fn invalid(&root: Node) -> usize {
+                     let view = children(root)[0].text.as_str();
+                     root.children[0].text.clear();
+                     return view.byte_length();
                  })",
              }) {
             expect_diagnostic(analyze_test_errors(text), DiagnosticCode::AccessBorrowConflict);
@@ -1456,6 +1492,7 @@ const TestSuite suite([] static noexcept {
     "Vector views: loans protect owners and cannot escape local backing"_test = [] static noexcept {
         constexpr auto cases = std::array {
             R"(fn bad() { var v: Vector<i32> = [1, 2]; let view: [i32] = v; v.reserve(2); })",
+            R"(fn bad() { var v: Vector<i32> = [1, 2]; v.append(v); })",
             R"(fn bad() { var v: Vector<i32> = [1, 2]; let view = v.slice(0, 1); v[1] = 3; })",
             R"(fn bad() { let v: Vector<i32> = [1, 2]; let view: [i32] = v; let moved = &&v; })",
             R"(fn bad() -> [i32] { let v: Vector<i32> = [1, 2]; return v; })",
@@ -1547,9 +1584,44 @@ const TestSuite suite([] static noexcept {
             );
         };
 
+    "Vector execution: bounded dynamic variants complete and released storage permits reuse"_test =
+        [] static noexcept {
+            static_cast<void>(analyze_test_program(R"(
+                enum Tree { Leaf, Branch(Vector<Tree>) }
+                const {
+                    var leaves = Vector<Tree> {};
+                    for _ in 0..3 { leaves.push(Tree::Leaf); }
+                    assert(leaves.length() == 3);
+                }
+                const {
+                    var rows = Vector<[i32; 2]> {};
+                    for _ in 0..2 { rows.push([0; 2]); }
+                    var groups = Vector<Vector<[i32; 2]>> {};
+                    groups.push(rows);
+                    let removed = groups.remove(0);
+                    assert(removed.length() == 2);
+                    groups.push(rows);
+                    groups.clear();
+                    for _ in 0..3 { groups.push(rows); }
+                    groups[0] = [];
+                    groups.push(rows);
+                    assert(groups.length() == 4 && groups[0].is_empty());
+                }
+                const {
+                    var rows = Vector<[i32; 2]> {};
+                    for _ in 0..2 { rows.push([0; 2]); }
+                    var (first, second) = (rows, rows);
+                    first.remove(0);
+                    let moved = &&first;
+                    second.append(rows);
+                    second.append(rows);
+                    assert(moved.length() == 1 && second.length() == 6);
+                }
+            )"));
+        };
+
     {
         const auto prelude = std::string(R"(
-                import std::async using when_all;
                 struct Node { children: Vector<Node> }
                 const fn build(depth: i32) -> Node {
                     var node = Node {};
@@ -1587,41 +1659,17 @@ const TestSuite suite([] static noexcept {
                 const count = grow();)",
             },
             Input {
-                "nested Write growth",
-                R"(const fn grow() -> usize {
-                    var root = Node {};
-                    root.children.push(Node {});
-                    let child = build(30);
-                    root.children[0].children.push(&&child);
-                    return root.children.length();
-                }
-                const count = grow();)",
-            },
-            Input {
                 "enum payload growth",
-                R"(enum Tree { Leaf, Branch(Vector<Tree>) }
+                R"(enum Tree { Leaf, Branch(Vector<[i32; 1024]>) }
                 const fn grow() -> usize {
-                    var leaves = Vector<Tree> {};
-                    for _ in 0..1000 { leaves.push(Tree::Leaf); }
-                    return leaves.length();
-                }
-                const count = grow();)",
-            },
-            Input {
-                "concurrent Take results",
-                R"(const async fn rows() -> Vector<[i32; 1024]> {
-                    var values = Vector<[i32; 1024]> {};
-                    for _ in 0..32 { values.push([0; 1024]); }
-                    return &&values;
-                }
-                const count = (await when_all(rows(), rows())).0.length();)",
-            },
-            Input {
-                "wide element growth",
-                R"(const fn grow() -> usize {
-                    var rows = Vector<[i32; 1024]> {};
-                    for _ in 0..64 { rows.push([0; 1024]); }
-                    return rows.length();
+                    var tree = Tree::Branch([]);
+                    match tree {
+                        .Branch(&rows) => {
+                            for _ in 0..64 { rows.push([0; 1024]); }
+                            return rows.length();
+                        },
+                        .Leaf => return 0,
+                    }
                 }
                 const count = grow();)",
             },

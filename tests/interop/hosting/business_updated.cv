@@ -1,0 +1,31 @@
+struct Record {
+    text: String,
+    score: i32
+}
+
+struct Decision {
+    accepted: bool,
+    label: String,
+    notes: Vector<String>
+}
+
+struct RecordError {
+    reason: String
+}
+
+private import(cpp) fn minimum_score() -> i32;
+private import(cpp) fn decorate(text: String) -> Vector<String>;
+private import(cpp) fn submit(decision: Decision);
+
+fn process(record: Record) -> Decision throw RecordError {
+    if record.text.is_empty() { throw RecordError { reason: "empty record" }; }
+    var notes = decorate(record.text);
+    notes.push(f"score: {record.score}");
+    let decision = Decision {
+        accepted: record.score + 10 >= minimum_score(),
+        label: f"updated {notes[0]}",
+        notes: &&notes
+    };
+    submit(decision);
+    return decision;
+}

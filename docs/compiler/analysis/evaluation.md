@@ -15,8 +15,8 @@ Modules in `semantic/evaluation` have these responsibilities:
 | `value` | Execution representations, text and compound read views, and execution-value equality |
 | `shape` | Cached compound nesting depth and slot counts for resource accounting |
 | `operation` | Checked scalar operations and retained-input queries |
-| `freeze` | Interning completed results |
 | `execution` | Execution entries and call context |
+| `standard` | Standard capability contracts, native dispatch, and execution-value conversion |
 | `executor` | Execution state, with `expr`, `control`, `text`, and `vector` implementation slices |
 | `memory` | Addressable objects and projection resolution |
 | `limits` | Resource bounds |
@@ -59,7 +59,8 @@ Value and structured control contexts share operation execution, step accounting
 and capability checks. Value contexts receive normal-completion values; structured
 control contexts also carry return, break, and continue to their enclosing
 boundaries. Value-form controls obey the language's transfer boundary and cannot
-transfer control out of an operand.
+transfer control out of an operand. Void control completion carries no value
+storage; producing expressions retain their value until its consumer takes it.
 Call arguments and unsupported-operation inputs retain their storage or value
 demands during acquisition. Native Read preserves exact storage borrows; Carven
 Read follows the type's snapshot rules. Value initialization and captures retain
@@ -71,6 +72,13 @@ construction facts; `PublishedConstantValues` reads a sealed program. Execution
 borrows these interfaces through const references. `analysis.constant.freeze`
 retains completed execution results through a single `ProgramDraft`, which supplies
 both type queries and canonical interning. Retained IDs belong to that program.
+
+`semantic.semir.constant` owns the inline `ConstantAtom` representation used by
+folding and execution. Scalar operators consume and produce atoms directly;
+folding converts to persistent facts at its boundaries. SIMD values retain up to
+256 representation bits inline. Their semantic type determines lane width,
+count, and mask interpretation. Operators consume admitted types and check
+value-dependent failures such as division by zero and out-of-bounds indices.
 
 `SemanticExecutionContext` supplies callable lookup and completed typed bodies.
 `prepare_call` returns an `ExecutionBody` whose inputs identify its parameter
@@ -96,8 +104,9 @@ the root. Other admitted operations run when the root executes or a type reads
 its value.
 
 A construction dependency query uses the same executor with a restricted host
-capability. It suppresses output and rejects actual clock reads, input, and
-waiting at execution, including through source calls; constructing configuration
+capability. It suppresses output and rejects actual host observations and effects,
+including filesystem access, process execution, clock reads, input, and waiting
+through source calls; constructing configuration
 or cold operations does not perform those actions. The analysis caller separately
 selects host-effect availability through `HostEffects`. Analysis defaults to
 `Deny`; compilation and command-line execution select `Allow`, while workspace
@@ -111,9 +120,10 @@ capability after its required operands complete; bounds and other dynamic checks
 run on selected paths. Queries, supported aggregate equality, and display borrow
 compound views; operand evaluation retains its ordinary copy and access rules.
 Projection can retain child identities, copy from local storage, or move from
-temporary owners according to the operand's storage. Local initialization,
-assignment, and parameter storage materialize retained aggregate children into
-independently mutable values.
+temporary owners according to the operand's storage. Aggregate construction
+materializes retained children into independently mutable values. Local
+initialization, assignment, and parameter storage materialize a retained root;
+already constructed values carry their child storage with them.
 
 Static execution consumes completed structured function bodies after ordinary
 contextual typing, name binding, operation selection and result completion.
@@ -250,10 +260,11 @@ callables admitted in static execution and interpretation. `const` is an executi
 capability; explicit static roots perform host effects when they execute.
 Ordinary runtime calls remain required work.
 
-Compiler support owns host operations independently of Runtime Craft.
-`support.clock` samples and waits on the monotonic clock; `support.input` owns the
-process input cursor. The executor adapts host results to semantic values; source
-wrappers construct the public results and typed failures.
+Standard Craft providers own filesystem, process, and channel operations.
+`semantic.evaluation.standard` dispatches their typed native contracts and adapts
+results to execution values. Builtin clock and input operations use
+`support.clock` and `support.input`; the latter owns the process input cursor.
+Source wrappers construct public results and typed failures.
 
 Input readiness returns a borrowed byte view. The executor constructs an owning
 byte value and the request status, charges its budgets, and commits cursor
@@ -302,20 +313,21 @@ retained temporary storage, including early returns and execution failures.
 
 Evaluator state and call stacks belong to one static root and end with that
 request. Existing `ConstantID` values borrow retained inputs. Computed
-`ConstantAtom` values remain execution-local and cannot carry compound storage;
-they hold scalar data or a retained text identity. `ExecutionValue` is
+`ConstantAtom` values contain inline scalar or SIMD payloads or a retained text
+identity, without compound storage. `ExecutionValue` is
 move-only: host movement transports execution results, while `copy_value`
-performs language copying and accounts for aggregate and text work. Atoms,
+performs language copying and accounts for aggregate and byte work. Atoms,
 coordinates and immutable text handles remain copyable.
 
 Pointers, aggregates, slices, and callable values retain `ConstructionTypeRef`
 during inference. `visit_execution_type` reads canonical, construction, and
 generic shapes through `ExecutionValueAccess`. Admission, resource accounting,
-initialization, and Read storage selection use those shapes. Each normally
-completed expression delivers its checked type through `deliver_value`, including
-aggregate children. Slice detachment copies elements through the slice's element
-type while preserving the borrowed backing. Freezing requires canonical types;
-non-null execution pointers cannot freeze.
+initialization, and Read storage selection use those shapes. Aggregate construction
+delivers each direct member to its checked type; assignment and Vector insertion
+preserve that contract. `deliver_value` traverses members when their enclosing type
+changes; delivery to the same type preserves the completed value. Slice detachment
+reads elements through the slice's element type before freezing. Freezing requires
+canonical types; non-null execution pointers cannot freeze.
 Generic record construction retains checked member types in the shared generic
 shape cache. Execution delivery and contents queries consume those members;
 unavailable member information produces an execution diagnostic.
@@ -333,7 +345,7 @@ constraint. Empty arrays require no element target.
 spelling. The move-only `ExecutionOwnedText` encapsulates String ownership;
 `ExecutionText` shares immutable content, weakly borrows String storage, or
 retains an `ExecutionSlice` coordinate into byte storage. `as_str` preserves the
-borrow without copying bytes or charging text work. String copying creates fresh
+borrow without copying bytes or charging byte work. String copying creates fresh
 storage; source Take and mutation replace its storage identity, whereas host
 moves preserve it. Releasing that storage expires its weak borrowers.
 Formatting, queries, and equality read text without freezing it. At the
@@ -374,19 +386,23 @@ constructors share array shape rules and struct initializer selection in `analys
 ### Resource limits
 
 The builtin formatter validates its supported specifications and bounds width and
-precision before calling the host C++ standard formatter. Each text result is
-limited to 1 MiB. Steps, nested calls, aggregate size, and copying work are bounded.
-`ExecutionLimits` supplies cumulative step, text-work, and aggregate-work
-allowances at the execution entry. Nested calls share those allowances; each root
+precision before calling the host C++ standard formatter. Text and contiguous
+byte values are each limited to 1 MiB. Aggregate size and nesting have fixed bounds.
+The caller supplies cumulative step, byte-work, and aggregate-work allowances
+through `ExecutionLimits` at the execution entry. Nested calls share those allowances; each root
 starts fresh. Per-value size, aggregate depth, and call depth retain fixed limits.
-Text work counts constructed, copied, and appended bytes; formatted append charges
-its completed format result and the destination append. Aggregate work counts
+Byte work counts constructed, copied, and appended text or binary bytes; formatted
+append charges its completed format result and the destination append. Aggregate work counts
 constructed and copied slots, including nested children. Freezing bounds each
 completed value's depth and slots, counting shared constant children at every
 occurrence in that value tree. Reads of retained values
 and storage transfers create no additional slots.
 Fixed storage shapes provide exact size checks without walking their values.
 Dynamic shape checks inspect the selected payloads and consume execution steps.
+Mutations retain an element count for the canonical owning object and adjust it
+by the removed and inserted subtrees. New subtrees are checked at their actual
+storage depth. Logical projection owners share their backing object's count;
+transferring a projection invalidates that count until the next mutation.
 
 ### Freezing and completion
 
@@ -405,10 +421,15 @@ types; compound constants reference already interned children. Freezing checks
 the completed value tree, including only the selected enum payload. Definition
 admission for `const fn` separately checks its declared types and reachable
 operations across possible inputs.
-Vectors share execution aggregate storage and ordinary copying, transfer,
-indexing, and mutation. Their actual value trees are bounded during execution;
-recursive type declarations do not imply unbounded retained storage. Completed
-vectors freeze to typed `VectorConstant` children and logical capacity;
+`Vector<u8>` and detached byte slices own contiguous Runtime byte storage.
+Element reads produce a scalar observation; writes update the byte in place.
+Borrowed slices retain owner coordinates and an extent. Other vectors own typed
+execution elements. Both representations follow ordinary copying, transfer,
+indexing, and mutation rules. Their actual storage is bounded during execution;
+recursive type declarations do not imply unbounded retained storage.
+Completed byte sequences freeze to `ByteSequenceConstant`, preserving bytes and
+Vector capacity without interning each element. Other vectors freeze to typed
+`VectorConstant` children and logical capacity.
 `TextConstant` retains UTF-8 contents; its canonical type distinguishes String,
 str, and character views. Character views retain no cursor state.
 The same recursive publication checks apply inside products and enum payloads.
@@ -417,12 +438,14 @@ Capacity intrinsics update logical capacity in both static and interpreted modes
 At a constant initializer, an explicit slice destination or `slice()` can
 produce an execution-local slice and retain it through `analysis.constant.freeze`.
 The selected freeze preserves each element's type. `SliceConstant` records ordered
-canonical element IDs under a `SliceTypeValue`; it contains no host address,
-allocator state, or capacity. Store construction checks child identity and availability;
+canonical element IDs under a `SliceTypeValue`; byte slices use
+`ByteSequenceConstant`. Neither retains a host address or allocator state. Store
+construction checks child identity and availability;
 publication checks the slice type and exact child types. Initializer slice queries
 operate on retained inputs or execution-local contents without intermediate freezing.
 During static execution, slices borrow live backing objects; copies and chained slices keep
-their selected element identity. Only a completed static root detaches the
+their selected element identity. A statically empty slice needs no backing; a dynamically
+empty view retains its original borrow. Only a completed static root detaches the
 selected values into `SliceConstant` before releasing the backing. Runtime views
 retain ordinary ownership checks.
 
@@ -513,7 +536,7 @@ Static execution delivers output bytes and a stream selection through its
 context. The analysis adapter forwards them to the synchronous `ExecutionOutput`
 recipient supplied to `analyze` or `compile`; an omitted recipient discards output.
 The executor owns evaluation order and accounts for output and failed-check
-diagnostic text within its cumulative text-work budget. The driver owns
+diagnostic text within its cumulative byte-work budget. The driver owns
 stream presentation. Ordinary output is separate from error diagnostics and is
 not stored in the published semantic program.
 
@@ -561,26 +584,71 @@ target planning selects runtime tests.
 
 ## Interpreted execution
 
-Each source batch admits at most one entry: an explicit `main` or the implicit
-function containing one file's top-level statements. Multiple entries are rejected
-by shared semantic analysis. Declaration-only files do not acquire empty entries.
-Compilation and checking do not require an entry; native and interpreted program
-execution do. Native and interpreted test execution select runtime tests instead of
+Each module admits at most one entry: an explicit `main` or the implicit
+function containing its top-level statements. Source batches may contain several
+modules with entries. Declaration-only files do not acquire empty entries.
+Compilation and checking do not require an entry; each native executable links
+one entry, and the interpretation command requires exactly one in its input batch.
+Native and interpreted test execution select runtime tests instead of
 the entry and require at least one runtime test. Static execution and
 static tests remain part of ordinary analysis in every mode.
 
-`interpreter/` consumes a published `SemIRProgram`. It starts the entry or all
-selected runtime tests through the shared structured executor, which checks
-operation support on executed paths. Runtime tests are ordered by
-canonical module path and source order. Each receives a fresh executor and budget.
+`interpreter/` consumes a published `SemIRProgram`. It runs a selected parameterless
+source function or runtime tests through the shared structured executor, which
+checks operation support on executed paths. The ordinary interpretation command
+selects the program entry; explicit-source build commands select the standard
+build library's source-plan function. Runtime tests are ordered by
+canonical module path and source order. Each receives a fresh executor and the
+caller's resource policy. Ordinary CLI execution has no default cumulative work
+quota; `--max-steps` supplies an explicit step budget. Static roots and hosted
+calls retain their independent bounded policies. Project build commands execute
+the user's script through this same interpretation path.
 A stopped test leaves later tests available; an abort ends the run. Test operations
 are admitted in helpers only for test execution. Published tests use the same
 body execution and assertion control as static tests, including wrapping integer
 arithmetic.
-Source validity and entry uniqueness are established before interpretation.
-Native sources and module fragments may be present, but the executor diagnoses
-reached native operations. It loads no C++ code and performs no native global
-initialization or destruction.
+Source validity is established before interpretation; the driver checks entry
+uniqueness when selecting a program entry. Parameterless root calls are checked
+against their callable signature.
+Native sources and module fragments may be present. The host may supply typed
+bindings for compiled native functions, members, and conversions through
+`host_cpp_operation` and `host_cpp_conversion`. Global function names select
+bindings; member names also require the actual native receiver type. Hosted user
+operations use one selector. Parameters match the
+registered carrier and access mode; asynchronous failure sets match nominal names
+and field types independently of carrier order. Conversions specify both the
+native carrier and source-language result type. Conversions to globally named,
+non-template C++ types also register the target name. Optional native type
+descriptors are retained in the binding and shared by signature matching and
+recursive value conversion, including native elements inside source containers.
+These bindings are independent
+of the calling module and its expressions. Invocations retain their argument
+storage, use hosting value conversion, and drive asynchronous work through the
+native execution root. Missing or ambiguous bindings report execution errors. This is explicit
+registration, not C++ name lookup: templates, default arguments, implicit native
+conversions, and arbitrary header expressions are not inferred at runtime.
+`semantic.evaluation.standard` supplies the standard native operations to both
+static and interpreted execution. One typed catalog describes their functions,
+members, conversions, and effects. Capability validation and execution use that
+catalog with `ExecutionValueAccess`, over either construction or published facts.
+Construction derives known by-value result types from these native signatures:
+scalars, owned strings, vectors, named native carriers, and cold operations.
+Field and reference results retain their delegated C++ queries. Publication
+checks the selected result against the same signature facts.
+The adapter converts execution values directly to native parameters and converts
+native results back into execution values. Asynchronous activations retain their
+arguments and advance through `ExecutionExternalOperation`.
+
+Execution contexts control standard host effects. Synchronous effects require
+permission before invocation; cold asynchronous work requires it when execution
+starts. Static effects mark the analysis uncacheable. Native values remain local
+to execution and cannot be frozen. Public hosting bindings supply additional
+user operations through their own value and contract adapters.
+
+Semantic execution calls native providers linked into the compiler process.
+Collected C++ inputs supply generated programs; their presence does not load
+their implementations or run their global initialization. Host-owned network
+operations require the native Network event source and an explicit host binding.
 
 Semantic display owns bounded text storage, escaping, and indentation in
 `semantic/evaluation/display.cpp`. Native display owns these operations in the
@@ -599,6 +667,264 @@ the same wrapping integer arithmetic as interpretation and generated code.
 Output and errors follow the selected stage; the
 normal compiler has no interpreter-mode branch. The driver owns command options
 and diagnostic presentation.
+
+### Hosted execution
+
+The C++23 headers under `include/carven/hosting/` expose program, function, and
+session contracts. `entry.hpp`, `operation.hpp`, `method.hpp`, and `service.hpp`
+own typed native adapters; `call.hpp` supplies signatures and result delivery.
+`arguments.hpp` decodes owning arguments. Ordinary C++ operations retain opaque
+receivers and borrowed argument backing in their invocation storage.
+`request.hpp` owns typed asynchronous completion mailboxes. Compiler modules
+implement semantic checking and execution behind this header boundary.
+Private `hosting.program` state owns published programs and retained function selections.
+`HostProgram::load(entry_module, sources, output, dependencies)` analyzes every
+explicit `HostSource` module. The optional source resolver supplies missing
+dependencies by canonical module name; only requested dependency text is loaded.
+`HostSourceResolver` carries a context and a `resolve` function pointer,
+borrowed until loading returns. An empty callback supplies no dependencies.
+Dependency discovery retains parsed documents for analysis. Without a resolver,
+the caller supplies a closed batch. Loading rejects missing or duplicate module
+identities; function lookup is confined to the entry module's own non-private
+declarations. Bare and exported functions are admitted;
+private functions and imported bindings cannot be selected as hosted entries.
+Source imports still obey ordinary craft visibility. The single-source overload
+uses the same path. Callers own filesystem access and available source inventories.
+Loading permits static output and checks standard capability contracts, but
+disables host effects. User service registrations apply to subsequent calls.
+
+`HostFunction::call` accepts synchronous source functions and drives them
+through a temporary `HostSession`. It uses the same argument admission,
+execution activation, result conversion, and cleanup as long-lived sessions.
+Its options supply output, execution limits, native type mappings, and
+`allow_host_effects`. This flag defaults to false and controls standard host
+effects in interpreted calls, including file access, processes, input, and time.
+Registered user services and compiled native entries execute their own contracts.
+Native service registrations belong to `HostSessionOptions::services`.
+Function handles retain their original program. Each call has a fresh execution
+domain and budget. Callers supply execution options explicitly;
+`host_call_options()` and `host_session_options()` select the baseline limits
+and empty registrations.
+
+The owning `HostValue` boundary represents signed and unsigned integers up to
+64 bits, `bool`, `String`, `Vector<T>`, non-generic ordinary source structs and
+enums, and registered native values. Results also admit void. Generated API and
+provider headers publish the callable's types, access modes, execution kind,
+failure set, and native leaf types. Typed adapters derive recursive mappings from
+these contracts and generated nominal descriptions. String and vector mappings
+use the runtime's `String` and `Vector<T>` types; `std::string` is also admitted as
+text. Borrowed text, raw pointers, generic nominal types, and Write parameters
+are not admitted. Language ownership analysis applies to admitted access modes.
+
+Public type descriptions derive scalar, container, record, and enum shapes from
+C++ types and generated declarations. `hosting.contract` checks those descriptions
+against semantic types. Enum cases match by name and payload types. Numeric enums
+also match their underlying integer width, signedness, and declared values.
+The native case descriptors use existing factory signatures, numeric values, and
+variant storage. Public codecs convert C++ values to owning `HostValue` carriers;
+`hosting.value` converts those carriers to internal execution values.
+
+Transport validates known text carriers as UTF-8 and checks byte and aggregate
+limits. Contiguous byte vectors use the byte budget without UTF-8 validation.
+Native references require a live referent, including inside records, vectors,
+and enum payloads. Other registered native carriers remain opaque. Recursive
+conversions share budgets across a call's arguments; results have a separate budget.
+
+`HostRecord` carries module and type names with named fields. `HostEnum` carries
+module, type, and selected-case names with an ordered payload. These names do not
+represent generic type arguments. Byte vectors cross as
+`carven::runtime::Vector<std::uint8_t>`; other vectors use `std::vector<HostValue>`.
+`i32` and `u8` use `std::int32_t` and `std::uint8_t` carriers. Other signed and
+unsigned integers use `std::int64_t` and `std::uint64_t`, with range checking
+against the declared source type.
+
+`HostFailure` owns a nominal `HostValue` payload, using the same record and enum
+codecs as ordinary arguments and results. Its module and type queries derive
+from that payload. Failure identity compares module/type names. Exported values
+and failures own their data independently of the executed program. Execution
+errors retain source locations and call sites; internal values retain
+program-qualified semantic identities.
+
+`HostSession` copies provider registrations and policy, owns stable loaded
+program records and active invocations, and borrows native callback contexts
+until closure. `HostCallContract` describes native entries and services:
+name, Read/Take parameters, result, execution kind, and nominal failures.
+Generated contracts retain a canonical source signature
+identity, including native names and nominal shapes. Load and reload compare
+that identity as well as native type mappings; distinct source aliases remain
+distinct even when they name the same C++ carrier. Generated entry and service
+contracts preserve source parameter access independently of C++ parameter representation. Factories check
+native implementations against those contracts and return closed registrations.
+Entries registered by C++ function and name use Read access for their parameters;
+generated contracts supply the source declaration's access modes.
+Method factories derive adapters from the selected C++ member signature.
+`HostSession::create(module, options)` starts from entries without loading source.
+Registered native declarations are checked during load/reload. Unregistered
+native declarations can remain in a loaded program; reaching one fails at the
+call boundary. Unused registrations are allowed.
+
+Admission decodes dynamic arguments once into owned typed values for native
+entries, or imports them into execution values for source. Every admitted call
+owns a `HostInvocationState` containing its completion state, host context,
+and prepared activation. Native entry callbacks run only when polled; object
+arguments are checked again for liveness before that first call. A synchronous
+callback finishes in its first slice. Async entry callbacks return the existing
+`execution::AsyncOperation`; their activation owns an `execution::Root` and
+retains argument storage through completion. Native and source activations use
+one internal `HostCall::advance/cancel/take_result` protocol. `HostSourceCall`
+owns interpreter control. The invocation destroys its activation before closing
+the context or reclaiming its program.
+
+Submission captures the selected entry immediately. A queued event selects the
+entry when admitted. Reload checks analysis, native contracts, and registered
+entry signatures before publishing replacements together. Bare and exported
+source functions can replace matching registered entries through the same lookup
+used by `HostProgram::function`. Omitted or private declarations leave existing
+entries in place. A failed reload changes no entry. Already admitted calls finish
+their original implementation. Calls inside
+source resolve within that program. Standalone function handles remain attached
+to their original program; submitting a stale handle to a reloaded session is
+an argument error.
+
+The session reclaims a replaced program after its last entry binding and active
+invocation release it, unless it remains the current source for diagnostics and
+unregistered names. Explicit standalone program/function owners can still retain
+it. Static output produced while loading a later rejected candidate is not
+rolled back. Completed task results and failures retain no program or provider
+environment.
+
+`SemanticExecutor::advance` bounds coroutine resumptions while preserving the
+source scheduler's current turn and FIFO order. Constants, binding reads, and
+function references complete synchronously without coroutine frames. Operations
+with dependencies retain cold frames driven by the continuation loop, keeping
+native stack depth independent of source recursion. Each expression delivers its
+result at its own operation boundary. Session polling advances calls
+and admits events within an explicit quantum. Each source call slice advances a
+bounded group of continuations before returning to session dispatch. Source
+operation budgets remain independent of this scheduling granularity.
+Native callbacks return promptly and do
+not reenter session/task controls; native instructions are not metered by
+interpreter budgets. The session starts no worker and performs no blocking wait
+for provider completion. Its owner arranges wakeups and polling.
+
+`hosting.context` provides one serialized service scope per invocation. Native
+execution slices enter this scope; source activations borrow their invocation's
+context. It dispatches registered provider indices and tracks asynchronous
+requests. Interpreted provider calls pass owning `HostValue` arguments to typed
+adapters and import their returned carriers into the callable's published source
+type. This boundary materializes intermediate values between semantic storage
+and native carriers. Recursive conversions check value limits; the executor
+accounts admitted byte and aggregate storage against its cumulative budget.
+Native asynchronous calls pass typed arguments directly to their registered
+start callback and consume typed
+results without dynamic encoding. Both paths share the context's request
+lifecycle for registration, startup, cancellation, and detachment.
+
+Ordinary header calls constrained to an `Operation` construct the native cold
+operation through the registered typed binding. `ExecutionColdOperation` retains its
+`ExecutionExternalOperation`; awaiting it advances the existing native `Root`.
+Cold disposal destroys the unstarted operation. Cancellation drains started work
+before releasing typed arguments. Native success and failure values cross the
+owning value boundary before delivery to the execution result channels.
+
+`ExecutionHostCall` routes detached source arguments to explicit `import(cpp)`
+providers. Synchronous calls return an owning value; asynchronous calls return
+an `ExecutionExternalOperation` waiting in the existing execution queue.
+Typed services return success or declared failure through the owning value boundary.
+Declared failures become ordinary `ExecutionSourceFailure` for source recovery.
+Failure payloads use the same generated record and enum mappings as ordinary values.
+Native adapters construct `Outcome` or
+`Completion` from those same concrete types. A recoverable failure leaves later
+service calls available. Both execution modes report missing bindings, malformed
+responses, undeclared failures, and provider errors as execution errors at the
+call site.
+
+The C++20 contracts live under `crafts/carven/runtime/hosting/`. The C++23 hosting
+headers include their object and service contracts directly and reuse String,
+Outcome, Completion, Root, and EventSource. Compiler partitions include these
+headers in global module fragments.
+Binding factories expose opaque `HostServiceBinding` registrations.
+A native execution slice borrows the session's registration span
+through one internal scope. Typed calls resolve their process-local contract key
+there and invoke the typed callback. Result conversion depends on the value and
+failure types. Returning restores the enclosing scope; pending coroutines retain
+no scope. Synchronous fallible service callbacks return the ordinary
+`Outcome<Result, Failures...>` carrier. Missing bindings, invalid host values, and
+host execution errors stop the current invocation in both execution modes.
+Native synchronous calls propagate the stopped state through `Outcome`; async
+calls use `Completion`. The call context retains
+the first diagnostic and drains outstanding requests before returning `HostError`.
+Entry admission rejects invalid arguments before execution. Calling a service
+without an active invocation is a native protocol violation and terminates.
+
+The C++20 `execution::Root` owns a native driver, task context, and root frame.
+Its nonblocking advance polls once and dispatches at most one continuation;
+its owner finishes it before destruction. The task request distinguishes
+cancellation from invocation stopping. A stopped child marks the root and wakes
+cleanup through the existing cancellation registry. Generated resume boundaries
+propagate stopping before reading ordinary results; completion observation retains
+it even when another child already succeeded.
+
+`HostPendingRequest<Response>` owns
+a typed response receiver and detaches on destruction. `HostRequest<Response>`
+posts into the same synchronized mailbox without owning a context, session, or
+execution frame. The mailbox stores the concrete response type; heterogeneous
+request registration erases only the shared cancellation lifecycle.
+Completion stores one response without running source. Late and duplicate
+responses are rejected.
+
+Cancellation closes an invocation's request scope before cancelling its activation.
+New service calls are rejected while owned-resource cleanup continues. Detachment
+clears provider reachability and invokes an optional cancel hook at most once.
+The context remains stable until the activation is destroyed. Request tokens
+can outlive that destruction without reaching native callbacks.
+
+An invalid asynchronous response records the invocation's first execution error,
+closes its service scope, and requests cooperative cancellation of the whole
+activation. Sibling requests detach and cleanup needs no further provider replies. Native
+receivers deliver a stopped `Completion`; the session returns the recorded
+execution error.
+User cancellation observed before response consumption instead keeps its cancelled
+result. Declared source failures remain distinct from both.
+
+`HostTask` shares only completion state and an active-only cancellation borrow,
+cleared on completion. Dropping a handle does not cancel session-owned work.
+Closing a session first closes its event mailbox and revokes subscriptions, then
+cancels and drains active calls before releasing registrations. Fatal exhaustion
+keeps the evaluator's ordinary abandoned-cleanup behavior. Completed effects remain
+observable. Interpreted standard host effects follow the call's
+`allow_host_effects` policy; registered user services follow their binding contracts.
+
+`Object` registers an externally owned native instance at a stable address.
+`reference()` returns a weak identity; the host invalidates it before moving or
+destroying that instance. `ObjectRef<T>` carries a checked reference to `T`; its
+copies retain the same identity and any shared owner. `ObjectRef<T>::own(value)`
+owns that instance. The erased `ObjectRef<void>::own(value)` stores an exact native
+value for the dynamic boundary. Both forms share the C++20 `object.hpp` contract
+included directly by native headers and semantic execution.
+
+`carven/hosting/method.hpp` supplies member adapters described by the common
+`HostCallContract`. Session provider resolution checks that contract against
+source declarations. Instance bindings retain object references; each bound call
+checks the object's type and liveness before invoking the member. Each named
+source C++ leaf maps to its exact C++ carrier type. A reference carrier is a value
+of `ObjectRef<T>`, separately from its referent `T`. Every reference access checks
+type and liveness. `ExecutionHostObject`
+stores a native leaf; source copies use that carrier's C++ copy operation. An owned
+string therefore copies its contents, while an object-reference copy preserves
+identity. Hosted native leaves must be copy-constructible. They are not addressable
+execution storage and cannot freeze into constant artifacts.
+
+`hosting.event` owns a bounded mailbox and revocable subscriptions tied to
+native owners. Posting copies owning arguments and allocates a task result without
+executing source. Missing entries, bad arguments, and execution failures use that
+result channel. Revocation or native invalidation cancels queued events; admitted
+calls require ordinary task cancellation. Queue entries retain no program or session.
+
+Session/task controls and object/subscription lifecycle are serialized on the
+owning thread. Token completion and event posting can cross threads. Raw native
+contexts outlive cancellation hooks; operations involving destroyable objects
+retain detached inputs and check object liveness after suspension.
 
 ## Numeric parse execution
 

@@ -22,8 +22,11 @@ public:
     auto add_local(TargetIdentifier name) noexcept -> TargetLocalID;
     auto intern_type(TargetType type) noexcept -> TargetTypeID;
 
-    auto finish(TargetUnitSections sections, TargetDirectiveInputs directives) && noexcept
-        -> TargetUnit;
+    auto finish(
+        TargetUnitSections sections,
+        TargetDirectiveInputs directives,
+        std::vector<std::string> link_dependencies = {}
+    ) && noexcept -> TargetUnit;
 
 private:
     TargetUnitIdentity unit_identity;

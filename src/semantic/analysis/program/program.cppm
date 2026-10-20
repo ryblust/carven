@@ -100,7 +100,7 @@ public:
     auto write_output(ExecutionOutputStream stream, std::string_view bytes) const noexcept -> void;
     auto syntax_tree(ProgramModuleID id) const noexcept -> const SyntaxTree&;
     auto syntax_trees() const noexcept -> std::span<const std::optional<SyntaxTree>>;
-    auto imported(ProgramModuleID module) const noexcept -> bool;
+    auto imported(ProgramModuleID module_id) const noexcept -> bool;
     auto imported(BodyID body) const noexcept -> bool;
     auto cacheable() const noexcept -> bool;
     auto record_host_effect() const noexcept -> void;
@@ -136,6 +136,8 @@ public:
     auto record_vector_element(TypeID element, ProgramOriginID origin) noexcept -> void;
     auto builtin_type(BuiltinType type) const noexcept -> TypeID override;
     auto try_canonicalize_declared_type(ConstructionTypeRef type) noexcept -> std::optional<TypeID>;
+    auto try_canonicalize_declared_type(const ConstructionType& type) noexcept
+        -> std::optional<TypeID>;
     auto canonicalize_declared_type(ConstructionTypeRef type) noexcept -> TypeID;
     auto type_copy(TypeID type) const noexcept -> CanonicalType override;
     auto read_borrows_storage(ConstructionTypeRef type) const noexcept -> bool override;
@@ -191,6 +193,12 @@ public:
 
     auto generic_declaration_contract_copy(GenericDeclarationID definition) const noexcept
         -> GenericDeclarationContract;
+
+    auto check_generic_bounds(
+        GenericDeclarationID definition,
+        std::span<const GenericArgument> arguments,
+        ProgramOriginID origin
+    ) const noexcept -> AnalysisResult<void>;
 
     auto instantiate_generic_nominal(
         GenericDeclarationID definition,
@@ -341,8 +349,10 @@ public:
     auto provided_function(ProvidedFunction function) noexcept -> CallableID;
     auto number_parser(BuiltinType number, ConstantID invalid) noexcept -> CallableID;
     auto complete_callable(CallableID id, CallableImplementation implementation) noexcept -> void;
+
     auto callable_implementation_copy(CallableID id) const noexcept
         -> std::optional<CallableImplementation>;
+
     auto module_declaration_copy(ModuleID id) const noexcept -> ModuleDeclaration;
     auto function_declaration_copy(FunctionID id) const noexcept -> FunctionDeclaration;
     auto function_for_callable(CallableID id) const noexcept -> std::optional<FunctionID>;
@@ -490,9 +500,9 @@ private:
         Bodies,
     };
 
-    struct TestStopFacts final {
-        std::vector<bool> callables;
-        std::map<GenericDeclarationID, bool> definitions;
+    struct CallStopFacts final {
+        std::vector<CallStopEffect> callables;
+        std::map<GenericDeclarationID, CallStopEffect> definitions;
     };
 
     ProgramDraft(
@@ -512,12 +522,12 @@ private:
         const FailureSolution& failures
     ) noexcept -> void;
 
-    auto solve_test_stops(
+    auto solve_call_stops(
         const CanonicalTypeStore& types,
         const TypeResolution& resolved_types,
         const DeclarationStore& declarations,
         const GenericAnalysisSnapshot& generics
-    ) const noexcept -> TestStopFacts;
+    ) const noexcept -> CallStopFacts;
 
     auto verify_body(const SemIRBody& body, const DeclarationStore& declarations) const noexcept
         -> void;

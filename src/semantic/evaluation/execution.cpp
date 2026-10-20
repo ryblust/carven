@@ -2,6 +2,7 @@ module carven:semantic.evaluation.execution.impl;
 
 import :semantic.evaluation.execution;
 import :semantic.evaluation.executor;
+import :semantic.evaluation.value;
 import :semantic.semir.traversal;
 import :support.invariant;
 import std;
@@ -54,6 +55,10 @@ auto SemanticExecutionContext::host_effects_rejection() const noexcept
     return std::nullopt;
 }
 
+auto ExecutionExternalOperation::wait(std::optional<std::int64_t>) noexcept -> bool {
+    return false;
+}
+
 auto SemanticExecutionContext::stage() const noexcept -> ExecutionStage {
     return ExecutionStage::Static;
 }
@@ -66,7 +71,8 @@ auto SemanticExecutionContext::bind_call(
     ExecutionOperandAccess&,
     ProgramOriginID
 ) noexcept -> ContinuationTask<std::expected<CallableID, ExecutionCallFailure>> {
-    co_return callable;
+    using Result = std::expected<CallableID, ExecutionCallFailure>;
+    return ContinuationTask<Result>(Result(callable));
 }
 
 auto SemanticExecutionContext::freeze(ExecutionValue) noexcept -> std::optional<ConstantID> {
@@ -75,8 +81,16 @@ auto SemanticExecutionContext::freeze(ExecutionValue) noexcept -> std::optional<
 
 namespace {
 
-auto child_lifetimes_in(const auto& source, const ExecutionBody& body) noexcept
-    -> std::vector<LifetimeRegionID> {
+auto child_lifetimes_in(
+    const auto& source,
+    const ExecutionBody& body,
+    const auto& bindings
+) noexcept -> std::vector<LifetimeRegionID> {
+    if (std::ranges::none_of(bindings, [](const auto& entry) static noexcept {
+            return std::holds_alternative<AsyncChildBindingStorage>(entry.value.storage);
+        })) {
+        return {};
+    }
     auto lifetimes = std::vector<LifetimeRegionID>();
     visit_semantic_nodes(source, [&](const auto& node) noexcept {
         if constexpr (std::same_as<std::remove_cvref_t<decltype(node)>, SemanticStatement>) {
@@ -104,12 +118,12 @@ ExecutionBody::ExecutionBody(const SemIRBody& body) noexcept
 ExecutionBody::ExecutionBody(const StructuredBodyDraft& body, const SemanticRegion& region) noexcept
     : body(&body),
       selected_region(&region),
-      child_lifetimes(child_lifetimes_in(region, *this)) {}
+      child_lifetimes(child_lifetimes_in(region, *this, body.bindings.entries())) {}
 
 ExecutionBody::ExecutionBody(const SemIRBody& body, const SemanticRegion& region) noexcept
     : body(&body),
       selected_region(&region),
-      child_lifetimes(child_lifetimes_in(region, *this)) {}
+      child_lifetimes(child_lifetimes_in(region, *this, body.bindings())) {}
 
 ExecutionBody::ExecutionBody(
     const StructuredBodyDraft& body,
@@ -117,7 +131,7 @@ ExecutionBody::ExecutionBody(
 ) noexcept
     : body(&body),
       selected_region(&body.region),
-      child_lifetimes(child_lifetimes_in(expression, *this)) {}
+      child_lifetimes(child_lifetimes_in(expression, *this, body.bindings.entries())) {}
 
 auto ExecutionBody::kind() const noexcept -> BodyKind {
     if (const auto* draft = std::get_if<const StructuredBodyDraft*>(&body)) {
@@ -167,28 +181,6 @@ auto ExecutionBody::binding_access(LocalBindingID id) const noexcept -> AccessMo
         return parameter->access;
     }
     return AccessMode::Read;
-}
-
-auto ExecutionBody::bindings_in(LifetimeRegionID lifetime) const noexcept
-    -> std::vector<std::size_t> {
-    return body.visit([&](const auto* source) noexcept {
-        auto result = std::vector<std::size_t>();
-        const auto bindings = [&]() noexcept {
-            if constexpr (std::same_as<
-                              std::remove_cvref_t<decltype(*source)>,
-                              StructuredBodyDraft>) {
-                return source->bindings.entries();
-            } else {
-                return source->bindings();
-            }
-        }();
-        for (const auto entry : bindings) {
-            if (entry.value.lifetime == lifetime) {
-                result.push_back(entry.id.index());
-            }
-        }
-        return result;
-    });
 }
 
 namespace {

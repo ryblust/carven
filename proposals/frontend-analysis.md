@@ -2,14 +2,14 @@
 
 - **Status:** Draft
 - **Implementation:** Not started
-- **Scope:** Diagnostic production, recovering syntax, partial semantic queries, compilation admission, cancellation, and analysis fault isolation
+- **Scope:** Lossless damaged syntax, snapshot-owned partial semantics, causal diagnostics, query coordination, request cancellation, and analysis fault isolation
 
 ## Summary
 
-Accept incomplete source as an analysis input. Preserve useful syntax and
-established semantic facts, return diagnostics as data, and identify missing
-prerequisites. Use a compilation coordinator to select work and admit a fully
-checked program to generation or interpretation.
+Extend existing top-level syntax recovery and complete-selection workspace
+analysis with lossless damaged syntax, independently owned partial types, and
+tracked semantic queries. Preserve established facts and causal diagnostics when
+other work fails, and distinguish source errors from interrupted requests.
 
 Separate diagnostic recording, local recovery, and request coordination. Track
 operand, type, body, and execution-result validity explicitly at their producing
@@ -100,6 +100,24 @@ against Carven's ownership, generics, and static-execution rules.
 | Type error debugging in Hazel, Cambridge technical report, July 2026 | Type slices explain contributing source; the report also explores cast slices and dynamic witnesses. It is a technical report based on a 2025 undergraduate dissertation. | Retain causal evidence for explanations. Dynamic witness search is outside this proposal; the report is not evidence of production maturity. |
 
 ## Design
+
+### Ownership and delivery boundaries
+
+Compiler-owned syntax, partial facts, query dependencies, and admission preserve
+one set of language rules. Existing builtin contracts participate in these facts;
+query effects and request cancellation are compiler-service contracts rather
+than new source-level effect forms. The compiler host owns coordination and
+worker isolation. Runtime Craft continues to supply generated-program support;
+LSP supervision and query storage belong to the analysis service. Standard Craft
+build declarations supply project selections consumed by that service.
+
+Deliver recovering syntax and snapshot-owned partial observations using the
+smallest required query boundaries. Fine-grained reuse consumes established
+query results and dependency records; persistent caching and parallel scheduling
+require measurements after those contracts work. Required-value admission is
+needed wherever partial analysis must execute a constant dependency. Effectful
+query reuse and worker integration have their own completion evidence and do
+not gate useful syntax recovery or independent ordinary observations.
 
 ### Observable behavior
 

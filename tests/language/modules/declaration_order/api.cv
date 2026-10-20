@@ -1,14 +1,14 @@
-export fn public_later(value: i32) -> PublicLater => { value: value };
+fn public_later(value: i32) -> PublicLater => { value: value };
 
-export struct PublicWrapper {
+struct PublicWrapper {
     later: PublicLater,
 }
 
-export struct PublicLater {
+struct PublicLater {
     value: i32,
 }
 
-export enum RemoteLateResult {
+enum RemoteLateResult {
     Value(i32),
     Empty,
 }

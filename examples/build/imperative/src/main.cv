@@ -1,0 +1,8 @@
+import .catalog using items;
+import build.generated.settings using minimum_stock;
+
+for item in items()? {
+    if item.stock >= minimum_stock {
+        println(f"{item.name}: {item.stock} in stock (minimum {minimum_stock})");
+    }
+}

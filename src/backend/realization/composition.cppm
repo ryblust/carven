@@ -145,6 +145,7 @@ struct LoweringDeferredStorage final {
 
 struct LoweringInitializeResult final {
     LoweringDeferredStorage storage;
+    bool retain_success;
 };
 
 // Each arm assigns its result to a named local.

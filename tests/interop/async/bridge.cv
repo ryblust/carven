@@ -1,7 +1,7 @@
-import std::async using { yield_once, wait_ready, close, when_all, when_any, first_successful };
-import "async/bridge.hpp" using async_bridge::{ Context, TrivialContext };
+import std::async using { yield_once, wait_ready, close, when_all, when_any, first_successful }
+import "async/bridge.hpp" using async_bridge::{ Context, TrivialContext }
 
-export struct IOError {
+struct IOError {
     code: i32
 }
 

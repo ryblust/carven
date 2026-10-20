@@ -55,7 +55,7 @@ auto BodyElaborator::empty_region(Span span) noexcept -> SemanticRegion {
         .result = std::nullopt,
         .result_reachable = false,
         .failures = BodyFailures(draft().add_empty_failure_term()),
-        .exits_test = false,
+        .exits_call = false,
 
     };
 }

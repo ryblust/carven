@@ -378,7 +378,7 @@ auto BodyElaborator::lambda_expression(
 }
 
 auto BodyExprSite::interpret_enum_case(
-    TypeID type,
+    ConstructionTypeRef type,
     std::string_view name,
     Span name_span,
     std::span<const ASTExprID> arguments,

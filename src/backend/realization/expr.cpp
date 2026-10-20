@@ -115,58 +115,69 @@ auto BodyRealizer::ExpressionBuilder::finish_expression(
     if (!statements.continues()) {
         co_return take_statements(shared).complete<LoweringResult>(std::nullopt);
     }
-    if (demand == ResultDemand::AdoptSuccess) {
-        if (!fragment.awaited_carrier) {
-            // An embedded producer delivered its ordinary result. Construct only
-            // the destination callable's completion at this actual return.
+    if (demand == ResultDemand::ForwardResult && !owner.is_async()) {
+        auto carrier = raw(fragment, literal, final_use);
+        co_return take_statements(shared).complete<LoweringResult>(
+            LoweringDirectExpression {.expression = std::move(carrier)}
+        );
+    }
+    if (demand == ResultDemand::AdoptSuccess || demand == ResultDemand::ForwardResult) {
+        const auto* callable = std::get_if<CallableBodyExit>(&owner.inputs.exit);
+        if (callable == nullptr) {
+            invariant_violation("result carrier requested outside a callable");
+        }
+        const auto destination = owner.is_async()
+            ? owner.completion_type()
+            : owner.context.callable_result(callable->callable_id);
+        if (!fragment.result_carrier) {
             auto arguments = std::vector<TargetExpr>();
-            if (!owner.context.is_void(fragment.preparation.operation.type.resolved())
+            auto factory = "success";
+            const auto result_type = fragment.preparation.operation.type.resolved();
+            if (!owner.context.is_void(result_type)
                 && !std::holds_alternative<LoweringCompleted>(fragment.completion)) {
-                arguments.push_back(emit(fragment, final_use, literal));
+                auto body = std::vector<TargetStmt>();
+                body.push_back(generated_statement(
+                    TargetReturnStmt {.expression = emit(fragment, final_use, literal)}
+                ));
+                arguments.push_back(
+                    TargetExpr {
+                        .value = TargetLambdaExpr {
+                            .parameters = {},
+                            .result = owner.context.lower_type(result_type, TypeNameScope::Module),
+                            .body = std::move(body)
+                        }
+                    }
+                );
+                factory = "success_from";
             }
             co_return take_statements(shared).complete<LoweringResult>(LoweringDirectExpression {
                 .expression = call_expression(
-                    static_member_expression(
-                        owner.completion_type(),
-                        TargetIdentifier::from_spelling("success")
-                    ),
+                    static_member_expression(destination, TargetIdentifier::from_spelling(factory)),
                     std::move(arguments)
                 )
             });
         }
-        owner.mutable_owners.insert(fragment.awaited_carrier->local);
-        auto carrier = name_expression(fragment.awaited_carrier->local);
-        if (fragment.awaited_carrier->deferred) {
+        const auto& source = *fragment.result_carrier;
+        owner.mutable_owners.insert(source.local);
+        auto carrier = name_expression(source.local);
+        if (source.deferred) {
             carrier = dereference_expression(std::move(carrier));
         }
-        auto transferred = call_expression(
+        carrier = call_expression(
             intrinsic_expression(TargetSymbol::StdMove),
             target_expressions(std::move(carrier))
         );
-        const auto* operation = std::get_if<OperationTypeValue>(
-            &owner.context.semantic().types().type(fragment.awaited_carrier->operation).value
-        );
-        if (operation == nullptr) {
-            invariant_violation("direct await return has no canonical operation");
-        }
-        const auto destination = owner.completion_type();
-        const auto completed = owner.context.async_type(
-            TargetSymbol::RuntimeAsyncCompletion,
-            operation->success,
-            operation->failures,
-            TypeNameScope::Module
-        );
-        if (completed != destination) {
-            transferred = call_expression(
+        if (demand == ResultDemand::AdoptSuccess) {
+            carrier = call_expression(
                 static_member_expression(
                     destination,
                     TargetIdentifier::from_spelling("adopt_success")
                 ),
-                target_expressions(std::move(transferred))
+                target_expressions(std::move(carrier))
             );
         }
         co_return take_statements(shared).complete<LoweringResult>(
-            LoweringDirectExpression {.expression = std::move(transferred)}
+            LoweringDirectExpression {.expression = std::move(carrier)}
         );
     }
     if (std::holds_alternative<LoweringCompleted>(fragment.completion)) {
@@ -176,11 +187,6 @@ auto BodyRealizer::ExpressionBuilder::finish_expression(
         discard_pending(fragment);
         adopt(fragment);
         co_return take_statements(shared).complete<LoweringResult>(LoweringCompleted {});
-    }
-    if (demand == ResultDemand::PropagateOutcome) {
-        co_return take_statements(shared).complete<LoweringResult>(LoweringDirectExpression {
-            .expression = std::get<TargetExpr>(std::move(fragment.completion))
-        });
     }
     auto result = emit(fragment, final_use, literal);
     co_return take_statements(shared).complete<LoweringResult>(
@@ -193,13 +199,9 @@ auto BodyRealizer::ExpressionBuilder::initialize_expression(
     const SemanticExpression& initializer,
     LoweringStmtBuilder& destination
 ) noexcept -> ContinuationTask<std::monostate> {
-    const auto awaited = !owner.context.is_void(initializer.type.resolved())
-        && std::holds_alternative<SemAwait>(owner.preparation.operation(initializer).value);
-    const auto retain_success = awaited
-        && !owner.context.semantic().type_contents(initializer.type.resolved()).can_store_inline();
     auto fragment = (co_await build(
         initializer,
-        {.demand = retain_success ? ResultDemand::AdoptSuccess : ResultDemand::Value,
+        {.demand = ResultDemand::Value,
          .use = PreparedUse::Consume,
          .retain_backing = false,
          .expression_depth = 0uz,
@@ -207,51 +209,6 @@ auto BodyRealizer::ExpressionBuilder::initialize_expression(
     ));
     adopt(fragment);
     if (!statements.continues()) {
-        destination.scope(
-            take_statements(false),
-            TargetGeneratedExpansionAttribution {.reason = TargetExpansionReason::LoweringSupport}
-        );
-        co_return {};
-    }
-    if (fragment.awaited_carrier && retain_success) {
-        const auto& carrier = *fragment.awaited_carrier;
-        const auto* operation = std::get_if<OperationTypeValue>(
-            &owner.context.semantic().types().type(carrier.operation).value
-        );
-        if (operation == nullptr || owner.context.is_void(operation->success)) {
-            invariant_violation("await binding has no nonvoid canonical success");
-        }
-        const auto storage = LoweringDeferredStorage {
-            .local = owner.binding_locals.at(binding),
-            .value_type = owner.context.target().intern_type({
-                .value =
-                    TargetIntrinsicType {
-                        .symbol = TargetSymbol::RuntimeAsyncSuccessBinding,
-                        .type_argument_ids =
-                            {owner.context.lower_type(operation->success, TypeNameScope::Module)}
-                    },
-                .const_qualified = false,
-            }),
-        };
-        owner.delayed_bindings.emplace(binding, storage);
-        owner.success_bindings.insert(binding);
-        owner.declare_deferred(storage, true, destination, true);
-        owner.mutable_owners.insert(carrier.local);
-        auto access = name_expression(carrier.local);
-        if (carrier.deferred) {
-            access = dereference_expression(std::move(access));
-        }
-        owner.initialize_deferred(
-            storage,
-            TargetExpr {
-                .value =
-                    TargetConstructionExpr {
-                        .type = storage.value_type,
-                        .initializer = target_expressions(std::move(access)),
-                    }
-            },
-            statements
-        );
         destination.scope(
             take_statements(false),
             TargetGeneratedExpansionAttribution {.reason = TargetExpansionReason::LoweringSupport}
@@ -268,7 +225,7 @@ auto BodyRealizer::ExpressionBuilder::initialize_expression(
     }
     const auto& source = initializer;
     if (!owner.preparation.summary(source).requires_coroutine_context
-        && !source.exits_test
+        && !source.exits_call
         && owner.context.semantic()
                .failure_sets()
                .failure_set(source.failures.resolved())
@@ -303,6 +260,70 @@ auto BodyRealizer::ExpressionBuilder::initialize_expression(
         owner.needs_cleanup(owner.metadata.binding(binding).type)
     );
     owner.initialize_deferred(storage, std::move(value), statements);
+    destination.scope(
+        take_statements(false),
+        TargetGeneratedExpansionAttribution {.reason = TargetExpansionReason::LoweringSupport}
+    );
+    co_return {};
+}
+
+auto BodyRealizer::ExpressionBuilder::initialize_success(
+    const SemanticExpression& initializer,
+    const LoweringDeferredStorage& storage,
+    LoweringStmtBuilder& destination
+) noexcept -> ContinuationTask<std::monostate> {
+    auto fragment = (co_await build(
+        initializer,
+        {.demand = ResultDemand::AdoptSuccess,
+         .use = PreparedUse::Consume,
+         .retain_backing = false,
+         .expression_depth = 0uz,
+         .await_fusion = std::nullopt}
+    ));
+    adopt(fragment);
+    if (statements.continues()) {
+        auto arguments = std::vector<TargetExpr>();
+        if (fragment.result_carrier) {
+            const auto& carrier = *fragment.result_carrier;
+            owner.mutable_owners.insert(carrier.local);
+            auto access = name_expression(carrier.local);
+            if (carrier.deferred) {
+                access = dereference_expression(std::move(access));
+            }
+            arguments.push_back(std::move(access));
+        } else {
+            auto body = std::vector<TargetStmt>();
+            body.push_back(generated_statement(
+                TargetReturnStmt {
+                    .expression =
+                        emit(fragment, PreparedUse::Consume, ConstantLiteralContext::Exact)
+                }
+            ));
+            arguments.push_back(intrinsic_expression(TargetSymbol::StdInPlace));
+            arguments.push_back(
+                TargetExpr {
+                    .value = TargetLambdaExpr {
+                        .parameters = {},
+                        .result =
+                            owner.context
+                                .lower_type(initializer.type.resolved(), TypeNameScope::Module),
+                        .body = std::move(body)
+                    }
+                }
+            );
+        }
+        owner.initialize_deferred(
+            storage,
+            TargetExpr {
+                .value =
+                    TargetConstructionExpr {
+                        .type = storage.value_type,
+                        .initializer = std::move(arguments)
+                    }
+            },
+            statements
+        );
+    }
     destination.scope(
         take_statements(false),
         TargetGeneratedExpansionAttribution {.reason = TargetExpansionReason::LoweringSupport}
@@ -624,25 +645,76 @@ auto BodyRealizer::initialize_binding(
             || std::holds_alternative<FunctionTypeValue>(type))) {
         unused_initializers.emplace(binding_locals.at(binding), UnusedInitializer::Omit);
     }
-    const auto escapes = source.exits_test
+    const auto escapes = source.exits_call
         || !context.semantic()
                 .failure_sets()
                 .failure_set(source.failures.resolved())
                 .members.empty();
-    if (escapes
-        && (std::holds_alternative<SemIf>(initializer.value)
-            || std::holds_alternative<SemMatch>(initializer.value)
-            || std::holds_alternative<SemTry>(initializer.value))) {
+    const auto carries_result = [&](this const auto& self,
+                                    const SemanticExpression& expression) noexcept -> bool {
+        const auto& operation = preparation.operation(expression);
+        if (std::holds_alternative<SemAwait>(operation.value) || fallible(operation)) {
+            return true;
+        }
+        const auto region = [&](const SemanticRegion& body) noexcept {
+            return body.result_reachable && body.result && self(*body.result);
+        };
+        return operation.value.visit(
+            Overloaded {
+                [&](const SemIf& value) noexcept {
+                    return std::ranges::any_of(
+                               value.branches,
+                               [&](const auto& branch) noexcept { return region(branch.body); }
+                           )
+                        || (value.otherwise && region(**value.otherwise));
+                },
+                [&](const SemMatch& value) noexcept {
+                    return std::ranges::any_of(value.arms, [&](const auto& arm) noexcept {
+                        return arm.reachable && region(arm.body);
+                    });
+                },
+                [&](const SemTry& value) noexcept {
+                    return region(*value.body)
+                        || std::ranges::any_of(value.arms, [&](const auto& arm) noexcept {
+                               return region(arm.body);
+                           });
+                },
+                [](const auto&) static noexcept { return false; },
+            }
+        );
+    };
+    const auto retain_success =
+        !context.semantic().type_contents(metadata.binding(binding).type).can_store_inline()
+        && carries_result(source);
+    if (retain_success
+        || (escapes
+            && (std::holds_alternative<SemIf>(initializer.value)
+                || std::holds_alternative<SemMatch>(initializer.value)
+                || std::holds_alternative<SemTry>(initializer.value)))) {
+        const auto result_type =
+            context.lower_type(metadata.binding(binding).type, TypeNameScope::Module);
         const auto storage = LoweringDeferredStorage {
             .local = binding_locals.at(binding),
-            .value_type = context.lower_type(metadata.binding(binding).type, TypeNameScope::Module)
+            .value_type = retain_success
+                ? context.target().intern_type(
+                      {.value =
+                           TargetIntrinsicType {
+                               .symbol = TargetSymbol::RuntimeSuccessBinding,
+                               .type_argument_ids = {result_type}
+                           },
+                       .const_qualified = false}
+                  )
+                : result_type
         };
+        if (retain_success) {
+            success_bindings.insert(binding);
+        }
         delayed_bindings.emplace(binding, storage);
         declare_deferred(storage, true, destination, needs_cleanup(metadata.binding(binding).type));
         auto statements = LoweringStmtBuilder();
         (co_await result_expression(
             source,
-            LoweringInitializeResult {.storage = storage},
+            LoweringInitializeResult {.storage = storage, .retain_success = retain_success},
             statements
         ));
         destination.scope(

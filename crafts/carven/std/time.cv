@@ -1,31 +1,36 @@
-import std::async using { Operation, cancel_point };
+import std::async using { Operation, cancel_point }
 
 export struct Duration {
     nanoseconds: i64
 }
 
-export struct RangeError {}
+export struct TimeRangeError {}
 
 export struct Timeout {}
 
 private const minimum_nanoseconds = -9223372036854775808i64;
 private const maximum_nanoseconds = 9223372036854775807i64;
 
-private const fn scaled(value: i64, factor: i64) -> Duration throw RangeError {
+private const fn scaled(value: i64, factor: i64) -> Duration throw TimeRangeError {
     if value < minimum_nanoseconds / factor || value > maximum_nanoseconds / factor {
-        throw RangeError {};
+        throw TimeRangeError {};
     }
     return { nanoseconds: value * factor };
 }
 
 export const fn nanoseconds(value: i64) -> Duration => { nanoseconds: value };
-export const fn microseconds(value: i64) -> Duration throw RangeError => scaled(value, 1000)?;
-export const fn milliseconds(value: i64) -> Duration throw RangeError => scaled(value, 1000000)?;
-export const fn seconds(value: i64) -> Duration throw RangeError => scaled(value, 1000000000)?;
+export const fn microseconds(value: i64) -> Duration throw TimeRangeError => scaled(value, 1000)?;
 
-private const fn checked_add_nanoseconds(base: i64, offset: i64) -> i64 throw RangeError {
-    if offset > 0 && base > maximum_nanoseconds - offset { throw RangeError {}; }
-    if offset < 0 && base < minimum_nanoseconds - offset { throw RangeError {}; }
+export const fn milliseconds(value: i64) -> Duration throw TimeRangeError => scaled(
+    value,
+    1000000
+)?;
+
+export const fn seconds(value: i64) -> Duration throw TimeRangeError => scaled(value, 1000000000)?;
+
+private const fn checked_add_nanoseconds(base: i64, offset: i64) -> i64 throw TimeRangeError {
+    if offset > 0 && base > maximum_nanoseconds - offset { throw TimeRangeError {}; }
+    if offset < 0 && base < minimum_nanoseconds - offset { throw TimeRangeError {}; }
     return base + offset;
 }
 
@@ -34,11 +39,11 @@ export class TimePoint {
 
     const fn now() -> TimePoint => { nanoseconds_since_epoch: monotonic_now() };
 
-    const fn after(duration: Duration) -> TimePoint throw RangeError => {
+    const fn after(duration: Duration) -> TimePoint throw TimeRangeError => {
         nanoseconds_since_epoch: checked_add_nanoseconds(monotonic_now(), duration.nanoseconds)?
     };
 
-    const fn shifted(self, duration: Duration) -> TimePoint throw RangeError => {
+    const fn shifted(self, duration: Duration) -> TimePoint throw TimeRangeError => {
         nanoseconds_since_epoch: checked_add_nanoseconds(
             self.nanoseconds_since_epoch,
             duration.nanoseconds
@@ -53,7 +58,7 @@ export class TimePoint {
     const fn wait(self) -> Operation<void> => wait_until(self.nanoseconds_since_epoch);
 }
 
-export const async fn sleep(duration: Duration) throw RangeError {
+export const async fn sleep(duration: Duration) throw TimeRangeError {
     await cancel_point();
     if duration.nanoseconds <= 0 { return; }
     let deadline = TimePoint::after(duration)?;

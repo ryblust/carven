@@ -2,7 +2,6 @@ module carven:driver.options.impl;
 
 import :backend.generation.request;
 import :driver.options;
-import :driver.sources;
 import :support.path;
 import std;
 
@@ -34,7 +33,6 @@ auto parse_compilation_options(
         .destination = std::nullopt,
         .test_mode = TestGenerationMode::None,
         .input_paths = {},
-        .mapped_inputs = {},
         .timings = false,
     };
     auto has_test_option = false;
@@ -74,14 +72,6 @@ auto parse_compilation_options(
         const auto arg = std::string_view(args[index]);
         if (arg == "--timings") {
             request.timings = true;
-        } else if (arg.starts_with("--source=")) {
-            auto input = parse_source_input(arg.substr(std::string_view("--source=").size()));
-            if (!input) {
-                return std::unexpected(
-                    compilation_option_error(CompilationOptionErrorKind::InvalidSourceInput, arg)
-                );
-            }
-            request.mapped_inputs.push_back(std::move(*input));
         } else if (command == CompilationCommand::Compile
                    && (arg == "--tests" || arg == "--tests=runner")) {
             if (has_test_option) {
@@ -116,7 +106,7 @@ auto parse_compilation_options(
         }
     }
 
-    if (request.input_paths.empty() && request.mapped_inputs.empty()) {
+    if (request.input_paths.empty()) {
         return std::unexpected(compilation_option_error(CompilationOptionErrorKind::NoSourceInput));
     }
     if (command == CompilationCommand::Compile && !request.destination) {
@@ -134,11 +124,6 @@ auto format_compilation_option_error(const CompilationOptionError& error) noexce
         case CompilationOptionErrorKind::MissingOutputPath:
             return std::format("missing output path after '{}'", *error.option);
         case CompilationOptionErrorKind::EmptyOutputPath: return "output path is empty";
-        case CompilationOptionErrorKind::InvalidSourceInput:
-            return std::format(
-                "invalid source mapping '{}'; expected --source=<canonical-module>=<path.cv>",
-                *error.option
-            );
         case CompilationOptionErrorKind::UnknownOption:
             return std::format("unknown option '{}'", *error.option);
         case CompilationOptionErrorKind::NoSourceInput: return "at least one input is required";

@@ -7,7 +7,7 @@ import std::async using {
     when_all,
     when_any,
     first_successful,
-};
+}
 
 struct Failure {
     code: i32,
@@ -239,6 +239,6 @@ const test "Async composition: products, selection, and owned cleanup" {
     check(result);
 }
 
-export async fn run_composition() {
+async fn run_composition() {
     assert(result && await exercise());
 }

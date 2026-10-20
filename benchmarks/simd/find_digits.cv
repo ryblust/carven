@@ -1,4 +1,4 @@
-import std::simd.scan using { byte_range, find_from };
+import std::simd.scan using { byte_range, find_from }
 
 private const selected = byte_range(48, 57);
 

@@ -1,7 +1,7 @@
 import std::core using NumberParseError;
 import std::io using ByteLines;
-import std::json using { ValueError, Value };
-import std::utf using { UTF8Error, split_once, starts_with, SplitCursor, TextError };
+import std::json using { JSONValueError, JSONValue }
+import std::utf using { UTF8Error, split_once, starts_with, TextSplitCursor, TextError }
 
 enum Level {
     Info,
@@ -45,7 +45,7 @@ const rules: Rules = {
 };
 
 // Parse the report template once at compile time; runtime copies remain writable.
-const report_template = Value::parse(
+const report_template = JSONValue::parse(
     r#"{"accepted":0,"rejected":0,"warnings":0,"errors":0,"slow":[]}"#
 )?;
 
@@ -59,7 +59,7 @@ private const fn level(text: str) -> Level throw RecordError => match text {
 private const fn redact(text: str) -> String throw TextError {
     var result: String = {};
     var first = true;
-    var cursor = SplitCursor::new();
+    var cursor = TextSplitCursor::new();
     while {
         match cursor.next(text, " ")? {
             .End => break,
@@ -127,15 +127,15 @@ fn analyze(bytes: [u8]) -> Report {
     return &&report;
 }
 
-fn to_json(report: Report) -> String throw ValueError {
+fn to_json(report: Report) -> String throw JSONValueError {
     var document = report_template;
-    document.set("accepted", &&Value::unsigned_integer(report.accepted as u64))?;
-    document.set("rejected", &&Value::unsigned_integer(report.rejected as u64))?;
-    document.set("warnings", &&Value::unsigned_integer(report.warnings as u64))?;
-    document.set("errors", &&Value::unsigned_integer(report.errors as u64))?;
-    var slow = Value::array();
+    document.set("accepted", &&JSONValue::unsigned_integer(report.accepted as u64))?;
+    document.set("rejected", &&JSONValue::unsigned_integer(report.rejected as u64))?;
+    document.set("warnings", &&JSONValue::unsigned_integer(report.warnings as u64))?;
+    document.set("errors", &&JSONValue::unsigned_integer(report.errors as u64))?;
+    var slow = JSONValue::array();
     for message in report.slow {
-        slow.push(&&Value::string(message))?;
+        slow.push(&&JSONValue::string(message))?;
     }
     document.set("slow", &&slow)?;
     return document.to_json()?;
@@ -161,7 +161,7 @@ const test "log rules redact credentials before retaining messages" {
         try {
             report_template.get("accepted")?.number_text()? == "0"
         } catch {
-            ValueError(_) => false
+            JSONValueError(_) => false
         }
     );
 }

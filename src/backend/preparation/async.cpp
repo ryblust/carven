@@ -92,8 +92,6 @@ auto producer(const SemIRProgram& program, const SemColdCall& call) noexcept
     if (!body_id
         || signature.execution != CallableExecutionKind::Async
         || !scalar(program, signature.result, true)
-        || !program.failure_sets().failure_set(signature.failures).members.empty()
-        || program.may_complete_cancelled(call.target)
         || std::ranges::any_of(
             signature.parameters,
             [&](const CallableParameter& parameter) noexcept {
@@ -118,7 +116,7 @@ auto producer(const SemIRProgram& program, const SemColdCall& call) noexcept
         ++nodes;
         using Node = std::remove_cvref_t<decltype(node)>;
         if constexpr (std::same_as<Node, SemanticExpression>) {
-            supported &= !node.exits_test && !std::holds_alternative<SemReport>(node.value);
+            supported &= !std::holds_alternative<SemReport>(node.value);
         } else if constexpr (std::same_as<Node, SemanticStatement>) {
             supported &= !std::holds_alternative<SemAsyncLet>(node.value);
         }
@@ -154,7 +152,7 @@ auto prepare_await_producer(const SemIRProgram& program, const SemanticExpressio
         || signature.execution != CallableExecutionKind::Synchronous
         || !std::holds_alternative<OperationTypeValue>(program.types().type(signature.result).value)
         || !program.failure_sets().failure_set(signature.failures).members.empty()
-        || program.may_stop_test(callable)
+        || program.may_stop(callable)
         || std::ranges::any_of(
             signature.parameters,
             [&](const CallableParameter& parameter) noexcept {
@@ -382,12 +380,23 @@ auto prepare_tail_await_loop(const SemIRProgram& program, CallableID callable) n
         // Each char await retains its own validation and diagnostic site.
         || (result != nullptr && result->kind == BuiltinType::Char)
         || !scalar_parameters(program, signature)
-        || !program.failure_sets().failure_set(signature.failures).members.empty()
-        || program.may_complete_cancelled(callable)
-        || program.may_stop_test(callable)) {
+        || !program.failure_sets().failure_set(signature.failures).members.empty()) {
         return std::nullopt;
     }
     const auto& body = program.bodies().body(*body_id);
+    auto selected = PreparedTailAwaitLoop {.awaits = {}};
+    visit_semantic_nodes(
+        body.region(),
+        TailReturnQuery {
+            .program = program,
+            .callable = callable,
+            .selected = selected,
+            .enclosing_operands = 0uz,
+        }
+    );
+    if (selected.awaits.empty()) {
+        return std::nullopt;
+    }
     if (!body.inputs().captures.empty()
         || std::ranges::any_of(body.bindings(), [&](const auto& binding) noexcept {
                return !scalar(program, binding.value.type, false)
@@ -395,13 +404,13 @@ auto prepare_tail_await_loop(const SemIRProgram& program, CallableID callable) n
            })) {
         return std::nullopt;
     }
+    // Selection excludes retained operand lifetimes. Ordinary body awaits and
+    // checked calls still realize their own stop and cancellation exits.
     auto supported = true;
-    auto selected = PreparedTailAwaitLoop {.awaits = {}};
     visit_semantic_nodes(body.region(), [&](const auto& node) noexcept {
         using Node = std::remove_cvref_t<decltype(node)>;
         if constexpr (std::same_as<Node, SemanticExpression>) {
             supported &= scalar_operation(program, node)
-                && !node.exits_test
                 && program.failure_sets().failure_set(node.failures.resolved()).members.empty()
                 && !std::holds_alternative<SemAddressOf>(node.value)
                 && !std::holds_alternative<SemCpp>(node.value)
@@ -418,15 +427,5 @@ auto prepare_tail_await_loop(const SemIRProgram& program, CallableID callable) n
             supported &= !std::holds_alternative<SemAsyncLet>(node.value);
         }
     });
-    visit_semantic_nodes(
-        body.region(),
-        TailReturnQuery {
-            .program = program,
-            .callable = callable,
-            .selected = selected,
-            .enclosing_operands = 0uz,
-        }
-    );
-    return supported && !selected.awaits.empty() ? std::optional(std::move(selected))
-                                                 : std::nullopt;
+    return supported ? std::optional(std::move(selected)) : std::nullopt;
 }

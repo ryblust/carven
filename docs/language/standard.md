@@ -17,12 +17,19 @@ Value methods use their receiver, such as `samples.sqrt()`.
 | Domain | Public entries | Capability and API reference |
 | --- | --- | --- |
 | Core | `std::core` | [Numeric types, parsing, and floating methods](types.md), [Unicode text and formatting](text.md), [owning vectors](aggregates.md#owning-vectors), [ranges](control-flow.md#control-flow-and-loops), [slices](types.md#read-only-slices), and [pointer access](pointers.md) |
+| Collections | `std::collections` | [Hash maps, sets, and hashing](collections.md) |
 | Input and output | `std::io` | [Printing, standard input, and byte framing](io.md) |
+| Filesystem | `std::fs` | [Whole-file bytes and text, path queries, and directory creation](fs.md) |
 | Async | `std::async`; async syntax | [Cold operations, composition, and lexical children](async.md) |
+| Channels | `std::channel` | [Bounded asynchronous byte messages](channel.md) |
+| Processes | `std::process` | [Child processes, byte communication, and process groups](process.md) |
 | Time | `std::time`; duration literals | [Intervals, monotonic time, waits, and deadlines](time.md) |
 | UTF | `std::utf` | [Errors, encoding, validation, and text processing](utf.md) |
 | SIMD | `std::simd`, `std::simd.bytes`, `std::simd.floats`, `std::simd.scan` | [Vector and mask primitives, block traversal, and byte-set queries](simd.md) |
 | JSON | `std::json` | [Validation, owned values, parsing, and writing](json.md) |
+| Build | `std::build` | [Executable targets and object reuse](build.md) |
+| Compilation | `std::compiler` | [Hosted C++ generation and implementation dependencies](build.md#compilation-api) |
+| TOML | `std::toml` | [Configuration parsing, owned values, and borrowed traversal](toml.md) |
 | Networking | `std::net` | [TCP reads and writes over host-owned connections](net.md) |
 | Testing | `std::testing`; `assert` from `std::core` | [Assertions and test reports](execution.md#tests) |
 

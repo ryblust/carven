@@ -6,7 +6,7 @@ and deadlines in `std::time`.
 ## Types and imports
 
 Import the types and callables being used from `std::time`.
-`Duration`, `RangeError`, `Timeout`, and `TimePoint` are declared in the standard
+`Duration`, `TimeRangeError`, `Timeout`, and `TimePoint` are declared in the standard
 source module.
 
 Importing an operation binds that operation; naming a type in an annotation or a
@@ -18,15 +18,15 @@ binding.
 `Duration` is a nominal struct with one public
 `nanoseconds: i64` field. Every field value is valid, including zero and the full
 negative range. Construction, copying, mutation, and field access use ordinary
-struct rules. `RangeError` is an empty nominal struct used for unrepresentable
+struct rules. `TimeRangeError` is an empty nominal struct used for unrepresentable
 unit scaling and time-point addition.
 
 | Function from `std::time` | Result | Failure |
 | --- | --- | --- |
 | `nanoseconds(value: i64)` | `Duration` with the supplied field value | None |
-| `microseconds(value: i64)` | `Duration` scaled by 1,000 | `RangeError` |
-| `milliseconds(value: i64)` | `Duration` scaled by 1,000,000 | `RangeError` |
-| `seconds(value: i64)` | `Duration` scaled by 1,000,000,000 | `RangeError` |
+| `microseconds(value: i64)` | `Duration` scaled by 1,000 | `TimeRangeError` |
+| `milliseconds(value: i64)` | `Duration` scaled by 1,000,000 | `TimeRangeError` |
+| `seconds(value: i64)` | `Duration` scaled by 1,000,000,000 | `TimeRangeError` |
 
 Scaling checks the result's signed `i64` range before multiplication. These
 functions are `const fn`.
@@ -36,7 +36,7 @@ use checked functions such as `milliseconds(value)?`. Nanoseconds describe the
 representation, not wakeup accuracy.
 
 ```carven
-import std::time using { Duration, milliseconds };
+import std::time using { Duration, milliseconds }
 
 const delay: Duration = milliseconds(250)?;
 ```
@@ -50,8 +50,8 @@ use ordinary copying, access, and lifetime rules.
 | Operation | Result and behavior | Failure |
 | --- | --- | --- |
 | `TimePoint::now()` | `TimePoint`; sample the clock once | None |
-| `TimePoint::after(duration: Duration)` | `TimePoint`; sample once and add the interval | `RangeError` |
-| `point.shifted(duration: Duration)` | `TimePoint`; add the interval without reading the clock | `RangeError` |
+| `TimePoint::after(duration: Duration)` | `TimePoint`; sample once and add the interval | `TimeRangeError` |
+| `point.shifted(duration: Duration)` | `TimePoint`; add the interval without reading the clock | `TimeRangeError` |
 | `point.is_before(other: TimePoint)` | `bool`; compare stored points | None |
 | `point.has_passed()` | `bool`; compare the stored point with the current clock | None |
 | `point.wait()` | Snapshot the stored deadline into a cold `Operation<void>` | None |
@@ -83,14 +83,14 @@ void operations. Starting or awaiting them consumes the cold owner.
 
 | Function | Argument | Nominal failure |
 | --- | --- | --- |
-| `sleep(duration: Duration)` | Relative interval | `RangeError` |
+| `sleep(duration: Duration)` | Relative interval | `TimeRangeError` |
 | `sleep_until(point: TimePoint)` | Absolute monotonic deadline | None |
 
 Constructing `sleep(duration)` does not read the clock or register a timer.
 Relative timing begins when the operation executes, after its initial
 cancellation checkpoint. A nonpositive duration succeeds immediately after that
 checkpoint without deadline arithmetic or an implicit yield. Positive intervals
-use checked deadline addition and may throw `RangeError`.
+use checked deadline addition and may throw `TimeRangeError`.
 
 `point.wait()` is a synchronous factory for a cold operation. It copies the
 stored deadline without retaining the point, reading the clock, or registering
@@ -99,9 +99,9 @@ Both accept pending cancellation before checking whether the deadline is already
 due. Creating or discarding an unstarted operation performs no waiting.
 
 ```carven
-import std::time using { TimePoint, RangeError, sleep, sleep_until };
+import std::time using { TimePoint, TimeRangeError, sleep, sleep_until }
 
-async fn main() throw RangeError {
+async fn main() throw TimeRangeError {
     await sleep(250ms)?;
     let deadline = TimePoint::after(100ms)?;
     await sleep_until(deadline);
@@ -119,7 +119,7 @@ and preserves this completion contract.
 
 `timeout(operation, duration)` is a builtin from `std::time`. It consumes one
 cold operation and a `Duration`, preserves the operation's successful type, and
-adds `Timeout` and `RangeError` to its nominal failures. `Timeout` is an empty
+adds `Timeout` and `TimeRangeError` to its nominal failures. `Timeout` is an empty
 nominal struct. The call requires a direct function invocation; it cannot be
 stored as a callable value. Transfer a named cold owner with `&&`; lexical
 children cannot be passed.
@@ -128,7 +128,7 @@ Construction retains the protected input without executing it or reading the
 clock. At execution, pending cancellation is accepted first. A nonpositive
 interval selects `Timeout` without starting protected work or reading the clock.
 A positive interval calculates a fixed monotonic deadline before starting either
-child. Unrepresentable deadline arithmetic produces `RangeError`.
+child. Unrepresentable deadline arithmetic produces `TimeRangeError`.
 
 The protected operation is queued before the timer. Terminal publication selects
 one candidate; an already terminal pair gives the protected operation priority.
@@ -140,11 +140,11 @@ later cancellation requests and losing outcomes cannot replace the result.
 Noncooperative protected work can delay closure beyond the deadline.
 
 ```carven
-import std::time using { timeout, RangeError, Timeout };
+import std::time using { timeout, TimeRangeError, Timeout }
 
 async fn load() -> i32 => 7;
 
-async fn main() throw Timeout + RangeError {
+async fn main() throw Timeout + TimeRangeError {
     println(await timeout(load(), 100ms)?);
 }
 ```

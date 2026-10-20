@@ -182,7 +182,7 @@ extern "C++" auto main(int native_argc, const char* const* native_argv) noexcept
     }
     const auto batch = format_batch(sources, batch_inputs);
     if (!batch) {
-        std::print(std::cerr, "{}", render_diagnostics(batch.error(), sources));
+        std::print(std::cerr, "{}", render_diagnostics(batch.error(), sources, false));
         return 2;
     }
     if (mode == OutputMode::Check) {

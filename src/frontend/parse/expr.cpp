@@ -893,8 +893,9 @@ auto Parser::construction_allowed_here() const noexcept -> bool {
 auto Parser::starts_field_construction() const noexcept -> bool {
     return check(TokenKind::LeftBrace)
         && cursor + 2 < tokens.size()
-        && tokens[cursor + 1].kind == TokenKind::Identifier
-        && tokens[cursor + 2].kind == TokenKind::Colon;
+        && (tokens[cursor + 1].kind == TokenKind::Ellipsis
+            || (tokens[cursor + 1].kind == TokenKind::Identifier
+                && tokens[cursor + 2].kind == TokenKind::Colon));
 }
 
 auto Parser::try_parse_construction() noexcept -> std::optional<ASTExprID> {
@@ -926,67 +927,49 @@ auto Parser::try_parse_construction() noexcept -> std::optional<ASTExprID> {
     auto right = current();
     if (!failed && !check(TokenKind::RightBrace)) {
         const auto depth = enter_depth(expression_nesting);
-        if (check(TokenKind::Identifier)) {
-            const auto lookahead = cursor + 1;
-            const auto field_form =
-                lookahead < tokens.size() && tokens[lookahead].kind == TokenKind::Colon;
-            if (field_form) {
-                auto fields = std::vector<ASTFieldInitializer> {};
-                const auto list_start = current().span;
-                while (!failed) {
-                    const auto name =
-                        expect(TokenKind::Identifier, "expected initializer field name");
-                    expect(TokenKind::Colon, "expected ':' after initializer field name");
-                    const auto value = parse_expression();
-                    if (!value) {
-                        break;
+        const auto field_form = check(TokenKind::Ellipsis)
+            || (check(TokenKind::Identifier)
+                && cursor + 1 < tokens.size()
+                && tokens[cursor + 1].kind == TokenKind::Colon);
+        if (field_form) {
+            auto fields = std::vector<ASTFieldInitializer>();
+            auto defaults = std::optional<Span>();
+            const auto list_start = current().span;
+            while (!failed) {
+                if (check(TokenKind::Ellipsis)) {
+                    defaults = consume().span;
+                    if (!check(TokenKind::RightBrace)) {
+                        fail_here("expected '}' after default initialization marker");
                     }
-                    fields.push_back({
-                        .span = join(name.span, builder.expression(*value).span),
-                        .name_span = name.span,
-                        .value = *value,
-                    });
-                    if (!match(TokenKind::Comma)) {
-                        break;
-                    }
-                    if (check(TokenKind::RightBrace)) {
-                        break;
-                    }
+                    break;
                 }
-                const auto list_end = fields.empty() ? list_start : fields.back().span;
-                initializer = {
-                    .value = ASTFieldInitializerList {
-                        .span = join(list_start, list_end),
-                        .fields = std::move(fields),
-                    },
-                };
-            } else {
-                auto values = std::vector<ASTExprID> {};
-                const auto list_start = current().span;
-                while (!failed) {
-                    const auto value = parse_expression();
-                    if (!value) {
-                        break;
-                    }
-                    values.push_back(*value);
-                    if (!match(TokenKind::Comma)) {
-                        break;
-                    }
-                    if (check(TokenKind::RightBrace)) {
-                        break;
-                    }
+                const auto name = expect(TokenKind::Identifier, "expected initializer field name");
+                expect(TokenKind::Colon, "expected ':' after initializer field name");
+                const auto value = parse_expression();
+                if (!value) {
+                    break;
                 }
-                const auto list_end =
-                    values.empty() ? list_start : builder.expression(values.back()).span;
-                initializer = {
-                    .value = ASTPositionalInitializerList {
-                        .span = join(list_start, list_end),
-                        .values = std::move(values),
-                    },
-                };
+                fields.push_back({
+                    .span = join(name.span, builder.expression(*value).span),
+                    .name_span = name.span,
+                    .value = *value,
+                });
+                if (!match(TokenKind::Comma) || check(TokenKind::RightBrace)) {
+                    break;
+                }
             }
+            const auto list_end = defaults ? *defaults
+                : fields.empty()           ? list_start
+                                           : fields.back().span;
+            initializer = {
+                .value = ASTFieldInitializerList {
+                    .span = join(list_start, list_end),
+                    .fields = std::move(fields),
+                    .defaults = defaults,
+                },
+            };
         } else {
-            auto values = std::vector<ASTExprID> {};
+            auto values = std::vector<ASTExprID>();
             const auto list_start = current().span;
             while (!failed) {
                 const auto value = parse_expression();
@@ -994,10 +977,7 @@ auto Parser::try_parse_construction() noexcept -> std::optional<ASTExprID> {
                     break;
                 }
                 values.push_back(*value);
-                if (!match(TokenKind::Comma)) {
-                    break;
-                }
-                if (check(TokenKind::RightBrace)) {
+                if (!match(TokenKind::Comma) || check(TokenKind::RightBrace)) {
                     break;
                 }
             }

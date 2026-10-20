@@ -1,6 +1,7 @@
 module carven:semantic.analysis.pattern.control;
 
 import :semantic.analysis.coverage;
+import :semantic.analysis.model;
 import :semantic.semir.decl;
 import :semantic.semir.program;
 import :semantic.semir.structured;
@@ -14,7 +15,7 @@ import std;
 // both bounds complete, and every outward exit bypasses later alternatives.
 template<typename Body, typename State, typename Initial, typename Evaluate, typename Join>
 auto analyze_pattern_condition(
-    const SemIRProgram& program,
+    const AnalysisModelView& model,
     const Body& body,
     PatternID id,
     std::span<const SemPatternBounds> bounds,
@@ -23,6 +24,7 @@ auto analyze_pattern_condition(
     const Evaluate& evaluate,
     const Join& join
 ) noexcept -> ContinuationTask<std::invoke_result_t<const Initial&, State>> {
+    const auto& program = model.program;
     auto result = initial(std::move(state));
     const auto& pattern = body.pattern(id).value;
     const auto sequence = [&](PatternID child) noexcept -> ContinuationTask<std::monostate> {
@@ -30,7 +32,7 @@ auto analyze_pattern_condition(
             co_return {};
         }
         auto next = (co_await analyze_pattern_condition(
-            program,
+            model,
             body,
             child,
             bounds,
@@ -52,7 +54,7 @@ auto analyze_pattern_condition(
                 break;
             }
             auto next = (co_await analyze_pattern_condition(
-                program,
+                model,
                 body,
                 child,
                 bounds,
@@ -66,8 +68,7 @@ auto analyze_pattern_condition(
             result.exits.append_range(std::views::as_rvalue(next.exits));
         }
     } else if (const auto* enumeration = std::get_if<EnumCasePattern>(&pattern)) {
-        const auto owner = program.declarations().enum_case(enumeration->enum_case).owner;
-        if (program.declarations().enumeration(owner).cases.size() > 1uz) {
+        if (model.enum_case_count(enumeration->enum_case) > 1uz) {
             result.no = result.yes;
         }
         for (const auto child : enumeration->payload) {

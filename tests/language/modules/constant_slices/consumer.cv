@@ -1,7 +1,10 @@
-import .data using { table, empty, rows, from_provider, provider_row };
+import .data using { table, empty, bytes, byte_tail, rows, from_provider, provider_row }
 
 const selected = table[1];
 const tail = table.slice(1, table.length());
+const selected_byte = byte_tail[1];
+const byte_count = byte_tail.length();
+const empty_bytes = byte_tail.slice(3, 3);
 
 fn from_consumer() -> [i32] => table;
 
@@ -19,4 +22,14 @@ test "Modules: constant slices keep their contents across modules" {
     check(empty.is_empty());
     check(row[0] == 6);
     check(row[1] == rows[1][1]);
+    check(bytes.capacity() == 8);
+    check(byte_count == 3);
+    check(selected_byte == 128);
+    check(byte_tail[2] == 255);
+    check(empty_bytes.is_empty());
+    var copy = bytes;
+    copy[0] = 42;
+    copy.push(7);
+    check(bytes[0] == 0 && bytes.length() == 4);
+    check(copy[0] == 42 && copy.length() == 5);
 }

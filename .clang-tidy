@@ -61,7 +61,7 @@ ImplementationFileExtensions:
   - 'cpp'
   - 'cppm'
   - 'cxx'
-HeaderFilterRegex: '.*[/\\](src|tests|crafts)[/\\].*|.*[/\\]\.gens[/\\].*'
+HeaderFilterRegex: '.*[/\\](src|include|tests|crafts)[/\\].*|.*[/\\]\.gens[/\\].*'
 FormatStyle: none
 SystemHeaders: false
 CheckOptions:

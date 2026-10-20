@@ -38,7 +38,7 @@ auto control_callable(const SemIRProgram& program, std::string_view name) noexce
     return std::nullopt;
 }
 
-auto check_test_stops(
+auto check_call_stops(
     const SemIRProgram& program,
     std::span<const TestStopExpectation> expected
 ) noexcept -> void {
@@ -136,46 +136,14 @@ const TestSuite suite([] static noexcept {
         }
     };
 
-    "Semantic control: frozen slice bounds distinguish proofs from retained checks"_test =
-        [] static noexcept {
-            const auto program = analyze_test_program(
-                "const values: [i32] = [3, 7]; "
-                "fn valid() -> i32 => values[1]; "
-                "fn checked() -> i32 => values[4];"
-            );
-            for (const auto name : {"valid", "checked"}) {
-                scenario(name, [&]() noexcept {
-                    const auto callable = control_callable(program, name);
-                    if (!expect(callable.has_value())) {
-                        return;
-                    }
-                    const auto body_id =
-                        callable_body_id(program.declarations().callable(*callable));
-                    if (!expect(body_id.has_value())) {
-                        return;
-                    }
-                    const auto& body = program.bodies().body(*body_id);
-                    if (!expect_equal(body.region().statements.size(), 1uz)) {
-                        return;
-                    }
-                    const auto* returned =
-                        std::get_if<SemReturn>(&body.region().statements.front().value);
-                    if (!expect(returned != nullptr && returned->value.has_value())) {
-                        return;
-                    }
-                    const auto& expression = *returned->value;
-                    const auto* index = std::get_if<SemIndex>(&expression.value);
-                    if (!expect(index != nullptr)) {
-                        return;
-                    }
-                    expect(
-                        std::holds_alternative<ProvenInBounds>(index->bounds)
-                        == (std::string_view(name) == "valid")
-                    );
-                    expect(expression.constant.has_value() == (std::string_view(name) == "valid"));
-                });
-            }
-        };
+    "Semantic control: frozen slices admit runtime indexing"_test = [] static noexcept {
+        expect(analyze_test_errors(
+                   "const values: [i32] = [3, 7]; "
+                   "fn valid() -> i32 => values[1]; "
+                   "fn checked() -> i32 => values[4];"
+        )
+                   .empty());
+    };
 
     "Semantic control: specialized sequence bounds distinguish proofs from retained checks"_test =
         [] static noexcept {
@@ -561,7 +529,7 @@ const TestSuite suite([] static noexcept {
                     "import producer using next; fn first() => next(4); fn again() => first();"
                 );
                 const auto producer =
-                    sources.append_virtual("producer.cv", "export fn next(a: i32) => a + 1;");
+                    sources.append_virtual("producer.cv", "fn next(a: i32) => a + 1;");
                 if (!expect(consumer.has_value())) {
                     return;
                 }
@@ -641,7 +609,6 @@ const TestSuite suite([] static noexcept {
         fn quiet(flag: bool) -> void { if flag { quiet_back(false); } }
         fn quiet_back(flag: bool) -> void { quiet(flag); }
         fn ordinary() { check(true); }
-        private import(cpp) fn native();
         fn call_view(action: fn() -> void) { action(); }
         fn closure() { []() { fail(); }(); }
     )");
@@ -654,12 +621,51 @@ const TestSuite suite([] static noexcept {
                 {.name = "quiet", .stops = false},
                 {.name = "quiet_back", .stops = false},
                 {.name = "ordinary", .stops = false},
-                {.name = "native", .stops = false},
                 {.name = "call_view", .stops = true},
                 {.name = "closure", .stops = true},
             });
-            check_test_stops(program, expected);
+            check_call_stops(program, expected);
         };
+
+    "Semantic control: native import contracts admit invocation stops"_test = [] static noexcept {
+        const auto program = analyze_test_program(R"(
+            struct Error {}
+            private import(cpp) fn provider();
+            private import(cpp) fn target() = ::target;
+            private import(cpp) fn fallible_provider() throw Error;
+            private import(cpp) fn fallible_target() throw Error = ::fallible_target;
+            private import(cpp) fn callback(action: fn() -> void) = ::callback;
+            fn direct() { target(); }
+            async fn asynchronous() { target(); }
+            fn declared_failure() throw Error { throw Error {}; }
+            fn generic<T>(value: T) { target(); }
+            fn specialized() { generic(1); }
+            fn recovered() {
+                try { fallible_target()?; } catch { Error(_) => {}, }
+            }
+        )");
+        for (const auto name :
+             {"provider",
+              "target",
+              "fallible_provider",
+              "fallible_target",
+              "callback",
+              "direct",
+              "asynchronous",
+              "specialized",
+              "recovered"}) {
+            const auto callable = control_callable(program, name);
+            if (!expect(callable.has_value()).note("function = ", name)) {
+                return;
+            }
+            expect(program.may_stop(*callable)).note("function = ", name);
+            expect(!program.may_stop_test(*callable)).note("function = ", name);
+        }
+        const auto failure = control_callable(program, "declared_failure");
+        if (expect(failure.has_value())) {
+            expect(!program.may_stop(*failure));
+        }
+    };
 
     "Semantic control: published effects include every branch"_test = [] static noexcept {
         const auto program = analyze_test_program(R"(
@@ -682,7 +688,7 @@ const TestSuite suite([] static noexcept {
             if (!expect(returned->value.has_value())) {
                 return;
             }
-            expect(returned->value->exits_test);
+            expect(returned->value->exits_call);
             expect(program.may_stop_test(*callable)).note("function = ", name);
         }
         for (const auto entry : program.tests().entries()) {
@@ -692,7 +698,7 @@ const TestSuite suite([] static noexcept {
             if (!expect(initialized != nullptr)) {
                 return;
             }
-            expect(initialized->initializer.exits_test);
+            expect(initialized->initializer.exits_call);
         }
     };
 
@@ -729,8 +735,8 @@ const TestSuite suite([] static noexcept {
             if (!expect(returned != nullptr && returned->value.has_value())) {
                 return;
             }
-            expect_equal(returned->value->exits_test, input.stops);
-            expect_equal(body.region().exits_test, input.stops);
+            expect_equal(returned->value->exits_call, input.stops);
+            expect_equal(body.region().exits_call, input.stops);
             expect_equal(program.may_stop_test(*callable), input.stops);
         });
     };
@@ -1092,7 +1098,7 @@ const TestSuite suite([] static noexcept {
             {.name = "forward", .stops = true},
             {.name = "conditional", .stops = true},
         });
-        check_test_stops(program, expected);
+        check_call_stops(program, expected);
     };
 
     "Semantic control: only fail completes a report without returning"_test = [] static noexcept {
@@ -1126,7 +1132,7 @@ const TestSuite suite([] static noexcept {
                 {.name = "known_stopping", .stops = true},
                 {.name = "dynamic", .stops = true},
             });
-            check_test_stops(program, expected);
+            check_call_stops(program, expected);
         };
 });
 

@@ -395,7 +395,7 @@ const TestSuite suite([] static noexcept {
                 "const requested = cancel_requested(); const yielded = yield_once(); "
                 "async fn run() -> i32 => cancel_requested() + yield_once();"
             );
-            append("providers", "export const fn yield_once() -> i32 => 7;");
+            append("providers", "const fn yield_once() -> i32 => 7;");
             auto syntax = parse_program(sources, SourceBatch {.modules = inputs});
             require(syntax.has_value());
             const auto analyzed = analyze(std::move(*syntax), HostEffects::Deny);
@@ -424,11 +424,11 @@ const TestSuite suite([] static noexcept {
             );
             append(
                 "api",
-                "import values using { increment, seed }; export const fn answer() -> i32 => increment(seed);"
+                "import values using { increment, seed } const fn answer() -> i32 => increment(seed);"
             );
             append(
                 "values",
-                "export const seed: i32 = 41; export const fn increment(value: i32) -> i32 => value + 1;"
+                "const seed: i32 = 41; const fn increment(value: i32) -> i32 => value + 1;"
             );
             auto syntax = parse_program(sources, SourceBatch {.modules = inputs});
             if (!expect(syntax.has_value())) {

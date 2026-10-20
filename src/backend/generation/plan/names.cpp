@@ -97,10 +97,10 @@ auto plan_closures(const SemIRProgram& semantic) noexcept -> TargetClosureCatalo
     auto scanned_tests = std::vector<std::uint8_t>(callable_count);
     auto discovery = std::vector<CallableID>();
     auto source_modules = std::flat_map<ProgramSourceID, ModuleID>();
-    for (const auto module : declarations.modules()) {
+    for (const auto module_decl : declarations.modules()) {
         source_modules.emplace(
-            semantic.provenance().module_record(module.value.provenance_module).source_id,
-            module.id
+            semantic.provenance().module_record(module_decl.value.provenance_module).source_id,
+            module_decl.id
         );
     }
 
@@ -441,12 +441,12 @@ auto plan_names(
             }
         }
     }
-    for (const auto module : declarations.modules()) {
+    for (const auto module_decl : declarations.modules()) {
         auto instances = std::vector<const GenericNominalInstance*>();
         auto requests = std::vector<TargetContentName>();
         for (const auto& instance : semantic.generic_nominal_instances()) {
             const auto& definition = semantic.generic_declaration_contract(instance.definition);
-            if (definition.module_id != module.id) {
+            if (definition.module_id != module_decl.id) {
                 continue;
             }
             auto content = type_content_key(semantic, generic_types.at(instance.declaration));
@@ -458,11 +458,12 @@ auto plan_names(
             });
             instances.push_back(std::addressof(instance));
         }
-        const auto names = claim_content_identifiers(requests, module_occupied[module.id.index()]);
+        const auto names =
+            claim_content_identifiers(requests, module_occupied[module_decl.id.index()]);
         for (const auto [instance, name] : std::views::zip(instances, names)) {
             instance->declaration.visit([&](auto id) noexcept {
                 const auto entity = TargetEntityName {
-                    .owner_module = module.id,
+                    .owner_module = module_decl.id,
                     .relative_name = TargetName {name},
                 };
                 if constexpr (std::same_as<decltype(id), StructID>) {
@@ -647,6 +648,7 @@ auto plan_names(
     for (const auto constant : semantic.constants().entries()) {
         if (constant_has_storage(constant_values, constant.id)
             || std::holds_alternative<SliceConstant>(constant.value.value)
+            || std::holds_alternative<ByteSequenceConstant>(constant.value.value)
             || std::holds_alternative<CStringConstant>(constant.value.value)) {
             request_name(
                 "carven_constant_",

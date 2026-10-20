@@ -1,4 +1,4 @@
-import std::io using { Read as Input, Read as SameInput };
+import std::io using { ReadResult as Input, ReadResult as SameInput }
 
 const fn wrap<T>(&&value: Input<T>) -> Input<T> => &&value;
 

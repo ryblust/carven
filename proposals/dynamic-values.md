@@ -26,6 +26,34 @@ Owning closures and builtin `Operation<T, throw E>` have fixed call or completio
 contracts. General nominal conformance, existential packaging, and dynamic
 operation tables remain unimplemented.
 
+The hosting API's `HostValue` is an owning C++ data boundary for admitted
+source values. Typed service registrations and native object references supply
+fixed call contracts and object identity. They introduce no source-level erased
+type or nominal dynamic conformance.
+
+## Design
+
+### Ownership and first consumer
+
+Select a fixed-operation holding contract from a callback, heterogeneous
+collection, or service consumer. Compare existing callable/service boundaries
+with a nominal erased value using that consumer's required operations and
+extension model. User-defined implementation types and domain operations are
+an independent reason for a source interface; a fixed builtin boundary need not
+select general existential elimination.
+
+Compiler knowledge checks conformance, receiver access, hidden-value lifetime,
+failures, and conversions. A builtin holding type or operation may provide the
+bounded contract. Runtime Craft owns shared native storage, dispatch, and cleanup
+mechanisms; realization selects carriers and thunks from the published contract.
+Standard Craft and user modules own domain contracts, adapters, and algorithms.
+Select borrowed, owned, or shared holding from the
+consumer, with its representation and costs.
+
+The first consumer selects its required holding and dispatch forms. Generic
+operations, polymorphic elimination, and open-plugin ABI require their own
+consumers and closure rules; none is a prerequisite for fixed-operation dispatch.
+
 ## Open decisions
 
 ### Contract and conformance

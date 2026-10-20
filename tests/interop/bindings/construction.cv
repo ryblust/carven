@@ -1,6 +1,7 @@
 import <vector> using std::vector;
 import <utility> using std::pair;
 import "interpolation/append.hpp";
+import "bindings/construction.hpp" using construction_probe;
 
 import "bindings/construction.hpp" using construction_probe::{
     Byte,
@@ -12,7 +13,18 @@ import "bindings/construction.hpp" using construction_probe::{
     record,
     reset,
     recorded,
-};
+}
+
+test "C++ names: selected paths agree in types construction and associated calls" {
+    let value: construction_probe::Box<i32> = construction_probe::Box<i32>::make(7);
+    check(value.read() == 7);
+    let copy = construction_probe::Box<i32> { value.read() };
+    check(copy.read() == 7);
+    check(::construction_probe::Box<i32>::make(8).read() == 8);
+    construction_probe::reset();
+    check(construction_probe::record(9) == 9);
+    check(construction_probe::recorded() == 9);
+}
 
 test "C++ construction: deduced results compose with indexing calls and copies" {
     var values = vector { 1, 2, 3 };

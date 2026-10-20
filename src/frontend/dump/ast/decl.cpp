@@ -4,6 +4,7 @@ import :frontend.ast.control;
 import :frontend.ast.decl;
 import :frontend.ast.expr;
 import :frontend.ast.ids;
+import :frontend.ast.imports;
 import :frontend.ast.interop;
 import :frontend.ast.literal;
 import :frontend.ast.pattern;
@@ -14,6 +15,17 @@ import :frontend.dump.ast;
 import :source.text;
 import :support.visit;
 import std;
+
+auto ASTDumper::render_import_item(
+    const ASTImportItem& item,
+    std::string_view prefix,
+    bool is_last
+) noexcept -> void {
+    render_span_field(prefix, is_last && !item.alias_span, "name", item.name_span);
+    if (item.alias_span) {
+        render_span_field(prefix, is_last, "alias", *item.alias_span);
+    }
+}
 
 auto ASTDumper::render_module_import(
     ASTModuleImportID declaration_id,
@@ -76,20 +88,7 @@ auto ASTDumper::render_module_import(
                         format_dump_span(declaration.selection.span)
                     )
                 );
-                render_span_field(
-                    child_prefix(nested_prefix, true),
-                    !selection.item.alias_span.has_value(),
-                    "name",
-                    selection.item.name_span
-                );
-                if (selection.item.alias_span) {
-                    render_span_field(
-                        child_prefix(nested_prefix, true),
-                        true,
-                        "alias",
-                        *selection.item.alias_span
-                    );
-                }
+                render_import_item(selection.item, child_prefix(nested_prefix, true), true);
             },
             [&](ASTWildcardImport) noexcept {
                 append_line(
@@ -118,15 +117,7 @@ auto ASTDumper::render_module_import(
                     [&](const ASTImportItem& item,
                         std::string_view item_prefix,
                         bool item_last) noexcept {
-                        render_span_field(
-                            item_prefix,
-                            item_last && !item.alias_span,
-                            "name",
-                            item.name_span
-                        );
-                        if (item.alias_span) {
-                            render_span_field(item_prefix, item_last, "alias", *item.alias_span);
-                        }
+                        render_import_item(item, item_prefix, item_last);
                     }
                 );
             },
@@ -166,17 +157,12 @@ auto ASTDumper::render_cpp_header_import(
         }
         clause.selection.visit(
             Overloaded {
-                [&](const ASTCppSingleSelection& value) noexcept {
-                    render_span_field(using_prefix, true, "name", value.name);
+                [&](const ASTSingleImport& value) noexcept {
+                    render_import_item(value.item, using_prefix, true);
                 },
-                [&](const ASTCppListSelection& value) noexcept {
-                    for (const auto [index, name] : std::views::enumerate(value.names)) {
-                        render_span_field(
-                            using_prefix,
-                            index + 1uz == value.names.size(),
-                            "name",
-                            name
-                        );
+                [&](const ASTImportList& value) noexcept {
+                    for (const auto [index, item] : std::views::enumerate(value.names)) {
+                        render_import_item(item, using_prefix, index + 1uz == value.names.size());
                     }
                 },
                 [&](const ASTCppNamespaceSelection& value) noexcept {
@@ -232,7 +218,7 @@ auto ASTDumper::render_top_level_item(
             [&](const ASTGenericParameter& parameter,
                 std::string_view item_prefix,
                 bool item_last) noexcept {
-                if (parameter.kind == ASTGenericParameterKind::Type) {
+                if (parameter.kind == ASTGenericParameterKind::Type && parameter.bounds.empty()) {
                     render_span_field(item_prefix, item_last, "name", parameter.name_span);
                     return;
                 }
@@ -244,7 +230,20 @@ auto ASTDumper::render_top_level_item(
                     parameter.kind == ASTGenericParameterKind::Type ? "kind Type"
                                                                     : "kind FailureSet"
                 );
-                render_span_field(nested, true, "name", parameter.name_span);
+                render_span_field(nested, parameter.bounds.empty(), "name", parameter.name_span);
+                if (!parameter.bounds.empty()) {
+                    render_list(
+                        nested,
+                        true,
+                        "bounds",
+                        parameter.bounds,
+                        [&](ASTTypeID bound,
+                            std::string_view bound_prefix,
+                            bool bound_last) noexcept {
+                            render_type(bound, bound_prefix, bound_last);
+                        }
+                    );
+                }
             }
         );
     };

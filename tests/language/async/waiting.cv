@@ -1,4 +1,4 @@
-import std::async using { cancel_point, yield_once, wait_ready, close };
+import std::async using { cancel_point, yield_once, wait_ready, close }
 
 const async fn value(number: i32, delayed: bool) -> i32 {
     if delayed { await yield_once(); }
@@ -38,6 +38,15 @@ const async fn ready() -> bool {
     await close(first);
     await close(second);
     return index == 0 && !cancelled && repeated == (0usize, false);
+}
+
+const async fn discarded_wait() -> bool {
+    async let child = accepting();
+    await wait_ready(child);
+    cancel child;
+    let terminal = await wait_ready(child);
+    await close(child);
+    return terminal == (0usize, false);
 }
 
 const async fn accepting() {
@@ -104,6 +113,7 @@ const async fn exercise() => await pending()
     && await committed(true)
     && await committed(false)
     && await ready()
+    && await discarded_wait()
     && await cancelled_child()
     && await failed_child()
     && await release()
@@ -117,6 +127,6 @@ const test "Async waiting: terminal observation and explicit closure" {
     check(result);
 }
 
-export async fn run_waiting() {
+async fn run_waiting() {
     assert(await exercise() && result);
 }

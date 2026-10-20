@@ -1,4 +1,5 @@
-import .utf.scan using { UTF8State, push_utf8, feed_utf8, check_utf8_complete };
+import .utf.scan using { UTF8State, push_utf8, feed_utf8, check_utf8_complete }
+import std::simd.bytes using find_byte;
 
 export enum UTF8ErrorKind {
     InvalidLead,
@@ -139,7 +140,7 @@ export enum TextError {
     EmptySeparator
 }
 
-export struct Split {
+export struct TextSplit {
     found: bool,
     before: str,
     after: str
@@ -156,26 +157,40 @@ export const fn substring(text: str, start: usize, end: usize) -> str throw Text
     return str::from_utf8_unchecked(text.bytes.slice(start, end));
 }
 
-export const fn starts_with(text: str, prefix: str) -> bool {
-    if prefix.byte_length() > text.byte_length() { return false; }
-    for index in 0..prefix.byte_length() {
-        if text.bytes[index] != prefix.bytes[index] { return false; }
+private const fn matches_at(bytes: [u8], start: usize, pattern: [u8]) -> bool {
+    var offset: usize = 0;
+    while pattern.length() - offset >= 32 {
+        if (u8x32::load(bytes, start + offset) != u8x32::load(pattern, offset)).any() {
+            return false;
+        }
+        offset += 32;
+    }
+    while offset < pattern.length() {
+        if bytes[start + offset] != pattern[offset] { return false; }
+        ++offset;
     }
     return true;
 }
 
-export const fn split_once(text: str, separator: str) -> Split throw TextError {
+export const fn starts_with(text: str, prefix: str) -> bool {
+    return prefix.byte_length() <= text.byte_length() && matches_at(text.bytes, 0, prefix.bytes);
+}
+
+export const fn ends_with(text: str, suffix: str) -> bool {
+    if suffix.byte_length() > text.byte_length() { return false; }
+    return matches_at(text.bytes, text.byte_length() - suffix.byte_length(), suffix.bytes);
+}
+
+export const fn split_once(text: str, separator: str) -> TextSplit throw TextError {
     if separator.is_empty() { throw TextError::EmptySeparator; }
     if separator.byte_length() <= text.byte_length() {
-        for start in 0usize..=text.byte_length() - separator.byte_length() {
-            var matches = true;
-            for offset in 0..separator.byte_length() {
-                if text.bytes[start + offset] != separator.bytes[offset] {
-                    matches = false;
-                    break;
-                }
-            }
-            if matches {
+        let candidates_end = text.byte_length() - separator.byte_length() + 1;
+        var start: usize = 0;
+        while start < candidates_end {
+            start += find_byte(text.bytes.slice(start, candidates_end), separator.bytes[0]);
+            if start == candidates_end { break; }
+            if matches_at(text.bytes, start, separator.bytes) {
+                // A complete match of valid UTF-8 starts and ends at character boundaries.
                 return {
                     found: true,
                     before: str::from_utf8_unchecked(text.bytes.slice(0, start)),
@@ -184,6 +199,7 @@ export const fn split_once(text: str, separator: str) -> Split throw TextError {
                     )
                 };
             }
+            ++start;
         }
     }
     return {
@@ -205,22 +221,22 @@ export const fn split(text: str, separator: str) -> Vector<String> throw TextErr
     }
 }
 
-export enum SplitField {
+export enum TextSplitField {
     Value(str),
     End
 }
 
 // Keep the same source and separator for one traversal. Only offsets are stored.
-export class SplitCursor {
+export class TextSplitCursor {
     offset: usize,
     finished: bool,
 
-    const fn new() -> SplitCursor => {
+    const fn new() -> TextSplitCursor => {
         offset: 0,
         finished: false
     };
 
-    const fn next(&self, text: str, separator: str) -> SplitField throw TextError {
+    const fn next(&self, text: str, separator: str) -> TextSplitField throw TextError {
         if separator.is_empty() { throw TextError::EmptySeparator; }
         if self.finished { return .End; }
         let part = split_once(substring(text, self.offset, text.byte_length())?, separator)?;
@@ -237,8 +253,9 @@ export class SplitCursor {
 export const fn lines(text: str) -> Vector<String> {
     var result: Vector<String> = [];
     var start: usize = 0;
-    for end in 0..text.byte_length() {
-        if text.bytes[end] != 0x0a { continue; }
+    while start < text.byte_length() {
+        let end = start + find_byte(text.bytes.slice(start, text.byte_length()), 0x0a);
+        if end == text.byte_length() { break; }
         var limit = end;
         if limit > start && text.bytes[limit - 1] == 0x0d { --limit; }
         result.push(str::from_utf8_unchecked(text.bytes.slice(start, limit)) as String);

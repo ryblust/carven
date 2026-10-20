@@ -1,1 +1,1 @@
-export fn wildcard_value() -> i32 => 42;
+fn wildcard_value() -> i32 => 42;

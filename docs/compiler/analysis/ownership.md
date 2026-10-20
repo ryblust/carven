@@ -161,10 +161,12 @@ identity.
 Body evaluation and calls share one referent graph. A place names a storage node
 and its inline field or array suffix. Selecting a checked Vector element follows
 an owns edge immediately. Checked element type participates in selection identity,
-including enum payloads with different types. Vector elements contain no loans
-or callable storage and cannot be taken through their fields. Availability follows
-all possible owning sources in the current flow, including when a retained query
-domain is reused before a local declaration initializes its owner.
+including enum payloads with different types. Sequence loans retain their source
+type, so a slice into a Vector follows the same owns edge when selecting an element.
+Vector elements contain no loans or callable storage and cannot be taken through
+their fields. Availability follows all possible owning sources in the current
+flow, including when a retained query domain is reused before a local declaration
+initializes its owner.
 
 Checked input shapes and body operations determine whether evaluation observes
 storage relations. Input loans and captures, Take, non-scalar assignments, and
@@ -268,7 +270,7 @@ scalar snapshot writes do not reconstruct their ancestors. Stable selection and
 loan checks apply to every write.
 
 A query answer retains its referent domain, published topology, reachable write
-effects, and normal, typed-failure, and test-stop completions.
+effects, and normal, typed-failure, and stopped completions.
 Effects exist even when a function writes and then diverges without a completion.
 They preserve structural invalidation, ordinary backing writes, and Take obligations.
 Obtaining Write access is an independent guard obligation even for a known function
@@ -312,30 +314,32 @@ singleton target.
 
 The ownership solver records a dependency whenever an active query reads a call
 answer. Recursive calls read the current answer; changed semantic answers schedule
-their readers again. Normal, typed-failure and test-stop completions and reachable
-effects join monotonically.
+their readers again. Normal, typed-failure and stopped completions and reachable
+effects join monotonically. Pending queries follow the existing call graph's
+dependency order, with FIFO scheduling inside each strongly connected component.
 Retained identities stay fixed; graph facts grow monotonically. Completion states
 expand to the shared referent domain, including exits temporarily absent while a
 callee answer is pending. Finite source sites, inline paths, interface roles,
 and graph relations bound query identity. Solver-growth budgets measure work
 for representative source families. Loop headers accumulate entry and reached
 backedges, including while a pending call has no answer.
-Break, return, failure, and test-stop exits accumulate alongside the header.
+Break, return, failure, and stopped exits accumulate alongside the header.
 Convergence requires both state equality and an unchanged topology revision;
 new owns edges, owning sources, and many upgrades affect the next transfer even
 if the current object rows happen to be equal.
 
 Each evaluation returns its transfer answer, diagnosis, and return-copy
 observations. A query retains its latest diagnosis while the solver accumulates
-an inductive upper bound. For a candidate answer `A` and a fresh transfer
-`F(A)`, closure means `join(A, F(A)) == A` with unchanged topology and input
-revisions.
+an inductive upper bound. A transfer `F(D)` reads dependency answers `D`; the
+accumulated answer `A` covers that transfer after the join. Its closure certificate
+requires unchanged input, topology, and dependency answers.
 
-Answer, input, or topology growth invalidates closure and schedules reevaluation
-of the query and its readers. An empty worklist requires every query's closure
-certificate. Each retained diagnosis then observes the final callee answers and
-checks a complete transfer covered by its accumulated answer. Semantic equality
-excludes diagnostic origins and locations witnessing a Take.
+Input or topology growth invalidates the query's closure. Answer growth
+invalidates its readers, including the query itself when it read its own answer.
+These invalidations schedule reevaluation. An empty worklist requires every
+query's closure certificate. Each retained diagnosis then observes the final
+callee answers and checks a complete transfer covered by its accumulated answer.
+Semantic equality excludes diagnostic origins and locations witnessing a Take.
 Loops retain the witnesses selected by the converged join even when no semantic
 fact changes.
 
@@ -356,8 +360,7 @@ alternatives retain the union of candidate projections. Their arms pin enclosing
 and leaving an arm restores the enclosing selection environment.
 Branches merge only real successors; loops include entry, backedges, and exits.
 Diagnostic witnesses do not distinguish execution states.
-Return, failure, and test-stop states have separate transfer paths. Test stop
-propagates through Carven calls to the active test body.
+Return, failure, and stopped states have separate transfer paths. Stopping propagates through Carven calls to the invocation or active test body.
 Equal callable-view copies retain their target relationships rather than borrowing
 the intermediate view storage. Expired callable backing is diagnosed before any
 attempt to interpret its former capture state.

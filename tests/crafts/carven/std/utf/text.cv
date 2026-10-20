@@ -6,10 +6,11 @@ import std::utf using {
     split,
     lines,
     starts_with,
-    SplitCursor,
-    SplitField,
+    ends_with,
+    TextSplitCursor,
+    TextSplitField,
     TextError,
-};
+}
 
 private const fn copied_text() -> String throw UTF8Error {
     let bytes = [0xffu8, 0x61, 0, 0xc3, 0xa9, 0xe4, 0xbd, 0xa0, 0xff];
@@ -41,10 +42,10 @@ private const fn changed_backing() -> String {
 }
 
 private const fn fields(text: str, separator: str) -> Vector<String> throw TextError {
-    var cursor = SplitCursor::new();
+    var cursor = TextSplitCursor::new();
     var result: Vector<String> = [];
     while {
-        let field: SplitField = cursor.next(text, separator)?;
+        let field: TextSplitField = cursor.next(text, separator)?;
         match field {
             .End => break,
             .Value(value) => result.push(value as String),
@@ -113,7 +114,7 @@ test "UTF8: borrowed and owning text construction report invalid bytes" {
     let input: [u8; 2] = [0xe2, 0x28];
     let bytes = input.slice();
     let expected = UTF8Error {
-        kind:.InvalidContinuation,
+        kind: .InvalidContinuation,
         offset: 1,
         sequence_start: 0
     };
@@ -149,6 +150,22 @@ private const fn processed_text() -> bool throw TextError {
     if substring(text, 9, 13)? != "😀" { return false; }
     if !substring(text, 3, 3)?.is_empty() { return false; }
     if !starts_with(text, "aé") || starts_with(text, "é") { return false; }
+    let long = "0123456789abcdef0123456789abcdef世界";
+    if !starts_with(long, "0123456789abcdef0123456789abcdef世")
+        || starts_with(long, "0123456789abcdef0123456789abcdef界")
+        || !ends_with(long, "123456789abcdef0123456789abcdef世界")
+        || ends_with(long, "123456789abcdef0123456789abcdef世") {
+        return false;
+    }
+    if !starts_with(text, "") || !ends_with(text, "") || ends_with("", text) { return false; }
+    let long_pair = split_once(long, "世界")?;
+    if !long_pair.found || long_pair.before.byte_length() != 32 || !long_pair.after.is_empty() {
+        return false;
+    }
+    let long_lines = lines("0123456789abcdef0123456789abcdef世界\r\nlast\n");
+    if long_lines.length() != 2 || long_lines[0] != long || long_lines[1] != "last" {
+        return false;
+    }
     let pair = split_once("key=世界=value", "=")?;
     if !pair.found || pair.before != "key" || pair.after != "世界=value" { return false; }
     let absent = split_once(text, "missing")?;

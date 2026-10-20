@@ -1,13 +1,12 @@
-import std::io using Read;
-import <carven/std/net/native.hpp>;
+import std::async using Operation;
+import std::io using ReadResult;
+import <carven/std/net/native.hpp> using carven::standard::net;
 
-export struct ConnectionView {
-    native: ::carven::standard::net::View
+export struct NetConnectionView {
+    native: net::View
 }
 
-export(cpp) fn borrow(native: ::carven::standard::net::View) -> ConnectionView => {
-    native: native
-};
+export(cpp) const fn borrow(native: net::View) -> NetConnectionView => { native: native };
 
 export enum NetError {
     System(i32),
@@ -16,23 +15,7 @@ export enum NetError {
     NoProgress
 }
 
-private import(cpp) async fn native_read(
-    connection: ::carven::standard::net::View,
-    limit: usize
-) -> ::carven::standard::net::ReadResult = ::carven::standard::net::read;
-
-private import(cpp) async fn native_write(
-    connection: ::carven::standard::net::View,
-    &&bytes: Vector<u8>,
-    offset: usize
-) -> ::carven::standard::net::WriteResult = ::carven::standard::net::write;
-
-private import(cpp) async fn native_write_all(
-    connection: ::carven::standard::net::View,
-    &&bytes: Vector<u8>
-) -> ::carven::standard::net::WriteResult = ::carven::standard::net::write_all;
-
-private fn validate(kind: u8, code: i32) throw NetError {
+private const fn validate(kind: u8, code: i32) throw NetError {
     match kind {
         0 => {},
         1 => throw NetError::System(code),
@@ -44,25 +27,28 @@ private fn validate(kind: u8, code: i32) throw NetError {
 }
 
 export async fn read(
-    connection: ConnectionView,
+    connection: NetConnectionView,
     max_bytes: usize
-) -> Read<Vector<u8>> throw NetError {
+) -> ReadResult<Vector<u8>> throw NetError {
     assert(max_bytes > 0);
-    var result = await native_read(connection.native, max_bytes);
+    let pending: Operation<net::ReadResult> = net::read(connection.native, max_bytes);
+    var result = await pending;
     validate(result.error as u8, result.code as i32)?;
-    if result.end { return .End; }
+    if result.end as bool { return .End; }
     return .Data((&result).take_bytes() as Vector<u8>);
 }
 
-export async fn write(connection: ConnectionView, &&bytes: Vector<u8>) -> usize throw NetError {
+export async fn write(connection: NetConnectionView, &&bytes: Vector<u8>) -> usize throw NetError {
     if bytes.is_empty() { return 0; }
-    let result = await native_write(connection.native, &&bytes, 0);
+    let pending: Operation<net::WriteResult> = net::write(connection.native, &&bytes, 0usize);
+    let result = await pending;
     validate(result.error as u8, result.code as i32)?;
     return result.count as usize;
 }
 
-export async fn write_all(connection: ConnectionView, &&bytes: Vector<u8>) throw NetError {
+export async fn write_all(connection: NetConnectionView, &&bytes: Vector<u8>) throw NetError {
     if bytes.is_empty() { return; }
-    let result = await native_write_all(connection.native, &&bytes);
+    let pending: Operation<net::WriteResult> = net::write_all(connection.native, &&bytes);
+    let result = await pending;
     validate(result.error as u8, result.code as i32)?;
 }

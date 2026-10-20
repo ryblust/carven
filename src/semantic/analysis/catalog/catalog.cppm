@@ -29,11 +29,12 @@ struct CatalogFunctionForm final {
 
 struct CatalogStructForm final {
     StructID structure;
-    std::vector<FunctionID> operations;
+    std::vector<CatalogSymbolID> operations;
 };
 
 struct CatalogGenericForm final {
     GenericDeclarationID definition;
+    std::vector<CatalogSymbolID> operations;
 };
 
 struct CatalogEnumForm final {
@@ -53,8 +54,10 @@ struct CatalogConstantForm final {
 
 enum class MemberVisibility { Public, Private };
 
+using ClassDeclarationRef = std::variant<StructID, GenericDeclarationID>;
+
 struct ClassOperation final {
-    StructID owner;
+    ClassDeclarationRef owner;
     MemberVisibility visibility;
     bool receiver;
 };

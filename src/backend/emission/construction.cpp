@@ -88,7 +88,11 @@ auto TargetRenderer::build_type_layouts(TargetTypeID type) noexcept -> void {
         }
         if (const auto* query = std::get_if<TargetDecltypeType>(&value.value)) {
             auto construction = LayoutConstruction {.renderer = *this};
-            if (!traverse_target_expression(query->expression(), construction)) {
+            if (!traverse_target_expression(
+                    query->expression(),
+                    construction,
+                    TargetExpressionRole::Operand
+                )) {
                 invariant_violation("target type query layout traversal did not complete");
             }
         }

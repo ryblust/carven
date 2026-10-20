@@ -1,4 +1,4 @@
-import std::async using { Operation, yield_once };
+import std::async using { Operation, yield_once }
 
 async fn leaf(value: i32) -> i32 {
     await yield_once();
@@ -103,6 +103,20 @@ async fn pending_return(&trace: i32) -> i32 {
     async let child = finish_child(&trace);
     cancel child;
     return select_return(&trace);
+}
+
+fn rejected_step(&trace: i32) throw Failure {
+    trace = trace * 10 + 9;
+    throw Failure::First;
+}
+
+async fn returning_before_step(&trace: i32) -> i32 throw Failure {
+    async let child = finish_child(&trace);
+    cancel child;
+    for ; true; rejected_step(&trace)? {
+        if true { return select_return(&trace); }
+    }
+    return 0;
 }
 
 async fn header_child_observe() -> i32 {
@@ -260,7 +274,7 @@ async fn operand_recovery(reject: bool) -> i32 {
     return result * 1000 + trace;
 }
 
-export fn typed_relay(&&pending: Operation<i32>) -> Operation<i32> => &&pending;
+fn typed_relay(&&pending: Operation<i32>) -> Operation<i32> => &&pending;
 
 async fn typed_forward(&&pending: Operation<i32, throw Failure>) -> i32 throw Failure {
     return await pending?;
@@ -385,6 +399,14 @@ async fn run_contracts() {
     assert(await wrapper_backing() == 20);
     var trace: i32 = 0;
     assert(await pending_return(&trace) == 1);
+    assert(trace == 12);
+    trace = 0;
+    let selected = try {
+        await returning_before_step(&trace)?
+    } catch {
+        Failure(_) => -1,
+    };
+    assert(selected == 1);
     assert(trace == 12);
     assert(await header_child_observe() == 25);
     assert(await header_child_continue() == 2);

@@ -13,6 +13,22 @@ import std;
 namespace {
 
 const TestSuite suite([] static noexcept {
+    "Generic capabilities: unknown and unsupported operands require declared evidence"_test =
+        [] static noexcept {
+            expect_diagnostic(
+                analyze_test_errors(R"(
+                    fn invalid<T>(value: T) -> u64 => Hash::hash(value);
+                )"),
+                DiagnosticCode::TypeGenericArguments
+            );
+            expect_diagnostic(
+                analyze_test_errors(R"(
+                    fn hash<T: Hash>(value: T) -> u64 => Hash::hash(value);
+                    fn invalid() -> u64 => hash<f64>(1.0);
+                )"),
+                DiagnosticCode::TypeGenericArguments
+            );
+        };
     "Generic static calls: canonical environments close completed operation dependencies"_test =
         [] static noexcept {
             for (const auto initializer : std::array<std::string_view, 3> {
@@ -267,40 +283,47 @@ const TestSuite suite([] static noexcept {
             expect(diagnostics.empty());
         };
 
-    "Generic definitions: unused heads enforce their type and storage contracts"_test =
-        [] static noexcept {
-            constexpr auto invalid = std::array {
-                std::pair {"struct Box<T, T> { value: T }", DiagnosticCode::TypeGenericDefinition},
-                std::pair {
-                    "struct Pair<T, U> {} struct Box<T> { value: Pair<T> }",
-                    DiagnosticCode::TypeGenericArguments
-                },
-                std::pair {"struct Box<T> { value: Box<T> }", DiagnosticCode::TypeRecursiveStorage},
-                std::pair {
-                    "struct Box<T> { next: ptr<Box<[T; 1]>> }",
-                    DiagnosticCode::TypeGenericExpansion
-                },
-                std::pair {
-                    "fn identity<T>(value: T) -> T => value;",
-                    DiagnosticCode::TypeGenericDefinition
-                },
-                std::pair {
-                    "class Box<T> { value: T, fn read(self) -> T => self.value; }",
-                    DiagnosticCode::TypeGenericDefinition
-                },
-                std::pair {"enum Code<T> { Ready, Failed }", DiagnosticCode::TypeGenericDefinition},
-            };
-            for (const auto& [text, code] : invalid) {
-                expect_diagnostic(analyze_test_errors(text), code);
-            }
-            const auto accepted = analyze_test_errors(R"(
+    "Generic definitions: unused heads enforce their type and storage contracts"_test = [] static noexcept {
+        constexpr auto invalid = std::array {
+            std::pair {"struct Box<T, T> { value: T }", DiagnosticCode::TypeGenericDefinition},
+            std::pair {
+                "struct Pair<T, U> {} struct Box<T> { value: Pair<T> }",
+                DiagnosticCode::TypeGenericArguments
+            },
+            std::pair {"struct Box<T> { value: Box<T> }", DiagnosticCode::TypeRecursiveStorage},
+            std::pair {
+                "struct Box<T> { next: ptr<Box<[T; 1]>> }",
+                DiagnosticCode::TypeGenericExpansion
+            },
+            std::pair {
+                "fn identity<T>(value: T) -> T => value;",
+                DiagnosticCode::TypeGenericDefinition
+            },
+            std::pair {
+                "class Box<T> { value: T, fn read(self) -> T => self.value; }",
+                DiagnosticCode::TypeGenericDefinition
+            },
+            std::pair {"enum Code<T> { Ready, Failed }", DiagnosticCode::TypeGenericDefinition},
+            std::pair {
+                "enum Box<T> { Hold(T) } fn wrap<T>(value: T) -> Box<T> { let create = Box<T>::Hold; return create(value); }",
+                DiagnosticCode::TypeGenericDefinition
+            },
+            std::pair {
+                "enum Maybe<T> { None, Some(T) } fn inspect<T>(value: Maybe<T>) { match value { .Some(_) => {} } }",
+                DiagnosticCode::MatchNonExhaustive
+            },
+        };
+        for (const auto& [text, code] : invalid) {
+            expect_diagnostic(analyze_test_errors(text), code);
+        }
+        const auto accepted = analyze_test_errors(R"(
             struct Node<T> { value: T, next: ptr<Node<T>> }
             struct Left<T, U> { next: ptr<Right<U, T>> }
             struct Right<T, U> { next: ptr<Left<U, T>> }
             struct VoidPointer<T> { value: ptr<void> }
         )");
-            expect(accepted.empty());
-        };
+        expect(accepted.empty());
+    };
 
     "Generic tuples: symbolic products retain unit slots and enforce storage boundaries"_test =
         [] static noexcept {
@@ -519,13 +542,6 @@ const TestSuite suite([] static noexcept {
             struct Payload<U> { value: U }
         )")
                        .empty());
-            expect_diagnostic(
-                analyze_test_errors(R"(
-            struct T {}
-            struct Box<T> { callback: fn(T) -> T }
-        )"),
-                DiagnosticCode::TypeGenericDefinition
-            );
             expect_diagnostic(
                 analyze_test_errors(R"(
             enum T { One = 1 }

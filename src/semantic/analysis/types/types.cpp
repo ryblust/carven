@@ -291,69 +291,57 @@ auto resolve_named_value(
             "range element must be an integer type"
         ));
     }
-    if (named.global_root.has_value() || !selected_entity) {
-        auto components = std::vector<Span>();
-        for (const auto& component : named.components) {
-            components.push_back(component.name_span);
+    auto native_name =
+        lookup_cpp_name(draft, catalog, import_usage, module_id, source_name_path(named));
+    if (!native_name.has_value()) {
+        co_return std::unexpected(native_name.error());
+    }
+    if (native_name->has_value()) {
+        auto arguments = std::vector<ConstructionTypeRef>();
+        for (const auto& argument : named.arguments) {
+            const auto selected_type = require_type_argument(draft, module_id, argument);
+            if (!selected_type) {
+                co_return std::unexpected(selected_type.error());
+            }
+            auto resolved = (co_await resolve_source_type(
+                draft,
+                catalog,
+                import_usage,
+                module_id,
+                syntax,
+                *selected_type,
+                resolve_extent,
+                requests,
+                generic_context,
+                observations
+            ));
+            if (!resolved.has_value()) {
+                co_return std::unexpected(resolved.error());
+            }
+            arguments.push_back(*resolved);
         }
-        auto name = lookup_cpp_name(
-            draft,
-            catalog,
-            import_usage,
-            module_id,
-            named.global_root.has_value() ? CppNameLookup::Global : CppNameLookup::ModuleScope,
-            components
-        );
-        if (!name.has_value()) {
-            co_return std::unexpected(name.error());
-        }
-        if (name->has_value()) {
-            auto arguments = std::vector<ConstructionTypeRef>();
-            for (const auto& argument : named.arguments) {
-                const auto selected_type = require_type_argument(draft, module_id, argument);
-                if (!selected_type) {
-                    co_return std::unexpected(selected_type.error());
+        if (std::ranges::any_of(arguments, [](ConstructionTypeRef type) static noexcept {
+                return !std::holds_alternative<TypeID>(type);
+            })) {
+            co_return ConstructionTypeRef {draft.intern_generic_type(
+                GenericCppNamedType {
+                    .name = std::move(**native_name),
+                    .arguments = std::move(arguments)
                 }
-                auto resolved = (co_await resolve_source_type(
-                    draft,
-                    catalog,
-                    import_usage,
-                    module_id,
-                    syntax,
-                    *selected_type,
-                    resolve_extent,
-                    requests,
-                    generic_context,
-                    observations
-                ));
-                if (!resolved.has_value()) {
-                    co_return std::unexpected(resolved.error());
-                }
-                arguments.push_back(*resolved);
-            }
-            if (std::ranges::any_of(arguments, [](ConstructionTypeRef type) static noexcept {
-                    return !std::holds_alternative<TypeID>(type);
-                })) {
-                co_return ConstructionTypeRef {draft.intern_generic_type(
-                    GenericCppNamedType {
-                        .name = std::move(**name),
-                        .arguments = std::move(arguments)
-                    }
-                )};
-            }
-            auto concrete_arguments = std::vector<TypeID>();
-            for (const auto argument : arguments) {
-                concrete_arguments.push_back(std::get<TypeID>(argument));
-            }
-            co_return ConstructionTypeRef {draft.intern_type(
-                {.value = CppTypeValue {
-                     .form = CppNamedType {
-                         .name = std::move(**name),
-                         .arguments = std::move(concrete_arguments)
-                     }
-                 }}
             )};
         }
+        auto concrete_arguments = std::vector<TypeID>();
+        for (const auto argument : arguments) {
+            concrete_arguments.push_back(std::get<TypeID>(argument));
+        }
+        co_return ConstructionTypeRef {draft.intern_type(
+            {.value = CppTypeValue {
+                 .form = CppNamedType {
+                     .name = std::move(**native_name),
+                     .arguments = std::move(concrete_arguments)
+                 }
+             }}
+        )};
     }
 
     if (named.components.size() != 1uz) {
@@ -539,65 +527,6 @@ auto resolve_function_type(
     const GenericTypeContext* generic_context,
     SourceObservation* observations
 ) noexcept -> AnalysisTask<ConstructionTypeRef> {
-    const auto concrete_callable_type = [&](ConstructionTypeRef type,
-                                            Span at) noexcept -> AnalysisTask<ConstructionTypeRef> {
-        const auto* generic = std::get_if<GenericTypeID>(&type);
-        if (!generic) {
-            co_return type;
-        }
-        auto pending = std::vector<ConstructionTypeRef> {*generic};
-        auto visited = std::flat_set<ConstructionTypeRef>();
-        auto dependencies = std::flat_set<GenericDeclarationID>();
-        while (!pending.empty()) {
-            const auto current = pending.back();
-            pending.pop_back();
-            if (!visited.insert(current).second) {
-                continue;
-            }
-            const auto* pending_generic = std::get_if<GenericTypeID>(&current);
-            if (!pending_generic) {
-                continue;
-            }
-            const auto expression = draft.generic_type_copy(*pending_generic);
-            if (std::holds_alternative<GenericTypeParameter>(expression)) {
-                co_return std::unexpected(fail(
-                    draft,
-                    module_id,
-                    at,
-                    DiagnosticCode::TypeGenericDefinition,
-                    "callable view signatures require concrete types"
-                ));
-            }
-            if (const auto* application = std::get_if<GenericNominalApplication>(&expression)) {
-                dependencies.insert(application->definition);
-            }
-            visit_generic_type_children(expression, [&](ConstructionTypeRef child) noexcept {
-                pending.push_back(child);
-            });
-        }
-        if (requests) {
-            for (const auto definition : dependencies) {
-                auto available = co_await requests->ensure_declaration(
-                    catalog.generic_symbol(definition),
-                    module_id,
-                    at
-                );
-                if (!available) {
-                    co_return std::unexpected(available.error());
-                }
-            }
-        }
-        auto resolved = draft.resolve_generic_type(
-            *generic,
-            generic_context->definition,
-            {},
-            draft.append_source_origin(draft.module_source(module_id), at)
-        );
-        if (!resolved) {
-            co_return std::unexpected(resolved.error());
-        }
-        co_return ConstructionTypeRef(*resolved);
-    };
     auto parameters = std::vector<ConstructionCallableParameter>();
     parameters.reserve(function.parameters.size());
     for (const auto& parameter : function.parameters) {
@@ -616,14 +545,10 @@ auto resolve_function_type(
         if (!type.has_value()) {
             co_return std::unexpected(type.error());
         }
-        auto concrete = co_await concrete_callable_type(*type, syntax.type(parameter.type).span);
-        if (!concrete) {
-            co_return std::unexpected(concrete.error());
-        }
         parameters.push_back({
             .stage = ParameterStage::Runtime,
             .access = semantic_access_mode(parameter.access),
-            .type = *concrete,
+            .type = *type,
         });
     }
     auto result = (co_await resolve_source_type(
@@ -640,11 +565,6 @@ auto resolve_function_type(
     ));
     if (!result.has_value()) {
         co_return std::unexpected(result.error());
-    }
-    auto concrete_result =
-        co_await concrete_callable_type(*result, syntax.type(function.result_type).span);
-    if (!concrete_result) {
-        co_return std::unexpected(concrete_result.error());
     }
     auto failures = ConstructionFailureRef(draft.empty_failure_set());
     if (function.throw_clause.has_value()) {
@@ -665,25 +585,7 @@ auto resolve_function_type(
         }
         failures = *resolved;
     }
-    if (!std::holds_alternative<FailureSetID>(failures)) {
-        co_return std::unexpected(fail(
-            draft,
-            module_id,
-            function.throw_clause->span,
-            DiagnosticCode::TypeGenericDefinition,
-            "callable view signatures require a concrete failure set"
-        ));
-    }
-    const auto bound = draft.append_construction_type(
-        ConstructionType {
-            .value = ConstructionCallableViewTypeValue {
-                .parameters = std::move(parameters),
-                .result = *concrete_result,
-                .failures = failures,
-            },
-        }
-    );
-    co_return ConstructionTypeRef {draft.canonicalize_declared_type(bound)};
+    co_return make_callable_view_type(draft, std::move(parameters), *result, failures);
 }
 
 auto resolve_type_value(
@@ -1201,6 +1103,9 @@ auto resolve_generic_type_contents(
                 if (!concrete) {
                     co_return std::unexpected(concrete.error());
                 }
+                if (const auto* generic = std::get_if<GenericTypeID>(&*concrete)) {
+                    co_return *generic;
+                }
                 co_return draft.intern_generic_type(draft.canonicalize_declared_type(*concrete));
             },
         }
@@ -1331,44 +1236,26 @@ auto resolve_source_type_application(
     const GenericTypeContext* generic_context,
     SourceObservation* observations
 ) noexcept -> AnalysisTask<ConstructionTypeRef> {
-    auto operand = application.operand_id;
-    auto components = std::vector<ASTTypeNameComponent>();
-    auto global_root = std::optional<Span>();
-    while (true) {
-        const auto& expression = syntax.expression(operand);
-        if (const auto* group = std::get_if<ASTGroupExpr>(&expression.value)) {
-            operand = group->expression;
-        } else if (const auto* member = std::get_if<ASTMemberExpr>(&expression.value);
-                   member && member->op == ASTMemberOperator::Scope) {
-            components.push_back({.name_span = member->name_span});
-            operand = member->operand_id;
-        } else if (const auto* name = std::get_if<ASTNameExpr>(&expression.value)) {
-            components.push_back({.name_span = name->name_span});
-            break;
-        } else if (const auto* native = std::get_if<ASTCppNameExpr>(&expression.value)) {
-            global_root = native->global_root;
-            for (const auto component : std::views::reverse(native->components)) {
-                components.push_back({.name_span = component});
-            }
-            break;
-        } else {
-            co_return std::unexpected(fail(
-                draft,
-                module_id,
-                application.arguments_span,
-                DiagnosticCode::TypeGenericArguments,
-                "type application requires a declared type name"
-            ));
-        }
+    const auto path = source_name_path(syntax, application.operand_id);
+    if (!path) {
+        co_return std::unexpected(fail(
+            draft,
+            module_id,
+            application.arguments_span,
+            DiagnosticCode::TypeGenericArguments,
+            "type application requires a declared type name"
+        ));
     }
-    std::ranges::reverse(components);
     const auto named = ASTNamedType {
-        .global_root = global_root,
-        .components = std::move(components),
+        .global_root = path->global_root,
+        .components = path->components | std::views::transform([](Span component) static noexcept {
+                          return ASTTypeNameComponent {.name_span = component};
+                      })
+            | std::ranges::to<std::vector>(),
         .arguments = application.arguments,
     };
     const auto span = Span::from_bounds(
-        syntax.expression(operand).span.start(),
+        path->global_root.value_or(path->components.front()).start(),
         application.arguments_span.end()
     );
     if (generic_context) {

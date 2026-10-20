@@ -1,0 +1,87 @@
+import std::build using BuildError;
+
+import std::build.artifacts using {
+    compile_objects,
+    index_implementations,
+    index_providers,
+    record_providers,
+    required_implementations,
+}
+
+import std::compiler using CompiledImplementation;
+import std::fs using write_text;
+import std::process using environment;
+
+test "Build objects: reuse follows source and header contents" {
+    try {
+        let command: Vector<String> = [environment("CARVEN_TEST_CXX")?, "-std=c++20"];
+        let sources: Vector<String> = ["first.cpp", "second.cpp", "first.cpp"];
+        write_text("shared 值 $#.hpp", "#define VALUE 7\n")?;
+        write_text("first.cpp", "#include \"shared 值 $#.hpp\"\nint first() { return VALUE; }\n")?;
+        write_text(
+            "second.cpp",
+            "#include \"shared 值 $#.hpp\"\nint second() { return VALUE + 2; }\n"
+        )?;
+
+        let first = compile_objects(command, sources, "objects", "test", true)?;
+        require(first.files.length() == 2);
+        check(first.compiled == 2);
+        var implementations: Vector<CompiledImplementation> = [
+            {
+                file: "first.cpp",
+                source: "first.cpp",
+                dependencies: []
+            },
+            {
+                file: "second.cpp",
+                source: "second.cpp",
+                dependencies: []
+            },
+        ];
+        let candidates: Vector<String> = ["shared 值 $#.cpp", "unused.cpp"];
+        let provider_index = index_providers(candidates);
+        var implementation_index = index_implementations(implementations);
+        let providers = record_providers(
+            first.files,
+            candidates,
+            provider_index,
+            &implementations,
+            &implementation_index
+        );
+        require(providers.length() == 1);
+        check(providers[0] == "shared 值 $#.cpp");
+        for source in ["first.cpp", "second.cpp"] {
+            let closure = required_implementations(
+                [source as String],
+                implementations,
+                implementation_index
+            )?;
+            require(closure.length() == 2);
+            check(closure[1] == "shared 值 $#.cpp");
+        }
+        let reused = compile_objects(command, ["first.cpp"], "objects", "test", true)?;
+        require(reused.files.length() == 1);
+        check(reused.compiled == 0);
+        check(reused.files[0].path == first.files[0].path);
+
+        write_text("shared 值 $#.hpp", "#define VALUE 9\n")?;
+        let changed = compile_objects(command, sources, "objects", "test", true)?;
+        check(changed.compiled == 2);
+        let unchanged = compile_objects(command, sources, "objects", "test", true)?;
+        check(unchanged.compiled == 0);
+
+        write_text("first.cpp", "#error compilation must fail\n")?;
+        let rejected = try {
+            let _ = compile_objects(command, sources, "objects", "test", true)?;
+            false
+        } catch {
+            BuildError(_) => true,
+        };
+        check(rejected);
+        write_text("first.cpp", "#include \"shared 值 $#.hpp\"\nint first() { return VALUE; }\n")?;
+        let repaired = compile_objects(command, sources, "objects", "test", true)?;
+        check(repaired.compiled == 1);
+    } catch {
+        _ => fail("object compilation must preserve its reuse contract"),
+    }
+}

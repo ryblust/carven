@@ -1,11 +1,31 @@
-import std::async using yield_once;
-import "async/cleanup.hpp" using async_cleanup_probe::{ Lease, resource_released };
-import "lifetimes/tail_outcomes.hpp" using tail_outcome_probe::{ Guard, record };
+import std::async using { cancel_point, close, yield_once }
 
-import(cpp) async fn cleanup_cancelled();
+import "async/cleanup.hpp" using async_cleanup_probe::{
+    Lease,
+    StopOnRelease,
+    resource_released,
+    stop_value,
+}
 
-export enum Failure {
+import "lifetimes/tail_outcomes.hpp" using tail_outcome_probe::{ Guard, Tracked, record }
+
+import(cpp) async fn cleanup_cancelled() = ::cleanup_cancelled;
+import(cpp) async fn cleanup_stopped() = ::cleanup_stopped;
+import(cpp) async fn cleanup_value() -> i32 = ::cleanup_value;
+import(cpp) async fn cleanup_wait_for_release() = ::cleanup_wait_for_release;
+import(cpp) async fn cleanup_observe_release() = ::cleanup_observe_release;
+import(cpp) async fn cleanup_observe_cancellation() = ::cleanup_observe_cancellation;
+import(cpp) fn cleanup_prefix(depth: i32) -> i32 = ::cleanup_prefix;
+import(cpp) fn cleanup_iteration(value: i32) -> i32 = ::cleanup_iteration;
+import(cpp) fn cleanup_stopped_value(value: i32) -> i32 = ::cleanup_stopped_value;
+
+enum Failure {
     Rejected,
+}
+
+struct PayloadFailure {
+    value: i32,
+    payload: Tracked,
 }
 
 private async fn child() {
@@ -43,6 +63,8 @@ export(cpp) async fn nested_failure() -> i32 throw Failure {
 }
 
 export(cpp) async fn caught_failure() -> i32 {
+    async let outer = yield_once();
+    cancel outer;
     try {
         async let pending = child();
         cancel pending;
@@ -192,4 +214,253 @@ export(cpp) async fn assignment_regions(kind: i32) -> i32 {
     }
     if !resource_released() { return 0; }
     return selected;
+}
+
+private async fn replace_failure_source(&source: i32) {
+    await yield_once();
+    source = 9;
+    record('c', 2);
+}
+
+private async fn reject_payload(value: i32) -> i32 throw PayloadFailure {
+    throw PayloadFailure {
+        value: value,
+        payload: Tracked { value }
+    };
+}
+
+private async fn tail_failure(&source: i32) -> i32 throw PayloadFailure {
+    async let pending = replace_failure_source(&source);
+    cancel pending;
+    if source == 7 {
+        let guard = Guard { 1 };
+        if source > 0 { return await reject_payload(source)?; }
+    }
+    return 0;
+}
+
+export(cpp) async fn selected_failure() -> i32 {
+    var source = 7;
+    let selected = try {
+        await tail_failure(&source)?
+    } catch {
+        PayloadFailure(error) => {
+            record('h', error.value);
+            error.payload.get() as i32
+        },
+    };
+    return selected * 10 + source;
+}
+
+export(cpp) async fn cleanup_stop_priority() -> i32 {
+    async let outer = cleanup_wait_for_release();
+    cancel outer;
+    for ; true;
+    {
+        if true {
+            let lease = Lease {};
+            async let inner = cleanup_stopped();
+            cancel inner;
+        }
+        record('u', 9);
+        break;
+    }
+    return 7;
+}
+
+export(cpp) async fn tail_await_stop() {
+    return await cleanup_stopped();
+}
+
+export(cpp) async fn tail_close_stop() -> i32 {
+    async let pending = cleanup_stopped();
+    cancel pending;
+    return await cleanup_value();
+}
+
+private async fn stopped_producer() -> i32 => stop_value() as i32;
+
+export(cpp) async fn implicit_fused_stop() -> i32 {
+    let selected = await stopped_producer();
+    record('u', 9);
+    return selected;
+}
+
+private async fn completing_stopped_producer() -> i32 {
+    let lease = Lease {};
+    cleanup_prefix(2);
+    return cleanup_iteration(7);
+}
+
+export(cpp) async fn fused_stop() -> bool {
+    async let pending = cleanup_wait_for_release();
+    cancel pending;
+    let selected = await completing_stopped_producer();
+    record('u', 9);
+    return selected == 7;
+}
+
+private async fn source_checked_leaf() -> i32 {
+    cleanup_iteration(8);
+    return cleanup_stopped_value(7);
+}
+
+private async fn checked_stopped_producer(internal_wait: bool) -> i32 {
+    let lease = Lease {};
+    if !internal_wait { return cleanup_stopped_value(7); }
+    let operation = source_checked_leaf();
+    return await operation;
+}
+
+export(cpp) async fn fused_checked_stop(internal_wait: bool) -> bool {
+    async let pending = cleanup_wait_for_release();
+    cancel pending;
+    let selected = await checked_stopped_producer(internal_wait);
+    record('u', 9);
+    return selected == 7;
+}
+
+private async fn yielding_stopped_producer() -> i32 {
+    let lease = Lease {};
+    cleanup_prefix(2);
+    await yield_once();
+    return cleanup_iteration(7);
+}
+
+export(cpp) async fn fused_yield_stop() -> bool {
+    async let observer = cleanup_observe_release();
+    cancel observer;
+    let selected = await yielding_stopped_producer();
+    record('u', 9);
+    return selected == 7;
+}
+
+export(cpp) async fn prefix_stop(depth: i32) -> i32 {
+    let current = cleanup_prefix(depth);
+    if current == 0 { return 7; }
+    return await prefix_stop(current - 1);
+}
+
+export(cpp) async fn tail_cancel(depth: i32) -> i32 {
+    await cancel_point();
+    let current = cleanup_iteration(depth);
+    if current == 0 { return 7; }
+    return await tail_cancel(current - 1);
+}
+
+export(cpp) async fn tail_actual_stop(depth: i32, value: i32) -> i32 {
+    if depth == 0 { return value; }
+    return await tail_actual_stop(cleanup_stopped_value(depth - 1), cleanup_iteration(value));
+}
+
+private async fn checkpoint(accept: bool) -> i32 {
+    let lease = Lease {};
+    if accept { await cancel_point(); } else { await yield_once(); }
+    return 7;
+}
+
+export(cpp) async fn cancellation_checkpoint(accept: bool) -> bool {
+    let selected = await checkpoint(accept);
+    record('u', 9);
+    return selected == 7;
+}
+
+private async fn cancelled_unit() {
+    await cleanup_cancelled();
+}
+
+private async fn cancelled_value(stop_on_release: bool) -> i32 {
+    if stop_on_release {
+        let lease = StopOnRelease {};
+        await cancelled_unit();
+        return 7;
+    }
+    let lease = Lease {};
+    await cancelled_unit();
+    return 7;
+}
+
+export(cpp) async fn cancellation_policy(cancelled: bool) {
+    async let pending = cleanup_observe_cancellation();
+    if cancelled { await cancelled_value(false); } else { await checkpoint(false); }
+    record('u', 9);
+    await pending;
+}
+
+export(cpp) async fn cancellation_tail() -> i32 {
+    return await cancelled_value(false);
+}
+
+export(cpp) async fn cancellation_cleanup_stop() -> bool {
+    async let pending = cleanup_wait_for_release();
+    let selected = await cancelled_value(true);
+    record('u', 9);
+    await close(pending);
+    return selected == 7;
+}
+
+export(cpp) async fn cancellation_child_stop() -> bool {
+    async let pending = cleanup_stopped();
+    let selected = await cancelled_value(false);
+    record('u', 9);
+    await close(pending);
+    return selected == 7;
+}
+
+private async fn failure_producer(
+    recover: bool,
+    stop_on_release: bool
+) -> i32 throw PayloadFailure {
+    if stop_on_release {
+        let lease = StopOnRelease {};
+        return await reject_payload(7)?;
+    }
+    let lease = Lease {};
+    return try {
+        await reject_payload(7)?
+    } catch {
+        PayloadFailure(error) => {
+            record('l', error.value);
+            if !recover { rethrow; }
+            error.payload.get() as i32
+        },
+    };
+}
+
+export(cpp) async fn failure_recovery(recover: bool) -> bool {
+    async let pending = cleanup_observe_cancellation();
+    let selected = try {
+        await failure_producer(recover, false)?
+    } catch {
+        PayloadFailure(error) => {
+            record('h', error.value);
+            error.payload.get() as i32
+        },
+    };
+    record('u', 9);
+    await pending;
+    return selected == 7;
+}
+
+export(cpp) async fn failure_with_child() -> i32 throw PayloadFailure {
+    async let pending = cleanup_observe_cancellation();
+    let selected = await failure_producer(false, false)?;
+    await pending;
+    return selected;
+}
+
+export(cpp) async fn failure_cleanup_stop() -> bool throw PayloadFailure {
+    async let pending = cleanup_wait_for_release();
+    let selected = await failure_producer(false, true)?;
+    record('u', 9);
+    await pending;
+    return selected == 7;
+}
+
+export(cpp) async fn failure_child_stop() -> bool throw PayloadFailure {
+    async let pending = cleanup_stopped();
+    let selected = await failure_producer(false, false)?;
+    record('u', 9);
+    await pending;
+    return selected == 7;
 }

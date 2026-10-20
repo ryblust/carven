@@ -46,7 +46,7 @@ const TestSuite suite([] static noexcept {
                         .result = leaf(),
                         .result_reachable = true,
                         .failures = BodyFailures(draft.add_empty_failure_term()),
-                        .exits_test = false,
+                        .exits_call = false,
 
 
                     };
@@ -139,11 +139,11 @@ const TestSuite suite([] static noexcept {
                 == ExitSet(Exit::Normal)
             );
             visit_semantic_nodes(copied, [](SemanticExpression& node) static noexcept {
-                node.exits_test = true;
+                node.exits_call = true;
             });
             auto unchanged = true;
             visit_semantic_nodes(restored, [&](const SemanticExpression& node) noexcept {
-                unchanged &= !node.exits_test;
+                unchanged &= !node.exits_call;
             });
             expect(unchanged);
             // Replacement destroys the original deep tree; its independent
@@ -195,15 +195,15 @@ const TestSuite suite([] static noexcept {
         expect(children[0] == &*operation.left);
         expect(children[1] == &*operation.right);
         visit_semantic_children(operation, [](SemanticExpression& child) static noexcept {
-            child.exits_test = true;
+            child.exits_call = true;
         });
-        expect(operation.left->exits_test);
-        expect(operation.right->exits_test);
+        expect(operation.left->exits_call);
+        expect(operation.right->exits_call);
         const auto* nested = std::get_if<SemUnary>(&operation.left->value);
         if (!expect(nested != nullptr)) {
             return;
         }
-        expect(!(nested->operand->exits_test));
+        expect(!(nested->operand->exits_call));
     };
 });
 

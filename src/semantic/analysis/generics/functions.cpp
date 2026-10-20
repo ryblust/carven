@@ -58,6 +58,26 @@ auto ProgramDraft::substitute_function_type(
             }
             return make_operation_type(*this, *success, effects->substitute(operation->failures));
         }
+        if (const auto* view = std::get_if<GenericCallableViewType>(&shape)) {
+            auto parameters = view->parameters;
+            for (auto& parameter : parameters) {
+                auto type = child(parameter.type);
+                if (!type) {
+                    return std::unexpected(type.error());
+                }
+                parameter.type = *type;
+            }
+            auto result = child(view->result);
+            if (!result) {
+                return std::unexpected(result.error());
+            }
+            return make_callable_view_type(
+                *this,
+                std::move(parameters),
+                *result,
+                effects->substitute(view->failures)
+            );
+        }
         auto resolved = resolve_generic_type(*generic, definition, arguments, origin, effects);
         if (!resolved) {
             return std::unexpected(resolved.error());
@@ -102,6 +122,14 @@ auto ProgramDraft::substitute_function_type(
     });
     if (error) {
         return std::unexpected(*error);
+    }
+    if (auto* view = std::get_if<ConstructionCallableViewTypeValue>(&source.value)) {
+        return make_callable_view_type(
+            *this,
+            std::move(view->parameters),
+            view->result,
+            view->failures
+        );
     }
     return append_construction_type(std::move(source));
 }
@@ -277,6 +305,22 @@ auto ProgramDraft::instantiate_generic_function(
         }
         owner = record->structure;
     };
+    const auto substitute_case = [&](ConstructionEnumCaseRef& reference) noexcept {
+        const auto* generic = std::get_if<GenericEnumCaseRef>(&reference);
+        if (!generic || error) {
+            return;
+        }
+        const auto selected = *generic;
+        auto resolved =
+            resolve_generic_type(selected.owner, definition, key.second, origin, &effects);
+        if (!resolved) {
+            error = resolved.error();
+            return;
+        }
+        const auto shape = type_copy(*resolved);
+        const auto owner = std::get<EnumTypeValue>(shape.value).enumeration;
+        reference = enum_cases(owner)[selected.index];
+    };
     auto bindings = source.bindings.clone().transform<ElaboratedLocalBinding>(
         [&](LocalBindingID, ElaboratedLocalBinding binding) noexcept {
             substitute(binding.type);
@@ -286,6 +330,9 @@ auto ProgramDraft::instantiate_generic_function(
     auto patterns = source.patterns.clone().transform<ElaboratedPattern>(
         [&](PatternID, ElaboratedPattern pattern) noexcept {
             substitute(pattern.type);
+            if (auto* selected = std::get_if<EnumCasePattern>(&pattern.value)) {
+                substitute_case(selected->enum_case);
+            }
             if (auto* constraint = std::get_if<ElaboratedTypeConstraintPattern>(&pattern.value)) {
                 substitute(constraint->type);
             }
@@ -319,6 +366,12 @@ auto ProgramDraft::instantiate_generic_function(
                         std::get_if<CppStaticMemberCallee<ConstructionTypeRef>>(&native->callee)) {
                     substitute(member->type);
                 }
+            }
+            if (auto* selected = std::get_if<SemEnumCase>(&expression.value)) {
+                substitute_case(selected->enum_case);
+            }
+            if (auto* selected = std::get_if<SemEnumConstructor>(&expression.value)) {
+                substitute_case(selected->enum_case);
             }
             if (auto* record = std::get_if<SemStruct>(&expression.value)) {
                 substitute_owner(record->structure);

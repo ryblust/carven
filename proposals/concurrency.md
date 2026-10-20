@@ -27,6 +27,12 @@ execute through the same-thread runtime. Their scheduling and cancellation
 contracts are implemented, but no task migration or cross-thread value admission
 is defined. Compiler-stage parallelism is a separate implementation experiment.
 
+`std::channel::ByteChannel` exchanges owned bytes on one driver thread.
+`std::build` overlaps native compiler subprocesses through `std::process`.
+Hosting permits typed request completion and event posting from native threads,
+while session control remains serialized. These boundaries do not define
+cross-thread execution of Carven code or a general source memory model.
+
 Write access is non-owning and nonexclusive: a mutable owner can be passed to
 multiple Write parameters in one call. Evaluate concurrency-specific capabilities,
 cross-thread type restrictions, stronger access in concurrent contexts, runtime
@@ -62,6 +68,28 @@ Select capability evidence and native mechanisms with the first operation.
 Deliver its source semantics, compiler facts, diagnostics, lowering, interoperation,
 tests, and documentation together.
 
+### Ownership and first consumer
+
+Compare scoped execution and ownership-transferring message passing as initial
+consumers. Each selects its admitted values, referent lifetimes, conflicting-access
+rules, and synchronization relations. Shared mutable state and task migration
+add their own requirements when selected.
+
+Compiler knowledge records and checks cross-thread admission through values and
+referents under the selected evidence, lifetime, and access rules. Bounded builtin
+thread or channel operations can establish handoff and completion contracts. Runtime Craft
+supplies shared thread and synchronization mechanisms; Standard Craft owns public
+declarations, channel/buffering policy, higher-level algorithms, and native
+adapters where they express the complete contract.
+
+Compare compiler-derived evidence and explicit native-provider obligations for
+the first operation. Source impl evidence needs a contract for how its claims
+are established; public thread-safety concepts are selected when a source API
+needs to express these requirements. The operation requires its memory and
+ordering rules, independently of a general capability language, Shared owner,
+or executor framework. Define blocking or awaitable behavior for that operation;
+async syntax alone supplies no cross-thread guarantee.
+
 ## Open decisions
 
 ### OPEN-02 — Where do shared-state and data-race guarantees apply?
@@ -94,7 +122,8 @@ tests, and documentation together.
 ### OPEN-04 — Which operations establish happens-before?
 
 - **Status:** Blocked
-- **Depends on:** `OPEN-02`, `OPEN-03`, and a concrete synchronization operation
+- **Depends on:** Value admission from `OPEN-03` and a concrete synchronization
+  operation; `OPEN-02` supplies conflicting-access rules when shared state is exposed
 - **Activation condition:** An atomic, lock, channel, thread-completion, or
   cross-thread task-completion operation enters active design.
 - **Question:** Define synchronization and observable ordering.
@@ -115,7 +144,8 @@ scope. C++ mechanisms implement the selected source contract.
 
 - **Reason deferred:** Entry-value capability, data-race validity, and completion
   synchronization are undefined.
-- **Depends on:** The memory model and a thread-creation use case
+- **Depends on:** Entry-value admission, referent lifetime, conflicting-access
+  rules, and completion ordering for the selected thread operation
 - **Reactivation condition:** A program requires a scoped thread or equivalent
   cross-thread execution.
 
@@ -127,7 +157,8 @@ thread-local state and callback obligations.
 
 - **Reason deferred:** Guard/access interactions and happens-before need a memory
   model contract.
-- **Depends on:** The memory model and a shared-state use case
+- **Depends on:** Shared-state access rules and ordering for the selected
+  synchronization operation
 - **Reactivation condition:** A program needs a blocking mutex, condition,
   semaphore, or equivalent primitive.
 
@@ -140,7 +171,8 @@ contexts admit blocking operations and how misuse is diagnosed.
 
 - **Reason deferred:** Payload admission, ordering vocabulary, and target fallback
   depend on the memory model.
-- **Depends on:** The memory model and an atomic use case
+- **Depends on:** Payload admission, conflicting-access rules, and ordering for
+  the selected atomic operation
 - **Reactivation condition:** A shared-state API needs an operation that a narrower
   abstraction cannot express.
 
@@ -149,11 +181,12 @@ orders and defaults, compare/exchange success and failure ordering, observable
 fallback when lock-free implementation is unavailable, C++ ABI, and platform
 lowering.
 
-### DEFER-04 — Channels and message passing
+### DEFER-04 — Cross-thread channels and message passing
 
 - **Reason deferred:** Capacity, movement, closure, and synchronization require
   concrete value capabilities and happens-before rules.
-- **Depends on:** The memory model and a producer/consumer use case
+- **Depends on:** Sent-value admission, ownership handoff, referent lifetime,
+  and send/receive/closure ordering for the selected channel
 - **Reactivation condition:** A program requires cross-thread communication.
   A channel may provide the first narrow slice by reducing shared mutable state.
 

@@ -1,4 +1,4 @@
-export fn child_value() -> i32 => 29;
+fn child_value() -> i32 => 29;
 
 test "Modules: a child module remains callable beside a same-named declaration" {
     check(child_value() == 29);

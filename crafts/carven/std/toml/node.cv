@@ -1,0 +1,45 @@
+import std::toml using TOMLValue;
+
+enum Node {
+    Text(String),
+    Integer(i64),
+    Float(f64),
+    Boolean(bool),
+    DateTime(String, DateTimeKind),
+    Array(Sequence),
+    Table(Table),
+}
+
+enum DateTimeKind {
+    OffsetDateTime,
+    LocalDateTime,
+    LocalDate,
+    LocalTime,
+}
+
+// Construction provenance distinguishes namespaces which TOML permits reopening.
+enum TableOrigin {
+    Implicit,
+    Explicit,
+    Dotted,
+    Inline,
+}
+
+struct Table {
+    members: Vector<(String, TOMLValue)>,
+    origin: TableOrigin,
+}
+
+struct Sequence {
+    items: Vector<TOMLValue>,
+    tables: bool,
+}
+
+const fn find_member(members: Vector<(String, TOMLValue)>, key: str) -> usize {
+    var index = members.length();
+    while index != 0 {
+        index -= 1;
+        if members[index].0.as_str() == key { return index; }
+    }
+    return members.length();
+}

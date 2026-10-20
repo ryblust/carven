@@ -51,6 +51,17 @@ auto dependency(std::size_t depth, bool fail, TaskTrace& trace) noexcept
     co_return *child + 1uz;
 }
 
+auto owned_value() noexcept -> ContinuationTask<std::unique_ptr<int>> {
+    return ContinuationTask<std::unique_ptr<int>>(std::make_unique<int>(42));
+}
+
+auto owned_dependency(std::size_t depth) noexcept -> ContinuationTask<std::unique_ptr<int>> {
+    if (depth == 0uz) {
+        co_return co_await owned_value();
+    }
+    co_return co_await owned_dependency(depth - 1uz);
+}
+
 const TestSuite suite([] static noexcept {
     "Continuation tasks: dependencies preserve one execution and ordered cleanup"_test =
         [] static noexcept {
@@ -83,6 +94,15 @@ const TestSuite suite([] static noexcept {
         }
         expect_equal(trace.entered, 0uz);
         expect_equal(trace.exited, 0uz);
+    };
+
+    "Continuation tasks: forwarded results retain unique ownership"_test = [] static noexcept {
+        auto pending = owned_value();
+        auto transferred = std::move(pending);
+        const auto immediate = std::move(transferred).run();
+        expect_equal(*immediate, 42);
+        const auto result = owned_dependency(32uz).run();
+        expect_equal(*result, 42);
     };
 });
 

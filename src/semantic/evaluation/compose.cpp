@@ -1,6 +1,7 @@
 module carven:semantic.evaluation.compose.impl;
 
 import :semantic.evaluation.executor;
+import :semantic.evaluation.value;
 import :semantic.semir.type;
 import :support.invariant;
 import std;
@@ -103,7 +104,7 @@ auto SemanticExecutor::compose(
             }
         );
         elements.push_back(std::move(value));
-        return bounded_value(
+        return constructed_value(
             ExecutionAggregateValue {
                 .type = *success,
                 .elements = std::move(elements),
@@ -260,7 +261,7 @@ auto SemanticExecutor::compose(
         }
         elements.push_back(std::move(*result));
     }
-    co_return bounded_value(
+    co_return constructed_value(
         ExecutionAggregateValue {
             .type = *success,
             .elements = std::move(elements),

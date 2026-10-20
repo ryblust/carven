@@ -48,7 +48,7 @@ auto OwnershipBodyAnalyzer::run() noexcept -> OwnershipBodyResult {
     auto flow = region(body.region(), std::move(state), true).run();
     auto result = std::vector<OwnershipCallCompletion>();
     auto escape = std::optional<OwnershipEscape>();
-    const auto complete = [&](bool test_stopped,
+    const auto complete = [&](bool stopped,
                               std::optional<AnalysisFailureKey> failure,
                               OwnershipState state,
                               OwnershipRelationships value) noexcept {
@@ -105,12 +105,12 @@ auto OwnershipBodyAnalyzer::run() noexcept -> OwnershipBodyResult {
             return;
         }
         const auto found = std::ranges::find_if(result, [&](const auto& answer) noexcept {
-            return answer.test_stopped == test_stopped && answer.failure == failure;
+            return answer.stopped == stopped && answer.failure == failure;
         });
         if (found == result.end()) {
             result.push_back(
                 OwnershipCallCompletion {
-                    .test_stopped = test_stopped,
+                    .stopped = stopped,
                     .failure = failure,
                     .state = std::move(state),
                     .value = std::move(value)
@@ -146,7 +146,7 @@ auto OwnershipBodyAnalyzer::run() noexcept -> OwnershipBodyResult {
                 [&](OwnershipFailure& value) noexcept {
                     complete(false, value.type, std::move(exit.state), std::move(value.value));
                 },
-                [&](OwnershipTestStopped&) noexcept {
+                [&](OwnershipStopped&) noexcept {
                     complete(true, std::nullopt, std::move(exit.state), {});
                 },
                 [&](OwnershipCancelled&) noexcept {
@@ -172,20 +172,70 @@ auto OwnershipBodyAnalyzer::run() noexcept -> OwnershipBodyResult {
         }
         return place;
     };
+    // Selections used only while evaluating the callee are proof context. Publish
+    // owned paths only when a returned relationship, external write, or changed
+    // external holder needs their referents in the caller.
+    auto required = std::vector<bool>(topology.objects.size(), false);
+    auto pending = std::vector<std::size_t>();
+    const auto require = [&](std::size_t object) noexcept {
+        if (!required[object]) {
+            required[object] = true;
+            pending.push_back(object);
+        }
+    };
+    const auto require_relationships = [&](const OwnershipRelationships& relationships) noexcept {
+        for (const auto& capture : relationships.view().captures) {
+            require(capture.target.object);
+        }
+        for (const auto& loan : relationships.view().storage_loans) {
+            require(loan.backing.object);
+        }
+        for (const auto& loan : relationships.view().callable_loans) {
+            if (loan.backing) {
+                require(loan.backing->object);
+            }
+        }
+    };
+    const auto input_rooted = [&](std::size_t object) noexcept {
+        return std::ranges::any_of(topology.roots[object], [&](const auto root) noexcept {
+            return root < input.objects.size();
+        });
+    };
+    for (const auto& completion : result) {
+        require_relationships(completion.value);
+        for (const auto [index, object] : std::views::enumerate(completion.state.objects)) {
+            if (object.modified && input_rooted(static_cast<std::size_t>(index))) {
+                require(static_cast<std::size_t>(index));
+                require_relationships(object.relationships);
+            }
+        }
+    }
+    for (const auto& effect : effects) {
+        if (input_rooted(effect.place.object)) {
+            require(effect.place.object);
+        }
+    }
+    // Index the existing owns graph in reverse; retain each path to an input
+    // without retaining the callee's unrelated read-only descendants.
+    auto incoming = std::vector<std::vector<std::size_t>>(topology.objects.size());
+    for (const auto& edge : topology.owns) {
+        incoming[edge.element].push_back(edge.carrier.object);
+    }
+    for (auto cursor = 0uz; cursor < pending.size(); ++cursor) {
+        for (const auto carrier : incoming[pending[cursor]]) {
+            require(carrier);
+        }
+    }
     auto published_edges = std::vector<OwnershipStorageEdge>();
     for (const auto& edge : topology.owns) {
+        if (!required[edge.element]) {
+            continue;
+        }
         // Input topology is proof context, not a change to caller ownership.
         if (edge.carrier.object < input.objects.size() && edge.element < input.objects.size()) {
             continue;
         }
-        if (std::ranges::all_of(
-                topology.roots[edge.element],
-                [&](const auto root) noexcept { return root >= input.objects.size(); }
-            )
-            || std::ranges::all_of(
-                topology.roots[edge.carrier.object],
-                [&](const auto root) noexcept { return root >= input.objects.size(); }
-            )) {
+        if (!input_rooted(edge.element) || !input_rooted(edge.carrier.object)) {
             continue;
         }
         auto copy = edge;
@@ -220,9 +270,7 @@ auto OwnershipBodyAnalyzer::run() noexcept -> OwnershipBodyResult {
     }
     summary.owns = std::move(published_edges);
     for (auto effect : effects) {
-        if (std::ranges::all_of(topology.roots[effect.place.object], [&](const auto root) noexcept {
-                return root >= input.objects.size();
-            })) {
+        if (!input_rooted(effect.place.object)) {
             continue;
         }
         effect.place = publish_place(std::move(effect.place));
@@ -239,7 +287,7 @@ auto OwnershipBodyAnalyzer::run() noexcept -> OwnershipBodyResult {
     });
     summary.effects.erase(std::ranges::unique(summary.effects).begin(), summary.effects.end());
     std::ranges::sort(summary.completions, {}, [](const auto& answer) static noexcept {
-        return std::pair(answer.test_stopped, answer.failure);
+        return std::pair(answer.stopped, answer.failure);
     });
     return OwnershipBodyResult {.answer = std::move(summary), .diagnosis = std::move(diagnosis)};
 }
@@ -307,36 +355,6 @@ auto OwnershipBodyAnalyzer::call(
         std::move(state),
         origin
     );
-}
-
-auto OwnershipBodyAnalyzer::call_contract(
-    const CallableSignature& contract,
-    std::span<const OwnershipCallArgument> arguments,
-    OwnershipState state,
-    ProgramOriginID origin
-) noexcept -> OwnershipFlow {
-    auto result = OwnershipFlow {
-        .normal =
-            OwnershipNormal {
-                .state = std::move(state),
-                .value = opaque_callable_targets(contract.result, origin),
-                .storage = {}
-            },
-        .exits = {}
-    };
-    for (const auto& [parameter, argument] : std::views::zip(contract.parameters, arguments)) {
-        if (parameter.access != AccessMode::Write) {
-            continue;
-        }
-        if (argument.alias) {
-            check_storage_write(result.normal->state, *argument.alias, origin, false);
-        }
-        for (const auto& target : argument.storage) {
-            check_storage_write(result.normal->state, target, origin, false);
-        }
-    }
-    append_failures(result, contract.failures, result.normal->state);
-    return result;
 }
 
 auto OwnershipBodyAnalyzer::call_body(
@@ -1150,9 +1168,9 @@ auto OwnershipBodyAnalyzer::call_body(
             }
         }
         const auto value = restore_facts(answer.value);
-        if (answer.test_stopped) {
+        if (answer.stopped) {
             result.exits.push_back(
-                OwnershipExit {.payload = OwnershipTestStopped {}, .state = std::move(returned)}
+                OwnershipExit {.payload = OwnershipStopped {}, .state = std::move(returned)}
             );
         } else if (answer.failure) {
             if (actual_failures) {

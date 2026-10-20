@@ -30,7 +30,7 @@ private:
 
     struct Storage final {
         ASTStorage ast;
-        ASTModule module;
+        ASTModule ast_module;
     };
 
     SyntaxTree(std::shared_ptr<const Storage> storage, SourceID source) noexcept;

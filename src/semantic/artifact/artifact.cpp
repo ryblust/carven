@@ -49,7 +49,7 @@ struct SemIRProgramArtifactState final {
     std::map<std::pair<FunctionID, std::vector<ConstantID>>, CallableID> static_instance_index;
     std::map<CallableID, std::size_t> instance_callables;
     std::vector<bool> executed_bodies;
-    std::vector<bool> test_stops;
+    std::vector<CallStopEffect> call_stops;
     std::unique_ptr<const AsyncCancellationFacts> cancellation_facts;
     std::vector<TypeContents> contents;
     std::vector<CallableSurface> callable_surfaces;
@@ -75,7 +75,7 @@ SemIRProgram::SemIRProgram(SemIRProgramArtifactState state) noexcept
       static_instance_index(std::move(state.static_instance_index)),
       instance_callables(std::move(state.instance_callables)),
       executed_bodies(std::move(state.executed_bodies)),
-      test_stops(std::move(state.test_stops)),
+      call_stops(std::move(state.call_stops)),
       cancellation_facts(std::move(state.cancellation_facts)),
       contents(std::move(state.contents)),
       callable_surfaces(std::move(state.callable_surfaces)),
@@ -109,6 +109,7 @@ enum class SemanticArtifactTable : std::uint8_t {
 
 using SemanticArtifactNodeReference =
     std::variant<const SemanticExpression*, const SemanticRegion*, const SemanticStatement*>;
+
 using SemanticArtifactNode = std::variant<
     std::unique_ptr<SemanticExpression>,
     std::unique_ptr<SemanticRegion>,
@@ -512,7 +513,7 @@ public:
             value.static_instance_index,
             value.instance_callables,
             value.executed_bodies,
-            value.test_stops,
+            value.call_stops,
             value.cancellation_facts,
             value.contents,
             value.callable_surfaces,
@@ -1681,6 +1682,8 @@ struct SemanticHeaderContext final {};
 
 enum class SemanticArtifactKind : std::uint32_t { Program = 1, Definitions = 2 };
 
+constexpr auto semantic_artifact_revision = 3u << 16u;
+
 auto write_semantic_nodes(BinaryWriter& writer, SemanticArtifactContext& context) noexcept -> void {
     writer.unsigned_value(context.node_order.size(), 8);
     for (const auto& reference : context.node_order) {
@@ -1748,7 +1751,7 @@ auto write_semantic_header(
     SemanticArtifactKind kind
 ) noexcept -> void {
     auto header = SemanticHeaderContext {};
-    writer.unsigned_value(static_cast<std::uint32_t>(kind), 4);
+    writer.unsigned_value(semantic_artifact_revision | static_cast<std::uint32_t>(kind), 4);
     writer.write(context.counts, header);
     writer.write(context.bodies, header);
     write_semantic_nodes(writer, context);
@@ -1760,7 +1763,7 @@ auto read_semantic_header(BinaryReader& reader, SemanticArtifactKind kind) noexc
     if (!stored_kind) {
         return std::unexpected(std::move(stored_kind.error()));
     }
-    if (*stored_kind != static_cast<std::uint32_t>(kind)) {
+    if (*stored_kind != (semantic_artifact_revision | static_cast<std::uint32_t>(kind))) {
         return reader.fail("unsupported semantic artifact header");
     }
     auto result = SemanticArtifactAccess::context();
@@ -1811,8 +1814,8 @@ auto valid_semantic_bounds(
 }
 
 auto valid_provenance(CompilationProvenanceView provenance) noexcept -> bool {
-    for (const auto& module : provenance.module_records()) {
-        if (!provenance.contains(module.source_id)) {
+    for (const auto& module_record : provenance.module_records()) {
+        if (!provenance.contains(module_record.source_id)) {
             return false;
         }
     }

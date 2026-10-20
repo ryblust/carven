@@ -1,4 +1,4 @@
-import std::async using { cancel_requested, cancel_point, yield_once };
+import std::async using { cancel_requested, cancel_point, yield_once }
 
 const fn mark(&trace: i32, digit: i32) {
     trace = trace * 10 + digit;
@@ -188,7 +188,7 @@ const test "Constant scheduler: source execution contracts" {
     check(!outside_request);
 }
 
-export async fn run_scheduling() {
+async fn run_scheduling() {
     assert(await ordering() == ordered);
     assert(await cancellation() == cancelled);
     assert(await child_failure() == caught);

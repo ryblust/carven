@@ -172,26 +172,29 @@ auto analyze_workspace_project(
     parsed.reserve(inputs.size());
     for (const auto& input : inputs) {
         if (!input.source) {
-            diagnostics.push_back(
-                DiagnosticBuilder(
-                    DiagnosticCode::CompilationInput,
-                    std::format("project document '{}' is not available", input.module.document)
-                )
-                    .build()
-            );
+            diagnostics.push_back(DiagnosticBuilder(
+                                      DiagnosticCode::CompilationInput,
+                                      std::format(
+                                          "project document '{}' is not available",
+                                          input.project_module.document
+                                      )
+            )
+                                      .build());
             continue;
         }
-        auto found = source_ids.find(input.module.document);
+        auto found = source_ids.find(input.project_module.document);
         if (found == source_ids.end()) {
             const auto source = input.source->source();
             const auto id = sources.append_shared(input.source->sources(), source.source_id);
-            found = source_ids.emplace(input.module.document, id).first;
+            found = source_ids.emplace(input.project_module.document, id).first;
             if (input.parsed) {
                 parsed.push_back({.source_id = id, .document = input.parsed});
             }
         }
         // Repeated mappings are diagnosed by the compiler, not collapsed here.
-        modules.push_back({.source_id = found->second, .module_path = input.module.module_path});
+        modules.push_back(
+            {.source_id = found->second, .module_path = input.project_module.module_path}
+        );
     }
     preparation_scope.stop();
     auto analyzed = diagnostics.empty()

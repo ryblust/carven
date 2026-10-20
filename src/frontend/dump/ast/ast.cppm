@@ -4,6 +4,7 @@ import :frontend.ast.control;
 import :frontend.ast.decl;
 import :frontend.ast.expr;
 import :frontend.ast.ids;
+import :frontend.ast.imports;
 import :frontend.ast.interop;
 import :frontend.ast.literal;
 import :frontend.ast.pattern;
@@ -40,6 +41,7 @@ private:
             ASTPatternID,
             const std::vector<ASTInterpolationPart>*>
             value;
+
         std::string prefix;
         bool is_last;
         std::string field;
@@ -86,6 +88,12 @@ private:
         bool is_last,
         std::string_view name,
         Span span
+    ) noexcept -> void;
+
+    auto render_import_item(
+        const ASTImportItem& item,
+        std::string_view prefix,
+        bool is_last
     ) noexcept -> void;
 
     auto render_type(

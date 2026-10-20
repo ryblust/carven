@@ -4,6 +4,7 @@ import :frontend.ast.control;
 import :frontend.ast.decl;
 import :frontend.ast.expr;
 import :frontend.ast.ids;
+import :frontend.ast.imports;
 import :frontend.ast.interop;
 import :frontend.ast.literal;
 import :frontend.ast.pattern;
@@ -35,7 +36,7 @@ const TestSuite suite([] static noexcept {
 
     "Parser declaration: generic parameters distinguish types and failure sets"_test =
         [] static noexcept {
-            const auto tree = parse_valid("fn forward<T, throw E>() {}");
+            const auto tree = parse_valid("fn forward<T: Hash + Equal, throw E>() {}");
             const auto& declaration = function(tree);
             if (!expect(declaration.type_parameters.has_value())) {
                 return;
@@ -45,6 +46,7 @@ const TestSuite suite([] static noexcept {
                 return;
             }
             expect(parameters[0].kind == ASTGenericParameterKind::Type);
+            expect_equal(parameters[0].bounds.size(), 2uz);
             expect(parameters[1].kind == ASTGenericParameterKind::FailureSet);
         };
 
@@ -187,7 +189,7 @@ const TestSuite suite([] static noexcept {
     "Parser declaration: module root separates imports from ordered top-level items"_test =
         [] static noexcept {
             static constexpr auto text = std::string_view(
-                "import math.vector using { Vector, dot, };\n"
+                "import math.vector using { Vector, dot, }\n"
                 "import .text using *;\n"
                 "import logging::api.write using write;\n"
                 "export enum State: u8 { Idle, Busy = 4, }\n"
@@ -217,6 +219,10 @@ const TestSuite suite([] static noexcept {
             }
 
             const auto& first = ast.module_import(module_syntax.module_imports[0]);
+            expect_equal(
+                slice(text, first.span),
+                std::string_view("import math.vector using { Vector, dot, }")
+            );
             if (!expect(
                     std::holds_alternative<ASTDomainRootModuleReference>(
                         first.module_reference.value
@@ -296,7 +302,7 @@ const TestSuite suite([] static noexcept {
                 "import <cstdint>;\n"
                 "import \"native/provider.hpp\";\n"
                 "private import(cpp) fn native_value(value: i32) -> i32;\n"
-                "import(cpp) fn domain_value() -> i32;\n"
+                "export import(cpp) fn domain_value() -> i32;\n"
                 "export(cpp) fn value() -> i32 { return domain_value(); }\n"
                 "#[cpp] ---\n"
                 "static_assert(true);\n"
@@ -334,12 +340,12 @@ const TestSuite suite([] static noexcept {
             expect(is<ASTCppImportForm>(private_import.implementation));
             expect(!private_import.cpp_export.has_value());
 
-            const auto& bare_import = function(result, 1);
-            expect(is<ASTBareDeclarationVisibility>(bare_import.visibility));
-            expect(is<ASTCppImportForm>(bare_import.implementation));
+            const auto& exported_import = function(result, 1);
+            expect(is<ASTExportDeclarationVisibility>(exported_import.visibility));
+            expect(is<ASTCppImportForm>(exported_import.implementation));
 
             const auto& cpp_export = function(result, 2);
-            expect(is<ASTExportDeclarationVisibility>(cpp_export.visibility));
+            expect(is<ASTBareDeclarationVisibility>(cpp_export.visibility));
             if (!expect(cpp_export.cpp_export.has_value())) {
                 return;
             }
@@ -456,8 +462,11 @@ const TestSuite suite([] static noexcept {
             static constexpr auto invalid = std::to_array<std::string_view>({
                 "import core;",
                 "import core using;",
-                "import core using {};",
-                "import core using { first second };",
+                "import core using {}",
+                "import core using { first second }",
+                "import core using { first };",
+                "import core using first",
+                "import core using *",
                 "fn main() {} import late using *;",
                 "#[cpp] ---\n---\nimport late using Name;",
                 "export import core using *;",
@@ -630,12 +639,8 @@ const TestSuite suite([] static noexcept {
             check_invalid(text);
         });
         check_invalid(
-            "export import(cpp) fn invalid();",
-            "an import(cpp) declaration cannot be exported directly"
-        );
-        check_invalid(
             "export(cpp) import(cpp) fn invalid();",
-            "an import(cpp) declaration cannot be exported directly"
+            "import(cpp) and export(cpp) cannot be combined"
         );
         check_invalid(
             "import(cpp) export(cpp) fn invalid();",
@@ -713,11 +718,11 @@ const TestSuite suite([] static noexcept {
             check_invalid("fn invalid() { let closure = [&&value]() {}; }");
         };
 
-    "Parser declaration: C++ selections retain qualified names and explicit namespaces"_test =
+    "Parser declaration: C++ selections retain qualified names aliases and namespaces"_test =
         [] static noexcept {
             constexpr auto text = std::string_view(
-                "import <vector> using std::vector;\n"
-                "import \"provider.hpp\" using vendor::{ Widget, create, };\n"
+                "import <vector> using std::vector as Items;\n"
+                "import \"provider.hpp\" using vendor::{ Widget as Model, create, }\n"
                 "import <utility> using std::*;\n"
             );
             const auto tree = parse_valid(text);
@@ -733,27 +738,39 @@ const TestSuite suite([] static noexcept {
                 return;
             }
             expect_equal(slice(text, first.prefix.front()), std::string_view("std"));
+            const auto& item = std::get<ASTSingleImport>(first.selection).item;
+            expect_equal(slice(text, item.name_span), std::string_view("vector"));
+            expect_equal(slice(text, item.local_name_span()), std::string_view("Items"));
+            const auto& names = std::get<ASTImportList>(imports[1].using_clause->selection).names;
+            if (!expect_equal(names.size(), 2uz)) {
+                return;
+            }
+            expect_equal(slice(text, names[0].name_span), std::string_view("Widget"));
+            expect_equal(slice(text, names[0].local_name_span()), std::string_view("Model"));
+            expect_equal(slice(text, names[1].local_name_span()), std::string_view("create"));
             expect_equal(
-                slice(text, std::get<ASTCppSingleSelection>(first.selection).name),
-                std::string_view("vector")
-            );
-            expect_equal(
-                std::get<ASTCppListSelection>(imports[1].using_clause->selection).names.size(),
-                2uz
+                slice(text, imports[1].span),
+                std::string_view(
+                    "import \"provider.hpp\" using vendor::{ Widget as Model, create, }"
+                )
             );
             expect(
                 std::holds_alternative<ASTCppNamespaceSelection>(imports[2].using_clause->selection)
             );
             constexpr auto invalid = std::array {
                 "import <vector> using *;",
-                "import <vector> using {};",
+                "import <vector> using {}",
                 "import <vector> using std::;",
-                "import <vector> using {std::*,};",
-                "import <vector> using {std::vector};",
-                "import <vector> using std::{nested::vector};",
-                "import <vector> using std::{nested::{vector}};",
-                "import <vector> using std::{vector, *};",
-                "import <vector> using std::vector as v;",
+                "import <vector> using {std::*,}",
+                "import <vector> using {std::vector}",
+                "import <vector> using std::{nested::vector}",
+                "import <vector> using std::{nested::{vector}}",
+                "import <vector> using std::{vector, *}",
+                "import <vector> using { vector };",
+                "import <vector> using std::{ vector };",
+                "import <vector>",
+                "import <vector> using std::vector",
+                "import <vector> using std::*",
             };
             each(
                 invalid,
@@ -766,9 +783,9 @@ const TestSuite suite([] static noexcept {
         [] static noexcept {
             constexpr auto text = std::string_view(
                 "import <future> using std::async;\n"
-                "import \"provider.hpp\" using async::{ await, cancel, match };\n"
+                "import \"provider.hpp\" using async::{ await, cancel, match }\n"
                 "import \"provider.hpp\" using async::await::*;\n"
-                "import \"provider.hpp\" using { test, let };\n"
+                "import \"provider.hpp\" using { test, let }\n"
             );
             const auto tree = parse_valid(text);
             const auto& imports = root(tree).cpp_header_imports;
@@ -777,24 +794,24 @@ const TestSuite suite([] static noexcept {
             }
             const auto& single = *imports[0].using_clause;
             expect_equal(
-                slice(text, std::get<ASTCppSingleSelection>(single.selection).name),
+                slice(text, std::get<ASTSingleImport>(single.selection).item.name_span),
                 std::string_view("async")
             );
             const auto& list = *imports[1].using_clause;
             expect_equal(slice(text, list.prefix.front()), std::string_view("async"));
-            expect_equal(std::get<ASTCppListSelection>(list.selection).names.size(), 3uz);
+            expect_equal(std::get<ASTImportList>(list.selection).names.size(), 3uz);
             const auto& opened = *imports[2].using_clause;
             expect_equal(opened.prefix.size(), 2uz);
             expect(std::holds_alternative<ASTCppNamespaceSelection>(opened.selection));
             expect_equal(
-                std::get<ASTCppListSelection>(imports[3].using_clause->selection).names.size(),
+                std::get<ASTImportList>(imports[3].using_clause->selection).names.size(),
                 2uz
             );
             for (const auto invalid : {
                      "fn await() {}",
                      "struct match {}",
                      "import provider using await;",
-                     "import provider using { await };",
+                     "import provider using { await }",
                  }) {
                 check_invalid(invalid);
             }
@@ -805,7 +822,7 @@ const TestSuite suite([] static noexcept {
             constexpr auto cases = std::to_array<std::string_view>({
                 "import using using *;",
                 "import .import.export using value;",
-                "import match::using.true using {value};",
+                "import match::using.true using {value}",
             });
             each(
                 cases,
@@ -1005,7 +1022,7 @@ const TestSuite suite([] static noexcept {
                 "enum Maybe<T,,U> { None }",
                 "fn relay<4>(value: i32) {}",
                 "fn relay<T(value: T) {}",
-                "struct Box<T: Copy> { value: T }",
+                "struct Box<T:> { value: T }",
             };
             for (const auto input : inputs) {
                 check_invalid(input);

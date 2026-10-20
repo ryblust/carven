@@ -41,8 +41,8 @@ const TestSuite suite([] static noexcept {
                 ),
             };
 
-            expect(render_diagnostics({}, source).empty());
-            const auto rendered = render_diagnostics(diagnostics, source);
+            expect(render_diagnostics({}, source, false).empty());
+            const auto rendered = render_diagnostics(diagnostics, source, false);
             const auto first = rendered.find("first");
             const auto second = rendered.find("second");
             if (!expect(first != std::string::npos)) {

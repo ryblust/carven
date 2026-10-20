@@ -1,0 +1,89 @@
+import std::utf using UTF8Error;
+import <carven/std/fs/native.hpp> using carven::standard::fs;
+
+export enum FileError {
+    System(i32),
+    InvalidUTF8(UTF8Error)
+}
+
+export enum PathKind {
+    Missing,
+    File,
+    Directory,
+    Other
+}
+
+export struct DirectoryScan {
+    root: str,
+    recursive: bool,
+    excluded_root: str
+}
+
+private const fn checked(code: i32) throw FileError {
+    if code != 0 { throw FileError::System(code); }
+}
+
+export const fn canonical(path: str) -> String throw FileError {
+    var result = fs::canonical(path);
+    checked(result.code as i32)?;
+    return (&result).take_path() as String;
+}
+
+export const fn resolve(path: str) -> String throw FileError {
+    var result = fs::resolve(path);
+    checked(result.code as i32)?;
+    return (&result).take_path() as String;
+}
+
+export const fn parent(path: str) -> String => fs::parent(path) as String;
+export const fn join(base: str, path: str) -> String => fs::join(base, path) as String;
+
+export const fn remove(path: str) -> bool throw FileError {
+    let result = fs::remove(path);
+    checked(result.code as i32)?;
+    return result.removed as bool;
+}
+
+export const fn files(scan: DirectoryScan) -> Vector<String> throw FileError {
+    var result = fs::files(scan.root, scan.recursive, scan.excluded_root);
+    checked(result.code as i32)?;
+    return (&result).take_paths() as Vector<String>;
+}
+
+export const fn read_bytes(path: str) -> Vector<u8> throw FileError {
+    var result = fs::read_bytes(path);
+    checked(result.code as i32)?;
+    return (&result).take_bytes() as Vector<u8>;
+}
+
+export const fn read_text(path: str) -> String throw FileError {
+    let bytes = read_bytes(path)?;
+    return try {
+        str::from_utf8(bytes)? as String
+    } catch {
+        UTF8Error(error) => throw FileError::InvalidUTF8(error)
+    };
+}
+
+export const fn write_bytes(path: str, bytes: [u8]) throw FileError {
+    checked(fs::write_bytes(path, bytes) as i32)?;
+}
+
+export const fn write_text(path: str, text: str) throw FileError {
+    write_bytes(path, text.bytes)?;
+}
+
+export const fn status(path: str) -> PathKind throw FileError {
+    let result = fs::status(path);
+    checked(result.code as i32)?;
+    return match result.kind as i32 {
+        0 => .Missing,
+        1 => .File,
+        2 => .Directory,
+        _ => .Other,
+    };
+}
+
+export const fn create_directories(path: str) throw FileError {
+    checked(fs::create_directories(path) as i32)?;
+}

@@ -1,4 +1,4 @@
-import std::async using { cancel_requested, cancel_point };
+import std::async using { cancel_requested, cancel_point }
 
 private async fn accept_cancellation() {
     eprintln("child accepts cancellation:", cancel_requested());

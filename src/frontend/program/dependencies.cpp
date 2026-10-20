@@ -2,17 +2,43 @@ module carven:frontend.program.dependencies.impl;
 
 import :frontend.ast.decl;
 import :frontend.ast.expr;
+import :frontend.ast.imports;
 import :frontend.ast.literal;
 import :frontend.ast.type;
 import :frontend.literal;
 import :frontend.program.dependencies;
 import :frontend.program.parse;
 import :source.standard;
+import :support.function_ref;
 import std;
+
+auto source_dependency_closure(
+    std::span<const CanonicalModulePath> roots,
+    FunctionRef<std::shared_ptr<const ParsedDocument>(const CanonicalModulePath&) noexcept> load
+) noexcept -> std::vector<CanonicalModulePath> {
+    auto pending = std::vector<CanonicalModulePath>(roots.begin(), roots.end());
+    auto visited = std::set<CanonicalModulePath>();
+    auto selected = std::vector<CanonicalModulePath>();
+    for (auto index = 0uz; index < pending.size(); ++index) {
+        const auto module_path = pending[index];
+        if (!visited.insert(module_path).second) {
+            continue;
+        }
+        selected.push_back(module_path);
+        const auto document = load(module_path);
+        const auto syntax = document ? document->recovered_syntax() : std::optional<ASTView>();
+        if (syntax) {
+            pending.append_range(
+                source_dependencies(*syntax, module_path, document->source().text)
+            );
+        }
+    }
+    return selected;
+}
 
 auto source_dependencies(
     ASTView syntax,
-    const CanonicalModulePath& module,
+    const CanonicalModulePath& module_path,
     std::string_view source
 ) noexcept -> std::vector<CanonicalModulePath> {
     auto paths = std::set<std::string>();
@@ -25,12 +51,12 @@ auto source_dependencies(
     const auto add_default = [&](std::string_view name) noexcept {
         for (const auto& declaration : standard_declarations()) {
             if (declaration.default_available && name == declaration.name) {
-                paths.emplace(declaration.module);
+                paths.emplace(declaration.module_path);
             }
         }
     };
-    for (const auto& import : syntax.module_imports()) {
-        const auto path = resolve_import_path(source, module, import.module_reference);
+    for (const auto& import_decl : syntax.module_imports()) {
+        const auto path = resolve_import_path(source, module_path, import_decl.module_reference);
         if (!path) {
             continue;
         }
@@ -41,7 +67,7 @@ auto source_dependencies(
             const auto entry =
                 std::ranges::find_if(provided_exports(), [&](const auto& entry) noexcept {
                     return provided
-                        && entry.module == *provided
+                        && entry.provider == *provided
                         && entry.name == name
                         && !entry.module_local;
                 });
@@ -50,11 +76,10 @@ auto source_dependencies(
             } else if (entry->identity == ProvidedExport::Timeout) {
                 needs_source = true;
             } else if (standard_associated_receiver(entry->identity)) {
-                type_names[std::string(slice(source, item.alias_span.value_or(item.name_span)))] =
-                    entry->identity;
+                type_names[std::string(slice(source, item.local_name_span()))] = entry->identity;
             }
         };
-        import.selection.value.visit([&](const auto& selection) noexcept {
+        import_decl.selection.value.visit([&](const auto& selection) noexcept {
             using Selection = std::remove_cvref_t<decltype(selection)>;
             if constexpr (std::same_as<Selection, ASTSingleImport>) {
                 select(selection.item);
@@ -83,7 +108,7 @@ auto source_dependencies(
         if (const auto* literal = std::get_if<ASTLiteral>(&expression.value)) {
             if (const auto* integer = std::get_if<IntegerLiteralValue>(&literal->value);
                 integer && duration_literal_scale(integer->suffix)) {
-                paths.emplace(standard_declaration(StandardDeclaration::Duration).module);
+                paths.emplace(standard_declaration(StandardDeclaration::Duration).module_path);
             }
         }
         const auto* member = std::get_if<ASTMemberExpr>(&expression.value);
@@ -106,7 +131,7 @@ auto source_dependencies(
         if (const auto* entry = receiver
                 ? find_standard_associated(*receiver, slice(source, member->name_span))
                 : nullptr) {
-            paths.emplace(standard_declaration(entry->declaration).module);
+            paths.emplace(standard_declaration(entry->declaration).module_path);
         }
     }
     auto result = std::vector<CanonicalModulePath>();

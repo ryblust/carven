@@ -226,4 +226,14 @@ BodyContractVerifier::BodyContractVerifier(
     const SemIRProgram& semantic
 ) noexcept
     : body(source),
-      program(semantic) {}
+      program(semantic),
+      module_id(std::nullopt) {
+    const auto location = program.provenance().source_origin(body.region().origin);
+    for (const auto declaration : program.declarations().modules()) {
+        if (program.provenance().module_record(declaration.value.provenance_module).source_id
+            == location.source_id) {
+            module_id = declaration.id;
+            break;
+        }
+    }
+}

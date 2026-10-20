@@ -4,7 +4,7 @@ import "discarded_results/provider.hpp" using discarded_probe::{
     reset,
     call_count,
     owner_count,
-};
+}
 
 private fn native_result() => result();
 

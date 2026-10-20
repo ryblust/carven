@@ -1,7 +1,7 @@
 import "entry/explicit.hpp";
 
-private import(cpp) fn cv_test_entry_mark_test_observed();
-private import(cpp) fn cv_test_entry_run_tests() -> i32;
+private import(cpp) fn cv_test_entry_mark_test_observed() = ::cv_test_entry_mark_test_observed;
+private import(cpp) fn cv_test_entry_run_tests() -> i32 = ::cv_test_entry_run_tests;
 
 test "Entry: an authored entry runs inline tests" {
     cv_test_entry_mark_test_observed();

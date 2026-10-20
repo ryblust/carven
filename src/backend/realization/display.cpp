@@ -45,7 +45,7 @@ auto display_statements(
             integer_expression(1)
         );
     };
-    const auto line = [&](bool closing = false) noexcept {
+    const auto line = [&](bool closing) noexcept {
         emit("line", target_expressions(closing ? name_expression(depth) : child_depth()));
     };
     const auto child = [&](TypeID child_type, TargetExpr projection) noexcept {
@@ -66,7 +66,7 @@ auto display_statements(
     if (const auto* tuple = std::get_if<TupleTypeValue>(&canonical)) {
         text("(");
         for (auto index = 0uz; index < tuple->elements.size(); ++index) {
-            line();
+            line(false);
             child(
                 tuple->elements[index],
                 template_call_expression(
@@ -95,7 +95,7 @@ auto display_statements(
             text(std::string(name) + " {");
             for (auto index = 0uz; index < declaration.fields.size(); ++index) {
                 const auto& field = declaration.fields[index];
-                line();
+                line(false);
                 text(std::string(context.semantic().provenance().spelling(field.name)) + ": ");
                 child(
                     field.type,
@@ -155,7 +155,7 @@ auto display_statements(
                 if (!item.payload_types.empty()) {
                     text("(");
                     for (auto field = 0uz; field < item.payload_types.size(); ++field) {
-                        line();
+                        line(false);
                         child(
                             item.payload_types[field],
                             member_expression(

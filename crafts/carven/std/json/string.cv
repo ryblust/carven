@@ -1,5 +1,5 @@
 import std::json using JSONError;
-import std::simd.scan using { one_of, byte_range, set_union, find_from };
+import std::simd.scan using { one_of, byte_range, set_union, find_from }
 
 // The payload ends the ordinary byte run; offset advances past the terminator.
 enum StringPart {
@@ -14,7 +14,7 @@ private const fn read_hex(bytes: [u8], &offset: usize) -> u32 throw JSONError {
     for _ in 0..4 {
         if offset == bytes.length() {
             throw JSONError {
-                kind:.UnexpectedEnd,
+                kind: .UnexpectedEnd,
                 offset: offset
             };
         }
@@ -24,7 +24,7 @@ private const fn read_hex(bytes: [u8], &offset: usize) -> u32 throw JSONError {
             0x41..=0x46 => (byte - 0x41 + 10) as u32,
             0x61..=0x66 => (byte - 0x61 + 10) as u32,
             _ => throw JSONError {
-                kind:.InvalidHex,
+                kind: .InvalidHex,
                 offset: offset
             },
         };
@@ -39,7 +39,7 @@ private const fn read_escape(bytes: [u8], &offset: usize) -> char throw JSONErro
     let start = offset - 1;
     if offset == bytes.length() {
         throw JSONError {
-            kind:.UnexpectedEnd,
+            kind: .UnexpectedEnd,
             offset: offset
         };
     }
@@ -56,27 +56,27 @@ private const fn read_escape(bytes: [u8], &offset: usize) -> char throw JSONErro
         0x74 => return '\t',
         0x75 => {},
         _ => throw JSONError {
-            kind:.InvalidEscape,
+            kind: .InvalidEscape,
             offset: offset - 1
         },
     }
     let first = read_hex(bytes, &offset)?;
     if first >= 0xdc00 && first <= 0xdfff {
         throw JSONError {
-            kind:.UnpairedSurrogate,
+            kind: .UnpairedSurrogate,
             offset: start
         };
     }
     if first < 0xd800 || first > 0xdbff { return char::from_u32_unchecked(first); }
     if bytes.length() - offset < 2 {
         throw JSONError {
-            kind:.UnpairedSurrogate,
+            kind: .UnpairedSurrogate,
             offset: start
         };
     }
     if bytes[offset] != 0x5c || bytes[offset + 1] != 0x75 {
         throw JSONError {
-            kind:.UnpairedSurrogate,
+            kind: .UnpairedSurrogate,
             offset: start
         };
     }
@@ -85,7 +85,7 @@ private const fn read_escape(bytes: [u8], &offset: usize) -> char throw JSONErro
     let second = read_hex(bytes, &offset)?;
     if second < 0xdc00 || second > 0xdfff {
         throw JSONError {
-            kind:.UnpairedSurrogate,
+            kind: .UnpairedSurrogate,
             offset: second_start
         };
     }
@@ -95,13 +95,13 @@ private const fn read_escape(bytes: [u8], &offset: usize) -> char throw JSONErro
 const fn begin_string(bytes: [u8], &offset: usize) throw JSONError {
     if offset == bytes.length() {
         throw JSONError {
-            kind:.UnexpectedEnd,
+            kind: .UnexpectedEnd,
             offset: offset
         };
     }
     if bytes[offset] != 0x22 {
         throw JSONError {
-            kind:.UnexpectedByte,
+            kind: .UnexpectedByte,
             offset: offset
         };
     }
@@ -113,18 +113,36 @@ const fn next_string_part(bytes: [u8], &offset: usize) -> StringPart throw JSONE
     let end = find_from(bytes, offset, stops);
     if end == bytes.length() {
         throw JSONError {
-            kind:.UnexpectedEnd,
+            kind: .UnexpectedEnd,
             offset: bytes.length()
         };
     }
     let byte = bytes[end];
     if byte < 0x20 {
         throw JSONError {
-            kind:.ControlCharacter,
+            kind: .ControlCharacter,
             offset: end
         };
     }
     offset = end + 1;
     if byte == 0x22 { return .End(end); }
     return .Escape(end, read_escape(bytes, &offset)?);
+}
+
+// Offset starts after the opening quote and ends after the closing quote.
+const fn read_string_contents(bytes: [u8], &offset: usize) -> String throw JSONError {
+    var result = String {};
+    while {
+        let start = offset;
+        match next_string_part(bytes, &offset)? {
+            .End(end) => {
+                result.append(str::from_utf8_unchecked(bytes.slice(start, end)));
+                return &&result;
+            },
+            .Escape(end, character) => {
+                result.append(str::from_utf8_unchecked(bytes.slice(start, end)));
+                result.push(character);
+            },
+        }
+    }
 }

@@ -8,11 +8,11 @@ import std;
 auto render_diagnostic(
     const Diagnostic& diagnostic,
     const SourceManager& sources,
-    bool use_color = false
+    bool use_color
 ) noexcept -> std::string;
 
 auto render_diagnostics(
     std::span<const Diagnostic> diagnostics,
     const SourceManager& sources,
-    bool use_color = false
+    bool use_color
 ) noexcept -> std::string;

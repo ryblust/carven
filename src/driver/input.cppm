@@ -15,11 +15,11 @@ struct CompilationInput final {
 };
 
 auto load_compilation_input(
-    std::string_view executable,
+    const std::filesystem::path& crafts,
     const CompilationOptions& options,
     ExecutionOutput output,
     TimingOutput timings
-) noexcept -> std::optional<CompilationInput>;
+) noexcept -> std::expected<CompilationInput, std::string>;
 
 // Consumes retained artifact bytes, leaving source and semantic owners intact.
 auto encode_compilation_input(CompilationInput& input) noexcept

@@ -50,7 +50,7 @@ auto expect_type(const WorkspaceHoverQuery& query, BuiltinType type) noexcept ->
 const TestSuite tests([] static noexcept {
     "Workspace: analysis captures pure static output without executing ordinary host calls"_test =
         [] static noexcept {
-            auto host = WorkspaceAnalysisHost();
+            auto host = WorkspaceAnalysisHost(2uz);
             const auto project = std::array {
                 project_module("app.cv", "app"),
                 project_module("time.cv", "crafts.carven.std.time")
@@ -74,7 +74,7 @@ const TestSuite tests([] static noexcept {
         };
 
     "Workspace: explicit static host effects require caller permission"_test = [] static noexcept {
-        auto host = WorkspaceAnalysisHost();
+        auto host = WorkspaceAnalysisHost(2uz);
         const auto project = std::array {
             project_module("app.cv", "app"),
             project_module("time.cv", "crafts.carven.std.time"),
@@ -109,10 +109,10 @@ const TestSuite tests([] static noexcept {
 
     "Workspace: provided aliases preserve entity references and local rename scope"_test =
         [] static noexcept {
-            auto host = WorkspaceAnalysisHost();
+            auto host = WorkspaceAnalysisHost(2uz);
             const auto project = std::array {project_module("app.cv", "app")};
             const auto text = std::string(
-                "import std::core using { String as Text, String as Other }; fn build() -> Text => Other::from_str(\"value\");"
+                "import std::core using { String as Text, String as Other } fn build() -> Text => Other::from_str(\"value\");"
             );
             update(host, "app.cv", 1, text);
             const auto snapshot = host.snapshot();
@@ -157,7 +157,7 @@ const TestSuite tests([] static noexcept {
         };
     "Workspace: duration literals discover their standard source declaration"_test =
         [] static noexcept {
-            auto host = WorkspaceAnalysisHost();
+            auto host = WorkspaceAnalysisHost(2uz);
             const auto project = std::array {
                 project_module("app.cv", "app"),
                 project_module("time.cv", "crafts.carven.std.time")
@@ -167,7 +167,7 @@ const TestSuite tests([] static noexcept {
                 "time.cv",
                 1,
                 "export struct Duration { nanoseconds: i64 } "
-                "export struct RangeError {} export struct Timeout {}"
+                "export struct TimeRangeError {} export struct Timeout {}"
             );
             const auto literal = std::string("fn run() { let ticks = (1ms).nanoseconds; }");
             update(host, "app.cv", 1, literal);
@@ -194,7 +194,7 @@ const TestSuite tests([] static noexcept {
 
     "Workspace: numeric parsing discovers source errors without importing their names"_test =
         [] static noexcept {
-            auto host = WorkspaceAnalysisHost();
+            auto host = WorkspaceAnalysisHost(2uz);
             const auto project = std::array {
                 project_module("app.cv", "app"),
                 project_module("core.cv", "crafts.carven.std.core")
@@ -226,7 +226,7 @@ const TestSuite tests([] static noexcept {
 
     "Workspace: standard associated calls discover source declarations through aliases"_test =
         [] static noexcept {
-            auto host = WorkspaceAnalysisHost();
+            auto host = WorkspaceAnalysisHost(2uz);
             const auto project = std::array {
                 project_module("app.cv", "app"),
                 project_module("utf.cv", "crafts.carven.std.utf"),
@@ -268,7 +268,7 @@ const TestSuite tests([] static noexcept {
                 "import .lib using answer; fn read() { let result = answer(); return result; }"
             );
             const auto loaded = host.update({
-                {.document = "lib.cv", .version = 1, .text = "export fn answer() -> i32 => 1;"},
+                {.document = "lib.cv", .version = 1, .text = "fn answer() -> i32 => 1;"},
                 {.document = "app.cv", .version = 1, .text = std::string(app)},
                 {.document = "other.cv", .version = 1, .text = "fn unfinished("},
             });
@@ -290,7 +290,7 @@ const TestSuite tests([] static noexcept {
             expect(!failed.result->diagnostics().empty());
 
             const auto rejected = host.update({
-                {.document = "lib.cv", .version = 2, .text = "export fn answer() -> i64 => 2;"},
+                {.document = "lib.cv", .version = 2, .text = "fn answer() -> i64 => 2;"},
                 {.document = "other.cv", .version = 1, .text = "stale edit"},
             });
             require(!rejected.has_value());
@@ -301,7 +301,7 @@ const TestSuite tests([] static noexcept {
             expect_equal(unchanged->result->source().text, original->text);
 
             const auto changed = host.update({
-                {.document = "lib.cv", .version = 2, .text = "export fn answer() -> i64 => 2;"},
+                {.document = "lib.cv", .version = 2, .text = "fn answer() -> i64 => 2;"},
                 {
                     .document = "other.cv",
                     .version = 2,
@@ -338,7 +338,7 @@ const TestSuite tests([] static noexcept {
 
     "Workspace: source outlines recover during editing and survive document closure"_test =
         [] static noexcept {
-            auto host = WorkspaceAnalysisHost();
+            auto host = WorkspaceAnalysisHost(2uz);
             update(
                 host,
                 "untitled:buffer",

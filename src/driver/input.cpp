@@ -2,7 +2,6 @@ module carven:driver.input.impl;
 
 import :compiler.artifact;
 import :driver.analysis;
-import :driver.diagnostic;
 import :driver.input;
 import :driver.options;
 import :driver.sources;
@@ -36,18 +35,21 @@ auto source_context(
     auto sources = CommandSources {
         .crafts = {},
         .carven = {},
-        .native = {},
         .standard_modules = {},
         .owned_modules = {},
+        .external_modules = {},
     };
-    for (const auto [index, module] : std::views::enumerate(modules)) {
-        const auto origin = provenance.source_snapshot(module.source_id).display_origin();
-        sources.carven.push_back({.path = std::string(origin), .module_path = module.path});
+    for (const auto [index, module_record] : std::views::enumerate(modules)) {
+        const auto origin = provenance.source_snapshot(module_record.source_id).display_origin();
+        sources.carven.push_back({.path = std::string(origin), .module_path = module_record.path});
         if (artifact.modules[index].owned) {
-            sources.owned_modules.push_back(module.path);
+            sources.owned_modules.push_back(module_record.path);
         }
         if (artifact.modules[index].standard) {
-            sources.standard_modules.push_back(module.path);
+            sources.standard_modules.push_back(module_record.path);
+        }
+        if (artifact.modules[index].external) {
+            sources.external_modules.push_back(module_record.path);
         }
     }
     return sources;
@@ -56,17 +58,17 @@ auto source_context(
 } // namespace
 
 auto load_compilation_input(
-    std::string_view executable,
+    const std::filesystem::path& crafts,
     const CompilationOptions& options,
     ExecutionOutput output,
     TimingOutput timings
-) noexcept -> std::optional<CompilationInput> {
+) noexcept -> std::expected<CompilationInput, std::string> {
     auto sources = CommandSources {
         .crafts = {},
         .carven = {},
-        .native = {},
         .standard_modules = {},
         .owned_modules = {},
+        .external_modules = {},
     };
     auto source_paths = std::vector<std::string_view>();
     auto artifact_root = std::optional<std::filesystem::path>();
@@ -80,14 +82,12 @@ auto load_compilation_input(
         }
         const auto identity = std::filesystem::canonical(path, error);
         if (error) {
-            emit_driver_error(
+            return std::unexpected(
                 std::format("cannot read artifacts '{}': {}", input, error.message())
             );
-            return std::nullopt;
         }
         if (artifact_root && *artifact_root != identity) {
-            emit_driver_error("one artifact dependency closure is accepted");
-            return std::nullopt;
+            return std::unexpected("one artifact dependency closure is accepted");
         }
         artifact_root = identity;
     }
@@ -95,27 +95,23 @@ auto load_compilation_input(
         const auto semantic_path = *artifact_root / "carven/semantic";
         auto storage = read_file(semantic_path, compilation_binary_limits.bytes);
         if (!storage) {
-            emit_driver_error(
+            return std::unexpected(
                 std::format("cannot read semantic artifact: {}", storage.error().code.message())
             );
-            return std::nullopt;
         }
         const auto bytes = std::as_bytes(std::span(storage->data(), storage->size()));
         auto artifact = read_compilation_artifact(bytes);
         if (!artifact) {
-            emit_driver_error(binary_error(artifact.error()));
-            return std::nullopt;
+            return std::unexpected(binary_error(artifact.error()));
         }
-        if (source_paths.empty() && options.mapped_inputs.empty()) {
+        if (source_paths.empty()) {
             auto program = decode_semir_program(artifact->program);
             if (!program) {
-                emit_driver_error(binary_error(program.error()));
-                return std::nullopt;
+                return std::unexpected(binary_error(program.error()));
             }
             auto context = source_context(*artifact, program->provenance());
             if (!context) {
-                emit_driver_error(context.error());
-                return std::nullopt;
+                return std::unexpected(context.error());
             }
             return CompilationInput {
                 .sources = std::move(*context),
@@ -130,55 +126,53 @@ auto load_compilation_input(
                     : std::string(),
             };
         }
-        if (!std::ranges::all_of(artifact->modules, [](const auto& module) static noexcept {
-                return !module.owned || module.standard;
+        if (!std::ranges::all_of(artifact->modules, [](const auto& module_record) static noexcept {
+                return !module_record.owned || module_record.standard;
             })) {
-            emit_driver_error("new sources require a standard-library artifact dependency");
-            return std::nullopt;
+            return std::unexpected("new sources require a standard-library artifact dependency");
         }
         auto definitions = decode_checked_definitions(artifact->definitions);
         if (!definitions) {
-            emit_driver_error(binary_error(definitions.error()));
-            return std::nullopt;
+            return std::unexpected(binary_error(definitions.error()));
         }
         auto context = source_context(*artifact, definitions->provenance_view());
         if (!context) {
-            emit_driver_error(context.error());
-            return std::nullopt;
+            return std::unexpected(context.error());
         }
         sources = std::move(*context);
         seed.emplace(std::move(*definitions));
         sources.owned_modules.clear();
+        sources.external_modules.clear();
+        for (const auto& input : sources.carven) {
+            sources.external_modules.push_back(input.module_path);
+        }
     }
-    auto collected = artifact_root
-        ? collect_project_sources(source_paths, timings, options.mapped_inputs)
-        : collect_command_sources(executable, source_paths, timings, options.mapped_inputs);
+    auto collected = artifact_root ? collect_project_sources(source_paths, timings)
+                                   : collect_toolchain_sources(crafts, source_paths, timings);
     if (!collected) {
-        emit_driver_error(collected.error());
-        return std::nullopt;
+        return std::unexpected(collected.error());
     }
-    sources.carven.append_range(collected->carven);
-    sources.owned_modules.append_range(collected->owned_modules);
-    sources.standard_modules.append_range(collected->standard_modules);
-    sources.crafts = std::move(collected->crafts);
-    sources.native = std::move(collected->native);
     const auto retain_definitions =
         options.command == CompilationCommand::Check
         && options.destination
-        && !sources.owned_modules.empty()
-        && std::ranges::all_of(sources.owned_modules, [&](const auto& module) noexcept {
-               return std::ranges::contains(sources.standard_modules, module);
+        && !collected->owned_modules.empty()
+        && std::ranges::all_of(collected->owned_modules, [&](const auto& module_path) noexcept {
+               return std::ranges::contains(collected->standard_modules, module_path);
            });
     auto checked = load_and_analyze_checked_sources(
-        collected->carven,
+        *collected,
         std::move(seed),
         retain_definitions,
         output,
         timings
     );
     if (!checked) {
-        return std::nullopt;
+        return std::unexpected("source analysis failed");
     }
+    sources.carven.append_range(collected->carven);
+    sources.owned_modules.append_range(collected->owned_modules);
+    sources.standard_modules.append_range(collected->standard_modules);
+    sources.crafts = std::move(collected->crafts);
     return CompilationInput {
         .sources = std::move(sources),
         .semantic = std::move(*checked),
@@ -192,10 +186,11 @@ auto encode_compilation_input(CompilationInput& input) noexcept
         return std::move(input.artifact);
     }
     auto modules = std::vector<CompilationModuleOwnership>();
-    for (const auto& module : input.semantic.program.provenance().module_records()) {
+    for (const auto& module_record : input.semantic.program.provenance().module_records()) {
         modules.push_back({
-            .owned = std::ranges::contains(input.sources.owned_modules, module.path),
-            .standard = std::ranges::contains(input.sources.standard_modules, module.path),
+            .owned = std::ranges::contains(input.sources.owned_modules, module_record.path),
+            .standard = std::ranges::contains(input.sources.standard_modules, module_record.path),
+            .external = std::ranges::contains(input.sources.external_modules, module_record.path),
         });
     }
     auto semantic = encode_compilation_artifact(input.semantic, modules);

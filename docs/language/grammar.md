@@ -309,7 +309,7 @@ Choose a longer fence when the payload contains a matching line.
 Lexical analysis uses maximal munch. The punctuator set is:
 
 ```text
-( ) [ ] { } , . .. ..= : ;
+( ) [ ] { } , . .. ... ..= : ;
 + - * / % ! ? = < > & | ^ ~
 += -= *= /= %= != == <= >= ++ --
 && || << >> &= |= ^= <<= >>=
@@ -344,7 +344,7 @@ module-declaration = enum-declaration
                    | function-definition
                    | module-constant-declaration;
 
-cpp-import-function-declaration = [ "private" ],
+cpp-import-function-declaration = [ visibility-modifier ],
                                   "import", "(", "cpp", ")",
                                   function-head, [ "=", cpp-function-target ], ";";
 
@@ -375,19 +375,23 @@ import-declaration = module-import-declaration
                    | cpp-header-import-declaration;
 
 module-import-declaration = "import", module-reference,
-                            using-clause, ";";
+                            "using", ( using-list | ( import-item | "*" ), ";" );
 
 cpp-header-import-declaration = "import",
                                 ( CPP_ANGLE_HEADER_NAME
                                 | CPP_QUOTE_HEADER_NAME ),
-                                [ "using", cpp-import-selection ], ";";
+                                ( ";"
+                                | "using", cpp-using-list
+                                | "using", cpp-name,
+                                  ( [ import-alias ], ";"
+                                  | "::", ( cpp-using-list | "*", ";" ) ) );
 
 cpp-name = identifier-shaped-name, { "::", identifier-shaped-name };
-cpp-import-selection = cpp-using-list
-                     | cpp-name, [ "::", ( cpp-using-list | "*" ) ];
 
-cpp-using-list = "{", identifier-shaped-name,
-                 { ",", identifier-shaped-name }, [ "," ], "}";
+cpp-import-item = identifier-shaped-name, [ import-alias ];
+
+cpp-using-list = "{", cpp-import-item,
+                 { ",", cpp-import-item }, [ "," ], "}";
 
 module-reference = module-path
                  | ".", module-path
@@ -396,23 +400,22 @@ module-reference = module-path
 module-component = IDENTIFIER | reserved-keyword;
 module-path = module-component, { ".", module-component };
 
-using-clause = "using", import-selection;
-
-import-selection = import-item | "*" | using-list;
-import-item = IDENTIFIER, [ "as", IDENTIFIER ];
+import-alias = "as", IDENTIFIER;
+import-item = IDENTIFIER, [ import-alias ];
 
 using-list = "{", import-item, { ",", import-item }, [ "," ], "}";
 ```
 
 Module components accept every identifier-shaped spelling, including keywords.
-C++ selection paths and lists also accept keyword spellings as names. Carven lists
-contain simple export names with optional local aliases; qualified
-names, nested lists, and wildcards are not list items. Native selections do not
-accept aliases. A shared C++ path precedes
-the list: `import <print> using std::{ print, println };`.
+C++ selection paths and lists also accept keyword spellings as original names.
+Both module and native selections accept optional local aliases, which must be
+identifiers. Lists contain simple names with optional aliases; qualified names,
+nested lists, and wildcards are not list items. A shared C++ path precedes the
+list: `import <print> using std::{ print, println as write_line }`.
 
-The semicolon terminates the complete import declaration. A closing brace ends
-only the nested `using-list`.
+List imports end with `}` and reject a following semicolon. Non-list imports
+require a terminating semicolon. These rules apply to source modules and C++
+headers; line breaks do not terminate imports.
 
 Accepted shapes include:
 
@@ -420,7 +423,7 @@ Accepted shapes include:
 import math using answer;
 import .math using *;
 import json::parser using parse;
-import geometry.vector using { Point, length };
+import geometry.vector using { Point, length }
 import <cstdint>;
 import "native/provider.hpp";
 ```
@@ -519,7 +522,14 @@ throw-clause = "throw", ( "(", ")" | named-type, { "+", named-type } );
 
 Function definitions are top-level items or class operations. `import(cpp)` uses the same function
 head, an optional `= ::qualified::target` binding, and `;`;
-`export(cpp)` uses either function-body form.
+`export(cpp)` uses either function-body form. Ordinary `export` visibility may
+prefix `import(cpp)`; `export(cpp)` and `import(cpp)` cannot be combined.
+`export(cpp)` retains bare Carven visibility; its `export` token belongs to the
+C++ interface form, not the ordinary visibility modifier.
+An exported declaration selects one public boundary. `export(cpp)` cannot take
+an ordinary visibility prefix or a list of destinations; `fn` has no native
+interface annotation. `export` and `export(cpp)` are separate declaration forms,
+not modifiers to stack on one declaration.
 Both `const async fn` and `async const fn` apply the same two modifiers.
 `async` must introduce a function declaration.
 
@@ -534,13 +544,16 @@ no access marker and is never the `self` receiver. Lambda parameters use
 `throw` introduces the callable's failure contract after the success result.
 `throws` is an ordinary identifier. Nested functions and default arguments have
 no syntax.
-Named functions support checked parameterized bodies; parameterized class
-operations are not supported.
+Named functions and class operations support checked parameterized bodies.
+Class operations inherit their owner's parameters and may declare additional
+parameters with the same clause.
 
 ```ebnf
 type-parameter-clause = "<", generic-parameter,
                         { ",", generic-parameter }, [ "," ], ">";
-generic-parameter = [ "throw" ], IDENTIFIER;
+generic-parameter = [ "throw" ], IDENTIFIER,
+                    [ ":", capability-bound, { "+", capability-bound } ];
+capability-bound = qualified-name;
 ```
 
 A plain identifier declares a type parameter; `throw E` declares a failure-set
@@ -980,9 +993,9 @@ positional-initializer-list = expression,
                               { ",", expression },
                               [ "," ];
 
-field-initializer-list = field-initializer,
-                         { ",", field-initializer },
-                         [ "," ];
+field-initializer-list = "..."
+                       | field-initializer, { ",", field-initializer },
+                         [ "," | ",", "..." ];
 
 field-initializer = IDENTIFIER, ":", expression;
 
@@ -1171,9 +1184,10 @@ expression grammar outside a pattern.
 ### 10.5 Construction and Calls
 
 `T { ... }` supplies an explicit construction type. `{ ... }` omits the type
-and accepts only named fields or an empty initializer; semantic analysis requires
+and accepts only named fields, a trailing `...` default marker, or an empty
+initializer; semantic analysis requires
 a known expected type. In match and catch arm bodies, a leading `{` followed by
-`IDENTIFIER :` begins a construction expression. Other leading braces begin a
+`IDENTIFIER :` or `...` begins a construction expression. Other leading braces begin a
 branch block, so an empty `{}` remains an empty block. Use `({})` for an empty
 construction arm. Required function and control-flow bodies remain blocks.
 These decisions use tokens only, without name or type lookup.

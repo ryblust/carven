@@ -45,7 +45,7 @@ auto check_corpus(std::ptrdiff_t partition) noexcept -> void {
             }
             const auto result = format_source(sources, *id);
             if (!result) {
-                expect(result.has_value()).note(render_diagnostics(result.error(), sources));
+                expect(result.has_value()).note(render_diagnostics(result.error(), sources, false));
                 return;
             }
             const auto formatted_id = sources.append_virtual("formatted.cv", *result);
@@ -54,7 +54,8 @@ auto check_corpus(std::ptrdiff_t partition) noexcept -> void {
             }
             const auto repeated = format_source(sources, *formatted_id);
             if (!repeated) {
-                expect(repeated.has_value()).note(render_diagnostics(repeated.error(), sources));
+                expect(repeated.has_value())
+                    .note(render_diagnostics(repeated.error(), sources, false));
                 return;
             }
             ++formatted_count;

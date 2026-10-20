@@ -30,3 +30,17 @@ fn empty() {
         _ => {}
     }
 }
+
+fn partial() -> Pair {
+    return {
+        first: 1,
+        ...
+    };
+}
+
+fn all() -> Pair => { ... };
+
+fn target() -> Target => {
+    kind: .Executable,
+    ...
+};

@@ -180,14 +180,17 @@ cleanup during propagation.
 
 Prepared scalar print operands pass their known text to the ordinary runtime
 printing entry. Preparation retains the original operand's execution under its
-normal access and sequencing rules. The fallback writes the prepared bytes directly;
-when library feature detection admits `std::print`, it prints the text through that
-facility. Earlier values and separators remain observable if a later value's
-formatting or output fails. An inner formatted String still completes, including
-its owning construction, before
-subsequent print arguments execute. Scalar conversion buffers and allocation counts
-are implementation details; source String construction and operand completion retain
-their boundaries.
+normal access and sequencing rules. Realization borrows String text with `as_str`
+and formats remaining builtin scalars through `format_valid_utf8`. Prepared text
+and `str` pass directly to byte output. Only the selected conversions introduce
+formatting or structural-display dependencies.
+
+All source operands complete before these conversions and output. An inner
+formatted String completes its owning construction before subsequent source
+arguments execute. Output writes values, spaces, and the final newline in order;
+completed writes are not rolled back. Native formatting, allocation, and output
+errors terminate. Internal conversion buffers and their construction order are
+implementation details.
 
 Structural print operands use a synchronous borrowing wrapper. The compiler
 selects an emitter type from published semantic types; scalar, sequence, and
@@ -208,8 +211,8 @@ Temporary arguments live through the complete expression that synchronously
 consumes the wrapper. Runtime print, comparison, and entry-failure reporting use
 the same invocation protocol. `DisplayWriter` handles scalar conversion, nested
 text escaping, and bounded sequence and range display. Callable and unsupported
-native leaves render opaquely. Completed text uses the ordinary printing entry.
-The wrapper routes top-level C strings to the text printing entry. Nested C strings
+native leaves render opaquely. `display_text` transfers the completed writer buffer
+to the printing call. Top-level C strings pass as borrowed text. Nested C strings
 use the writer's quoting and escaping rules; null C strings render as `nullptr`.
 
 Known successful conditions retain their execution effects and need no report
@@ -254,7 +257,7 @@ checked operation and its original report site. Known mask prefixes already fold
 to complete constant masks. Memory operations still check the actual slice range;
 a known lane index is not a memory-range proof.
 
-`testing.hpp` owns test-stop transport and `TestContext`, which tracks the active
+`testing.hpp` owns `TestContext`, which tracks the active
 case and completed-case counts. `observe.hpp` owns condition observation;
 `report.hpp` owns failure text and fatal assertions without depending on value
 display. `check`, `require`, and `fail` call
@@ -266,9 +269,6 @@ the active case's module and name for every report. The runner emits a summary
 when it completes. Custom test reporters supply their own output; fatal
 assertions use the assertion reporter.
 
-Runtime `print.hpp` selects C++23 `std::print` using library feature detection and
-otherwise supplies the C++20 `std::format`/`fwrite` implementation. This selection
-belongs to consumer compilation and preserves the user's selected C++ standard.
-Values, structural display text, separators, and newlines share this output policy.
-The C++20 fallback writes UTF-8 bytes; Windows console Unicode rendering depends
-on the console configuration. `std::print` supplies native Unicode terminal handling.
+Runtime `print.hpp` writes completed text with C++20 `fwrite`. Values, separators,
+and newlines share this byte-output policy. Windows console Unicode rendering
+depends on the console configuration.

@@ -1,0 +1,6 @@
+private import(cpp) async fn query(&&text: String) -> String;
+
+export(cpp) async fn preview(&&text: String) -> String {
+    let response = await query(&&text);
+    return f"preview: {response}";
+}

@@ -72,6 +72,54 @@ fn loop_condition(&checks: i32, remaining: i32) -> bool {
     return remaining > 0;
 }
 
+const fn returning_loop(enabled: bool, &trace: i32) -> i32 {
+    for trace = trace * 10 + 1;
+        if true {
+            trace = trace * 10 + 2;
+            enabled
+        } else {
+            false
+        };
+        trace = trace * 10 + 4 {
+        trace = trace * 10 + 3;
+        if true { return 42; }
+    }
+    return 7;
+}
+
+const fn known_true_returning_loop(&trace: i32) -> i32 {
+    for trace = trace * 10 + 1;
+        if true {
+            trace = trace * 10 + 2;
+            true
+        } else {
+            false
+        };
+        trace = trace * 10 + 4 {
+        trace = trace * 10 + 3;
+        return 42;
+    }
+    return 7;
+}
+
+const fn returning_loop_effects() -> bool {
+    var trace = 0;
+    let skipped = (returning_loop(false, &trace), trace);
+    trace = 0;
+    let entered = (returning_loop(true, &trace), trace);
+    trace = 0;
+    let known_true = (known_true_returning_loop(&trace), trace);
+    return skipped == (7, 12) && entered == (42, 123) && known_true == (42, 123);
+}
+
+const test "Loops: returns preserve initialization and condition order and skip steps" {
+    check(returning_loop_effects());
+}
+
+test "Loops: native returns preserve initialization and condition order and skip steps" {
+    check(returning_loop_effects());
+}
+
 test "Loops: loops support clauses iteration and control transfer" {
     var total: i32 = 0;
     for var index: i32 = 0; index < 4; ++index {

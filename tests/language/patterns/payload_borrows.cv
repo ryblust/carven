@@ -19,8 +19,8 @@ private fn read_selected(holder: Holder) -> String => match holder.choice {
 };
 
 test "Payload borrowing: alternatives select original storage and guards release aliases" {
-    var left = Holder { choice:.Left("left" as String) };
-    var right = Holder { choice:.Right("right" as String) };
+    var left = Holder { choice: .Left("left" as String) };
+    var right = Holder { choice: .Right("right" as String) };
     append_selected(&left);
     append_selected(&right);
     check(read_selected(left).as_str() == "left!");
@@ -29,7 +29,7 @@ test "Payload borrowing: alternatives select original storage and guards release
     left.choice = .Right("replaced" as String);
     check(copied.as_str() == "left!");
     check(read_selected(left).as_str() == "replaced");
-    let empty = Holder { choice:.Right(String {}) };
+    let empty = Holder { choice: .Right(String {}) };
     check(read_selected(empty).as_str() == "empty");
 }
 

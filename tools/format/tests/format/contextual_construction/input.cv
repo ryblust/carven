@@ -2,3 +2,6 @@ fn build(value:i32)->Pair{return {first:value,second:{value:2}};}
 fn choose(value:i32)->Pair=>match value{0=>{first:1,second:{value:2}},_=>({}),};
 fn fallback()->Pair=>try{{first:1,second:{value:2}}}catch{Failure(_)=>{first:3,second:{value:4}},};
 fn empty(){match 0{_=>{}}}
+fn partial()->Pair{return {first:1,...};}
+fn all()->Pair=>{...};
+fn target()->Target=>{kind:.Executable,...};

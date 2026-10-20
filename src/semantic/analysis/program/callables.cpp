@@ -2,6 +2,7 @@ module carven:semantic.analysis.program.callables.impl;
 
 import :semantic.analysis.program;
 import :semantic.semir.decl;
+import :semantic.semir.generic;
 import :semantic.semir.type;
 import std;
 
@@ -54,6 +55,16 @@ auto ProgramDraft::callable_shape(ConstructionTypeRef type) const noexcept
         const auto expression = generic_type_copy(*generic);
         if (const auto* concrete = std::get_if<TypeID>(&expression)) {
             return callable_shape(*concrete);
+        }
+        if (const auto* view = std::get_if<GenericCallableViewType>(&expression)) {
+            return ConstructionCallableShape {
+                .owning_type = std::nullopt,
+                .execution = CallableExecutionKind::Synchronous,
+                .parameters = view->parameters,
+                .result = view->result,
+                .failures = view->failures,
+                .policy = FailureContractPolicy::Declared,
+            };
         }
         return std::nullopt;
     }

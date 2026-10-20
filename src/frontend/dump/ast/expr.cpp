@@ -267,7 +267,7 @@ auto ASTDumper::render_expression(
                 render_list(
                     nested_prefix,
                     true,
-                    "initializer fields",
+                    list.defaults ? "initializer fields with defaults" : "initializer fields",
                     list.fields,
                     [&](const ASTFieldInitializer& value,
                         std::string_view item_prefix,

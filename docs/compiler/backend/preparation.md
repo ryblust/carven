@@ -58,19 +58,23 @@ owning coroutine even when their value is discarded.
 
 `PreparedAwaitProducer` borrows an eligible producer body and an optional
 transparent synchronous factory, together with their semantic-node expansion
-cost. Producers have scalar Read inputs, scalar or void success, and no outward
-failure, cancelled completion, children, or test stop. Factories return one cold
-call using parameter reads and frozen constants. Residual static selection may
+cost. Producers have scalar Read inputs, scalar or void success, and no captures,
+children, or test reports. Published failure and cancellation capabilities select
+an existing `Completion` carrier when needed and scalar or discard delivery
+otherwise. Body awaits and checked calls retain their suspension and
+completion exits; local storage keeps its lexical lifetime. Factories return one
+cold call using parameter reads and frozen constants. Residual static selection may
 leave unconditional region wrappers. Realization supplies module visibility,
 active-callable checks, and the remaining expansion budget.
 
 `PreparedTailAwaitLoop` identifies self awaits in return position. Eligibility
 requires scalar Read inputs and locals, a scalar result other than `char`, and no
-captures, children, outward failure, cancellation, or test stop. Address formation
-and opaque native operations exclude the body. Tail arguments and enclosing
+captures, children, or outward failure. Address formation, raw C++ expressions,
+and direct C++ header calls exclude the body. Tail arguments and enclosing
 conditions must finish without retained operation storage or suspension; this
 preserves invocation lifetimes when one native loop reuses the parameter slots.
-Explicit yields remain eligible.
+Body awaits and checked calls retain their stop and cancellation exits; those
+effects do not exclude an otherwise eligible body.
 
 ## Operation preparation
 

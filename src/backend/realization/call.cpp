@@ -22,10 +22,12 @@ import std;
 auto BodyRealizer::ExpressionBuilder::complete_call(
     Fragment& fragment,
     const FallibleCall& transport,
-    bool project_success,
-    PreparedUse use,
-    bool propagate_outcome
+    ResultDemand demand,
+    PreparedUse use
 ) noexcept -> void {
+    if (demand == ResultDemand::ForwardResult) {
+        return;
+    }
     const auto& call = transport.call;
     const auto outcome = owner.fresh_local(TargetTemporaryNameKind::Outcome);
     const auto storage =
@@ -53,42 +55,22 @@ auto BodyRealizer::ExpressionBuilder::complete_call(
             statements
         );
     }
+    fragment.result_carrier = ResultCarrier {.local = outcome, .deferred = !automatic};
+    const auto project_success = demand != ResultDemand::Discard
+        && demand != ResultDemand::AdoptSuccess
+        && !owner.context.is_void(source(fragment).operation.type.resolved());
     auto access = name_expression(outcome);
     if (!automatic) {
         access = dereference_expression(std::move(access));
     }
-    if (propagate_outcome) {
-        // Keep the original carrier and operand cleanup owners. Runtime uses
-        // the same payload transfer policy as projection followed by return.
-        owner.mutable_owners.insert(outcome);
-        complete(
-            fragment,
-            call_member(
-                call_expression(
-                    intrinsic_expression(TargetSymbol::StdMove),
-                    target_expressions(std::move(access))
-                ),
-                "propagate",
-                {}
-            )
-        );
-        return;
-    }
-    if (owner.context.semantic().may_stop_test(call)) {
+    if (owner.context.semantic().may_stop(call)) {
         auto stopped_access = name_expression(outcome);
         if (!automatic) {
             stopped_access = dereference_expression(std::move(stopped_access));
         }
-        auto stopped = template_call_expression(
-            member_expression(
-                std::move(stopped_access),
-                TargetIdentifier::from_spelling("failure_if")
-            ),
-            {owner.context.intrinsic_type(TargetSymbol::RuntimeTestStopped, false)},
-            {}
-        );
+        auto stopped = call_member(std::move(stopped_access), "is_stopped", {});
         auto exit = LoweringStmtBuilder();
-        owner.emit_test_exit(exit);
+        owner.emit_stopped(exit);
         statements.record_exits(exit.exits());
         statements.emit(
             generated_statement(
@@ -127,27 +109,29 @@ auto BodyRealizer::ExpressionBuilder::complete_call(
     } else {
         complete(fragment, LoweringCompleted {});
     }
-    auto failure = LoweringStmtBuilder();
-    owner.transfer_failure(
-        OutcomeFailureSource {
-            .storage = outcome,
-            .deferred = !automatic,
-            .layout = transport.failures
-        },
-        transport.failures,
-        transport.destination,
-        failure
-    );
-    statements.record_exits(failure.exits());
-    statements.emit(
-        generated_statement(
-            TargetIfStmt {
-                .condition =
-                    prefix_expression(TargetPrefixOperator::LogicalNot, std::move(success)),
-                .body = std::move(failure).finish(),
-                .else_body = std::nullopt
-            }
-        ),
-        true
-    );
+    if (!owner.context.plan().failure_abi().members(transport.failures).empty()) {
+        auto failure = LoweringStmtBuilder();
+        owner.transfer_failure(
+            OutcomeFailureSource {
+                .storage = outcome,
+                .deferred = !automatic,
+                .layout = transport.failures
+            },
+            transport.failures,
+            transport.destination,
+            failure
+        );
+        statements.record_exits(failure.exits());
+        statements.emit(
+            generated_statement(
+                TargetIfStmt {
+                    .condition =
+                        prefix_expression(TargetPrefixOperator::LogicalNot, std::move(success)),
+                    .body = std::move(failure).finish(),
+                    .else_body = std::nullopt
+                }
+            ),
+            true
+        );
+    }
 }

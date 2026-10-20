@@ -61,7 +61,12 @@ auto emitted_statement(Statement statement) noexcept -> GeneratedArtifact {
             .body = std::move(items),
             .epilogue = {},
         },
-        TargetDirectiveInputs {.pragma_once = false, .requirements = {}, .native_headers = {}}
+        TargetDirectiveInputs {
+            .pragma_once = false,
+            .requirements = {},
+            .native_headers = {},
+            .generated_dependencies = {},
+        }
     );
     return emit(
         std::move(unit),

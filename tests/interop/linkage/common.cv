@@ -6,11 +6,11 @@ static auto native_value() noexcept -> int {
 }
 ---
 
-private import(cpp) fn native_value() -> i32;
+private import(cpp) fn native_value() -> i32 = ::native_value;
 
 fn value() -> i32 => native_value();
 
-export struct Value {
+struct Value {
     number: i32,
     label: String
 }

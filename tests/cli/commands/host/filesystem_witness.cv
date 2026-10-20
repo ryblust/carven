@@ -1,0 +1,9 @@
+import std::fs using { FileError, read_text }
+
+const fn width() -> usize throw FileError => read_text("unavailable.txt")?.byte_length();
+
+fn main() {
+    const n = width()?;
+    let values: [u8; n] = [0];
+    println(n, values.length());
+}

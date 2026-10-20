@@ -9,7 +9,7 @@ import "lifetimes/lifetimes.hpp" using lifetime_probe::{
     FixedOwner,
     ResultMaker,
     CopyOwner,
-};
+}
 
 fn fixed_success() -> FixedOwner throw Failure => 41;
 

@@ -121,6 +121,12 @@ auto make_fixed() noexcept -> Fixed {
     return Fixed {};
 }
 
+auto make_fixed_outcome() noexcept -> carven::runtime::Outcome<Fixed> {
+    return carven::runtime::Outcome<Fixed>::success_from([]() noexcept -> Fixed {
+        return Fixed {};
+    });
+}
+
 auto fixed_created() noexcept -> std::int32_t {
     return counters.created;
 }

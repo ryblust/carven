@@ -544,14 +544,10 @@ const TestSuite suite([] static noexcept {
         [] static noexcept {
             for (const auto reverse : {false, true}) {
                 auto sources = SourceManager();
-                const auto alpha = *sources.append_virtual(
-                    "alpha.cv",
-                    "export struct E {} export fn first() throw E {}"
-                );
-                const auto zeta = *sources.append_virtual(
-                    "zeta.cv",
-                    "export struct E {} export fn second() throw E {}"
-                );
+                const auto alpha =
+                    *sources.append_virtual("alpha.cv", "struct E {} fn first() throw E {}");
+                const auto zeta =
+                    *sources.append_virtual("zeta.cv", "struct E {} fn second() throw E {}");
                 const auto app = *sources.append_virtual(
                     "app.cv",
                     "import alpha using first; import zeta using second; "

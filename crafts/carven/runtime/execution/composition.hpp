@@ -49,6 +49,7 @@ struct CompositionInput<CompositionOperand<Input, Validate>> final {
     using ChildType = typename Base::ChildType;
     using CompletionType = typename Base::CompletionType;
     static constexpr bool validate = Validate;
+
     using ValidationSite =
         std::conditional_t<Validate, carven::runtime::SourceSite, UncheckedCompositionSite>;
 
@@ -228,6 +229,9 @@ template<CompositionPolicy Policy, typename Result, typename... Failures, typena
 auto compose(Inputs... inputs) noexcept -> AsyncOperation<Result, Failures...> {
     using Output = Completion<Result, Failures...>;
     constexpr auto count = sizeof...(Inputs);
+    if (stop_requested()) {
+        co_return Output::stopped();
+    }
     if (cancel_requested()) {
         co_return Output::cancelled();
     }
@@ -247,11 +251,19 @@ auto compose(Inputs... inputs) noexcept -> AsyncOperation<Result, Failures...> {
         auto fallback = std::optional<std::size_t>();
         auto output = std::optional<Output>();
         while (remaining != 0) {
+            if (stop_requested()) {
+                output.emplace(Output::stopped());
+                break;
+            }
             if (cancel_requested()) {
                 output.emplace(Output::cancelled());
                 break;
             }
             const auto selected = co_await WaitReadyAwaiter<count>(children, &active, true);
+            if (stop_requested()) {
+                output.emplace(Output::stopped());
+                break;
+            }
             if (selected.head == count || cancel_requested()) {
                 output.emplace(Output::cancelled());
                 break;
@@ -316,7 +328,7 @@ auto compose(Inputs... inputs) noexcept -> AsyncOperation<Result, Failures...> {
         co_await scope.close(
             remaining != 0 ? ClosingPolicy::RequestCancelAndClose : ClosingPolicy::CloseOnly
         );
-        co_return std::move(*output);
+        co_return stop_requested() ? Output::stopped() : std::move(*output);
     }
 }
 

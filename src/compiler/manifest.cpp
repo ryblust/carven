@@ -65,7 +65,8 @@ auto format_compilation_manifest(
     std::size_t runtime_test_count,
     bool cacheable,
     std::span<const std::string_view> owned_modules,
-    std::span<const std::string_view> standard_modules
+    std::span<const std::string_view> standard_modules,
+    std::span<const std::string_view> external_modules
 ) noexcept -> std::string {
     auto result = std::format(
         "{{\n  \"workspace\": {{\"root\": {}}},\n"
@@ -79,12 +80,14 @@ auto format_compilation_manifest(
     auto separator = std::string_view();
     for (const auto& input : inputs) {
         result += std::format(
-            "{}\n    {{\"path\": {}, \"module\": {}, \"owned\": {}, \"standard\": {}}}",
+            "{}\n    {{\"path\": {}, \"module\": {}, \"owned\": {}, \"standard\": {}, "
+            "\"external\": {}}}",
             separator,
             json_string(input.path),
-            json_string(input.module),
-            std::ranges::contains(owned_modules, input.module),
-            std::ranges::contains(standard_modules, input.module)
+            json_string(input.module_path),
+            std::ranges::contains(owned_modules, input.module_path),
+            std::ranges::contains(standard_modules, input.module_path),
+            std::ranges::contains(external_modules, input.module_path)
         );
         separator = ",";
     }
@@ -92,7 +95,8 @@ auto format_compilation_manifest(
     separator = {};
     for (const auto& artifact : artifacts.entries()) {
         result += std::format(
-            "{}\n    {{\"path\": {}, \"role\": \"{}\", \"source_mapping\": \"{}\", \"source\": {}}}",
+            "{}\n    {{\"path\": {}, \"role\": \"{}\", \"source_mapping\": \"{}\", "
+            "\"source\": {}, \"link_dependencies\": [",
             separator,
             json_string(artifact.logical_path),
             role_name(artifact.role),
@@ -100,6 +104,12 @@ auto format_compilation_manifest(
             artifact.source_path ? source_reference(*artifact.source_path, workspace_root)
                                  : std::string("null")
         );
+        auto dependency_separator = std::string_view();
+        for (const auto& dependency : artifact.link_dependencies) {
+            result += std::format("{}{}", dependency_separator, json_string(dependency));
+            dependency_separator = ", ";
+        }
+        result += "]}";
         separator = ",";
     }
     result += "\n  ]\n}\n";

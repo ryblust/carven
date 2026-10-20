@@ -1,22 +1,41 @@
-import std::async using { wait_ready, close };
-import std::time using { timeout, RangeError, Timeout };
+import std::async using { wait_ready, close }
+import std::time using { timeout, TimeRangeError, Timeout }
 import "async/fixed.hpp";
 
-// These declarations publish scalar native results to source analysis without
-// inferring a borrowing contract from an opaque C++ expression result.
-import(cpp) fn make_fixed() -> ::Fixed;
-import(cpp) fn fixed_created() -> i32;
-import(cpp) fn fixed_destroyed() -> i32;
-import(cpp) fn fixed_live() -> i32;
-import(cpp) fn fixed_trace() -> i32;
-import(cpp) fn fixed_identity_stable() -> i32;
-import(cpp) async fn fixed_cancel_on_destroy() -> i32;
-import(cpp) fn fixed_completion_cancel_observed() -> bool;
-import(cpp) async fn fixed_aligned_frames() -> bool;
+import(cpp) fn make_fixed() -> ::Fixed = ::make_fixed;
+import(cpp) fn make_declared() -> ::Fixed throw ParentFailure = ::make_fixed_outcome;
+import(cpp) fn fixed_created() -> i32 = ::fixed_created;
+import(cpp) fn fixed_destroyed() -> i32 = ::fixed_destroyed;
+import(cpp) fn fixed_live() -> i32 = ::fixed_live;
+import(cpp) fn fixed_trace() -> i32 = ::fixed_trace;
+import(cpp) fn fixed_identity_stable() -> i32 = ::fixed_identity_stable;
+import(cpp) async fn fixed_cancel_on_destroy() -> i32 = ::fixed_cancel_on_destroy;
+import(cpp) fn fixed_completion_cancel_observed() -> bool = ::fixed_completion_cancel_observed;
+import(cpp) async fn fixed_aligned_frames() -> bool = ::fixed_aligned_frames;
 
-export struct ParentFailure {}
+struct ParentFailure {}
 
-private async fn fixed() -> ::Fixed => make_fixed();
+private fn sync_fixed() -> ::Fixed => make_fixed();
+
+private fn nominal_fixed(fail: bool) -> ::Fixed throw ParentFailure {
+    if fail { throw ParentFailure {}; }
+    return ::Fixed {};
+}
+
+private fn sync_widened() -> ::Fixed throw ParentFailure => make_declared()?;
+
+private fn sync_selected(flag: bool) -> ::Fixed {
+    if flag {
+        return try {
+            sync_widened()?
+        } catch {
+            ParentFailure(_) => make_fixed()
+        };
+    }
+    return sync_fixed();
+}
+
+private async fn fixed() -> ::Fixed => sync_selected(true);
 
 private async fn forward() -> ::Fixed {
     return await fixed();
@@ -27,7 +46,7 @@ private async fn parent() -> ::Fixed throw ParentFailure {
     return await forward();
 }
 
-export async fn run_fixed() throw ParentFailure + Timeout + RangeError {
+async fn run_fixed() throw ParentFailure + Timeout + TimeRangeError {
     assert(await fixed_aligned_frames());
     assert(
         (fixed_created(), fixed_destroyed(), fixed_live(), fixed_trace(), fixed_identity_stable())
@@ -35,6 +54,7 @@ export async fn run_fixed() throw ParentFailure + Timeout + RangeError {
     );
     if true {
         let held = await parent()?;
+        assert(held.at_construction_address() as bool);
         assert(
             (
                 fixed_created(),
@@ -52,10 +72,36 @@ export async fn run_fixed() throw ParentFailure + Timeout + RangeError {
     );
     if true {
         let held = await timeout(parent(), 1s)?;
+        assert(held.at_construction_address() as bool);
         assert(fixed_created() == 2 && fixed_destroyed() == 1 && fixed_live() == 1);
         assert(fixed_identity_stable() == 1);
     }
     assert(fixed_destroyed() == 2 && fixed_live() == 0);
+    if true {
+        let held = sync_selected(false);
+        assert(held.at_construction_address() as bool);
+        assert(fixed_created() == 3 && fixed_destroyed() == 2 && fixed_live() == 1);
+        assert(fixed_identity_stable() == 1);
+    }
+    assert(fixed_destroyed() == 3 && fixed_live() == 0);
+    if true {
+        let held = if fixed_created() != 3 { sync_fixed() } else { ::Fixed {} };
+        assert(held.at_construction_address() as bool);
+        assert(fixed_created() == 4 && fixed_destroyed() == 3 && fixed_live() == 1);
+        assert(fixed_identity_stable() == 1);
+    }
+    assert(fixed_destroyed() == 4 && fixed_live() == 0);
+    if true {
+        let held = try {
+            nominal_fixed(false)?
+        } catch {
+            ParentFailure(_) => ::Fixed {}
+        };
+        assert(held.at_construction_address() as bool);
+        assert(fixed_created() == 5 && fixed_destroyed() == 4 && fixed_live() == 1);
+        assert(fixed_identity_stable() == 1);
+    }
+    assert(fixed_destroyed() == 5 && fixed_live() == 0);
 
     async let candidate = timeout(fixed_cancel_on_destroy(), 1s);
     let (_, cancelled) = await wait_ready(candidate);

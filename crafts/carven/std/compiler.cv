@@ -1,0 +1,42 @@
+import <carven/std/compiler/native.hpp> using carven::standard::compiler;
+
+export struct CompilerError {
+    message: String
+}
+
+export struct CompiledImplementation {
+    file: String,
+    source: String,
+    dependencies: Vector<String>
+}
+
+export struct Compilation {
+    cacheable: bool,
+    implementations: Vector<CompiledImplementation>,
+    include_dirs: Vector<String>,
+    native_providers: Vector<String>
+}
+
+export const fn compile(sources: [String], destination: str) -> Compilation throw CompilerError {
+    var result = compiler::compile(sources, destination);
+    if !(result.success as bool) {
+        throw CompilerError { message: (&result).take_error() as String };
+    }
+    let native = (&result).take_implementations() as Vector<compiler::Implementation>;
+    var implementations: Vector<CompiledImplementation> = [];
+    for implementation in native {
+        implementations.push(
+            {
+                file: implementation.file as String,
+                source: implementation.source as String,
+                dependencies: implementation.dependencies as Vector<String>
+            }
+        );
+    }
+    return {
+        cacheable: result.cacheable as bool,
+        implementations: &&implementations,
+        include_dirs: (&result).take_include_dirs() as Vector<String>,
+        native_providers: (&result).take_native_providers() as Vector<String>
+    };
+}

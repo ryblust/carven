@@ -171,7 +171,7 @@ CachedAnalysis::CachedAnalysis(std::vector<WorkspaceSemanticInput> inputs) noexc
 
 auto CachedAnalysis::matches_documents(const DocumentMap& documents) const noexcept -> bool {
     return std::ranges::all_of(inputs, [&](const WorkspaceSemanticInput& input) noexcept {
-        const auto found = documents.find(input.module.document);
+        const auto found = documents.find(input.project_module.document);
         const auto source =
             found == documents.end() ? nullptr : found->second.queries->source_owner();
         return input.source == source;
@@ -184,7 +184,9 @@ auto CachedAnalysis::matches_modules(std::span<const WorkspaceProjectModule> mod
         inputs,
         modules,
         [](const WorkspaceSemanticInput& input,
-           const WorkspaceProjectModule& module) static noexcept { return input.module == module; }
+           const WorkspaceProjectModule& project_module) static noexcept {
+            return input.project_module == project_module;
+        }
     );
 }
 
@@ -218,10 +220,10 @@ auto WorkspaceQueries::resolve(
         cached_selections.erase(found);
     } else {
         auto resolved = std::vector<WorkspaceSemanticInput>();
-        for (const auto& module : modules) {
-            const auto entry = document(module.document);
+        for (const auto& project_module : modules) {
+            const auto entry = document(project_module.document);
             resolved.push_back({
-                .module = module,
+                .project_module = project_module,
                 .source = entry ? entry->queries->source_owner() : nullptr,
                 .parsed = entry ? entry->queries->syntax(timings) : nullptr,
             });
@@ -235,9 +237,9 @@ auto WorkspaceQueries::resolve(
         cached_selections.push_back(node);
     }
     auto versions = std::map<std::string_view, std::int64_t>();
-    for (const auto& module : modules) {
-        if (const auto entry = document(module.document)) {
-            versions.emplace(module.document, entry->version);
+    for (const auto& project_module : modules) {
+        if (const auto entry = document(project_module.document)) {
+            versions.emplace(project_module.document, entry->version);
         }
     }
     auto document_versions = std::vector<WorkspaceDocumentVersion>();
@@ -263,13 +265,13 @@ auto WorkspaceQueries::navigation_modules(
     auto documents = std::set<std::string_view>();
     const auto* root = static_cast<const WorkspaceProjectModule*>(nullptr);
     auto valid_project = true;
-    for (const auto& module : project) {
-        if (!by_path.emplace(module.module_path.value(), &module).second
-            || !documents.insert(module.document).second) {
+    for (const auto& project_module : project) {
+        if (!by_path.emplace(project_module.module_path.value(), &project_module).second
+            || !documents.insert(project_module.document).second) {
             valid_project = false;
         }
-        if (module.document == document) {
-            root = &module;
+        if (project_module.document == document) {
+            root = &project_module;
         }
     }
     if (root == nullptr) {
@@ -278,30 +280,20 @@ auto WorkspaceQueries::navigation_modules(
     if (!valid_project) {
         return std::vector<WorkspaceProjectModule>(project.begin(), project.end());
     }
-    auto pending = std::vector<const WorkspaceProjectModule*> {root};
-    auto selected = std::set<std::string_view>();
+    const auto load =
+        [&](const CanonicalModulePath& path) noexcept -> std::shared_ptr<const ParsedDocument> {
+        const auto found = by_path.find(path.value());
+        if (found == by_path.end()) {
+            return nullptr;
+        }
+        const auto entry = this->document(found->second->document);
+        return entry ? entry->queries->syntax() : nullptr;
+    };
+    const auto selected = source_dependency_closure(std::span(&root->module_path, 1uz), load);
     auto modules = std::vector<WorkspaceProjectModule>();
-    for (auto index = 0uz; index < pending.size(); ++index) {
-        const auto& module = *pending[index];
-        if (!selected.insert(module.module_path.value()).second) {
-            continue;
-        }
-        modules.push_back(module);
-        const auto entry = this->document(module.document);
-        if (!entry) {
-            continue;
-        }
-        const auto parsed = entry->queries->syntax();
-        const auto ast = parsed->recovered_syntax();
-        if (!ast) {
-            continue;
-        }
-        for (const auto& path :
-             source_dependencies(*ast, module.module_path, parsed->source().text)) {
-            const auto found = by_path.find(path.value());
-            if (found != by_path.end()) {
-                pending.push_back(found->second);
-            }
+    for (const auto& path : selected) {
+        if (const auto found = by_path.find(path.value()); found != by_path.end()) {
+            modules.push_back(*found->second);
         }
     }
     return modules;

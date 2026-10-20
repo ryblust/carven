@@ -17,6 +17,14 @@ and validation.
 
 Choose the group by the tested boundary, independently of implementation language
 or a `std::` module path. Keep application checks with their sources under `examples/`.
+Validate standalone `build.cv` examples through the CLI group so the examples
+remain usable without repository build files.
+
+Use one build-and-run invocation to validate the standalone build example.
+Check object reuse and invalidation with small C++ inputs through the build
+Craft's object-compilation function. Same-Craft fixtures can exercise internal
+declarations through ordinary module visibility. Compile library consumers with
+their Crafts targets; reserve CLI interpretation for their hosted execution.
 
 Use focused internal tests for algorithms and compiler results that program-level
 execution cannot expose.
@@ -88,6 +96,10 @@ names in failure context. Merge cases with the same input class, execution path,
 and observation. Use separate cases for independent compilations; use `each` for
 observations sharing state or a dependent sequence.
 
+Exercise admission through the public call or loading boundary that owns it.
+Keep representative failures for distinct contracts such as type, access, shape,
+and lifetime. A second route to the same rejection needs independent evidence.
+
 Use comparison assertions for values and contextual predicates for opaque objects.
 Compare text contents with explicit lengths for binary data. Compare optional
 results with their expected values or `std::nullopt`. Compute expensive failure
@@ -112,7 +124,8 @@ compiling consumers and test generated behavior by running them.
 State the bound or work avoided in each cost assertion. Use deep, wide, or shared
 inputs when validating stack use or growth bounds. Scope measurements to the
 operation under test. Keep ordinary resource-accounting cases small; do not exhaust
-production budgets in routine tests.
+production budgets in routine tests. Reserve boundary-sized inputs for the
+size or depth limit itself; use small inputs for mutation and lifetime behavior.
 
 Check retained generic and staged definitions, source ownership, and ordinary and
 test generation in artifact-reuse cases. Observe static effects to verify that
@@ -129,6 +142,11 @@ files or effects.
 
 Use ordinary source files for behavioral tests. Use `.cv.fixture` where fixture bytes
 are the subject. Fix source positions only when attribution is the contract.
+Use bare Carven declarations for helpers shared within a test project, hosted
+entries, and their source types. Use `export` for cross-craft APIs or cases whose
+contract exercises exported declarations. Use `export(cpp)` for generated entry
+points called by C++ consumers; their signature types may remain bare. Exercise
+C++ signature dependencies independently of cross-craft source visibility.
 Check expected bytes, source preservation, idempotence, and stability under irrelevant
 whitespace in formatter fixtures. Format and parse repository programs in corpus tests.
 
@@ -136,6 +154,20 @@ whitespace in formatter fixtures. Format and parse repository programs in corpus
 
 Run commands from the repository root through `./xmakew`; use `.\xmakew.ps1` on
 Windows with the same arguments.
+
+The build uses the remote `carven-xmake-repo` by default. For joint compiler and
+rule development, set `CARVEN_XMAKE_REPO_DIR` to a local rule checkout. Relative
+paths resolve from the Carven repository root. In a POSIX shell:
+
+```sh
+export CARVEN_XMAKE_REPO_DIR=/path/to/carven-xmake-repo
+./xmakew f -c -y
+./xmakew require --force -y
+```
+
+In PowerShell, set `$env:CARVEN_XMAKE_REPO_DIR` to the checkout path. Keep the
+variable set for build and test commands. Repeat configuration and package refresh
+after local rule changes; reconfigure after changing the installed Crafts inventory.
 
 Build the compiler before testing. After a successful build, select the relevant
 groups or the full suite. Rebuild after code changes before rerunning tests.

@@ -1,4 +1,4 @@
-import std::json using { JSONError, validate };
+import std::json using { JSONError, validate }
 
 test "JSON: long whitespace and number runs preserve syntax and EOF offsets" {
     for length in [0usize, 1, 31, 32, 33, 63, 64, 65, 97] {

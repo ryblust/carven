@@ -1,7 +1,6 @@
 module carven:semantic.analysis.ownership.recursion.impl;
 
 import :semantic.analysis.ownership.context;
-import :semantic.semir.callable;
 import :semantic.semir.program;
 import :support.graph;
 import std;
@@ -37,7 +36,7 @@ auto OwnershipRecursionBuilder::observe(const SemanticExpression& expression) no
     if (const auto* call = std::get_if<SemCall>(&expression.value)) {
         auto target = call->target;
         if (!target.has_value()) {
-            target = callable_identity(program, call->callee->type.resolved());
+            target = model.callable_identity(call->callee->type.construction());
         }
         if (!target.has_value()) {
             adjacency[caller].push_back(dynamic_targets);

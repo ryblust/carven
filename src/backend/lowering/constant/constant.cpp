@@ -255,7 +255,7 @@ auto ConstantLowerer::matches_value_initialization(ConstantID id) noexcept -> bo
         } else if constexpr (std::same_as<Value, F64Constant>) {
             return std::bit_cast<std::uint64_t>(value.value) == 0u;
         } else if constexpr (std::same_as<Value, SIMDConstant>) {
-            return std::ranges::all_of(value.lanes, [](auto bits) static noexcept {
+            return std::ranges::all_of(value.words, [](auto bits) static noexcept {
                 return bits == 0u;
             });
         } else if constexpr (std::same_as<Value, NumericEnumConstant>) {
@@ -334,22 +334,23 @@ auto ConstantLowerer::initializer(
                         .kind;
                 const auto layout = *simd_layout(owner);
                 const auto mask = owner == layout.mask;
+                const auto lanes =
+                    value.lanes(mask ? BuiltinType::U8 : layout.element, layout.width);
                 // Lane storage is bit-exact, including signed zero and NaN payloads.
-                const auto splat =
-                    !mask && std::ranges::all_of(value.lanes, [&](auto lane) noexcept {
-                        return lane == value.lanes.front();
-                    });
+                const auto splat = !mask && std::ranges::all_of(lanes, [&](auto lane) noexcept {
+                    return lane == lanes.front();
+                });
                 auto bits = 0u;
-                const auto input_count = splat ? 1uz : value.lanes.size();
+                const auto input_count = splat ? 1uz : lanes.size();
                 for (auto i = 0uz; i < input_count; ++i) {
                     if (mask) {
-                        if (value.lanes[i] != 0u) {
+                        if (lanes[i] != 0u) {
                             bits |= 1u << i;
                         }
                     } else if (layout.element == BuiltinType::F32) {
                         inputs.push_back(floating_expression(
                             context,
-                            std::bit_cast<float>(value.lanes[i]),
+                            std::bit_cast<float>(lanes[i]),
                             context.semantic().types().builtin_type(BuiltinType::F32)
                         ));
                     } else {
@@ -358,7 +359,7 @@ auto ConstantLowerer::initializer(
                                 .value = TargetLiteralExpr {
                                     .value = TargetIntegerLiteral {
                                         .negative = false,
-                                        .magnitude = value.lanes[i],
+                                        .magnitude = lanes[i],
                                         .suffix = TargetIntegerSuffix::Unsigned
                                     }
                                 }
@@ -534,10 +535,12 @@ auto ConstantLowerer::initializer(
             },
             [&]<typename Sequence>(const Sequence& value) noexcept -> TargetExpr
                 requires (std::same_as<Sequence, SliceConstant>
-                          || std::same_as<Sequence, VectorConstant>)
+                          || std::same_as<Sequence, VectorConstant>
+                          || std::same_as<Sequence, ByteSequenceConstant>)
             {
-                constexpr auto owning = std::same_as<Sequence, VectorConstant>;
-                if constexpr (owning) {
+                const auto& canonical = context.semantic().types().type(fact.type).value;
+                const auto* vector = std::get_if<VectorTypeValue>(&canonical);
+                if constexpr (std::same_as<Sequence, VectorConstant>) {
                     if (ownership == ConstantOwnership::Owned) {
                         auto elements = std::vector<TargetExpr>();
                         elements.reserve(value.elements.size());
@@ -556,26 +559,38 @@ auto ConstantLowerer::initializer(
                 }
                 auto storage = context.constant_storage().find(id, ConstantStorageRole::Elements);
                 if (!storage) {
-                    const auto& canonical = context.semantic().types().type(fact.type).value;
                     const auto element = context.lower_type(
-                        [&]() noexcept {
-                            if constexpr (owning) {
-                                return std::get<VectorTypeValue>(canonical).element;
-                            } else {
-                                return std::get<SliceTypeValue>(canonical).element;
-                            }
-                        }(),
+                        vector ? vector->element : std::get<SliceTypeValue>(canonical).element,
                         TypeNameScope::Module
                     );
-                    auto elements = std::vector<TargetExpr>();
-                    elements.reserve(value.elements.size());
-                    for (const auto child : value.elements) {
-                        elements.push_back(initializer(
-                            child,
-                            ConstantLiteralContext::TargetTyped,
-                            ConstantOwnership::Retained
-                        ));
-                    }
+                    auto elements = [&]() noexcept
+                        -> std::variant<std::vector<TargetExpr>, std::vector<std::uint8_t>> {
+                        if constexpr (std::same_as<Sequence, ByteSequenceConstant>) {
+                            auto bytes = value.bytes;
+                            while (!bytes.empty() && bytes.back() == 0u) {
+                                bytes.pop_back();
+                            }
+                            return bytes;
+                        } else {
+                            auto expressions = std::vector<TargetExpr>();
+                            expressions.reserve(value.elements.size());
+                            for (const auto child : value.elements) {
+                                expressions.push_back(initializer(
+                                    child,
+                                    ConstantLiteralContext::TargetTyped,
+                                    ConstantOwnership::Retained
+                                ));
+                            }
+                            return expressions;
+                        }
+                    }();
+                    const auto size = [&]() noexcept {
+                        if constexpr (std::same_as<Sequence, ByteSequenceConstant>) {
+                            return value.bytes.size();
+                        } else {
+                            return value.elements.size();
+                        }
+                    }();
                     storage = context.constant_storage().append(
                         id,
                         context.intrinsic_type(TargetSymbol::Auto, false),
@@ -583,8 +598,7 @@ auto ConstantLowerer::initializer(
                             .value =
                                 TargetArrayExpr {
                                     .element_type_id = element,
-                                    .extent =
-                                        target_child(integer_expression(value.elements.size())),
+                                    .extent = target_child(integer_expression(size)),
                                     .elements = std::move(elements),
                                 },
                         },
@@ -595,7 +609,19 @@ auto ConstantLowerer::initializer(
                     intrinsic_expression(TargetSymbol::RuntimeSliceView),
                     target_expressions(name_expression(std::move(*storage)))
                 );
-                if constexpr (owning) {
+                if constexpr (!std::same_as<Sequence, SliceConstant>) {
+                    if (!vector) {
+                        return view;
+                    }
+                    if (ownership == ConstantOwnership::Owned) {
+                        return call_expression(
+                            static_member_expression(
+                                context.lower_type(fact.type, TypeNameScope::Module),
+                                TargetIdentifier::from_spelling("from_slice")
+                            ),
+                            target_expressions(std::move(view))
+                        );
+                    }
                     return call_expression(
                         static_member_expression(
                             context.lower_type(fact.type, TypeNameScope::Module),

@@ -2,7 +2,6 @@ module carven:semantic.analysis.ownership.facts.impl;
 
 import :semantic.analysis.coverage;
 import :semantic.analysis.ownership.context;
-import :semantic.semir.callable;
 import :semantic.semir.text;
 import :semantic.semir.vector;
 import std;
@@ -79,7 +78,7 @@ auto observe_relation_demand(
         } else if constexpr (std::same_as<Operation, SemCall>) {
             auto target = operation.target;
             if (!target) {
-                target = callable_identity(program, operation.callee->type.resolved());
+                target = model.callable_identity(operation.callee->type.construction());
             }
             const auto external =
                 !target || !program.declarations().body_for_callable(*target).has_value();

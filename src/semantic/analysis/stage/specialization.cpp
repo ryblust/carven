@@ -5,6 +5,7 @@ import :diagnostics.code;
 import :semantic.analysis.constant.fold;
 import :semantic.analysis.constant.freeze;
 import :semantic.analysis.program;
+import :semantic.analysis.operations;
 import :semantic.analysis.stage.session;
 import :semantic.analysis.stage.specialization;
 import :semantic.evaluation.operation;
@@ -29,18 +30,22 @@ public:
 private:
     auto expression(SemanticExpression& source) noexcept -> AnalysisTask<void>;
     auto statement(SemanticStatement& source) noexcept -> AnalysisTask<void>;
+
     template<typename Call>
     auto specialize_call(Call& call, CallableID target, ProgramOriginID origin) noexcept
         -> AnalysisTask<bool>;
+
     auto pattern_bounds(
         std::span<const PatternID> roots,
         std::vector<SemPatternBounds>& bounds
     ) noexcept -> std::map<PatternID, SemPatternBounds*>;
+
     auto pattern(
         PatternID root,
         const std::map<PatternID, SemPatternBounds*>& bounds,
         CompletionQuery& completion
     ) noexcept -> AnalysisTask<void>;
+
     auto unreachable(SemanticExpression& source) noexcept -> void;
     auto unreachable(SemanticRegion& source) noexcept -> void;
     // Replaces the static bindings a tree reads by their values.
@@ -51,6 +56,7 @@ private:
         SemanticExpression& expression,
         std::optional<ConstructionTypeRef> frozen_type = std::nullopt
     ) noexcept -> AnalysisTask<ConstantID>;
+
     auto select(SemIf& value) noexcept -> AnalysisTask<std::optional<SemanticRegion>>;
     auto expand(SemRangeLoop& loop) noexcept -> AnalysisTask<SemExpandedLoop>;
     auto completion_patterns() const noexcept -> CompletionPatterns;
@@ -78,11 +84,9 @@ auto Specializer::completion_patterns() const noexcept -> CompletionPatterns {
             [this](PatternID id) noexcept -> std::variant<PatternValue, ElaboratedPatternValue> {
             return draft.body_draft(body).patterns.get(id).value;
         },
-        .single_case =
-            [this](EnumCaseID id) noexcept {
-                const auto owner = draft.construction_enum_case_declaration_copy(id).owner;
-                return draft.enum_cases(owner).size() == 1uz;
-            },
+        .single_case = [this](
+                           ConstructionEnumCaseRef id
+                       ) noexcept { return enum_case_count(draft, id) == 1uz; },
     };
 }
 
@@ -195,7 +199,7 @@ auto Specializer::pattern_bounds(
 auto Specializer::unreachable(SemanticExpression& source) noexcept -> void {
     source.constant.reset();
     source.failures = BodyFailures(draft.add_empty_failure_term());
-    source.exits_test = false;
+    source.exits_call = false;
     source.operation_reachable = false;
     source.category = SemanticValueCategory::Value;
     source.value = SemUnreachable {};

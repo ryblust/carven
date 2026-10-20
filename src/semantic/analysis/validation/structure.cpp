@@ -129,7 +129,7 @@ auto BodyContractVerifier::verify_patterns() const noexcept -> void {
                     }
                 },
                 [&](const EnumCasePattern& value) noexcept {
-                    const auto& enum_case = require_enum_case(value.enum_case);
+                    const auto& enum_case = require_enum_case(concrete_enum_case(value.enum_case));
                     const auto& canonical = require_type(pattern.type);
                     const auto* enumeration = std::get_if<EnumTypeValue>(&canonical.value);
                     if (enumeration == nullptr

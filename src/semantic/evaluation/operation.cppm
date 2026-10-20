@@ -28,7 +28,7 @@ auto parse_number_constant(
     const ExecutionValueAccess& values,
     BuiltinType number,
     std::string_view text
-) noexcept -> std::optional<ConstantFact>;
+) noexcept -> std::optional<ConstantAtom>;
 
 enum class ConstantEvaluationFailure {
     OperandNotConstant,
@@ -57,6 +57,7 @@ auto load_constant_fact(
     const ExecutionValueAccess& values,
     std::optional<ConstantID> constant
 ) noexcept -> std::expected<const ConstantFact*, ConstantEvaluationFailure>;
+
 // Operands have passed semantic admission for language equality.
 auto constant_value_equal(
     const ConstantValueReader& values,
@@ -64,33 +65,45 @@ auto constant_value_equal(
     const ConstantValue& right
 ) noexcept -> bool;
 
+auto constant_value_equal(
+    const ConstantValueReader& values,
+    const ConstantAtomValue& left,
+    const ConstantAtomValue& right
+) noexcept -> bool;
+
+// Operands belong to this semantic program and have passed type admission.
+// These operations check execution-dependent failures, not fact storage again.
 auto evaluate_unary_constant_value(
     const ExecutionValueAccess& values,
     UnaryOperator operation,
-    const ConstantFact& operand,
+    const ConstantAtom& operand,
     TypeID result,
     IntegerArithmetic arithmetic
-) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure>;
+) noexcept -> std::expected<ConstantAtom, ConstantEvaluationFailure>;
+
 auto evaluate_binary_constant_value(
     const ExecutionValueAccess& values,
     BinaryOperator operation,
-    const ConstantFact& left,
-    const ConstantFact& right,
+    const ConstantAtom& left,
+    const ConstantAtom& right,
     TypeID result,
     IntegerArithmetic arithmetic
-) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure>;
+) noexcept -> std::expected<ConstantAtom, ConstantEvaluationFailure>;
+
 auto evaluate_cast_constant_value(
     const ExecutionValueAccess& values,
     CastKind kind,
-    const ConstantFact& operand,
+    const ConstantAtom& operand,
     TypeID result
-) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure>;
+) noexcept -> std::expected<ConstantAtom, ConstantEvaluationFailure>;
+
 auto evaluate_text_intrinsic_constant_value(
     const ExecutionValueAccess& values,
     TextIntrinsic intrinsic,
-    const ConstantFact& operand,
+    const ConstantAtom& operand,
     TypeID result
-) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure>;
+) noexcept -> std::expected<ConstantAtom, ConstantEvaluationFailure>;
+
 auto evaluate_slice_intrinsic_constant_value(
     const ExecutionValueAccess& values,
     SliceIntrinsic intrinsic,
@@ -105,6 +118,7 @@ auto fold_unary_constant(
     std::optional<ConstantID> operand,
     TypeID result
 ) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure>;
+
 auto fold_binary_constant(
     const ExecutionValueAccess& values,
     BinaryOperator operation,
@@ -112,12 +126,14 @@ auto fold_binary_constant(
     std::optional<ConstantID> right,
     TypeID result
 ) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure>;
+
 auto fold_cast_constant(
     const ExecutionValueAccess& values,
     CastKind kind,
     std::optional<ConstantID> operand,
     TypeID result
 ) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure>;
+
 auto fold_text_intrinsic_constant(
     const ExecutionValueAccess& values,
     TextIntrinsic intrinsic,
@@ -160,8 +176,8 @@ auto known_pattern_match(
                     const auto result = evaluate_binary_constant_value(
                         values,
                         operation,
-                        fact,
-                        values.constant(*bound.constant),
+                        *constant_atom(fact),
+                        *constant_atom(values.constant(*bound.constant)),
                         values.builtin_type(BuiltinType::Bool),
                         IntegerArithmetic::Wrapping
                     );
@@ -187,10 +203,10 @@ auto known_pattern_match(
                     return std::nullopt;
                 }
                 if (const auto* numeric = std::get_if<NumericEnumConstant>(&fact.value)) {
-                    return numeric->enum_case == value.enum_case;
+                    return numeric->enum_case == concrete_enum_case(value.enum_case);
                 }
                 if (const auto* payload = std::get_if<PayloadEnumConstant>(&fact.value)) {
-                    return payload->enum_case == value.enum_case;
+                    return payload->enum_case == concrete_enum_case(value.enum_case);
                 }
             }
             return std::nullopt;
@@ -202,9 +218,10 @@ auto evaluate_simd_constant_value(
     const ExecutionValueAccess& values,
     SIMDIntrinsic intrinsic,
     BuiltinType owner,
-    std::span<const ConstantFact> inputs,
+    std::span<const ConstantAtom> inputs,
     TypeID result
-) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure>;
+) noexcept -> std::expected<ConstantAtom, ConstantEvaluationFailure>;
+
 auto fold_simd_constant(
     const ExecutionValueAccess& values,
     SIMDIntrinsic intrinsic,
@@ -216,6 +233,6 @@ auto fold_simd_constant(
 auto evaluate_float_intrinsic_constant_value(
     const ExecutionValueAccess& values,
     FloatIntrinsic intrinsic,
-    std::span<const ConstantFact> operands,
+    std::span<const ConstantAtom> operands,
     TypeID result
-) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure>;
+) noexcept -> std::expected<ConstantAtom, ConstantEvaluationFailure>;

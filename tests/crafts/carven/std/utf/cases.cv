@@ -1,17 +1,17 @@
 import std::utf using UTF8Error;
 
-export struct UTF8Rejection {
+struct UTF8Rejection {
     bytes: [u8; 5],
     length: usize,
     error: UTF8Error,
 }
 
-export const rejection_cases: [UTF8Rejection] = [
+const rejection_cases: [UTF8Rejection] = [
     {
         bytes: [0x61, 0x80, 0x00, 0x00, 0x00],
         length: 2,
         error: {
-            kind:.InvalidLead,
+            kind: .InvalidLead,
             offset: 1,
             sequence_start: 1
         }
@@ -20,7 +20,7 @@ export const rejection_cases: [UTF8Rejection] = [
         bytes: [0x61, 0xc0, 0x80, 0x00, 0x00],
         length: 3,
         error: {
-            kind:.InvalidLead,
+            kind: .InvalidLead,
             offset: 1,
             sequence_start: 1
         }
@@ -29,7 +29,7 @@ export const rejection_cases: [UTF8Rejection] = [
         bytes: [0x61, 0xf5, 0x80, 0x80, 0x80],
         length: 5,
         error: {
-            kind:.InvalidLead,
+            kind: .InvalidLead,
             offset: 1,
             sequence_start: 1
         }
@@ -38,7 +38,7 @@ export const rejection_cases: [UTF8Rejection] = [
         bytes: [0x61, 0xe2, 0x28, 0xa1, 0x00],
         length: 4,
         error: {
-            kind:.InvalidContinuation,
+            kind: .InvalidContinuation,
             offset: 2,
             sequence_start: 1
         }
@@ -47,7 +47,7 @@ export const rejection_cases: [UTF8Rejection] = [
         bytes: [0x61, 0xf0, 0x9f, 0x98, 0x21],
         length: 5,
         error: {
-            kind:.InvalidContinuation,
+            kind: .InvalidContinuation,
             offset: 4,
             sequence_start: 1
         }
@@ -56,7 +56,7 @@ export const rejection_cases: [UTF8Rejection] = [
         bytes: [0x61, 0xe0, 0x9f, 0x80, 0x00],
         length: 4,
         error: {
-            kind:.Overlong,
+            kind: .Overlong,
             offset: 2,
             sequence_start: 1
         }
@@ -65,7 +65,7 @@ export const rejection_cases: [UTF8Rejection] = [
         bytes: [0x61, 0xf0, 0x8f, 0x80, 0x80],
         length: 5,
         error: {
-            kind:.Overlong,
+            kind: .Overlong,
             offset: 2,
             sequence_start: 1
         }
@@ -74,7 +74,7 @@ export const rejection_cases: [UTF8Rejection] = [
         bytes: [0x61, 0xed, 0xa0, 0x80, 0x00],
         length: 4,
         error: {
-            kind:.Surrogate,
+            kind: .Surrogate,
             offset: 2,
             sequence_start: 1
         }
@@ -83,7 +83,7 @@ export const rejection_cases: [UTF8Rejection] = [
         bytes: [0x61, 0xf4, 0x90, 0x80, 0x80],
         length: 5,
         error: {
-            kind:.TooLarge,
+            kind: .TooLarge,
             offset: 2,
             sequence_start: 1
         }
@@ -92,7 +92,7 @@ export const rejection_cases: [UTF8Rejection] = [
         bytes: [0x61, 0xc2, 0x00, 0x00, 0x00],
         length: 2,
         error: {
-            kind:.Truncated,
+            kind: .Truncated,
             offset: 2,
             sequence_start: 1
         }
@@ -101,7 +101,7 @@ export const rejection_cases: [UTF8Rejection] = [
         bytes: [0x61, 0xe2, 0x82, 0x00, 0x00],
         length: 3,
         error: {
-            kind:.Truncated,
+            kind: .Truncated,
             offset: 3,
             sequence_start: 1
         }
@@ -110,7 +110,7 @@ export const rejection_cases: [UTF8Rejection] = [
         bytes: [0x61, 0xf0, 0x9f, 0x98, 0x00],
         length: 4,
         error: {
-            kind:.Truncated,
+            kind: .Truncated,
             offset: 4,
             sequence_start: 1
         }

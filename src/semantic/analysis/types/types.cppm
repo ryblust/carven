@@ -29,6 +29,16 @@ struct GenericTypeContext final {
     std::span<const GenericParameterKind> parameter_kinds;
 };
 
+auto resolve_source_capability(
+    ProgramDraft& draft,
+    AnalysisCatalogView catalog,
+    ImportUsage& usage,
+    ProgramModuleID module_id,
+    ASTView syntax,
+    ASTTypeID bound,
+    const GenericTypeContext* context = nullptr
+) noexcept -> AnalysisResult<BuiltinCapability>;
+
 auto generic_parameter_index(
     const ProgramDraft& draft,
     const GenericTypeContext* context,

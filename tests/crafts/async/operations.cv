@@ -1,0 +1,45 @@
+import std::async using { close, yield_once }
+import std::channel using ByteChannel;
+import std::io using { IOError, write_stdout_async }
+
+const async fn check_channel() {
+    let channel = ByteChannel::new(1);
+    let bytes: Vector<u8> = [0, 255, 65];
+    let sending = channel.send(&&bytes);
+    match channel.try_receive() {
+        .Pending => {},
+        _ => assert(false),
+    }
+    assert(await sending);
+    match await channel.receive() {
+        .Data(data) => assert(data.length() == 3 && data[1] == 255),
+        .End => assert(false),
+    }
+    assert(channel.try_send(&&[]));
+    match channel.try_receive() {
+        .Data(data) => assert(data.is_empty()),
+        _ => assert(false),
+    }
+    async let waiting = channel.receive();
+    await yield_once();
+    await close(waiting);
+    channel.close();
+    match channel.try_receive() {
+        .End => {},
+        _ => assert(false),
+    }
+    match await channel.receive() {
+        .End => {},
+        .Data(_) => assert(false),
+    }
+}
+
+const {
+    await check_channel();
+}
+
+async fn main() throw IOError {
+    await check_channel();
+    let output = Vector<u8>::from_slice("native async: stdout, channel, cancellation\n".bytes);
+    await write_stdout_async(&&output)?;
+}
