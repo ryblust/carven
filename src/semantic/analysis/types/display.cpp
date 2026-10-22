@@ -182,7 +182,7 @@ auto type_display_name(
             Overloaded {
                 [&](TypeID value) noexcept { return name(value); },
                 [&](const GenericTypeParameter& value) noexcept {
-                    const auto contract = draft.generic_declaration_contract_copy(value.definition);
+                    const auto contract = draft.generic_parameter_contract_copy(value.definition);
                     return draft.spelling_copy(contract.parameters[value.index]);
                 },
 
@@ -211,6 +211,7 @@ auto type_display_name(
                 [&](const GenericCallableViewType& value) noexcept {
                     return callable_name(value.parameters, name(value.result), name);
                 },
+                [](const GenericClosureType&) static noexcept { return std::string("lambda"); },
                 [&](const GenericCppNamedType& value) noexcept {
                     auto text = std::string("::");
                     for (const auto [index, component] :
@@ -234,7 +235,7 @@ auto type_display_name(
                 },
                 [&](const GenericNominalApplication& value) noexcept {
                     const auto contract = draft.generic_declaration_contract_copy(value.definition);
-                    auto text = nominal_name(draft, contract.module_id, contract.name) + "<";
+                    auto text = nominal_name(draft, contract.module_id, *contract.name) + "<";
                     for (const auto [index, argument] : std::views::enumerate(value.arguments)) {
                         if (index != 0) {
                             text += ", ";

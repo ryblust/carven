@@ -10,6 +10,7 @@ import(cpp) fn tail_owner(digit: i32) -> ::TailOwner = ::tail_owner;
 import(cpp) fn tail_address(&value: i32) = ::tail_address;
 import(cpp) fn tail_addresses() -> i32 = ::tail_addresses;
 import(cpp) async fn tail_native() -> i32 = ::tail_native;
+import(cpp) fn check_allocations() = ::run_async_allocation_cases;
 
 export(cpp) async fn bounded_tail(depth: i32, accumulator: i32) -> i32 {
     if depth == 0 { return accumulator; }
@@ -129,44 +130,48 @@ async fn composed_results(value: i32) -> i32 {
 async fn discarded_results() {
     tail_reset();
     await operation_factory(tail_actual(2, 8), tail_actual(0, 9));
-    assert(tail_trace() == 89143);
+    check(tail_trace() == 89143);
     tail_reset();
     await boolean_operation(true);
     await character_operation(false);
-    assert(tail_trace() == 567);
+    check(tail_trace() == 567);
 }
 
-async fn run_tail() {
+async test "Async tail calls: native lifetimes and evaluation order" {
     lifetime_probe::reset();
     let retained = (
         await retain_actual_owner(lifetime_probe::Owner { 3 }.probe() as i32),
         lifetime_probe::matches("3 13 ") as bool
     );
-    assert(retained == (1, true));
-    assert(lifetime_probe::matches("3 13 -3 ") as bool);
+    check(retained == (1, true));
+    check(lifetime_probe::matches("3 13 -3 ") as bool);
     tail_reset();
-    assert((await effects(1, 2, 2, 0), tail_trace()) == (12, 123123));
+    check((await effects(1, 2, 2, 0), tail_trace()) == (12, 123123));
     tail_reset();
     let saved = effects(1, 2, 1, 0);
-    assert((await saved, tail_trace()) == (21, 123));
+    check((await saved, tail_trace()) == (21, 123));
     tail_reset();
     async let queued = sibling();
-    assert((await yielding(2)) == 7);
+    check((await yielding(2)) == 7);
     await queued;
-    assert(tail_trace() == 1811);
+    check(tail_trace() == 1811);
     tail_reset();
-    assert((await owned(3), tail_trace()) == (7, 1234));
+    check((await owned(3), tail_trace()) == (7, 1234));
     tail_reset();
-    assert((await addressed(3)) == 4);
+    check((await addressed(3)) == 4);
     tail_reset();
-    assert((await actual_cleanup(2), tail_trace()) == (14141, 14141));
+    check((await actual_cleanup(2), tail_trace()) == (14141, 14141));
     tail_reset();
-    assert((await outer_cleanup(2), tail_trace()) == (14143, 14141));
+    check((await outer_cleanup(2), tail_trace()) == (14143, 14141));
     tail_reset();
-    assert((await skipped_step(3), tail_trace()) == (0, 0));
+    check((await skipped_step(3), tail_trace()) == (0, 0));
     tail_reset();
-    assert((await composed_results(-1), tail_trace()) == (30, 89123567));
+    check((await composed_results(-1), tail_trace()) == (30, 89123567));
     tail_reset();
-    assert((await composed_results(2), tail_trace()) == (5, 89143567));
+    check((await composed_results(2), tail_trace()) == (5, 89143567));
     await discarded_results();
+}
+
+test "Async tail calls: native allocation growth is bounded" {
+    check_allocations();
 }

@@ -149,9 +149,16 @@ struct ExecutionPointer final {
     std::optional<ExecutionPlace> target;
 };
 
+// An internal aggregate field can alias existing execution storage without owning it.
+struct ExecutionReference final {
+    ConstructionTypeRef type;
+    ExecutionPlace target;
+};
+
 struct ExecutionFunction final {
     ConstructionTypeRef type;
-    CallableID callable;
+    // Named functions are stateless; callable objects borrow their existing storage.
+    std::variant<CallableID, ExecutionPlace> target;
 };
 
 // A host reference transports native identity and optional shared native ownership.
@@ -208,6 +215,7 @@ struct ExecutionValue final : std::variant<
                                   ExecutionOwnedText,
                                   ExecutionVoid,
                                   ExecutionPointer,
+                                  ExecutionReference,
                                   ExecutionSlice,
                                   ExecutionFunction,
                                   ExecutionHostObject,

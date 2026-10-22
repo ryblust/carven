@@ -247,40 +247,48 @@ auto StaticExecutionContext::prepare_call(ExecutionCallSite target, ProgramOrigi
             .blocks = {}
         };
     };
-    const auto function = function_for_callable(callable);
-    if (!function) {
-        co_return std::unexpected(
-            failure_event(ExecutionReason::Admission, "callable has no executable Carven body")
+    auto completed = std::optional<BodyID>();
+    if (const auto implementation = draft.callable_implementation_copy(callable)) {
+        if (const auto* closure = std::get_if<ClosureBodyImplementation>(&*implementation)) {
+            completed = closure->body;
+        }
+    }
+    if (!completed) {
+        const auto function = function_for_callable(callable);
+        if (!function) {
+            co_return std::unexpected(
+                failure_event(ExecutionReason::Admission, "callable has no executable Carven body")
+            );
+        }
+        if (!draft.function_declaration_copy(*function).is_const) {
+            co_return std::unexpected(failure_event(
+                ExecutionReason::Admission,
+                "compile-time execution can only call an explicitly declared const fn"
+            ));
+        }
+        if (draft.static_instance(callable)) {
+            const auto body = draft.static_instance_body(callable);
+            if (!body) {
+                co_return std::unexpected(ExecutionFailure {ExecutionDependencyFailure {}});
+            }
+            if (!*body) {
+                co_return std::unexpected(failure_event(
+                    ExecutionReason::Evaluation,
+                    "compile-time execution depends on an unfinished specialization"
+                ));
+            }
+            co_return ExecutionBody(draft.body_draft(**body));
+        }
+        const auto location = draft.source_origin(origin);
+        auto body = co_await stage.requests().ensure_function_body(
+            *function,
+            draft.source_module(location.source_id),
+            location.span
         );
-    }
-    if (!draft.function_declaration_copy(*function).is_const) {
-        co_return std::unexpected(failure_event(
-            ExecutionReason::Admission,
-            "compile-time execution can only call an explicitly declared const fn"
-        ));
-    }
-    if (draft.static_instance(callable)) {
-        const auto body = draft.static_instance_body(callable);
         if (!body) {
             co_return std::unexpected(ExecutionFailure {ExecutionDependencyFailure {}});
         }
-        if (!*body) {
-            co_return std::unexpected(failure_event(
-                ExecutionReason::Evaluation,
-                "compile-time execution depends on an unfinished specialization"
-            ));
-        }
-        const auto& instance = draft.body_draft(**body);
-        co_return ExecutionBody(instance);
-    }
-    const auto location = draft.source_origin(origin);
-    auto completed = co_await stage.requests().ensure_function_body(
-        *function,
-        draft.source_module(location.source_id),
-        location.span
-    );
-    if (!completed) {
-        co_return std::unexpected(ExecutionFailure {ExecutionDependencyFailure {}});
+        completed = *body;
     }
     const auto realized = co_await stage.realize_body(*completed);
     if (!realized) {
@@ -490,8 +498,10 @@ auto StaticStage::realize_body(BodyID body) noexcept -> AnalysisTask<void> {
                 needs_stage |= branch->is_static;
             }
             if (const auto* call = std::get_if<SemCall>(&node.value); call && call->target) {
-                if (const auto function = program.function_for_callable(*call->target)) {
-                    needs_stage |= program.staged_function(*function);
+                if (const auto* target = std::get_if<CallableID>(&*call->target)) {
+                    if (const auto function = program.function_for_callable(*target)) {
+                        needs_stage |= program.staged_function(*function);
+                    }
                 }
             }
             if (const auto* call = std::get_if<SemColdCall>(&node.value)) {

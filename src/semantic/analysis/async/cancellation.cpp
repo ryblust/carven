@@ -2,6 +2,7 @@ module carven:semantic.analysis.async.cancellation.impl;
 
 import :semantic.analysis.async;
 import :semantic.semir.async;
+import :semantic.semir.body;
 import :semantic.semir.children;
 import :semantic.semir.decl;
 import :semantic.semir.evaluation;
@@ -149,7 +150,7 @@ auto CancellationAnalysis::region_result(
 auto CancellationAnalysis::call_target(const SemCall& call) const noexcept
     -> std::optional<CallableID> {
     if (call.target) {
-        return call.target;
+        return std::get<CallableID>(*call.target);
     }
     const auto& type = program.types().type(call.callee->type.resolved()).value;
     if (const auto* function = std::get_if<FunctionTypeValue>(&type)) {
@@ -368,7 +369,7 @@ auto CancellationAnalysis::visit_body(const SemIRBody& body) noexcept -> void {
             region_result(body.region(), *returned);
         }
     }
-    if (!completion && !returned) {
+    if (!completion && !returned && body.kind() != BodyKind::Test) {
         return;
     }
     auto pending = std::vector<CancellationVisit> {{.node = &body.region(), .reachable = true}};

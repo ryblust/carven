@@ -502,37 +502,54 @@ auto SemanticExecutor::expression_operation(
             (co_await default_value(source.type.construction(), source.origin)),
             source
         );
-    } else if constexpr (std::same_as<Operation, SemBorrowCallable>) {
-        if (auto supported = check_callable_adaptation(
-                operation.source->type.construction(),
+    } else if constexpr (std::same_as<Operation, SemClosure>) {
+        if (auto checked = account_aggregate(operation.captures.size(), source.origin); !checked) {
+            co_return std::unexpected(std::move(checked.error()));
+        }
+        auto captures = std::vector<ExecutionValue>();
+        captures.reserve(operation.captures.size());
+        for (const auto& capture : operation.captures) {
+            if (capture.mode == CaptureMode::Write) {
+                auto selected = co_await place(frame, capture.expression);
+                if (!selected) {
+                    co_return std::unexpected(std::move(selected.error()));
+                }
+                captures.push_back(
+                    ExecutionReference {
+                        .type = capture.expression.type.construction(),
+                        .target = std::move(*selected),
+                    }
+                );
+            } else {
+                auto evaluated = co_await this->value(frame, capture.expression);
+                if (!evaluated) {
+                    co_return std::unexpected(std::move(evaluated.error()));
+                }
+                captures.push_back(std::move(*evaluated));
+            }
+        }
+        co_return normal_result<Result>(
+            constructed_value(
+                ExecutionAggregateValue {
+                    .type = source.type.construction(),
+                    .elements = std::move(captures),
+                    .capacity = 0uz,
+                },
+                source.origin
+            ),
+            source
+        );
+    } else if constexpr (std::same_as<Operation, SemBorrowCallable>
+                         || std::same_as<Operation, SemArrayAdopt>) {
+        co_return normal_result<Result>(
+            co_await adapt_callable(
+                frame,
+                *operation.source,
                 source.type.construction(),
                 source.origin
-            );
-            !supported) {
-            co_return std::unexpected(std::move(supported.error()));
-        }
-        auto function = (co_await this->value(frame, *operation.source));
-        if (!function) {
-            co_return std::unexpected(std::move(function.error()));
-        }
-        if (std::holds_alternative<ExecutionFunction>(*function)) {
-            co_return normal_result<Result>(std::move(*function), source);
-        }
-        co_return std::unexpected(fail(
-            source.origin,
-            ExecutionReason::Evaluation,
-            "callable is not supported in execution"
-        ));
-    } else if constexpr (std::same_as<Operation, SemArrayAdopt>) {
-        if (auto supported = check_callable_adaptation(
-                operation.source->type.construction(),
-                source.type.construction(),
-                source.origin
-            );
-            !supported) {
-            co_return std::unexpected(std::move(supported.error()));
-        }
-        co_return normal_result<Result>((co_await this->value(frame, *operation.source)), source);
+            ),
+            source
+        );
     } else if constexpr (std::same_as<Operation, SemAddressOf>) {
         auto selected = (co_await place(frame, *operation.source));
         if (!selected) {
@@ -1040,18 +1057,23 @@ auto SemanticExecutor::expression_operation(
         }
         co_return normal_result<Result>(std::move(right), source);
     } else if constexpr (std::same_as<Operation, SemCall> || std::same_as<Operation, SemColdCall>) {
-        auto evaluated_callee = (co_await this->value(frame, *operation.callee));
+        auto evaluated_callee =
+            co_await operand(frame, *operation.callee, OperandUse::Borrow, source.origin);
         if (!evaluated_callee) {
             co_return std::unexpected(std::move(evaluated_callee.error()));
         }
-        const auto* callee = std::get_if<ExecutionFunction>(&*evaluated_callee);
-        if (!callee) {
-            co_return std::unexpected(fail(
-                source.origin,
-                ExecutionReason::Admission,
-                "callable has no executable Carven body"
-            ));
+        const auto callee_place = std::get<ExecutionPlace>(*evaluated_callee);
+        auto callee_value = observed(callee_place, source.origin);
+        if (!callee_value) {
+            co_return std::unexpected(std::move(callee_value.error()));
         }
+        const auto* function = std::get_if<ExecutionFunction>(&callee_value->get());
+        const auto selected = function != nullptr
+            ? *function
+            : ExecutionFunction {
+                  .type = operation.callee->type.construction(),
+                  .target = callee_place,
+              };
         auto operands = std::vector<ExecutionOperand>();
         for (const auto& argument : operation.arguments) {
             auto evaluated = (co_await operand(
@@ -1064,6 +1086,10 @@ auto SemanticExecutor::expression_operation(
                 co_return std::unexpected(std::move(evaluated.error()));
             }
             operands.push_back(std::move(*evaluated));
+        }
+        auto callee = callable_invocation(selected, source.origin);
+        if (!callee) {
+            co_return std::unexpected(std::move(callee.error()));
         }
         if constexpr (std::same_as<Operation, SemColdCall>) {
             auto selected =
@@ -1088,7 +1114,12 @@ auto SemanticExecutor::expression_operation(
             );
         } else {
             co_return normal_result<Result>(
-                (co_await call(callee->callable, std::move(operands), source.origin)),
+                (co_await call(
+                    callee->callable,
+                    std::move(operands),
+                    source.origin,
+                    callee->environment
+                )),
                 source
             );
         }
@@ -1354,7 +1385,11 @@ auto SemanticExecutor::evaluate_expression(
                 normal_result<Result>(ExecutionValue(operation.constant), source)
             );
         } else if constexpr (std::same_as<Operation, SemBinding>) {
-            auto local = slot_value(frame, operation.binding.index(), source.origin);
+            auto selected = slot_place(frame, operation.binding, source.origin);
+            if (!selected) {
+                return ExecutionTask<Result>(std::unexpected(std::move(selected.error())));
+            }
+            auto local = observed(*selected, source.origin);
             if (!local) {
                 return ExecutionTask<Result>(std::unexpected(std::move(local.error())));
             }
@@ -1366,7 +1401,7 @@ auto SemanticExecutor::evaluate_expression(
             return ExecutionTask<Result>(normal_result<Result>(
                 ExecutionFunction {
                     .type = source.type.construction(),
-                    .callable = operation.callable
+                    .target = operation.callable
                 },
                 source
             ));

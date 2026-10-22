@@ -798,7 +798,7 @@ private:
     bool async_body = false;
     std::set<LocalBindingID> async_child_bindings;
     // One lexical lambda declaration serves each evaluation of that source expression.
-    std::map<Span, CallableID> lambda_callables;
+    std::map<Span, ConstructionCallableRef> lambda_callables;
     std::size_t aggregate_construction_work = 0uz;
     bool observe_sources;
     SourceObservation source_occurrences;

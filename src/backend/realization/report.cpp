@@ -176,39 +176,29 @@ auto BodyRealizer::lower_report(
 }
 
 auto BodyRealizer::emit_stopped(LoweringStmtBuilder& destination) noexcept -> void {
-    auto result = std::optional<TargetExpr>();
-    if (const auto* callable = std::get_if<CallableBodyExit>(&inputs.exit)) {
-        if (!is_async() && !context.semantic().may_stop(callable->callable_id)) {
-            invariant_violation("stop exit absent from callable transport");
-        }
-        if (is_async()) {
-            destination.emit(
-                discard_statement(
-                    call_expression(intrinsic_expression(TargetSymbol::RuntimeAsyncRequestStop), {})
-                ),
-                true
-            );
-            if (local_result_exit) {
-                // Leave producer storage before the outer await propagates the
-                // stop. Its check precedes any result access.
-                destination.terminate(
-                    generated_statement(TargetGotoStmt {.label = local_result_exit->exit.label}),
-                    local_result_exit->exit.target
-                );
-                return;
-            }
-            emit_completion(
-                call_expression(
-                    static_member_expression(
-                        completion_type(),
-                        TargetIdentifier::from_spelling("stopped")
-                    ),
-                    {}
-                ),
-                LoweringExitKind::Failure,
-                destination
+    if (is_async()) {
+        destination.emit(
+            discard_statement(
+                call_expression(intrinsic_expression(TargetSymbol::RuntimeAsyncRequestStop), {})
+            ),
+            true
+        );
+        if (local_result_exit) {
+            // Leave producer storage before the outer await propagates the
+            // stop. Its check precedes any result access.
+            destination.terminate(
+                generated_statement(TargetGotoStmt {.label = local_result_exit->exit.label}),
+                local_result_exit->exit.target
             );
             return;
+        }
+        emit_stateless_completion(CompletionState::Stopped, destination);
+        return;
+    }
+    auto result = std::optional<TargetExpr>();
+    if (const auto* callable = std::get_if<CallableBodyExit>(&inputs.exit)) {
+        if (!context.semantic().may_stop(callable->callable_id)) {
+            invariant_violation("stop exit absent from callable transport");
         }
         result = call_expression(
             static_member_expression(

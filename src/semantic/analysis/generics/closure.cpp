@@ -133,6 +133,16 @@ auto ProgramDraft::normalize_generic_environment(
                     });
                 return intern_type({.value = CppTypeValue {.form = std::move(concrete)}});
             }
+        } else if (const auto* closure = std::get_if<GenericClosureType>(&shape)) {
+            const auto environment =
+                normalize_generic_environment(closure->arguments, origin, failures);
+            if (environment) {
+                const auto callable =
+                    instantiate_generic_callable(closure->definition, *environment, origin);
+                if (callable) {
+                    return intern_type({.value = ClosureTypeValue {.callable = *callable}});
+                }
+            }
         } else if (const auto* nominal = std::get_if<GenericNominalApplication>(&shape)) {
             const auto environment =
                 normalize_generic_environment(nominal->arguments, origin, failures);
@@ -359,6 +369,42 @@ auto ProgramDraft::normalize_construction_types(const FailureSolution& failures)
                     return intern_type({.value = CppTypeValue {.form = std::move(concrete)}});
                 }
                 return intern_generic_type(std::move(normalized));
+            } else if constexpr (std::same_as<Shape, GenericClosureType>) {
+                auto closure = shape;
+                auto environment = CanonicalGenericEnvironment();
+                auto closed = true;
+                for (auto& argument : closure.arguments) {
+                    if (auto* type = std::get_if<ConstructionTypeRef>(&argument)) {
+                        *type = child(*type);
+                        if (const auto* concrete = std::get_if<TypeID>(type)) {
+                            environment.emplace_back(*concrete);
+                        } else {
+                            closed = false;
+                        }
+                    } else {
+                        auto& effect = std::get<ConstructionFailureRef>(argument);
+                        effect = failures.normalize(effect);
+                        if (const auto* concrete = std::get_if<FailureSetID>(&effect)) {
+                            environment.emplace_back(*concrete);
+                        } else {
+                            closed = false;
+                        }
+                    }
+                }
+                if (closed) {
+                    const auto found = storage.generic_callable_instance_index.find(
+                        std::pair(closure.definition, environment)
+                    );
+                    if (found != storage.generic_callable_instance_index.end()) {
+                        return intern_type(
+                            {.value = ClosureTypeValue {
+                                 .callable =
+                                     storage.generic_callable_instances[found->second].callable
+                             }}
+                        );
+                    }
+                }
+                return intern_generic_type(std::move(closure));
             } else if constexpr (std::same_as<Shape, GenericNominalApplication>) {
                 auto environment = CanonicalGenericEnvironment();
                 for (const auto& argument : shape.arguments) {
@@ -420,6 +466,60 @@ auto ProgramDraft::close_generic_calls() noexcept -> AnalysisResult<void> {
         auto pending = std::optional<ProgramOriginID>();
         auto error = std::optional<AnalysisFailure>();
         const auto close = [&](SemanticExpression& expression) noexcept {
+            auto* closure = std::get_if<SemClosure>(&expression.value);
+            auto* invocation = std::get_if<SemCall>(&expression.value);
+            auto* known = closure                  ? std::addressof(closure->callable)
+                : invocation && invocation->target ? std::addressof(*invocation->target)
+                                                   : nullptr;
+            if (known) {
+                const auto* lexical = std::get_if<GenericTypeID>(known);
+                if (!lexical || error) {
+                    return;
+                }
+                const auto reference = unwrap_type_alias(*this, ConstructionTypeRef(*lexical));
+                if (const auto* concrete = std::get_if<TypeID>(&reference)) {
+                    const auto shape = type_copy(*concrete);
+                    *known = std::get<ClosureTypeValue>(shape.value).callable;
+                    return;
+                }
+                const auto* type = std::get_if<GenericTypeID>(&reference);
+                if (!type) {
+                    pending = expression.origin;
+                    return;
+                }
+                const auto shape = generic_type_copy(*type);
+                const auto& source = std::get<GenericClosureType>(shape);
+                if (!preview) {
+                    auto solved = preview_failures();
+                    if (!solved) {
+                        error = solved.error();
+                        return;
+                    }
+                    preview.emplace(std::move(*solved));
+                }
+                const auto environment =
+                    normalize_generic_environment(source.arguments, expression.origin, &*preview);
+                if (!environment) {
+                    pending = expression.origin;
+                    return;
+                }
+                auto target = instantiate_generic_callable(
+                    source.definition,
+                    *environment,
+                    expression.origin
+                );
+                if (!target) {
+                    error = target.error();
+                    return;
+                }
+                *known = *target;
+                if (closure) {
+                    expression.type =
+                        BodyType(intern_type({.value = ClosureTypeValue {.callable = *target}}));
+                }
+                progress = true;
+                return;
+            }
             auto* call = std::get_if<SemGenericCall>(&expression.value);
             if (!call || error) {
                 return;
@@ -485,7 +585,7 @@ auto ProgramDraft::instantiate_generic_call(
         invariant_violation("generic call closure received a different expression");
     }
     const auto target =
-        instantiate_generic_function(call->definition, environment, expression.origin);
+        instantiate_generic_callable(call->definition, environment, expression.origin);
     if (!target) {
         return std::unexpected(target.error());
     }

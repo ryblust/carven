@@ -62,8 +62,9 @@ An async successful result cannot itself contain an operation.
 `await action()?` awaits completion before propagating its nominal failure.
 Ordinary `try`/`catch` handles those declared failures. Cancellation is a separate
 completion and does not add a nominal type to the failure set. Await is admitted
-in async bodies and static roots, blocks, and tests. Structured expressions,
-arguments, returns, and loop steps may contain await and preserve source evaluation order.
+in async function and test bodies and static roots, blocks, and tests. Structured
+expressions, arguments, returns, and loop steps may contain await and preserve
+source evaluation order.
 
 Host execution errors stop the whole invocation, close its children, and return
 the execution error to its owner. A stopped child cannot become a successful
@@ -253,17 +254,18 @@ validity. The compiler does not inspect native implementation code. Result stora
 supports immovable values in place and preserves observable source transfer and
 cleanup.
 
-Executed synchronous helpers in an async body may not transitively stop a test
-through `require` or `fail`. Constructing a cold operation is distinct from
-executing its body for this effect check.
+Async tests and their synchronous or asynchronous helpers may use `check`,
+`require`, and `fail`. A failed `require` or `fail` stops the active test root,
+including its children, and releases local values. Executing test operations
+without an active test violates the runtime contract.
 
 The driver is single-threaded and nonreentrant, with bounded native stack use for
 deep await chains. Scheduling is cooperative, without fairness or cancellation
 latency bounds. An async entry's wrapper drives the root through child closure
 before reporting its outcome.
 
-Async tests, class receivers, async callable values, arbitrary external awaitable
-types and cross-thread resume remain outside this admission boundary.
+Async class receivers, async callable values, arbitrary external awaitable types,
+and cross-thread resume remain outside this admission boundary.
 
 ## Static parameters and execution
 
@@ -285,7 +287,8 @@ it and executes its body in the same semantic execution domain. Stored operation
 unused cold owners, Write access to live local backing, and nominal failure
 propagation follow the ordinary ownership and evaluation rules. A private
 synchronous `const fn` may return an inferred cold operation. Its ordinary body
-cannot use await; static roots, `const` blocks, and `const test` bodies can.
+cannot use await; static roots, `const` blocks, `const test`, and
+`const async test` bodies can.
 Operations are execution-local values and cannot be frozen as constants.
 
 Static execution admits marked source callees, lexical children, and the async

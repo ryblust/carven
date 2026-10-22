@@ -29,7 +29,8 @@ auto OwnershipBodyAnalyzer::opaque_callable_targets(
                 path.pop_back();
             }
         } else if (std::holds_alternative<ConstructionCallableViewTypeValue>(shape)
-                   || std::holds_alternative<ClosureTypeValue>(shape)) {
+                   || std::holds_alternative<ClosureTypeValue>(shape)
+                   || std::holds_alternative<GenericClosureType>(shape)) {
             result.edit().callable_loans.push_back(
                 OwnershipCallableLoan {
                     .holder = path,
@@ -1376,7 +1377,7 @@ auto OwnershipBodyAnalyzer::expression(
                     const auto previous_readers = storage_readers.size();
                     auto arguments = std::vector<OwnershipCallArgument>();
                     const auto& definition = analysis.model.generics.definition(value.definition);
-                    const auto* function = std::get_if<GenericFunctionDefinition>(&definition);
+                    const auto* function = std::get_if<GenericCallableDefinition>(&definition);
                     if (!function) {
                         invariant_violation("generic call lacks a function contract");
                     }
@@ -1418,7 +1419,7 @@ auto OwnershipBodyAnalyzer::expression(
                     const auto concrete =
                         analysis.model.callable_identity(value.callee->type.construction());
                     const auto body_known =
-                        concrete && program.declarations().body_for_callable(*concrete).has_value();
+                        concrete && analysis.model.callable_body(*concrete).has_value();
                     auto callee = OwnershipRelationships {};
                     auto callee_storage = std::vector<OwnershipPlace>();
                     if (concrete.has_value()
@@ -1461,7 +1462,7 @@ auto OwnershipBodyAnalyzer::expression(
                         const auto invoke = [&](
                                                 this const auto& self,
                                                 const OwnershipRelationships& target,
-                                                std::optional<CallableID> function,
+                                                std::optional<ConstructionCallableRef> function,
                                                 std::optional<OwnershipPlace> capture_owner
                                             ) noexcept -> ContinuationTask<std::monostate> {
                             use(target, flow.normal->state, source.origin, true);
@@ -1479,7 +1480,8 @@ auto OwnershipBodyAnalyzer::expression(
                                     std::move(capture_owner),
                                     parameters,
                                     flow.normal->state,
-                                    source.origin
+                                    source.origin,
+                                    value.callee_failures.reference()
                                 );
                                 join_normal_ownership(invoked.normal, next.normal);
 
@@ -1525,9 +1527,9 @@ auto OwnershipBodyAnalyzer::expression(
                                         );
                                     };
                                     auto next = function
-                                        ? apply_contract(program.callable_signatures().signature(
-                                              program.declarations().callable(*function).signature
-                                          ))
+                                        ? apply_contract(
+                                              analysis.model.callable_contract(*function)
+                                          )
                                         : apply_contract(
                                               std::get<ConstructionCallableViewTypeValue>(
                                                   analysis.model.shape(

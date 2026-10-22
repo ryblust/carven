@@ -2,6 +2,7 @@ module carven:backend.generation.plan;
 
 import :artifacts;
 import :backend.generation.names;
+import :backend.generation.plan.references;
 import :backend.generation.request;
 import :backend.target.ids;
 import :backend.target.name;
@@ -42,7 +43,7 @@ struct TargetClosureCatalog final {
     std::vector<std::uint32_t> module_ordinals;
     std::vector<std::vector<CallableID>> production_definitions;
     std::vector<std::vector<CallableID>> test_definitions;
-    std::vector<CallableID> definition_order;
+    std::vector<CallableID> definitions;
 
     auto owner(CallableID callable) const noexcept -> ModuleID;
     auto production(ModuleID id) const noexcept -> std::span<const CallableID>;
@@ -159,7 +160,7 @@ private:
 
 struct TargetInterfaceForwardDeclaration final {
     ModuleID module_id;
-    NominalDeclarationRef declaration;
+    TargetTypeDefinitionRef declaration;
 };
 
 struct TargetInterfaceDeclaration final {
@@ -169,7 +170,7 @@ struct TargetInterfaceDeclaration final {
 
 struct TargetModuleSchedule final {
     ModuleID module_id;
-    std::vector<NominalDeclarationRef> source_nominal_order;
+    std::vector<NominalDeclarationRef> private_nominals;
     std::vector<CallableID> closure_definitions;
     // Complete set of named and closure callables with interface linkage.
     std::vector<CallableID> interface_callables;
@@ -253,6 +254,7 @@ public:
     auto identity() const noexcept -> TargetPlanIdentity;
     auto names() const noexcept -> const TargetNamePlan&;
     auto failure_abi() const noexcept -> const FailureABI&;
+    auto type_definitions() const noexcept -> std::span<const TargetTypeDefinitionRef>;
     auto artifacts() const noexcept -> TargetPlanTableEntries<TargetArtifactPlan, TargetArtifactID>;
     auto artifact_count() const noexcept -> std::size_t;
     auto interface_of(ModuleID id) const noexcept -> std::optional<TargetArtifactID>;
@@ -271,6 +273,7 @@ private:
         TargetPlanIdentity identity,
         TargetNamePlan names,
         FailureABI failure_abi,
+        std::vector<TargetTypeDefinitionRef> type_order,
         TargetPlanTable<TargetArtifactPlan, TargetArtifactID> artifacts
     ) noexcept;
 
@@ -278,6 +281,7 @@ private:
     TargetPlanIdentity plan_identity;
     TargetNamePlan name_plan;
     FailureABI failure_abi_plan;
+    std::vector<TargetTypeDefinitionRef> type_order;
     TargetPlanTable<TargetArtifactPlan, TargetArtifactID> artifact_plans;
     std::map<ModuleID, TargetArtifactID> module_interfaces;
     std::map<ModuleID, TargetArtifactID> module_implementations;
@@ -334,6 +338,7 @@ auto plan_artifacts(
     const TargetPlanningRequest& request,
     const std::flat_set<ModuleID>& library_modules,
     const TargetClosureCatalog& closures,
+    std::span<const TargetTypeDefinitionRef> type_order,
     const TargetNamePlan& names,
     TargetPlanIdentity identity
 ) noexcept -> TargetPlanTable<TargetArtifactPlan, TargetArtifactID>;

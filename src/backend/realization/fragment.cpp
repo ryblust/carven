@@ -929,7 +929,7 @@ auto BodyRealizer::ExpressionBuilder::build(
     if (request.await_fusion) {
         if (request.await_fusion->factory) {
             const auto* call = std::get_if<SemCall>(&value.operation.value);
-            if (call == nullptr || !call->target) {
+            if (call == nullptr || !owner.context.semantic().direct_call_target(*call)) {
                 invariant_violation("fused factory lost its resolved call identity");
             }
             fuse_factory(

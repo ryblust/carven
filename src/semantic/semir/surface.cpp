@@ -53,12 +53,12 @@ auto collect_surface(const SemIRProgram& semantic, const SemIRBody& body) noexce
                 types.insert(node.type.resolved());
                 if (const auto* call = std::get_if<SemCall>(&node.value)) {
                     if (call->target) {
-                        callables.insert(*call->target);
+                        callables.insert(std::get<CallableID>(*call->target));
                     }
                     enqueue(*call->callee);
                     if (call->target) {
                         const auto& signature = semantic.callable_signatures().signature(
-                            semantic.declarations().callable(*call->target).signature
+                            semantic.call_signature(*call)
                         );
                         if (signature.parameters.size() != call->arguments.size()) {
                             invariant_violation("generic call arguments do not match signature");
@@ -270,7 +270,7 @@ auto body_closure_references(const SemIRProgram& semantic, const SemIRBody& body
         Overloaded {
             [&](const SemanticExpression& expression) noexcept {
                 if (const auto* closure = std::get_if<SemClosure>(&expression.value)) {
-                    record(closure->callable);
+                    record(std::get<CallableID>(closure->callable));
                 }
                 collect_type(expression.type.resolved());
                 if (const auto* match = std::get_if<SemMatch>(&expression.value)) {

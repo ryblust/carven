@@ -89,7 +89,10 @@ auto integer_constant(const SemIRProgram& program, std::string_view name) noexce
 
 constexpr auto library_source = std::string_view(R"cv(
 export struct Box<T> { value: T }
-export const fn identity<T>(&&value: T) -> T => &&value;
+export const fn identity<T>(&&value: T) -> T {
+    let forward = [](&&item: T) -> T => &&item;
+    return forward(&&value);
+}
 export const fn add(const increment: i32, value: i32) -> i32 {
     var result = value;
     const for index in 0..increment { result += index - index + 1; }

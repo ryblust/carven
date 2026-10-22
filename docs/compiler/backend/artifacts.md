@@ -38,8 +38,9 @@ domain are encoded. Standard stream names (`stdin`, `stdout`, `stderr`) use the
 same encoding because supported CRTs can define them as object-like macros.
 The plan also owns encoded public namespace and function names
 shared by API headers and export façades. Artifact paths retain canonical source names.
-Closure names use source-location order within their owning module. Closures
-sharing a source location are ordered by their semantic callable identity.
+Ordinary closure names use source-location order within their owning module.
+Instantiated closures use names derived from canonical callable content, including
+their generic arguments.
 
 Semantic visibility and C++ definition requirements determine interface
 artifacts. Declaration-only dependencies use forward declarations. Complete
@@ -47,8 +48,9 @@ requirements form interface edges; strongly connected components share an
 interface. Function results and Take parameters require complete component
 types for the caller's value operations without imposing layout order. Object storage and Read
 traits require complete definitions. Body-only calls do not merge interfaces.
-Private nominals needed by an interface layout receive definitions in their
-owner's interface; declaration-only references receive forward declarations.
+Private nominals needed by an interface layout, including value captures of
+exposed closures, receive definitions in their owner's interface. Declaration-only
+references receive forward declarations.
 Nominal declarations and definitions use the same module namespace, including
 source-only definitions. Completeness determines the artifact that owns a
 definition; it does not change the type's C++ identity or Carven source visibility.
@@ -63,10 +65,15 @@ additional providers its emitted value operations require.
 
 Owning sequence elements require complete definitions for their operations,
 but only declarations for the carrier layout. These deferred complete requirements
-participate in interface closure without imposing layout order. Both interface
-and source artifacts emit forwards, ordered nominal layouts, then dependent enum
-factory bodies. Payload enums use aggregate variant storage and implicit C++
-copy, move, and destruction; source construction and access remain checked by Carven.
+participate in interface closure without imposing layout order. Nominal and
+closure definitions share one order based on C++ completeness requirements.
+By-value fields and captures require complete stored types. Write captures and
+pointer or reference fields need declarations; parameter trait queries contribute
+the completeness they require. Body references discover needed definitions without
+adding layout edges. Artifacts emit forward declarations, value-type definitions,
+then dependent enum factories and callable bodies. Payload enums use aggregate
+variant storage and implicit C++ copy, move, and destruction; source construction
+and access remain checked by Carven.
 
 Concrete generic nominal instances seed the internal interface schedule. Their
 private layout dependencies use the same completeness closure and module ordering.
@@ -74,8 +81,8 @@ Source audience remains a semantic check on the definition and its type argument
 Consumer headers contain requested concrete generic nominal layouts; fixed linkage
 domains and published dependencies keep ordinary library implementations shared.
 
-Schedules own interface definitions, C++ façades, source nominal and closure
-ordering, and selected tests. Module lowering starts with externally visible
+Schedules own interface definitions, C++ façades, ordered value-type definitions,
+and selected tests. Module lowering starts with externally visible
 functions, process and C++ export entries, interface closures, and enabled runtime
 tests. Realizing native function references and closure types requests their local
 definitions through `ModuleLowering`. Each callable is lowered once; its references
@@ -122,13 +129,17 @@ of this native interface closure.
 
 Each artifact collects requested definitions through one work queue. Every module
 has one artifact-owned lowering context, including the artifact's own module.
-An instance is an `inline` function in its owner's module namespace. Definitions
-follow emitted call edges in callee-first order; recursion cycles introduce the
-necessary forward declarations. Ordinary private callables remain in an anonymous
-namespace unless the interface surface requires external linkage.
+Generic callable instances include named functions and lexical closures. They
+are generated in artifacts that use them, within their source owner's module
+namespace. Named instances become `inline` functions. Closure instances emit
+their structures and out-of-class `inline` call operators. Value-type definitions
+precede callable bodies; emitted call edges order bodies callee-first, with
+forward declarations for recursion cycles. Ordinary private callables remain in
+an anonymous namespace unless the interface surface requires external linkage.
 
-Instance names append readable scalar static values, or a digest of typed
-canonical content for composite or long values. Name planning compares complete
+Static-parameter instance names append readable scalar values, or a digest of
+typed canonical content for composite or long values. Generic callable instance
+names derive from canonical callable content. Name planning compares complete
 content and assigns distinct spellings when preferred names coincide; digests do
 not identify cached semantic values. Content keys encode a local node graph with
 bounded-stack traversal; repeated dependencies reuse their node definitions.
@@ -142,8 +153,10 @@ their `stateless_value` instances. Helper records precede their function
 definitions so instance constraints see complete types. Display calls pass depth
 by value; the runtime writer owns the output budget.
 
-Each runtime test becomes a function. Static tests have already executed during
-analysis and receive no target function name or runner entry. Module runners call
+Each runtime test becomes a function. Asynchronous test bodies become coroutines;
+the module runner drives each root through child closure with the active test
+context. Static tests have already executed during analysis and
+receive no target function name or runner entry. Module runners call
 tests in source order; the runner header calls modules in canonical order.
 Generation selects test modules independently of implementation ownership. An
 omitted test selection covers all owned modules; drivers select their explicit

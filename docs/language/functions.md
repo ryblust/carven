@@ -39,9 +39,9 @@ cycle. A declaration without a body defaults to `void` when no result type is wr
 Parameter names must be unique. A call requires the exact arity, access marker, and
 compatible argument type declared by the callable. At runtime, the callee is evaluated
 first, then runtime arguments are evaluated once from left to right. A concrete closure
-selects its object identity; a callable view selects its target description. Invocation
-reads that target's current captures after argument evaluation. An explicit closure copy
-requests a capture-value snapshot.
+selects its object identity; a callable view selects its target description. Each
+capture use in the body selects that object's current captured value or Write
+target. An explicit closure copy requests a capture-value snapshot.
 
 A bare `return;` is valid only for `void`. A return operand must have a successful
 result compatible with the callable result, including `void`: `return action();`
@@ -112,8 +112,12 @@ substitution.
 Callable-view signatures can use type and failure-set parameters. Generic calls
 infer those arguments from the callable's parameter, result, and failure contracts
 under the same bounded inference rules as other types. The resulting callable
-view has a concrete signature at each application. Parameterized closures and
-`import(cpp)` or `export(cpp)` parameterized function declarations are not supported.
+view has a concrete signature at each application. Lambda expressions inside a
+parameterized function use its type and failure-set arguments in their captures,
+parameters, and results. They follow the same definition-time capability rules;
+a value capture of an unknown type parameter has no proven Copy capability.
+Lambdas do not declare their own type parameters. Parameterized `import(cpp)` and
+`export(cpp)` function declarations are not supported.
 
 Operations can retain type formation requirements. Dereferencing `ptr<T>`, for
 example, requires a non-void target. The requirement follows generic forwarding
@@ -138,11 +142,12 @@ The application waits for those declaration dependencies to complete before
 selecting a concrete instance. An unfinished failure set is not an empty set.
 This also applies to generic calls in static roots.
 
-`const fn` definitions use the same universal rules and require semantically
-reachable source calls to select known `const fn` targets. Static calls need concrete
-type and failure-set arguments. A body-local `const` initializer cannot require an
-unresolved generic environment; ordinary generic calls can execute once their type
-and failure-set arguments are concrete.
+`const fn` definitions use the same universal rules. Semantically reachable named
+source calls must select known `const fn` targets. Known lambda signatures and
+bodies are checked recursively; unknown callable targets fail admission. Static
+calls need concrete type and failure-set arguments. A body-local `const` initializer
+cannot require an unresolved generic environment; ordinary generic calls can execute
+once their type and failure-set arguments are concrete.
 Recursion requires a completed result signature. Concrete applications share
 instances keyed by the definition and ordered canonical type or failure-set
 arguments.
@@ -309,15 +314,16 @@ body; invocation uses the body's callable failure contract.
 
 ### Closure identity, copies, and aliases
 
-Every lambda expression has a unique concrete closure type. Assignment between
-values of the same closure type copies value captures and rebinds Write
-captures to the source closure's targets; it does not assign through those
-captures. Unused explicit captures produce `CV-LAMBDA-CAPTURE-UNUSED`.
+A concrete closure type is identified by its lambda expression and enclosing
+generic arguments. Assignment between values of the same closure type copies
+value captures and rebinds Write captures to the source closure's targets; it does
+not assign through those captures. Unused explicit captures produce
+`CV-LAMBDA-CAPTURE-UNUSED`.
 
-Repeated evaluation of one lambda expression produces values of the same
-closure type. Separate lambda expressions have distinct types even when their
-parameter lists, bodies, and captures look identical. A concrete closure type
-has no source type spelling; an inferred binding preserves it.
+Repeated evaluation of one lambda expression in the same concrete generic instance
+produces values of the same closure type. Separate lambda expressions have distinct
+types even when their parameter lists, bodies, and captures look identical. A
+concrete closure type has no source type spelling; an inferred binding preserves it.
 
 `let copy = closure` creates another closure owner. Copying value captures
 copies their values; copying Write captures preserves their referents. Copying
@@ -392,12 +398,12 @@ requirements of their targets.
 ### Invocation and snapshots
 
 Calling a concrete closure first selects its object identity, then evaluates
-arguments, then runs the body using that object's current captures. Assigning
-new contents to the same closure object during argument evaluation therefore
-affects this invocation. Calling a view first saves its target description:
-reassigning the view variable during argument evaluation affects later calls,
-but replacing contents of the already-selected closure object affects this
-call. Neither form creates an implicit capture snapshot.
+arguments. Each capture use in the body selects that object's current captured
+value or Write target. Assigning new contents to the same closure object during
+argument evaluation therefore affects this invocation. Calling a view first saves
+its target description: reassigning the view variable during argument evaluation
+affects later calls, but replacing contents of the already-selected closure object
+affects this call. Neither form creates an implicit capture snapshot.
 
 For example, the following uses one closure type produced by `factory`:
 

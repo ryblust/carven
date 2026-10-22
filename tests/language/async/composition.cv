@@ -239,6 +239,6 @@ const test "Async composition: products, selection, and owned cleanup" {
     check(result);
 }
 
-async fn run_composition() {
-    assert(result && await exercise());
+async test "Async composition: runtime products, selection, and owned cleanup" {
+    check(result && await exercise());
 }

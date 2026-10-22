@@ -8,6 +8,18 @@ auto CallableAdaptation::borrows_storage() const noexcept -> bool {
     return kind == CallableAdaptationKind::BorrowObject;
 }
 
+auto direct_call_target(const DeclarationStore& declarations, const SemCall& call) noexcept
+    -> std::optional<CallableID> {
+    const auto* target = call.target ? std::get_if<CallableID>(&*call.target) : nullptr;
+    if (!target
+        || std::holds_alternative<ClosureBodyImplementation>(
+            declarations.callable(*target).implementation
+        )) {
+        return std::nullopt;
+    }
+    return *target;
+}
+
 auto callable_identity(const SemIRProgram& program, TypeID type) noexcept
     -> std::optional<CallableID> {
     const auto& value = program.types().type(type).value;
@@ -103,7 +115,7 @@ auto query_callable_adaptation(
     return visit_execution_type(
         values,
         from,
-        [](const auto& shape) static noexcept -> std::optional<CallableAdaptation> {
+        [&](const auto& shape) noexcept -> std::optional<CallableAdaptation> {
             using Shape = std::remove_cvref_t<decltype(shape)>;
             if constexpr (std::same_as<Shape, FunctionTypeValue>
                           || std::same_as<Shape, ClosureTypeValue>) {
@@ -112,6 +124,11 @@ auto query_callable_adaptation(
                         ? CallableAdaptationKind::FunctionTarget
                         : CallableAdaptationKind::BorrowObject,
                     .callable = shape.callable
+                };
+            } else if constexpr (std::same_as<Shape, GenericClosureType>) {
+                return CallableAdaptation {
+                    .kind = CallableAdaptationKind::BorrowObject,
+                    .callable = std::get<GenericTypeID>(from),
                 };
             }
             invariant_violation("callable adaptation requires a callable source");
@@ -126,7 +143,8 @@ auto callable_adaptation(const SemIRProgram& program, TypeID from, TypeID to) no
         invariant_violation("published callable adaptation has unresolved copy identity");
     }
     if (result->borrows_storage() && result->callable) {
-        const auto body = program.declarations().body_for_callable(*result->callable);
+        const auto body =
+            program.declarations().body_for_callable(std::get<CallableID>(*result->callable));
         if (!body) {
             invariant_violation("closure adaptation requires a completed body");
         }

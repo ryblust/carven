@@ -232,7 +232,7 @@ auto BodyElaborator::call_expression(
                     (selected_symbol ? std::get_if<CatalogGenericForm>(&selected_symbol->form)
                                      : nullptr)) {
                 const auto declaration = draft().generic_declaration_copy(generic->definition);
-                if (std::holds_alternative<GenericFunctionDefinition>(declaration)) {
+                if (std::holds_alternative<GenericCallableDefinition>(declaration)) {
                     co_return co_await generic_call_expression(
                         source,
                         generic->definition,
@@ -436,7 +436,9 @@ auto BodyElaborator::call_expression(
     }
     auto callee =
         std::optional<BuiltExpression>(std::move(std::get<BuiltExpression>(*selected_callee)));
-    const auto target = active_builder().known_callable(callee->expression());
+    const auto known_target = active_builder().known_callable(callee->expression());
+    const auto* concrete_target = known_target ? std::get_if<CallableID>(&*known_target) : nullptr;
+    const auto target = concrete_target ? std::optional(*concrete_target) : std::nullopt;
     auto pending_failures = take_pending_failures(*callee);
     auto contract = callable_contract(callee->type(), ast.expression(source.callee).span);
     if (!contract.has_value()) {
@@ -562,7 +564,7 @@ auto BodyElaborator::call_expression(
         origin(span),
         SemCall {
             .callee = UniqueIndirect(std::move(*callee_operand)),
-            .target = target,
+            .target = known_target,
             .arguments = std::move(arguments),
             .callee_failures = BodyFailures(failures)
         }
@@ -613,7 +615,7 @@ auto BodyElaborator::class_operation(
             ));
         }
         auto instance =
-            draft().instantiate_generic_function(generic->definition, *canonical, origin(span));
+            draft().instantiate_generic_callable(generic->definition, *canonical, origin(span));
         if (!instance) {
             co_return std::unexpected(instance.error());
         }
@@ -717,7 +719,7 @@ auto BodyElaborator::generic_call_expression(
         co_return std::unexpected(checked.error());
     }
     const auto function =
-        std::get<GenericFunctionDefinition>(draft().generic_declaration_copy(definition));
+        std::get<GenericCallableDefinition>(draft().generic_declaration_copy(definition));
     const auto receiver_count = receiver.has_value() ? 1uz : 0uz;
     const auto argument_count = source.arguments.size() + receiver_count;
     if (argument_count != function.signature.parameters.size()) {
@@ -727,7 +729,8 @@ auto BodyElaborator::generic_call_expression(
             "generic call argument count differs from its declaration"
         ));
     }
-    const auto count = function.contract.parameters.size();
+    const auto parameters = draft().generic_parameter_contract_copy(definition);
+    const auto count = parameters.parameters.size();
     auto inferred = std::vector<std::optional<GenericArgument>>(count);
     const auto owner_count = owner_arguments.size();
     auto explicit_environment = std::move(owner_arguments);
@@ -739,7 +742,7 @@ auto BodyElaborator::generic_call_expression(
         auto site = BodyExprSite(*this, true);
         auto resolved = co_await site.resolve_generic_arguments(
             supplied,
-            std::span(function.contract.parameter_kinds).subspan(owner_count)
+            std::span(parameters.parameter_kinds).subspan(owner_count)
         );
         if (!resolved) {
             co_return std::unexpected(resolved.error());
@@ -775,7 +778,7 @@ auto BodyElaborator::generic_call_expression(
         auto expected = std::optional<ConstructionTypeRef>();
         if (explicit_environment.size() == count) {
             if (explicit_canonical.size() == count) {
-                auto resolved = draft().substitute_function_type(
+                auto resolved = draft().substitute_callable_type(
                     parameter.type,
                     definition,
                     explicit_canonical,
@@ -859,7 +862,7 @@ auto BodyElaborator::generic_call_expression(
     contract.failures = effects.substitute(contract.failures);
     auto resolved_target = std::optional<CallableID>();
     if (all_concrete && !generic_context) {
-        auto target = draft().instantiate_generic_function(definition, concrete, origin(span));
+        auto target = draft().instantiate_generic_callable(definition, concrete, origin(span));
         if (!target) {
             co_return std::unexpected(target.error());
         }

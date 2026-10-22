@@ -56,6 +56,9 @@ auto execution_value_type(const ConstantValueReader& values, const ExecutionValu
     if (const auto* pointer = std::get_if<ExecutionPointer>(&value)) {
         return pointer->type;
     }
+    if (const auto* reference = std::get_if<ExecutionReference>(&value)) {
+        return reference->type;
+    }
     if (const auto* slice = std::get_if<ExecutionSlice>(&value)) {
         return slice->type;
     }

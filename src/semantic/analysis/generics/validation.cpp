@@ -4,6 +4,7 @@ import :diagnostics.builder;
 import :semantic.analysis.construction.limits;
 import :semantic.analysis.operations;
 import :semantic.analysis.program;
+import :semantic.semir.body;
 import :semantic.semir.generic;
 import :semantic.semir.traversal;
 import :support.graph;
@@ -32,7 +33,7 @@ auto definition_fields(const GenericDeclarationDefinition& definition) noexcept
                     result.emplace_back(field.type, field.origin);
                 }
             },
-            [&](const GenericFunctionDefinition& function) noexcept {
+            [&](const GenericCallableDefinition& function) noexcept {
                 for (const auto& parameter : function.signature.parameters) {
                     if (const auto* type = std::get_if<GenericTypeID>(&parameter.type)) {
                         result.emplace_back(*type, function.contract.origin);
@@ -102,6 +103,8 @@ auto ProgramDraft::validate_generic_definitions(std::optional<GenericDeclaration
         const auto expression = generic_type_copy(*generic);
         if (const auto* application = std::get_if<GenericNominalApplication>(&expression)) {
             pending.emplace_back(application->definition, origin);
+        } else if (const auto* closure = std::get_if<GenericClosureType>(&expression)) {
+            pending.emplace_back(closure->definition, origin);
         }
         visit_generic_type_children(expression, [&](ConstructionTypeRef child) noexcept {
             self(self, child, origin);
@@ -123,18 +126,42 @@ auto ProgramDraft::validate_generic_definitions(std::optional<GenericDeclaration
             return std::unexpected(*failure);
         }
         const auto definition = generic_declaration_copy(owner);
-
+        if (const auto scope = definition_contract(definition).parameter_scope) {
+            pending.emplace_back(*scope, origin);
+        }
         for (const auto [type, origin] : definition_fields(definition)) {
             collect_dependencies(collect_dependencies, type, origin);
         }
-        if (std::holds_alternative<GenericFunctionDefinition>(definition)
-            && has_generic_function_body(owner)) {
+        if (std::holds_alternative<GenericCallableDefinition>(definition)
+            && has_generic_callable_body(owner)) {
             const auto calls = [&](const SemanticExpression& expression) noexcept {
+                collect_dependencies(
+                    collect_dependencies,
+                    expression.type.construction(),
+                    expression.origin
+                );
                 if (const auto* call = std::get_if<SemGenericCall>(&expression.value)) {
                     pending.emplace_back(call->definition, expression.origin);
+                    for (const auto& argument : call->environment) {
+                        visit_generic_argument_types(
+                            argument,
+                            [&](ConstructionTypeRef type) noexcept {
+                                collect_dependencies(collect_dependencies, type, expression.origin);
+                            }
+                        );
+                    }
+                } else if (const auto* closure = std::get_if<SemClosure>(&expression.value)) {
+                    if (const auto* type = std::get_if<GenericTypeID>(&closure->callable)) {
+                        collect_dependencies(collect_dependencies, *type, expression.origin);
+                    }
+                } else if (const auto* call = std::get_if<SemCall>(&expression.value);
+                           call && call->target) {
+                    if (const auto* type = std::get_if<GenericTypeID>(&*call->target)) {
+                        collect_dependencies(collect_dependencies, *type, expression.origin);
+                    }
                 }
             };
-            const auto& body = generic_function_body(owner);
+            const auto& body = generic_callable_body(owner);
             visit_semantic_nodes(body.region, calls);
             if (body.residual) {
                 visit_semantic_nodes(*body.residual, calls);
@@ -151,11 +178,14 @@ auto ProgramDraft::validate_generic_definitions(std::optional<GenericDeclaration
         const auto owner =
             GenericDeclarationID(program_identity, static_cast<std::uint32_t>(index));
         auto count = 0uz;
-        if (selected.contains(owner)) {
-            count = definition_contract(*storage.generic_definitions[index]).parameters.size();
+        if (selected.contains(owner) && generic_parameter_owner(owner) == owner) {
+            count = generic_parameter_contract_copy(owner).parameters.size();
         }
         offsets.push_back(offsets.back() + count);
     }
+    const auto parameter_offset = [&](GenericDeclarationID definition) noexcept {
+        return offsets[generic_parameter_owner(definition).index()];
+    };
     auto flow = std::vector<ParameterFlowEdge>();
     // A descriptor binds both the declaration and parameter identities; source
     // names and source trees do not participate in checking or substitution.
@@ -167,9 +197,11 @@ auto ProgramDraft::validate_generic_definitions(std::optional<GenericDeclaration
         }
         const auto definition = generic_declaration_copy(owner);
         const auto& contract = definition_contract(definition);
+        const auto parameter_owner = generic_parameter_owner(owner);
+        const auto parameters = generic_parameter_contract_copy(owner);
 
         auto parameter_names = std::set<ProgramSpellingID>();
-        for (const auto parameter : contract.parameters) {
+        for (const auto parameter : parameters.parameters) {
             if (!parameter_names.insert(parameter).second) {
                 diagnose(
                     DiagnosticCode::TypeGenericDefinition,
@@ -230,7 +262,10 @@ auto ProgramDraft::validate_generic_definitions(std::optional<GenericDeclaration
                             self(self, type, true, result);
                         });
                     },
-                    [&](const GenericNominalApplication& application) noexcept {
+                    [&]<typename Application>(const Application& application) noexcept
+                        requires (std::same_as<Application, GenericNominalApplication>
+                                  || std::same_as<Application, GenericClosureType>)
+                    {
                         for (const auto& argument : application.arguments) {
                             visit_generic_argument_types(
                                 argument,
@@ -240,7 +275,7 @@ auto ProgramDraft::validate_generic_definitions(std::optional<GenericDeclaration
                             );
                         }
                     },
-                }
+                    }
             );
         };
         const auto check = [&](auto&& self, ConstructionTypeRef type) noexcept -> void {
@@ -252,8 +287,8 @@ auto ProgramDraft::validate_generic_definitions(std::optional<GenericDeclaration
                 Overloaded {
                     [](TypeID) static noexcept {},
                     [&](const GenericTypeParameter& parameter) noexcept {
-                        if (parameter.definition != owner
-                            || parameter.index >= contract.parameters.size()) {
+                        if (parameter.definition != parameter_owner
+                            || parameter.index >= parameters.parameters.size()) {
                             diagnose(
                                 DiagnosticCode::TypeGenericDefinition,
                                 "generic field refers to a type parameter outside its definition",
@@ -292,8 +327,11 @@ auto ProgramDraft::validate_generic_definitions(std::optional<GenericDeclaration
                             self(self, type);
                         });
                     },
-                    [&](const GenericNominalApplication& application) noexcept {
-                        const auto target = generic_declaration_copy(application.definition);
+                    [&]<typename Application>(const Application& application) noexcept
+                        requires (std::same_as<Application, GenericNominalApplication>
+                                  || std::same_as<Application, GenericClosureType>)
+                    {
+                        const auto target = generic_parameter_contract_copy(application.definition);
                         auto bounds = check_generic_bounds(
                             application.definition,
                             application.arguments,
@@ -302,7 +340,7 @@ auto ProgramDraft::validate_generic_definitions(std::optional<GenericDeclaration
                         if (!bounds) {
                             failure = bounds.error();
                         }
-                        const auto target_count = definition_contract(target).parameters.size();
+                        const auto target_count = target.parameters.size();
                         if (target_count != application.arguments.size()) {
                             diagnose(
                                 DiagnosticCode::TypeGenericArguments,
@@ -315,7 +353,7 @@ auto ProgramDraft::validate_generic_definitions(std::optional<GenericDeclaration
                              ++argument) {
                             if (argument < target_count
                                 && !generic_argument_matches(
-                                    definition_contract(target).parameter_kinds[argument],
+                                    target.parameter_kinds[argument],
                                     application.arguments[argument]
                                 )) {
                                 diagnose(
@@ -342,12 +380,12 @@ auto ProgramDraft::validate_generic_definitions(std::optional<GenericDeclaration
                             );
 
                             for (const auto& [parameter, constructs] : origins) {
-                                if (parameter.definition == owner
-                                    && parameter.index < contract.parameters.size()) {
+                                if (parameter.definition == parameter_owner
+                                    && parameter.index < parameters.parameters.size()) {
                                     flow.push_back(
-                                        {.source = offsets[index] + parameter.index,
+                                        {.source = parameter_offset(owner) + parameter.index,
                                          .target =
-                                             offsets[application.definition.index()] + argument,
+                                             parameter_offset(application.definition) + argument,
                                          .constructs = constructs,
                                          .origin = contract.origin}
                                     );
@@ -355,15 +393,22 @@ auto ProgramDraft::validate_generic_definitions(std::optional<GenericDeclaration
                             }
                         }
                     },
-                }
+                    }
             );
         };
         for (const auto& field : definition_fields(definition)) {
             check(check, field.first);
         }
-        if (std::holds_alternative<GenericFunctionDefinition>(definition)
-            && has_generic_function_body(owner)) {
+        if (std::holds_alternative<GenericCallableDefinition>(definition)
+            && has_generic_callable_body(owner)) {
             const auto calls = [&](const SemanticExpression& expression) noexcept {
+                check(check, expression.type.construction());
+                if (const auto* call = std::get_if<SemCall>(&expression.value);
+                    call && call->target) {
+                    if (const auto* type = std::get_if<GenericTypeID>(&*call->target)) {
+                        check(check, *type);
+                    }
+                }
                 const auto* call = std::get_if<SemGenericCall>(&expression.value);
                 if (!call) {
                     return;
@@ -375,10 +420,10 @@ auto ProgramDraft::validate_generic_definitions(std::optional<GenericDeclaration
                     });
 
                     for (const auto& [parameter, constructs] : origins) {
-                        if (parameter.definition == owner) {
+                        if (parameter.definition == parameter_owner) {
                             flow.push_back({
-                                offsets[index] + parameter.index,
-                                offsets[call->definition.index()] + argument,
+                                parameter_offset(owner) + parameter.index,
+                                parameter_offset(call->definition) + argument,
                                 constructs,
                                 expression.origin,
                             });
@@ -386,7 +431,7 @@ auto ProgramDraft::validate_generic_definitions(std::optional<GenericDeclaration
                     }
                 }
             };
-            const auto& body = generic_function_body(owner);
+            const auto& body = generic_callable_body(owner);
             visit_semantic_nodes(body.region, calls);
             if (body.residual) {
                 visit_semantic_nodes(*body.residual, calls);
@@ -515,7 +560,10 @@ auto ProgramDraft::validate_generic_definitions(std::optional<GenericDeclaration
                         self(self, type, false, origin);
                     });
                 },
-                [&](const GenericNominalApplication& application) noexcept {
+                [&]<typename Application>(const Application& application) noexcept
+                    requires (std::same_as<Application, GenericNominalApplication>
+                              || std::same_as<Application, GenericClosureType>)
+                {
                     const auto key =
                         ApplicationKey(application.definition, application.arguments, owns_storage);
                     if (active.contains(key)) {
@@ -534,23 +582,45 @@ auto ProgramDraft::validate_generic_definitions(std::optional<GenericDeclaration
                         return;
                     }
                     active.insert(key);
-                    const auto definition = generic_declaration_copy(application.definition);
-                    for (const auto [field, field_origin] : definition_fields(definition)) {
-                        self(
-                            self,
-                            substitute_generic_type(
-                                field,
-                                application.definition,
-                                application.arguments
-                            ),
-                            owns_storage,
-                            field_origin
-                        );
+                    const auto parameter_owner = generic_parameter_owner(application.definition);
+                    if constexpr (std::same_as<Application, GenericClosureType>) {
+                        if (has_generic_callable_body(application.definition)) {
+                            const auto& body = generic_callable_body(application.definition);
+                            for (const auto binding : body.inputs.captures) {
+                                const auto capture = body.bindings.get(binding);
+                                self(
+                                    self,
+                                    substitute_generic_type(
+                                        capture.type,
+                                        parameter_owner,
+                                        application.arguments
+                                    ),
+                                    owns_storage
+                                        && std::get<CaptureBindingStorage>(capture.storage).mode
+                                            == CaptureMode::Value,
+                                    capture.origin
+                                );
+                            }
+                        }
+                    } else {
+                        const auto definition = generic_declaration_copy(application.definition);
+                        for (const auto [field, field_origin] : definition_fields(definition)) {
+                            self(
+                                self,
+                                substitute_generic_type(
+                                    field,
+                                    parameter_owner,
+                                    application.arguments
+                                ),
+                                owns_storage,
+                                field_origin
+                            );
+                        }
                     }
                     active.erase(key);
                     finished.insert(key);
                 },
-            }
+                }
         );
     };
     for (auto index = 0uz; index < storage.generic_definitions.size(); ++index) {
@@ -562,7 +632,7 @@ auto ProgramDraft::validate_generic_definitions(std::optional<GenericDeclaration
         const auto definition = generic_declaration_copy(owner);
         const auto& contract = definition_contract(definition);
 
-        if (std::holds_alternative<GenericFunctionDefinition>(definition)) {
+        if (std::holds_alternative<GenericCallableDefinition>(definition)) {
             continue;
         }
         auto arguments = generic_parameter_environment(owner);

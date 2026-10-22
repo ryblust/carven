@@ -62,22 +62,20 @@ const async fn read_temporary_owners() -> bool {
 const replaced = await replacement();
 const cancelled = await cancellation();
 
-const {
+const test "Async owners: static replacement, cancellation, and temporary iteration" {
     await equivalent();
-    assert(replaced && cancelled);
-    assert(await read_temporary_owners());
+    check(replaced && cancelled);
+    check(await read_temporary_owners());
 }
 
-async fn aggregate() -> bool {
+async test "Async owners: replacement, cancellation, and temporary iteration" {
+    await equivalent();
+    check(await read_temporary_owners());
+    check(await replacement());
+    check(await cancellation());
     var current = 0;
     var slots = (touch(&current),);
     slots.0 = touch(&current);
     await (&&slots).0;
-    return current == 1;
-}
-
-async fn run_owners() {
-    await equivalent();
-    assert(await read_temporary_owners());
-    assert(await replacement() && await cancellation() && await aggregate());
+    check(current == 1);
 }

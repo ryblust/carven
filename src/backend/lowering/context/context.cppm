@@ -130,6 +130,7 @@ public:
         TypeNameScope scope
     ) noexcept -> TargetTypeID;
 
+    auto async_void_type(TargetSymbol symbol) noexcept -> TargetTypeID;
     auto callable_completion(CallableID callable_id) noexcept -> TargetTypeID;
     auto callable_result(CallableID callable_id) noexcept -> TargetTypeID;
     auto call_result(const SemCall& call) noexcept -> TargetTypeID;

@@ -123,7 +123,7 @@ const TestSuite suite([] static noexcept {
                     library
                 );
                 auto result = std::map<BuiltinType, TargetName>();
-                for (const auto& instance : semantic.generic_function_instances()) {
+                for (const auto& instance : semantic.generic_callable_instances()) {
                     const auto argument = std::get<TypeID>(instance.arguments.front());
                     const auto kind =
                         std::get<BuiltinTypeValue>(semantic.types().type(argument).value).kind;

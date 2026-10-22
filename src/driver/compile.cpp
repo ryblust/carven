@@ -196,7 +196,8 @@ auto compile_artifacts(
             const auto& module_decl = semantic->declarations().module_decl(test.module_id);
             const auto& path =
                 semantic->provenance().module_record(module_decl.provenance_module).path;
-            return !test.is_const && std::ranges::contains(sources->owned_modules, path);
+            return test.execution != TestExecution::Static
+                && std::ranges::contains(sources->owned_modules, path);
         })
     );
     auto artifacts = [&]() noexcept -> std::expected<GeneratedArtifactSet, std::string> {

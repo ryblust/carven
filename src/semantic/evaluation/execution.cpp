@@ -151,6 +151,13 @@ auto ExecutionBody::parameters() const noexcept -> std::span<const LocalBindingI
     return std::get<const SemIRBody*>(body)->inputs().parameters;
 }
 
+auto ExecutionBody::captures() const noexcept -> std::span<const LocalBindingID> {
+    if (const auto* draft = std::get_if<const StructuredBodyDraft*>(&body)) {
+        return (*draft)->inputs.captures;
+    }
+    return std::get<const SemIRBody*>(body)->inputs().captures;
+}
+
 auto ExecutionBody::binding_count() const noexcept -> std::size_t {
     if (const auto* draft = std::get_if<const StructuredBodyDraft*>(&body)) {
         return (*draft)->bindings.size();

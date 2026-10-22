@@ -130,11 +130,7 @@ auto BodyRealizer::finish() noexcept -> LoweredBody {
     auto statements = region(metadata.region(), LoweringDiscardResult {}, false).run();
 
     if (is_async() && statements.continues()) {
-        const auto* callable = std::get_if<CallableBodyExit>(&inputs.exit);
-        const auto& signature = context.semantic().callable_signatures().signature(
-            context.semantic().declarations().callable(callable->callable_id).signature
-        );
-        if (!context.is_void(signature.result)) {
+        if (!context.is_void(result_type())) {
             invariant_violation("async body has an undelivered success value");
         }
         emit_return(std::nullopt, statements, LoweringReturnResult {});

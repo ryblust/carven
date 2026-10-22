@@ -4,6 +4,8 @@ import :diagnostics.builder;
 import :diagnostics.code;
 import :semantic.analysis.async;
 import :semantic.analysis.model;
+import :semantic.semir.body;
+import :semantic.semir.callable;
 import :semantic.semir.children;
 import :semantic.semir.decl;
 import :semantic.semir.traversal;
@@ -182,7 +184,7 @@ auto operation(const AnalysisModelView& model, ConstructionTypeRef type) noexcep
 }
 
 auto native_call(const AnalysisModelView& model, const SemCall& call) noexcept -> bool {
-    auto target = call.target;
+    auto target = direct_call_target(model.program.declarations(), call);
     if (!target) {
         if (const auto* function =
                 std::get_if<FunctionTypeValue>(&model.shape(call.callee->type.construction()))) {
@@ -277,13 +279,6 @@ auto analyze_async_contracts(
         }
         const auto origin =
             body_id ? program.bodies().body(*body_id).region().origin : *native_origin;
-        if (program.may_stop_test(entry.id)) {
-            diagnose(
-                origin,
-                DiagnosticCode::AsyncAdmission,
-                "async fn cannot execute a transitive test-stop effect"
-            );
-        }
         const auto function = program.source_function(entry.id);
         const auto entry_arguments = function
             && program.declarations().function(*function).entry_point
@@ -291,23 +286,11 @@ auto analyze_async_contracts(
         check_signature(signature, origin, false, entry_arguments);
     }
     for (const auto& definition : generics.definitions) {
-        if (const auto* function = std::get_if<GenericFunctionDefinition>(&definition);
+        if (const auto* function = std::get_if<GenericCallableDefinition>(&definition);
             function && function->signature.execution == CallableExecutionKind::Async) {
             check_signature(function->signature, function->contract.origin, true, false);
         }
     }
-    for (const auto& [definition, stops] : generics.call_stops) {
-        const auto& function = std::get<GenericFunctionDefinition>(generics.definition(definition));
-        if (includes_test_stop(stops)
-            && function.signature.execution == CallableExecutionKind::Async) {
-            diagnose(
-                function.contract.origin,
-                DiagnosticCode::AsyncAdmission,
-                "async fn cannot execute a transitive test-stop effect"
-            );
-        }
-    }
-
     for (const auto& [id, body] : model.bodies()) {
         static_cast<void>(id);
         visit_semantic_nodes(
@@ -315,7 +298,7 @@ auto analyze_async_contracts(
             Overloaded {
                 [&](const SemanticExpression& source) noexcept {
                     if (const auto* call = std::get_if<SemGenericCall>(&source.value)) {
-                        const auto& function = std::get<GenericFunctionDefinition>(
+                        const auto& function = std::get<GenericCallableDefinition>(
                             generics.definition(call->definition)
                         );
                         if (function.signature.execution == CallableExecutionKind::Async) {

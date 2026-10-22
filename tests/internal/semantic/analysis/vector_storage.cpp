@@ -58,7 +58,6 @@ auto expect_bounded_ownership(const SemIRProgram& program, std::size_t source_si
         .bodies = {},
         .records = {},
         .enum_payloads = {},
-        .call_stops = {},
         .failures = {},
     };
     const auto model = AnalysisModelView(program, generics);

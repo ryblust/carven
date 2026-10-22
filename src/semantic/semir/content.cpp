@@ -99,7 +99,7 @@ auto ContentWriter::nominal(NominalDeclarationRef reference) noexcept -> Content
         const auto& definition = program.generic_declaration_contract(instance->definition);
         token("generic");
         module_path(definition.module_id);
-        token(provenance.spelling(definition.name));
+        token(provenance.spelling(*definition.name));
         number(instance->arguments.size());
         for (const auto& argument : instance->arguments) {
             if (const auto* object = std::get_if<TypeID>(&argument)) {
@@ -133,11 +133,18 @@ auto ContentWriter::nominal(NominalDeclarationRef reference) noexcept -> Content
 
 auto ContentWriter::callable(CallableID id) noexcept -> ContentTask {
     const auto& declarations = program.declarations();
-    if (const auto* instance = program.generic_function_instance(id)) {
+    if (const auto* instance = program.generic_callable_instance(id)) {
         const auto& definition = program.generic_declaration_contract(instance->definition);
         token("generic instance");
         module_path(definition.module_id);
-        token(provenance.spelling(definition.name));
+        if (definition.name) {
+            token(provenance.spelling(*definition.name));
+        } else {
+            token("closure");
+            const auto origin = provenance.source_origin(definition.origin);
+            number(origin.span.start());
+            number(origin.span.end());
+        }
         number(instance->arguments.size());
         for (const auto& argument : instance->arguments) {
             number(argument.index());

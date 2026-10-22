@@ -133,8 +133,8 @@ header and before synthesized dependency groups. Formatters preserve include ord
 
 ### Carven source style
 
-Write combined function modifiers as `const async fn`, with static capability
-before execution kind.
+Write combined modifiers as `const async fn` or `const async test`, with static
+capability before execution kind.
 
 Group imports in official source in this order:
 

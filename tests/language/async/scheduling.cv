@@ -188,12 +188,12 @@ const test "Constant scheduler: source execution contracts" {
     check(!outside_request);
 }
 
-async fn run_scheduling() {
-    assert(await ordering() == ordered);
-    assert(await cancellation() == cancelled);
-    assert(await child_failure() == caught);
-    assert(await backing_close() == closed);
-    assert(await return_before_close() == selected);
-    assert(await nested_turn() == nested);
-    assert(await repeated_close() == recycled);
+async test "Async scheduler: runtime execution matches static contracts" {
+    check(await ordering() == ordered);
+    check(await cancellation() == cancelled);
+    check(await child_failure() == caught);
+    check(await backing_close() == closed);
+    check(await return_before_close() == selected);
+    check(await nested_turn() == nested);
+    check(await repeated_close() == recycled);
 }

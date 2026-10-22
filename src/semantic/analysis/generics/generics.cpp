@@ -33,7 +33,7 @@ auto generic_fields(const GenericDeclarationDefinition& definition) noexcept
                     result.push_back(field.type);
                 }
             },
-            [&](const GenericFunctionDefinition& value) noexcept {
+            [&](const GenericCallableDefinition& value) noexcept {
                 for (const auto& parameter : value.signature.parameters) {
                     if (const auto* type = std::get_if<GenericTypeID>(&parameter.type)) {
                         result.push_back(*type);
@@ -98,7 +98,8 @@ auto ProgramDraft::define_generic_declaration(
     const auto& contract = generic_contract(definition);
     if (contract.module_id.owner() != program_identity
         || !owns(contract.origin)
-        || !owns(contract.name)
+        || !contract.name
+        || !owns(*contract.name)
         || contract.parameters.empty()) {
         invariant_violation("generic definition has invalid source contract");
     }
@@ -111,6 +112,50 @@ auto ProgramDraft::define_generic_declaration(
         static_cast<void>(generic_type_copy(type));
     }
     storage.generic_definitions[id.index()] = std::move(definition);
+}
+
+auto ProgramDraft::append_generic_closure(
+    GenericDeclarationID parameter_scope,
+    ProgramOriginID origin,
+    ConstructionCallableContract signature
+) noexcept -> GenericDeclarationID {
+    require_state(State::Bodies, "append checked lexical callable");
+    parameter_scope = generic_parameter_owner(parameter_scope);
+    const auto parameters = generic_parameter_contract_copy(parameter_scope);
+    auto contract = GenericDeclarationContract {
+        .module_id = parameters.module_id,
+        .name = std::nullopt,
+        .origin = origin,
+        .visibility = DeclarationVisibility::Module,
+        .parameter_scope = parameter_scope,
+        .parameters = {},
+        .audience_dependencies = {},
+        .parameter_kinds = {},
+        .parameter_bounds = {},
+        .implementation_dependencies = {.types = {}, .callables = {}, .definitions = {}},
+    };
+    if (storage.generic_definitions.size() == std::numeric_limits<std::uint32_t>::max()) {
+        resource_limit_exceeded("generic declaration identities exhausted");
+    }
+    const auto id = GenericDeclarationID(
+        program_identity,
+        static_cast<std::uint32_t>(storage.generic_definitions.size())
+    );
+    storage.generic_definitions.emplace_back(
+        GenericCallableDefinition {
+            .contract = std::move(contract),
+            .signature = std::move(signature),
+            .is_const = false,
+            .infer_result = true,
+            .type_formations = {},
+        }
+    );
+    return id;
+}
+
+auto ProgramDraft::generic_parameter_owner(GenericDeclarationID definition) const noexcept
+    -> GenericDeclarationID {
+    return generic_declaration_contract_copy(definition).parameter_scope.value_or(definition);
 }
 
 auto ProgramDraft::generic_declaration_copy(GenericDeclarationID id) const noexcept
@@ -128,7 +173,7 @@ auto ProgramDraft::check_generic_bounds(
     std::span<const GenericArgument> arguments,
     ProgramOriginID origin
 ) const noexcept -> AnalysisResult<void> {
-    const auto contract = generic_declaration_contract_copy(definition);
+    const auto contract = generic_parameter_contract_copy(definition);
     if (arguments.size() != contract.parameters.size()) {
         return std::unexpected(
             diagnostics().error(DiagnosticBuilder(
@@ -212,6 +257,16 @@ auto ProgramDraft::intern_generic_type(GenericTypeExpression expression) noexcep
                 if (view.failures.visit([](auto id) static noexcept { return id.owner(); })
                     != program_identity) {
                     invariant_violation("generic callable used a foreign failure expression");
+                }
+            },
+            [&](const GenericClosureType& closure) noexcept {
+                const auto source = generic_declaration_copy(closure.definition);
+                const auto* callable = std::get_if<GenericCallableDefinition>(&source);
+                if (!callable || callable->contract.name) {
+                    invariant_violation("generic closure type has no lexical callable");
+                }
+                for (const auto& argument : closure.arguments) {
+                    visit_generic_argument_types(argument, validate_child);
                 }
             },
             [&](const GenericCppNamedType& native) noexcept {
@@ -393,7 +448,8 @@ auto ProgramDraft::substitute_generic_type(
                 child(type);
                 return type;
             });
-        } else if constexpr (std::same_as<Shape, GenericNominalApplication>) {
+        } else if constexpr (std::same_as<Shape, GenericNominalApplication>
+                             || std::same_as<Shape, GenericClosureType>) {
             value.arguments =
                 substitute_generic_environment(value.arguments, definition, arguments, effects);
         }
@@ -434,6 +490,33 @@ auto ProgramDraft::resolve_generic_type(
         .visit(
             Overloaded {
                 [](TypeID concrete) static noexcept -> AnalysisResult<TypeID> { return concrete; },
+                [&](const GenericClosureType& closure) noexcept -> AnalysisResult<TypeID> {
+                    const auto environment = substitute_generic_environment(
+                        closure.arguments,
+                        definition,
+                        generic_environment(arguments),
+                        effects
+                    );
+                    const auto closed = normalize_generic_environment(environment, origin);
+                    if (!closed) {
+                        return std::unexpected(
+                            diagnostics().error(
+                                DiagnosticBuilder(
+                                    DiagnosticCode::TypeGenericArguments,
+                                    "lexical callable environment requires determined types and failures"
+                                )
+                                    .primary(source_span(origin))
+                                    .build()
+                            )
+                        );
+                    }
+                    auto callable =
+                        instantiate_generic_callable(closure.definition, *closed, origin);
+                    if (!callable) {
+                        return std::unexpected(callable.error());
+                    }
+                    return intern_type({.value = ClosureTypeValue {.callable = *callable}});
+                },
                 [&](const GenericTypeParameter& parameter) noexcept -> AnalysisResult<TypeID> {
                     if (parameter.definition != definition || parameter.index >= arguments.size()) {
                         invariant_violation(
@@ -681,11 +764,12 @@ auto ProgramDraft::instantiate_generic_nominal(
     }
     const auto source = generic_declaration_copy(definition);
     const auto& contract = generic_contract(source);
+    const auto parameters = generic_parameter_contract_copy(definition);
     auto bounds = check_generic_bounds(definition, generic_environment(arguments), origin);
     if (!bounds) {
         return std::unexpected(bounds.error());
     }
-    if (std::holds_alternative<GenericFunctionDefinition>(source)) {
+    if (std::holds_alternative<GenericCallableDefinition>(source)) {
         return std::unexpected(
             diagnostics().error(DiagnosticBuilder(
                                     DiagnosticCode::TypeGenericArguments,
@@ -695,7 +779,7 @@ auto ProgramDraft::instantiate_generic_nominal(
                                     .build())
         );
     }
-    if (arguments.size() != contract.parameters.size()) {
+    if (arguments.size() != parameters.parameters.size()) {
         auto diagnostic = DiagnosticBuilder(
             DiagnosticCode::TypeGenericArguments,
             "generic type argument count differs from its declaration"
@@ -707,7 +791,7 @@ auto ProgramDraft::instantiate_generic_nominal(
         return std::unexpected(diagnostics().error(diagnostic.build()));
     }
     for (const auto [index, argument] : std::views::enumerate(arguments)) {
-        if (!generic_argument_matches(contract.parameter_kinds[index], argument)) {
+        if (!generic_argument_matches(parameters.parameter_kinds[index], argument)) {
             return std::unexpected(
                 diagnostics().error(DiagnosticBuilder(
                                         DiagnosticCode::TypeGenericArguments,
@@ -764,7 +848,7 @@ auto ProgramDraft::instantiate_generic_nominal(
     // references made while its fields are being completed.
     const auto declaration = source.visit(
         Overloaded {
-            [](const GenericFunctionDefinition&) static noexcept -> NominalDeclarationRef {
+            [](const GenericCallableDefinition&) static noexcept -> NominalDeclarationRef {
                 invariant_violation("generic function cannot reserve a nominal instance");
             },
             [&](const GenericRecordDefinition&) noexcept -> NominalDeclarationRef {
@@ -790,7 +874,7 @@ auto ProgramDraft::instantiate_generic_nominal(
     // The owned key keeps this environment stable while nested instances grow storage.
     auto completion = source.visit(
         Overloaded {
-            [](const GenericFunctionDefinition&) static noexcept -> AnalysisResult<void> {
+            [](const GenericCallableDefinition&) static noexcept -> AnalysisResult<void> {
                 invariant_violation("generic function cannot complete a nominal instance");
             },
             [&](const GenericRecordDefinition& record) noexcept -> AnalysisResult<void> {
@@ -815,7 +899,7 @@ auto ProgramDraft::instantiate_generic_nominal(
                     ConstructionStructDeclaration {
                         .kind = record.kind,
                         .module_id = contract.module_id,
-                        .name = contract.name,
+                        .name = *contract.name,
                         .origin = contract.origin,
                         .visibility = DeclarationVisibility::Module,
                         .fields = std::move(fields),
@@ -866,7 +950,7 @@ auto ProgramDraft::instantiate_generic_nominal(
                     owner,
                     EnumDeclaration {
                         .module_id = contract.module_id,
-                        .name = contract.name,
+                        .name = *contract.name,
                         .origin = contract.origin,
                         .visibility = DeclarationVisibility::Module,
                         .representation = PayloadEnumRepresentation {},

@@ -126,8 +126,26 @@ const TestSuite suite([] static noexcept {
                 expect(function(tree).const_span.has_value());
             }
             for (const auto source :
-                 {"async struct Bad {}", "async enum Bad { Value }", "async test {}"}) {
+                 {"async struct Bad {}", "async enum Bad { Value }", "private async test {}"}) {
                 check_rejected(source);
+            }
+        };
+
+    "Parser async: tests retain async and static modifiers with optional labels"_test =
+        [] static noexcept {
+            constexpr auto source = std::string_view(
+                "async test {} async test \"runtime\" {} "
+                "const async test \"static\" {} async const test {}"
+            );
+            const auto tree = parse_valid(source);
+            for (const auto index : {0uz, 1uz, 2uz, 3uz}) {
+                const auto& test = get<ASTTestDecl>(item(tree, index));
+                if (!expect(test.async_span.has_value())) {
+                    return;
+                }
+                expect_equal(slice(source, *test.async_span), std::string_view("async"));
+                expect_equal(test.is_const, index >= 2uz);
+                expect_equal(test.label.has_value(), index == 1uz || index == 2uz);
             }
         };
 

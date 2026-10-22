@@ -117,15 +117,18 @@ public:
     auto generic_declaration_contract(GenericDeclarationID id) const noexcept
         -> const GenericDeclarationContract&;
 
+    auto generic_parameter_contract(GenericDeclarationID id) const noexcept
+        -> const GenericDeclarationContract&;
+
     auto generic_nominal_instances() const noexcept -> std::span<const GenericNominalInstance>;
 
     auto generic_nominal_instance(NominalDeclarationRef declaration) const noexcept
         -> const GenericNominalInstance*;
 
-    auto generic_function_instances() const noexcept -> std::span<const GenericFunctionInstance>;
+    auto generic_callable_instances() const noexcept -> std::span<const GenericCallableInstance>;
 
-    auto generic_function_instance(CallableID callable) const noexcept
-        -> const GenericFunctionInstance*;
+    auto generic_callable_instance(CallableID callable) const noexcept
+        -> const GenericCallableInstance*;
 
     auto static_instances() const noexcept -> std::span<const StaticInstance>;
     // The function a callable implements: its declaration, or the function
@@ -152,10 +155,10 @@ public:
     auto await_completion_may_be_cancelled(BodyID body, const SemAwait& occurrence) const noexcept
         -> bool;
 
-    auto may_stop_test(CallableID callable_id) const noexcept -> bool;
     auto may_stop(CallableID callable_id) const noexcept -> bool;
     auto may_stop(TypeID type) const noexcept -> bool;
     auto may_stop(const SemCall& call) const noexcept -> bool;
+    auto direct_call_target(const SemCall& call) const noexcept -> std::optional<CallableID>;
     auto call_signature(TypeID type) const noexcept -> CallableSignatureID;
     auto call_signature(const SemCall& call) const noexcept -> CallableSignatureID;
 
@@ -182,7 +185,7 @@ private:
         std::vector<StaticInstance> static_instances,
         std::vector<GenericDeclarationContract> generic_declarations,
         std::vector<GenericNominalInstance> generic_instances,
-        std::vector<GenericFunctionInstance> generic_functions,
+        std::vector<GenericCallableInstance> generic_callables,
         std::vector<CallStopEffect> call_stops
     ) noexcept;
 
@@ -199,8 +202,8 @@ private:
     ImmutableProgramTable<GenericDeclarationContract, GenericDeclarationID>
         generic_declaration_store;
     std::vector<GenericNominalInstance> generic_instance_store;
-    std::vector<GenericFunctionInstance> generic_function_store;
-    std::map<CallableID, std::size_t> generic_instance_functions;
+    std::vector<GenericCallableInstance> generic_callable_store;
+    std::map<CallableID, std::size_t> generic_instance_callables;
     std::map<NominalDeclarationRef, std::size_t> generic_instance_nominals;
     std::map<std::pair<FunctionID, std::vector<ConstantID>>, CallableID> static_instance_index;
     std::map<CallableID, std::size_t> instance_callables;

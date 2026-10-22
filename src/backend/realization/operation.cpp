@@ -60,7 +60,7 @@ auto realize_callable_adaptation(
     TypeID to
 ) noexcept -> TargetExpr {
     if (preparation.adaptation.callable) {
-        context.require_callable_reference(*preparation.adaptation.callable);
+        context.require_callable_reference(std::get<CallableID>(*preparation.adaptation.callable));
     }
     const auto stateless = preparation.adaptation.kind == CallableAdaptationKind::StatelessClosure;
     if (preparation.array) {
@@ -916,9 +916,10 @@ auto realize_operation(
                 invariant_violation("unsubstituted generic call reached backend");
             },
             [&](const SemCall& value) noexcept -> TargetExpr {
-                const auto* parser = value.target
+                const auto direct = context.semantic().direct_call_target(value);
+                const auto* parser = direct
                     ? std::get_if<NumberParseImplementation>(
-                          &context.semantic().declarations().callable(*value.target).implementation
+                          &context.semantic().declarations().callable(*direct).implementation
                       )
                     : nullptr;
                 if (parser) {
@@ -935,9 +936,9 @@ auto realize_operation(
                         std::move(operands)
                     );
                 }
-                if (value.target) {
+                if (direct) {
                     return call_expression(
-                        context.callable_expression(*value.target),
+                        context.callable_expression(*direct),
                         std::move(operands)
                     );
                 }

@@ -29,7 +29,7 @@ struct OwnershipPlace final {
 struct OwnershipCallableLoan final {
     OwnershipProjectionPath holder;
     std::optional<OwnershipPlace> backing;
-    std::optional<CallableID> callable;
+    std::optional<ConstructionCallableRef> callable;
     ProgramOriginID origin;
     bool direct_only;
 
@@ -437,7 +437,8 @@ public:
         -> std::flat_map<AnalysisBodyID, std::uint32_t>;
 
 private:
-    auto body_ordinal(CallableID callable) const noexcept -> std::optional<std::uint32_t>;
+    auto body_ordinal(ConstructionCallableRef callable) const noexcept
+        -> std::optional<std::uint32_t>;
     const SemIRProgram& program;
     const AnalysisModelView& model;
     std::flat_map<AnalysisBodyID, std::uint32_t> ordinals;
@@ -709,12 +710,13 @@ private:
         -> ContinuationTask<OwnershipFlow>;
 
     auto call(
-        CallableID callable,
+        ConstructionCallableRef callable,
         const OwnershipRelationships& captures,
         std::optional<OwnershipPlace> capture_owner,
         std::span<const OwnershipCallArgument> arguments,
         OwnershipState state,
-        ProgramOriginID origin
+        ProgramOriginID origin,
+        std::optional<ConstructionFailureRef> actual_failures
     ) noexcept -> OwnershipFlow;
 
     template<typename Contract>

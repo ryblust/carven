@@ -218,7 +218,8 @@ machine code. Unknown optional facts retain the ordinary operation.
 syntax and source storage. `ProgramDraft` consumes it and owns declarations,
 canonical interning, construction types, failure constraints, and body
 construction. Declarations may reserve identities for recursion and forward
-references. Each body has one owning callable.
+references. Each body has one owner: a callable, a test, or a module-scope `const`
+block.
 
 Solving consumes construction state. `SemIRProgram` owns resolved semantic data
 and provenance; downstream consumers use no source syntax. Program, provenance,

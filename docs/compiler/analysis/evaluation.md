@@ -129,8 +129,9 @@ Static execution consumes completed structured function bodies after ordinary
 contextual typing, name binding, operation selection and result completion.
 Ordinary functions remain runtime callable but cannot be called from static
 roots. Each `const fn` definition receives a local capability check over
-its signature and semantically reachable body paths. Direct callees on those
-paths must also be declared `const fn`; each definition is checked separately.
+its signature and semantically reachable body paths. Named callees on those
+paths must also be declared `const fn`. Known closure bodies are checked recursively;
+unproven callable targets fail admission.
 The body producer records statement, tail, and expression-operation reachability
 in `SemanticStatement`, `SemanticRegion`, and `SemanticExpression`. The validator
 consumes those facts without reconstructing control flow. All functions remain
@@ -286,9 +287,10 @@ failed semantic dependency stops the whole domain. Exhaustion can stop source
 cleanup and further output; already written output remains observable.
 Arbitrary native C++ provider bodies remain outside semantic execution capability.
 Host operations use their supported semantic contracts. Await is admitted
-in static roots, `const` blocks, and `const test` bodies as well as async bodies;
-a synchronous const function's ordinary body cannot await. Runtime realization
-consumes the same published body and emits its C++ coroutine representation.
+in static roots, `const` blocks, and static tests as well as async function and
+async test bodies. A synchronous const function's ordinary body cannot await.
+Runtime realization consumes the same published body and emits its C++ coroutine
+representation.
 
 Execution budgets bound steps, text, and aggregate work, with no elapsed-time
 limit on host waits. A completed input value beyond the executor's value limits
@@ -334,12 +336,15 @@ unavailable member information produces an execution diagnostic.
 
 `query_callable_adaptation` supplies copy and target-borrow classification to
 execution, ownership analysis, and backend preparation. Read array arguments
-preserve source storage for copying adaptations. Direct function targets and
-same-type callable views execute without borrowing a callable object. Widening
-an existing view requires backing that execution values do not represent;
-unresolved copy identity also produces an execution diagnostic. A checked
-adaptation to an empty failure set establishes identity through its subset
-constraint. Empty arrays require no element target.
+preserve source storage for copying adaptations. Closure values store their
+captures in ordinary execution aggregates. Value captures own copies; Write
+captures borrow checked storage identities. Callable views retain a stateless
+callable identity or an existing storage coordinate. Widening borrows the source
+view, including element storage in array adaptations. Closure calls select storage
+identity before evaluating arguments. Capture occurrences resolve against that
+object's current fields.
+A checked adaptation to an empty failure set establishes identity through its
+subset constraint. Empty arrays require no element target.
 
 `ExecutionTextStorage` privately holds owned bytes or a borrowed retained
 spelling. The move-only `ExecutionOwnedText` encapsulates String ownership;
@@ -579,8 +584,9 @@ reject the program. Failed checks report diagnostics while allowing execution to
 requirements stop the root through the executor's failure transport. The static
 adapter retains the root's diagnostic failure, so failed checks prevent publication
 even when execution completes normally. Previously diagnosed dependencies retain
-their owner's failure. Published test declarations retain their execution stage so
-target planning selects runtime tests.
+their owner's failure. Published test declarations select static, synchronous
+runtime, or asynchronous runtime execution. Target planning selects runtime tests
+and lowers their bodies with the corresponding entry contract.
 
 ## Interpreted execution
 
@@ -599,8 +605,10 @@ checks operation support on executed paths. The ordinary interpretation command
 selects the program entry; explicit-source build commands select the standard
 build library's source-plan function. Runtime tests are ordered by
 canonical module path and source order. Each receives a fresh executor and the
-caller's resource policy. Ordinary CLI execution has no default cumulative work
-quota; `--max-steps` supplies an explicit step budget. Static roots and hosted
+caller's resource policy. Asynchronous tests run as independent roots and close
+their children before the next test. Root cancellation records a failed test.
+Ordinary CLI execution has no default cumulative work quota; `--max-steps` supplies
+an explicit step budget. Static roots and hosted
 calls retain their independent bounded policies. Project build commands execute
 the user's script through this same interpretation path.
 A stopped test leaves later tests available; an abort ends the run. Test operations

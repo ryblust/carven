@@ -17,16 +17,32 @@ def main():
         real = installed / "bin/carven"
         real.parent.mkdir(parents=True)
         shutil.copy2(compiler, real)
-        (installed / "crafts").symlink_to(crafts, target_is_directory=True)
+        shutil.copytree(crafts, installed / "crafts")
+        (installed / "crafts/carven/closure_fixture.cv").write_text(
+            'private struct Stamp { tag: i32 }\n'
+            'private fn offset(tag: i32) -> i32 => tag + 23;\n'
+            'export fn make<T>(tag: i32) {\n'
+            '    let stamp = Stamp { tag: tag };\n'
+            '    return [stamp](&&value: T) -> (i32, T) => (offset(stamp.tag), &&value);\n'
+            '}\n'
+        )
         (root / "bin").mkdir()
         command = root / "bin/carven"
         command.symlink_to(real)
         project = root / "plain project"
         project.mkdir()
         payload = ["--help", "你好🚀 space", "", 'a"b\\']
+        closure_import = 'import carven::closure_fixture using make;\n'
+        integer_closure_checks = (
+            'let number = make<i32>(19);\n'
+            'let (number_tag, number_value) = number(&&7);\n'
+            'assert(number_tag == 42 && number_value == 7);\n'
+        )
         (project / "main.cv").write_text(
             'import std::process using arguments;\n'
-            'for argument in arguments()? { println(argument); }\n'
+            + closure_import
+            + integer_closure_checks
+            + 'for argument in arguments()? { println(argument); }\n'
             'println("toolchain available");\n'
         )
         environment = {**os.environ, "PATH": f"{root / 'bin'}{os.pathsep}{os.environ['PATH']}"}
@@ -67,7 +83,7 @@ def main():
                            check=True, timeout=15)
         (project / "generate.py").write_text(
             'from pathlib import Path\n'
-            'Path("generated.cv").write_text("export fn generated() -> i32 => 0;\\n")\n'
+            'Path("generated.cv").write_text("fn generated() -> i32 => 0;\\n")\n'
         )
         (project / "support.cv").write_text(
             'import <values.hpp>;\n'
@@ -77,6 +93,12 @@ def main():
         (project / "main.cv").write_text(
             'import .support using value;\n'
             'import .generated using generated;\n'
+            + closure_import
+            + integer_closure_checks
+            + 'let owner = make<String>(20);\n'
+            'let payload: String = "kept";\n'
+            'let (text_tag, text_value) = owner(&&payload);\n'
+            'assert(text_tag == 43 && text_value.as_str() == "kept");\n'
             'println(value() + generated());\n'
         )
         plan = '''{

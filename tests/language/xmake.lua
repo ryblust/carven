@@ -16,6 +16,7 @@ target("carven-test-language")
     end
     add_files("modules/**.cv", "modules/staged_calls/provider.cpp")
     add_files("testing/inline.cv", "testing/assertions.cv", "io/values.cv", "time/clock.cv")
+    add_files("async/*.cv", "time/sleep.cv", "time/timeout.cv")
 target_end()
 
 includes("traps")
@@ -24,8 +25,7 @@ target("carven-test-language-execution")
     set_kind("binary")
     add_rules("@carven/carven")
     add_includedirs(".")
-    add_files("main.cv", "io/input.cv", "io/utf_errors.cv", "time/sleep.cv", "time/timeout.cv")
-    add_files("async/*.cv")
+    add_files("main.cv", "io/input.cv", "io/utf_errors.cv")
 
     add_tests("behavior", {run_timeout = 30000, plain = true, pass_outputs = {""}})
     for _, name in ipairs({"io-error", "partial-cancel", "fragmented-crlf", "fragmented-utf8"}) do
@@ -117,26 +117,45 @@ target("carven-test-language-test-control")
     set_kind("binary")
     add_rules("@carven/carven", {tests = true})
     add_includedirs(".")
-    add_files("testing/reporting.cv", "testing/runner_failure.cv")
+    add_files("testing/reporting.cv", "testing/runner_failure.cv", "testing/async_control.cv")
+    add_files("testing/async_native_cleanup.cv")
     add_files("../cli/commands/assertions/loop_step_stop.cv", "../cli/commands/assertions/evaluation_stop.cv")
     add_tests("control", {run_timeout = 30000})
     on_test(function (target, opt)
         return import("process", {rootdir = path.join(os.projectdir(), "tests", "harness")})
             .main(target, opt, {
                 args = {}, exit_code = 1,
-                stdout_ordered = {"reached 0", "reached 1", "reached 2", "reached 3", "reached 4",
-                    "reached 6", "reached 8", "closed 10", "closed 12", "reached 17", "closed 19", "closed 21"},
-                stdout_contains = {"ordinary", "after checks", "later", "body"},
+                stdout_ordered = {
+                    {"reached 0", "reached 1", "reached 2", "reached 3", "reached 4",
+                        "reached 6", "reached 8", "closed 10", "closed 12", "reached 17", "closed 19", "closed 21"},
+                    {"closed 103\n", "closed 102\n", "closed 100\n", "native async cleanup passed"},
+                    {"closed 101\n", "closed 100\n"},
+                    {"closed 105\n", "closed 104\n", "native async cleanup passed"},
+                    {"closed 108\n", "closed 106\n", "native async cleanup passed"},
+                    {"closed 107\n", "closed 106\n"},
+                },
+                stdout_contains = {"ordinary", "after checks", "later", "body",
+                    "async after check", "async child started 1", "async child started 2",
+                    "async child started 3", "async child started 4", "async child started 5", "async child started 6",
+                    "async child cancellation requested true", "async child closed 6",
+                    "async later passed", "sync after async passed", "async child started 7",
+                    "native async cleanup passed"},
                 stdout_not_contains = {"unreachable", "unexpected recovery", "program entry",
                     "reached 5\n", "reached 7\n", "reached 9\n", "reached 11\n", "reached 13\n",
                     "reached 14\n", "reached 15\n", "reached 16\n", "reached 18\n", "reached 20\n",
-                    "reached 22\n", "reached 23\n"},
+                    "reached 22\n", "reached 23\n", "async child closed 1", "async child closed 2",
+                    "async child closed 3", "async child closed 4", "async child closed 5", "async child closed 7"},
                 stderr_contains = {"test stopped", "step stopped", "evaluation stopped", "first check", "second check",
                     "direct temporary message with enough text for owned storage",
                     "explicit temporary message with enough text for owned storage",
                     "callable temporary message with enough text for owned storage",
                     "actual: [\n        12,\n        13,", "expected: [\n        15,\n        16,",
-                    "observed_boolean(&calls, true): <not evaluated>", "comparison_next(&calls): 1", "comparison_next(&calls): 2"},
+                    "observed_boolean(&calls, true): <not evaluated>", "comparison_next(&calls): 1", "comparison_next(&calls): 2",
+                    "async check continued", "async direct require stopped", "async direct fail stopped",
+                    "async helper require stopped", "async helper fail stopped", "cancellation escaped the test",
+                    "native async direct stop", "native async helper stopped", "native async child stopped its root",
+                    "async require helper stopped", "async fail helper stopped",
+                    "generic async callback stopped", "async child stopped its root"},
                 stderr_not_contains = {"99,", "unexpected recovery"},
             }, target:scriptdir())
     end)

@@ -367,8 +367,9 @@ auto OwnershipBatchAnalyzer::symbolic_input(const AnalysisBodyView& source) cons
                     .direct_only = false
                 }
             );
-        } else if (const auto* closure = std::get_if<ClosureTypeValue>(&value)) {
-            const auto& target = body(*program.declarations().body_for_callable(closure->callable));
+        } else if (std::holds_alternative<ClosureTypeValue>(value)
+                   || std::holds_alternative<GenericClosureType>(value)) {
+            const auto& target = body(*model.callable_body(*model.callable_identity(type)));
             for (const auto [index, id] : std::views::enumerate(target.inputs().captures)) {
                 const auto& capture = target.binding(id);
                 auto captured = self(capture.type, capture.origin);
@@ -837,9 +838,10 @@ auto OwnershipBatchAnalyzer::run() noexcept -> AnalysisResult<OwnershipAnalysisS
                     if (!target) {
                         return;
                     }
-                    const auto& required = derived.stable_parameters.at(*target);
+                    const auto callable = std::get<CallableID>(*target);
+                    const auto& required = derived.stable_parameters.at(callable);
                     const auto& signature = program.callable_signatures().signature(
-                        program.declarations().callable(*target).signature
+                        program.declarations().callable(callable).signature
                     );
                     for (const auto [index, parameter] :
                          std::views::enumerate(signature.parameters)) {

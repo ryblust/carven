@@ -22,29 +22,23 @@ async fn units() -> Vector<void> {
     return &&values;
 }
 
-async fn exercise() -> bool throw JSONError + JSONValueError {
-    let text: String = "[41,42]";
-    let (document, values, empty_values) = await when_all(
-        parse_owned(&&text),
-        products(),
-        units()
-    )?;
-    return document.length()?
-        == 2
-        && document.at(1)?.as_i64()? == 42
-        && values.length() == 2
-        && values[0] == (41, ())
-        && values[1] == (42, ())
-        && empty_values.length() == 2
-        && empty_values[1] == ();
-}
-
-async fn run_containers() {
-    let result = try {
-        await exercise()?
+async test "Async containers: owned aggregate results survive suspension" {
+    try {
+        let text: String = "[41,42]";
+        let (document, values, empty_values) = await when_all(
+            parse_owned(&&text),
+            products(),
+            units()
+        )?;
+        check(document.length()? == 2);
+        check(document.at(1)?.as_i64()? == 42);
+        require(values.length() == 2);
+        check(values[0] == (41, ()));
+        check(values[1] == (42, ()));
+        require(empty_values.length() == 2);
+        check(empty_values[1] == ());
     } catch {
-        JSONError(_) => false,
-        JSONValueError(_) => false,
-    };
-    assert(result);
+        JSONError(_) => fail("unexpected JSON parse failure"),
+        JSONValueError(_) => fail("unexpected JSON value failure"),
+    }
 }

@@ -79,6 +79,11 @@ struct ExecutionFrame final {
     std::vector<ExecutionChildRegistration> children;
 };
 
+struct ExecutionInvocation final {
+    CallableID callable;
+    std::optional<ExecutionPlace> environment;
+};
+
 class SemanticExecutor final : private ExecutionOperandAccess {
 public:
     SemanticExecutor(
@@ -148,7 +153,8 @@ private:
     auto call(
         ExecutionCallSite target,
         std::vector<ExecutionOperand> arguments,
-        ProgramOriginID origin
+        ProgramOriginID origin,
+        std::optional<ExecutionPlace> environment = std::nullopt
     ) noexcept -> ExecutionTask<ExecutionValue>;
 
     auto root_expression(
@@ -532,11 +538,22 @@ private:
     auto sequence_element_type(ConstructionTypeRef type) const noexcept
         -> std::optional<ConstructionTypeRef>;
 
-    auto check_callable_adaptation(
-        ConstructionTypeRef source,
+    auto callable_invocation(const ExecutionFunction& callee, ProgramOriginID origin) noexcept
+        -> ExecutionResult<ExecutionInvocation>;
+
+    auto adapt_callable(
+        ExecutionFrame& frame,
+        const SemanticExpression& source,
         ConstructionTypeRef target,
         ProgramOriginID origin
-    ) noexcept -> ExecutionResult<void>;
+    ) noexcept -> ExecutionTask<ExecutionValue>;
+
+    auto adapt_callable_storage(
+        ExecutionPlace source,
+        ConstructionTypeRef target,
+        ProgramOriginID origin,
+        std::size_t depth
+    ) noexcept -> ExecutionResult<ExecutionValue>;
 
     auto pointer_display(const ExecutionValue& value, ProgramOriginID origin) noexcept
         -> ExecutionResult<std::optional<std::string>>;
@@ -590,8 +607,8 @@ private:
         ProgramOriginID origin
     ) noexcept -> ExecutionResult<ExecutionValue>;
 
-    auto slot_value(ExecutionFrame& frame, std::size_t slot, ProgramOriginID origin) noexcept
-        -> ExecutionResult<ExecutionRead>;
+    auto slot_place(ExecutionFrame& frame, LocalBindingID binding, ProgramOriginID origin) noexcept
+        -> ExecutionResult<ExecutionPlace>;
 
     static auto has_bound_storage(const SemanticExpression& expression) noexcept -> bool;
 

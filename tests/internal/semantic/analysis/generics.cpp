@@ -13,6 +13,37 @@ import std;
 namespace {
 
 const TestSuite suite([] static noexcept {
+    "Generic closures: ownership requirements apply before concrete application"_test =
+        [] static noexcept {
+            expect_diagnostic(
+                analyze_test_errors(R"(
+fn inspect<T>(value: T) {}
+fn invalid<T>(value: T) {
+    let callback = [value]() { inspect(value); };
+}
+)"),
+                DiagnosticCode::TypeGenericDefinition
+            );
+            expect_diagnostic(
+                analyze_test_errors(R"(
+fn invalid<T>(&value: T) {
+    let callback = [&value]() { let _ = &&value; };
+}
+)"),
+                DiagnosticCode::AccessTakeOperand
+            );
+            expect_diagnostic(
+                analyze_test_errors(R"(
+fn touch<T>(&value: T) {}
+fn invalid<T>(&&value: T) {
+    var local = &&value;
+    return [&local]() { touch(&local); };
+}
+)"),
+                DiagnosticCode::AccessBorrowConflict
+            );
+        };
+
     "Generic capabilities: unknown and unsupported operands require declared evidence"_test =
         [] static noexcept {
             expect_diagnostic(
@@ -214,12 +245,20 @@ const TestSuite suite([] static noexcept {
             )"),
                 DiagnosticCode::TypeValueRequired
             );
-            expect_diagnostic(
-                analyze_test_errors(R"(
-                fn growing<T>() -> bool => growing<ptr<T>>();
-            )"),
-                DiagnosticCode::TypeGenericExpansion
-            );
+            for (const auto source : std::array<std::string_view, 2> {
+                     "fn growing<T>() -> bool => growing<ptr<T>>();",
+                     R"(
+                         fn growing<T>(&&value: T) -> void {
+                             let next = [](&&item: T) {};
+                             growing(&&next);
+                         }
+                     )",
+                 }) {
+                expect_diagnostic(
+                    analyze_test_errors(std::string(source)),
+                    DiagnosticCode::TypeGenericExpansion
+                );
+            }
         };
     "Generic expressions: ordinary pointer and scalar contexts retain their contracts"_test =
         [] static noexcept {

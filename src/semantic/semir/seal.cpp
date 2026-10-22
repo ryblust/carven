@@ -326,7 +326,7 @@ auto SemIRProgram::publish_bodies() noexcept -> void {
     auto tests = MutableProgramTable<TestDeclaration, TestID>(identity());
     for (auto& test : std::move(test_store.rows).release()) {
         test.body = mapping[test.body->index()];
-        if (test.is_const == test.body.has_value()) {
+        if ((test.execution == TestExecution::Static) == test.body.has_value()) {
             invariant_violation("test publication disagrees with its execution stage");
         }
         tests.add(test);

@@ -24,26 +24,26 @@ private fn local_factory(value: i32) {
     return local_after_yield(value);
 }
 
-async fn run_tracked() {
-    assert(
+async test "Async native values: transfer and local destruction" {
+    check(
         (tracked_created(), tracked_copied(), tracked_moved(), tracked_destroyed(), tracked_live())
             == (0, 0, 0, 0, 0)
     );
     if true {
         let held = await tracked();
-        assert(tracked_created() == 1 && tracked_copied() == 0 && tracked_live() == 1);
+        check(tracked_created() == 1 && tracked_copied() == 0 && tracked_live() == 1);
     }
-    assert(tracked_live() == 0 && tracked_destroyed() == tracked_created() + tracked_moved());
+    check(tracked_live() == 0 && tracked_destroyed() == tracked_created() + tracked_moved());
 
     let created_before = tracked_created();
     let selected = await local_after_yield(-7);
-    assert((selected, tracked_live(), tracked_created() - created_before) == (-7, 0, 1));
-    assert(tracked_copied() == 0 && tracked_destroyed() == tracked_created() + tracked_moved());
+    check((selected, tracked_live(), tracked_created() - created_before) == (-7, 0, 1));
+    check(tracked_copied() == 0 && tracked_destroyed() == tracked_created() + tracked_moved());
 
     let factory_created_before = tracked_created();
     let factory_selected = await local_factory(-7);
-    assert(
+    check(
         (factory_selected, tracked_live(), tracked_created() - factory_created_before) == (-7, 0, 2)
     );
-    assert(tracked_copied() == 0 && tracked_destroyed() == tracked_created() + tracked_moved());
+    check(tracked_copied() == 0 && tracked_destroyed() == tracked_created() + tracked_moved());
 }

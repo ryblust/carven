@@ -90,7 +90,8 @@ auto type_content_mask(const Shape& shape, Members members, Depend depend) noexc
                   || std::same_as<Shape, ConstructionOperationTypeValue>
                   || std::same_as<Shape, GenericOperationType>) {
         return operation_owner_content | value_storage_constraint;
-    } else if constexpr (std::same_as<Shape, ClosureTypeValue>) {
+    } else if constexpr (std::same_as<Shape, ClosureTypeValue>
+                         || std::same_as<Shape, GenericClosureType>) {
         return closure_owner_content | value_storage_constraint;
     } else if constexpr (std::same_as<Shape, FunctionTypeValue>) {
         return value_storage_constraint;

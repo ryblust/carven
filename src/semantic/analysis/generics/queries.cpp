@@ -12,19 +12,20 @@ import std;
 auto ProgramDraft::reserve_generic_body(GenericDeclarationID definition) noexcept
     -> BodyReservation {
     const auto source = generic_declaration_copy(definition);
-    if (!std::holds_alternative<GenericFunctionDefinition>(source)
-        || has_generic_function_body(definition)) {
+    if (!std::holds_alternative<GenericCallableDefinition>(source)
+        || has_generic_callable_body(definition)) {
         invariant_violation("generic body reservation requires an unchecked function definition");
     }
+    const auto& callable = std::get<GenericCallableDefinition>(source);
     return BodyReservation(
         BodyID(program_identity, definition.index()),
-        BodyKind::Function,
+        callable.contract.name ? BodyKind::Function : BodyKind::Closure,
         provenance_identity(),
         BodyIdentityDomain::GenericDefinition
     );
 }
 
-auto ProgramDraft::set_generic_function_body(
+auto ProgramDraft::set_generic_callable_body(
     GenericDeclarationID definition,
     StructuredBodyDraft body
 ) noexcept -> void {
@@ -36,7 +37,7 @@ auto ProgramDraft::set_generic_function_body(
                 definition.index(),
                 BodyIdentityDomain::GenericDefinition
             )
-        || !storage.generic_function_bodies
+        || !storage.generic_callable_bodies
                 .emplace(definition, std::make_unique<StructuredBodyDraft>(std::move(body)))
                 .second) {
         invariant_violation("checked generic body disagrees with its definition reservation");
@@ -45,16 +46,16 @@ auto ProgramDraft::set_generic_function_body(
     storage.checked_generic_definitions.clear();
 }
 
-auto ProgramDraft::has_generic_function_body(GenericDeclarationID definition) const noexcept
+auto ProgramDraft::has_generic_callable_body(GenericDeclarationID definition) const noexcept
     -> bool {
-    return storage.generic_function_bodies.contains(definition);
+    return storage.generic_callable_bodies.contains(definition);
 }
 
-auto ProgramDraft::generic_function_body(GenericDeclarationID definition) const noexcept
+auto ProgramDraft::generic_callable_body(GenericDeclarationID definition) const noexcept
     -> const StructuredBodyDraft& {
-    const auto found = storage.generic_function_bodies.find(definition);
-    if (found == storage.generic_function_bodies.end()) {
-        invariant_violation("generic function body requires completed definition checking");
+    const auto found = storage.generic_callable_bodies.find(definition);
+    if (found == storage.generic_callable_bodies.end()) {
+        invariant_violation("generic callable body requires completed definition checking");
     }
     return *found->second;
 }
@@ -74,6 +75,15 @@ auto ProgramDraft::generic_declaration_contract_copy(GenericDeclarationID defini
     });
 }
 
+auto ProgramDraft::generic_parameter_contract_copy(GenericDeclarationID definition) const noexcept
+    -> GenericDeclarationContract {
+    auto contract = generic_declaration_contract_copy(definition);
+    if (contract.parameter_scope) {
+        return generic_declaration_contract_copy(*contract.parameter_scope);
+    }
+    return contract;
+}
+
 auto ProgramDraft::generic_declaration_ids() const noexcept -> std::vector<GenericDeclarationID> {
     auto ids = std::vector<GenericDeclarationID>();
     for (auto i = 0uz; i < storage.generic_definitions.size(); ++i) {
@@ -84,7 +94,8 @@ auto ProgramDraft::generic_declaration_ids() const noexcept -> std::vector<Gener
 
 auto ProgramDraft::generic_parameter_environment(GenericDeclarationID definition) noexcept
     -> GenericEnvironment {
-    const auto contract = generic_declaration_contract_copy(definition);
+    definition = generic_parameter_owner(definition);
+    const auto contract = generic_parameter_contract_copy(definition);
     auto result = GenericEnvironment();
     for (const auto [index, policy] : std::views::enumerate(contract.parameter_kinds)) {
         if (policy == GenericParameterKind::Type) {
@@ -103,12 +114,12 @@ auto ProgramDraft::generic_parameter_environment(GenericDeclarationID definition
     return result;
 }
 
-auto ProgramDraft::complete_generic_function_result(
+auto ProgramDraft::complete_generic_callable_result(
     GenericDeclarationID definition,
     ConstructionTypeRef result
 ) noexcept -> void {
     auto& source =
-        std::get<GenericFunctionDefinition>(*storage.generic_definitions.at(definition.index()));
+        std::get<GenericCallableDefinition>(*storage.generic_definitions.at(definition.index()));
     if (!source.infer_result) {
         invariant_violation("generic result completed without inference");
     }
@@ -209,10 +220,9 @@ auto ProgramDraft::take_generic_analysis_snapshot(
         .owner = program_identity,
         .definitions = {},
         .types = storage.generic_types,
-        .bodies = std::move(storage.generic_function_bodies),
+        .bodies = std::move(storage.generic_callable_bodies),
         .records = std::move(storage.generic_record_shapes),
         .enum_payloads = std::move(storage.generic_enum_shapes),
-        .call_stops = {},
         .failures = failures,
     };
     const auto normalize = [&](ConstructionTypeRef& type) noexcept {
@@ -256,7 +266,8 @@ auto ProgramDraft::take_generic_analysis_snapshot(
                     normalize(type);
                     return type;
                 });
-            } else if constexpr (std::same_as<Shape, GenericNominalApplication>) {
+            } else if constexpr (std::same_as<Shape, GenericNominalApplication>
+                                 || std::same_as<Shape, GenericClosureType>) {
                 for (auto& argument : shape.arguments) {
                     if (auto* type = std::get_if<ConstructionTypeRef>(&argument)) {
                         normalize(*type);
@@ -301,9 +312,20 @@ auto ProgramDraft::take_generic_analysis_snapshot(
     const auto normalize_failure = [&](BodyFailures& value) noexcept {
         value = BodyFailures(failures->normalize(value.reference()));
     };
+    const auto normalize_callable = [&](ConstructionCallableRef& callable) noexcept {
+        if (const auto* generic = std::get_if<GenericTypeID>(&callable)) {
+            const auto reference = types.normalize(*generic);
+            if (const auto* concrete = std::get_if<TypeID>(&reference)) {
+                const auto shape = type_copy(*concrete);
+                callable = std::get<ClosureTypeValue>(shape.value).callable;
+            } else {
+                callable = std::get<GenericTypeID>(reference);
+            }
+        }
+    };
     for (const auto& definition : storage.generic_definitions) {
         auto copy = *definition;
-        if (auto* function = std::get_if<GenericFunctionDefinition>(&copy)) {
+        if (auto* function = std::get_if<GenericCallableDefinition>(&copy)) {
             for (auto& parameter : function->signature.parameters) {
                 normalize(parameter.type);
             }
@@ -337,6 +359,9 @@ auto ProgramDraft::take_generic_analysis_snapshot(
             [&](SemanticExpression& expression) noexcept {
                 normalize_body_type(expression.type);
                 normalize_failure(expression.failures);
+                if (auto* closure = std::get_if<SemClosure>(&expression.value)) {
+                    normalize_callable(closure->callable);
+                }
                 if (auto* selected = std::get_if<SemEnumCase>(&expression.value)) {
                     normalize_case(selected->enum_case);
                 }
@@ -361,6 +386,9 @@ auto ProgramDraft::take_generic_analysis_snapshot(
                 }
                 if (auto* call = std::get_if<SemCall>(&expression.value)) {
                     normalize_failure(call->callee_failures);
+                    if (call->target) {
+                        normalize_callable(*call->target);
+                    }
                 }
                 if (auto* call = std::get_if<SemGenericCall>(&expression.value)) {
                     normalize_failure(call->callee_failures);

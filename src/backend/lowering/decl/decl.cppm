@@ -10,7 +10,7 @@ import std;
 
 struct LoweredModuleSchedule final {
     std::vector<TargetItem> source_fragments;
-    std::vector<TargetItem> nominal_declarations;
+    std::vector<TargetItem> type_declarations;
     std::vector<TargetItem> private_declarations;
     std::vector<TargetItem> private_items;
     std::vector<TargetItem> module_items;
@@ -26,8 +26,10 @@ auto lower_declaration(
     bool declaration_only
 ) noexcept -> std::vector<TargetItem>;
 
-auto lower_forward_declarations(ModuleLowering& context, NominalDeclarationRef declaration) noexcept
-    -> std::vector<TargetItem>;
+auto lower_forward_declarations(
+    ModuleLowering& context,
+    TargetTypeDefinitionRef declaration
+) noexcept -> std::vector<TargetItem>;
 
 auto lower_cpp_export_header_declaration(ModuleLowering& context, FunctionID function) noexcept
     -> TargetItem;

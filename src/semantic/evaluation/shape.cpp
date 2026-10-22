@@ -48,7 +48,8 @@ auto ExecutionTypeShapes::compute(ConstructionTypeRef type, std::size_t depth) c
         type,
         [&](const auto& shape) noexcept -> std::optional<ExecutionTypeShape> {
             using Shape = std::remove_cvref_t<decltype(shape)>;
-            if constexpr (std::same_as<Shape, VectorTypeValue>
+            if constexpr (std::same_as<Shape, ClosureTypeValue>
+                          || std::same_as<Shape, VectorTypeValue>
                           || std::same_as<Shape, GenericVectorType>) {
                 return ExecutionTypeShape {.exact = false, .depth = 0uz, .elements = 0uz};
             } else if constexpr (std::same_as<Shape, ArrayTypeValue>
@@ -103,7 +104,6 @@ auto ExecutionTypeShapes::compute(ConstructionTypeRef type, std::size_t depth) c
                                  || std::same_as<Shape, ConstructionSliceTypeValue>
                                  || std::same_as<Shape, GenericSliceType>
                                  || std::same_as<Shape, FunctionTypeValue>
-                                 || std::same_as<Shape, ClosureTypeValue>
                                  || std::same_as<Shape, CallableViewTypeValue>
                                  || std::same_as<Shape, ConstructionCallableViewTypeValue>
                                  || std::same_as<Shape, GenericCallableViewType>

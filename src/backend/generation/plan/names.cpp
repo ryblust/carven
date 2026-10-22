@@ -3,9 +3,11 @@ module carven:backend.generation.plan.names.impl;
 import :backend.generation.linkage;
 import :backend.generation.names;
 import :backend.generation.plan;
+import :backend.generation.plan.references;
 import :semantic.semir.constant;
 import :semantic.semir.constant_access;
 import :semantic.semir.content;
+import :semantic.semir.decl;
 import :semantic.semir.generic;
 import :semantic.semir.stage;
 import :semantic.semir.traversal;
@@ -96,14 +98,6 @@ auto plan_closures(const SemIRProgram& semantic) noexcept -> TargetClosureCatalo
     auto scanned_production = std::vector<std::uint8_t>(callable_count);
     auto scanned_tests = std::vector<std::uint8_t>(callable_count);
     auto discovery = std::vector<CallableID>();
-    auto source_modules = std::flat_map<ProgramSourceID, ModuleID>();
-    for (const auto module_decl : declarations.modules()) {
-        source_modules.emplace(
-            semantic.provenance().module_record(module_decl.value.provenance_module).source_id,
-            module_decl.id
-        );
-    }
-
     const auto closure_origin = [&](CallableID callable) noexcept {
         const auto* implementation =
             std::get_if<ClosureBodyImplementation>(&declarations.callable(callable).implementation);
@@ -119,7 +113,7 @@ auto plan_closures(const SemIRProgram& semantic) noexcept -> TargetClosureCatalo
         }
         auto& owner = owners[callable.index()];
         if (!owner.has_value()) {
-            owner = source_modules.at(closure_origin(callable).source_id);
+            owner = target_type_owner(semantic, callable);
             discovery.push_back(callable);
         }
         (test ? tests : production)[callable.index()] = 1;
@@ -156,7 +150,7 @@ auto plan_closures(const SemIRProgram& semantic) noexcept -> TargetClosureCatalo
                     },
                     [&](TestID id) noexcept {
                         const auto& test = semantic.tests().test(id);
-                        if (!test.is_const) {
+                        if (test.execution != TestExecution::Static) {
                             visit_body(*test.body, true);
                         }
                     },
@@ -168,134 +162,13 @@ auto plan_closures(const SemIRProgram& semantic) noexcept -> TargetClosureCatalo
         }
     }
 
-    auto dependencies = std::vector<std::vector<CallableID>>(callable_count);
-    const auto collect_value_closure_dependencies =
-        [&](this const auto& self,
-            TypeID type_id,
-            std::vector<CallableID>& destination,
-            std::flat_set<TypeID>& active_types) noexcept -> void {
-        if (!active_types.insert(type_id).second) {
-            invariant_violation("closure capture target type contains a structural cycle");
-        }
-        semantic.types().type(type_id).value.visit(
-            Overloaded {
-                [](const BuiltinTypeValue&) static noexcept {},
-                [](const PointerTypeValue&) static noexcept {},
-                [](const StructTypeValue&) static noexcept {},
-                [](const EnumTypeValue&) static noexcept {},
-                [&](const SliceTypeValue& value) noexcept {
-                    self(value.element, destination, active_types);
-                },
-                [](const VectorTypeValue&) static noexcept {},
-                [&](const RangeTypeValue& value) noexcept {
-                    self(value.element, destination, active_types);
-                },
-                [&](const ArrayTypeValue& value) noexcept {
-                    self(value.element, destination, active_types);
-                },
-                [&](const TupleTypeValue& value) noexcept {
-                    for (const auto element : value.elements) {
-                        self(element, destination, active_types);
-                    }
-                },
-                [&](const OperationTypeValue& value) noexcept {
-                    self(value.success, destination, active_types);
-                },
-                [](const FunctionTypeValue&) static noexcept {},
-                [&](const ClosureTypeValue& value) noexcept {
-                    destination.push_back(value.callable);
-                },
-                [](const CallableViewTypeValue&) static noexcept {},
-                [&](const CppTypeValue& value) noexcept {
-                    visit_cpp_type_references(value, [&](TypeID argument) noexcept {
-                        self(argument, destination, active_types);
-                    });
-                },
-            }
-        );
-        active_types.erase(type_id);
-    };
-    for (const auto callable : discovery) {
-        const auto& declaration = declarations.callable(callable);
-        const auto body_id = std::get<ClosureBodyImplementation>(declaration.implementation).body;
-        const auto& body = semantic.bodies().body(body_id);
-        auto result_types = std::flat_set<TypeID>();
-        collect_value_closure_dependencies(
-            semantic.callable_signatures().signature(declaration.signature).result,
-            dependencies[callable.index()],
-            result_types
-        );
-        for (const auto capture : body.inputs().captures) {
-            const auto& binding = body.binding(capture);
-            const auto* storage = std::get_if<CaptureBindingStorage>(&binding.storage);
-            if (storage == nullptr) {
-                invariant_violation("closure BodyInputs names a non-capture binding");
-            }
-            switch (storage->mode) {
-                case CaptureMode::Value: break;
-                case CaptureMode::Write: continue;
-            }
-            auto active_types = std::flat_set<TypeID>();
-            collect_value_closure_dependencies(
-                binding.type,
-                dependencies[callable.index()],
-                active_types
-            );
-        }
-        visit_semantic_nodes(body.region(), [&](const SemanticExpression& expression) noexcept {
-            auto active_types = std::flat_set<TypeID>();
-            collect_value_closure_dependencies(
-                expression.type.resolved(),
-                dependencies[callable.index()],
-                active_types
-            );
-            if (const auto* child = std::get_if<SemClosure>(&expression.value)) {
-                dependencies[callable.index()].push_back(child->callable);
-            }
-        });
-        std::erase(dependencies[callable.index()], callable);
-        std::ranges::sort(dependencies[callable.index()]);
-        const auto unique = std::ranges::unique(dependencies[callable.index()]);
-        dependencies[callable.index()].erase(unique.begin(), unique.end());
-    }
-
     auto production_order = std::vector<std::vector<CallableID>>(module_count);
     auto test_order = std::vector<std::vector<CallableID>>(module_count);
-    auto state = std::vector<std::uint8_t>(callable_count);
-    auto definition_order = std::vector<CallableID>();
-    auto order = std::function<void(CallableID, bool)>();
-    order = [&](CallableID callable, bool test) noexcept {
-        if (state[callable.index()] == 2) {
-            return;
-        }
-        if (state[callable.index()] == 1) {
-            invariant_violation("closure target-type dependency is cyclic");
-        }
-        state[callable.index()] = 1;
-        const auto module_id = *owners[callable.index()];
-        for (const auto dependency : dependencies[callable.index()]) {
-            if (!owners[dependency.index()].has_value()) {
-                invariant_violation("closure target type depends on an unowned closure");
-            }
-            if (production[dependency.index()] != 0 || (test && tests[dependency.index()] != 0)) {
-                order(dependency, test && production[dependency.index()] == 0);
-            }
-        }
-        state[callable.index()] = 2;
-        auto& destination =
-            test ? test_order[module_id.index()] : production_order[module_id.index()];
+    for (const auto callable : discovery) {
+        auto& destination = production[callable.index()] != 0
+            ? production_order[owners[callable.index()]->index()]
+            : test_order[owners[callable.index()]->index()];
         destination.push_back(callable);
-        definition_order.push_back(callable);
-    };
-    for (const auto callable : discovery) {
-        if (production[callable.index()] != 0) {
-            order(callable, false);
-        }
-    }
-    for (const auto callable : discovery) {
-        if (production[callable.index()] == 0 && tests[callable.index()] != 0) {
-            order(callable, true);
-        }
     }
 
     auto module_ordinals = std::vector<std::uint32_t>(callable_count);
@@ -306,7 +179,9 @@ auto plan_closures(const SemIRProgram& semantic) noexcept -> TargetClosureCatalo
         < std::tuple {*owners[right.index()], closure_origin(right).span, right};
     });
     for (const auto callable : lexical_order) {
-        module_ordinals[callable.index()] = module_counts[owners[callable.index()]->index()]++;
+        if (!semantic.generic_callable_instance(callable)) {
+            module_ordinals[callable.index()] = module_counts[owners[callable.index()]->index()]++;
+        }
     }
 
     return {
@@ -315,7 +190,7 @@ auto plan_closures(const SemIRProgram& semantic) noexcept -> TargetClosureCatalo
         .module_ordinals = std::move(module_ordinals),
         .production_definitions = std::move(production_order),
         .test_definitions = std::move(test_order),
-        .definition_order = std::move(definition_order),
+        .definitions = std::move(discovery),
     };
 }
 
@@ -402,7 +277,7 @@ auto plan_names(
     for (const auto function : declarations.functions()) {
         const auto callable = function.value.callable;
         if (!callable_names[callable.index()].has_value()
-            && semantic.generic_function_instance(callable) == nullptr) {
+            && semantic.generic_callable_instance(callable) == nullptr) {
             claim_entity(function.value.module_id, function.value.name, callable, callable_names);
         }
     }
@@ -450,7 +325,8 @@ auto plan_names(
                 continue;
             }
             auto content = type_content_key(semantic, generic_types.at(instance.declaration));
-            const auto source_name = source_target_identifier(provenance.spelling(definition.name));
+            const auto source_name =
+                source_target_identifier(provenance.spelling(*definition.name));
             requests.push_back({
                 .preferred =
                     std::format("{}_{}", source_name.spelling(), content_name_digest(content)),
@@ -542,6 +418,7 @@ auto plan_names(
         };
     }
 
+    auto instance_closures = std::vector<std::vector<CallableID>>(module_count);
     for (const auto module_record : declarations.modules()) {
         const auto allocate_closure = [&](CallableID callable) noexcept {
             if (closures.owner(callable) != module_record.id
@@ -549,6 +426,10 @@ auto plan_names(
                 invariant_violation(
                     "target closure naming received a duplicate or foreign closure"
                 );
+            }
+            if (semantic.generic_callable_instance(callable)) {
+                instance_closures[module_record.id.index()].push_back(callable);
+                return;
             }
             const auto name = claim_target_type_identifier(
                 std::format("Closure{}", closures.module_ordinals[callable.index()]),
@@ -585,7 +466,7 @@ auto plan_names(
     auto tests = std::vector<std::optional<TargetIdentifier>>(semantic.tests().size());
     auto module_test_ordinals = std::vector<std::size_t>(module_count);
     for (const auto test : semantic.tests().entries()) {
-        if (test.value.is_const) {
+        if (test.value.execution == TestExecution::Static) {
             continue;
         }
         const auto module_id = test.value.module_id;
@@ -663,15 +544,15 @@ auto plan_names(
         *destinations[index] = identifier;
     }
     for (const auto module_record : declarations.modules()) {
-        auto generic_functions = std::vector<const GenericFunctionInstance*>();
+        auto generic_functions = std::vector<const GenericCallableInstance*>();
         auto generic_requests = std::vector<TargetContentName>();
-        for (const auto& instance : semantic.generic_function_instances()) {
+        for (const auto& instance : semantic.generic_callable_instances()) {
             const auto& definition = semantic.generic_declaration_contract(instance.definition);
-            if (definition.module_id != module_record.id) {
+            if (definition.module_id != module_record.id || !definition.name) {
                 continue;
             }
             auto content = callable_content_key(semantic, instance.callable);
-            const auto spelling = source_target_identifier(provenance.spelling(definition.name));
+            const auto spelling = source_target_identifier(provenance.spelling(*definition.name));
             generic_requests.push_back(
                 {.preferred =
                      std::format("{}_{}", spelling.spelling(), content_name_digest(content)),
@@ -687,6 +568,25 @@ auto plan_names(
             callable_names[instance->callable.index()] = TargetEntityName {
                 .owner_module = module_record.id,
                 .relative_name = TargetName {name}
+            };
+        }
+        auto closure_requests = std::vector<TargetContentName>();
+        for (const auto callable : instance_closures[module_record.id.index()]) {
+            auto content = callable_content_key(semantic, callable);
+            closure_requests.push_back({
+                .preferred = std::format("Closure_{}", content_name_digest(content)),
+                .content = std::move(content),
+            });
+        }
+        const auto closure_names = claim_content_identifiers(
+            closure_requests,
+            modules[module_record.id.index()]->reserved_identifiers
+        );
+        for (const auto [callable, name] :
+             std::views::zip(instance_closures[module_record.id.index()], closure_names)) {
+            closure_type_names[callable.index()] = TargetEntityName {
+                .owner_module = module_record.id,
+                .relative_name = TargetName {name},
             };
         }
         auto instances = std::vector<const StaticInstance*>();

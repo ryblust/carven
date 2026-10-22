@@ -1,19 +1,25 @@
 module carven:semantic.semir.callable;
 
 import :semantic.semir.constant_access;
+import :semantic.semir.decl;
 import :semantic.semir.program;
+import :semantic.semir.structured;
 import std;
 
 enum class CallableAdaptationKind { CopyTarget, FunctionTarget, StatelessClosure, BorrowObject };
 
 struct CallableAdaptation final {
     CallableAdaptationKind kind;
-    std::optional<CallableID> callable;
+    std::optional<ConstructionCallableRef> callable;
 
     auto borrows_storage() const noexcept -> bool;
 };
 
 auto callable_identity(const SemIRProgram& program, TypeID type) noexcept
+    -> std::optional<CallableID>;
+
+// Known closure identity retains object invocation through its source callable representation.
+auto direct_call_target(const DeclarationStore& declarations, const SemCall& call) noexcept
     -> std::optional<CallableID>;
 
 // The adaptation has checked invariant children and a source failure subset.

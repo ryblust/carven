@@ -371,12 +371,14 @@ auto Specializer::expression(SemanticExpression& source) noexcept -> AnalysisTas
         co_return {};
     }
     if (auto* call = std::get_if<SemCall>(&source.value); call && call->target) {
-        auto specialized = co_await specialize_call(*call, *call->target, source.origin);
-        if (!specialized) {
-            co_return std::unexpected(specialized.error());
-        }
-        if (*specialized) {
-            co_return {};
+        if (const auto* target = std::get_if<CallableID>(&*call->target)) {
+            auto specialized = co_await specialize_call(*call, *target, source.origin);
+            if (!specialized) {
+                co_return std::unexpected(specialized.error());
+            }
+            if (*specialized) {
+                co_return {};
+            }
         }
     } else if (auto* call = std::get_if<SemColdCall>(&source.value)) {
         auto specialized = co_await specialize_call(*call, call->target, source.origin);

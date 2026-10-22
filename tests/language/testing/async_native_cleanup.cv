@@ -1,0 +1,79 @@
+import std::async using { cancel_requested, yield_once }
+
+import "testing/observations.hpp";
+
+private async fn own_until_stopped(&started: bool, value: i32) {
+    let owner = ::observations::Owner(value);
+    started = true;
+    while !cancel_requested() {
+        await yield_once();
+    }
+}
+
+private async fn wait_started(&started: bool) {
+    // The child updates this borrowed flag while its parent yields.
+    while !started {
+        await yield_once();
+    }
+}
+
+private fn fail_from_helper() {
+    fail("native async helper stopped");
+    println("unreachable native async helper");
+}
+
+async test "Async testing: direct stop destroys nested native owners" {
+    let owner = ::observations::Owner(100);
+    var outer_started = false;
+    async let outer = own_until_stopped(&outer_started, 101);
+    await wait_started(&outer_started);
+    if true {
+        let nested = ::observations::Owner(102);
+        var inner_started = false;
+        async let inner = own_until_stopped(&inner_started, 103);
+        await wait_started(&inner_started);
+        require(false, "native async direct stop");
+        println("unreachable native async direct stop");
+        cancel inner;
+    }
+    cancel outer;
+}
+
+async test "Async testing: helper stop destroys native child and parent owners" {
+    let owner = ::observations::Owner(104);
+    var started = false;
+    async let child = own_until_stopped(&started, 105);
+    await wait_started(&started);
+    fail_from_helper();
+    println("unreachable native async caller");
+}
+
+private async fn stop_from_child() {
+    let owner = ::observations::Owner(108);
+    await yield_once();
+    require(false, "native async child stopped its root");
+    println("unreachable native async child");
+}
+
+async test "Async testing: child stop destroys parent and sibling native owners" {
+    let owner = ::observations::Owner(106);
+    var started = false;
+    async let sibling = own_until_stopped(&started, 107);
+    await wait_started(&started);
+    async let child = stop_from_child();
+    await child;
+    println("unreachable native async child caller");
+    cancel sibling;
+}
+
+async test "Async testing: later roots retain callback captures across suspension" {
+    var visits = 0;
+    let verify = [&visits]() {
+        visits += 1;
+        require(visits == 1);
+    };
+    await yield_once();
+    verify();
+    check(visits == 1);
+    println("native async cleanup passed");
+}

@@ -896,7 +896,7 @@ auto BodyElaborator::await_expression(const ASTPrefixExpr& source, Span span) no
         co_return std::unexpected(fail(
             source.operator_span,
             DiagnosticCode::AsyncAdmission,
-            "await requires an async fn body or const execution"
+            "await requires an async fn body, async test, or const execution"
         ));
     }
     auto operand_id = source.operand_id;

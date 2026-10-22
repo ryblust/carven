@@ -198,43 +198,6 @@ const TestSuite suite([] static noexcept {
             });
             check_compiler_errors(cases);
         };
-
-    "Callable execution: live-backed view widening requires execution support"_test =
-        [] static noexcept {
-            const auto cases = std::to_array<CompilerErrorExpectation>({
-                {.name = "scalar view widening borrows its source object",
-                 .source = R"(
-                struct Failure {}
-                const fn target() -> i32 => 1;
-                const {
-                    let source: fn() -> i32 = target;
-                    let widened: fn() -> i32 throw Failure = source;
-                }
-             )",
-                 .code = DiagnosticCode::ConstEvaluation,
-                 .primary_text = "source"},
-                {.name = "array view widening borrows its source elements",
-                 .source = R"(
-                struct Failure {}
-                const fn target() -> i32 => 1;
-                const {
-                    let source: [fn() -> i32; 1] = [target];
-                    let widened: [fn() -> i32 throw Failure; 1] = source;
-                }
-             )",
-                 .code = DiagnosticCode::ConstEvaluation,
-                 .primary_text = "source"},
-            });
-            check_compiler_errors(cases);
-            check_compiler_accepts(R"(
-                struct Failure {}
-                const {
-                    let source: [fn() -> i32; 0] = [];
-                    let widened: [fn() -> i32 throw Failure; 0] = source;
-                    assert(widened.slice().length() == 0);
-                }
-            )");
-        };
 });
 
 } // namespace

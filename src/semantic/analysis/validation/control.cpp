@@ -43,7 +43,7 @@ auto BodyContractVerifier::verify_region(
                     if (const auto* call = std::get_if<SemCall>(&expression.value);
                         call && call->target) {
                         if (program.callable_signatures()
-                                .signature(program.declarations().callable(*call->target).signature)
+                                .signature(program.call_signature(*call))
                                 .has_static_parameters()) {
                             invariant_violation("realized body retains an unresolved static call");
                         }

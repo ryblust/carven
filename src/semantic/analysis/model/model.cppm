@@ -44,6 +44,7 @@ using AnalysisTypeShape = std::variant<
     AnalysisPointerType,
     FunctionTypeValue,
     ClosureTypeValue,
+    GenericClosureType,
     ConstructionCallableViewTypeValue,
     ConstructionOperationTypeValue,
     CppTypeValue,
@@ -91,7 +92,12 @@ public:
     auto body(AnalysisBodyID id) const noexcept -> const AnalysisBodyView&;
     auto shape(ConstructionTypeRef type) const noexcept -> const AnalysisTypeShape&;
     auto concrete_type(ConstructionTypeRef type) const noexcept -> std::optional<TypeID>;
-    auto callable_identity(ConstructionTypeRef type) const noexcept -> std::optional<CallableID>;
+    auto callable_identity(ConstructionTypeRef type) const noexcept
+        -> std::optional<ConstructionCallableRef>;
+    auto callable_body(ConstructionCallableRef callable) const noexcept
+        -> std::optional<AnalysisBodyID>;
+    auto callable_contract(ConstructionCallableRef callable) const noexcept
+        -> ConstructionCallableContract;
     auto contents(ConstructionTypeRef type) const noexcept -> TypeContents;
     auto callable_adaptation(ConstructionTypeRef from, ConstructionTypeRef to) const noexcept
         -> CallableAdaptation;

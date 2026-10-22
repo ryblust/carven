@@ -105,13 +105,13 @@ auto ConstructionRequests::close_generic_environment(
             }
             for (const auto definition : owner.draft.generic_declaration_ids()) {
                 const auto source = owner.draft.generic_declaration_copy(definition);
-                const auto* function = std::get_if<GenericFunctionDefinition>(&source);
+                const auto* function = std::get_if<GenericCallableDefinition>(&source);
                 if (function && function->signature.failures == current) {
                     auto completed = co_await ensure_generic_function(definition, requester, span);
                     if (!completed) {
                         co_return std::unexpected(completed.error());
                     }
-                    if (!owner.draft.has_generic_function_body(definition)) {
+                    if (!owner.draft.has_generic_callable_body(definition)) {
                         co_return std::unexpected(owner.draft.diagnostics().error(
                             DiagnosticBuilder(
                                 DiagnosticCode::ConstEvaluation,

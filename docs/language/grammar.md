@@ -531,13 +531,14 @@ an ordinary visibility prefix or a list of destinations; `fn` has no native
 interface annotation. `export` and `export(cpp)` are separate declaration forms,
 not modifiers to stack on one declaration.
 Both `const async fn` and `async const fn` apply the same two modifiers.
-`async` must introduce a function declaration.
+`async` introduces a function declaration, a test declaration, or an `async let` binding.
 
 The optional `const` before `fn` declares that the function can execute in the
-static stage. In a `const fn` body, semantically reachable source calls must select
-known `const fn` targets, including through local callable bindings. Ordinary
-constant conditions do not remove this definition check; operations after an
-unconditional return need no executor capability.
+static stage. In a `const fn` body, semantically reachable named source calls must
+select known `const fn` targets. Known lambda signatures and bodies are checked
+recursively; unknown callable targets fail admission. Ordinary constant conditions
+do not remove this definition check; operations after an unconditional return
+need no executor capability.
 A `const` function parameter requires a static argument at each call. It takes
 no access marker and is never the `self` receiver. Lambda parameters use
 `parameter` without this modifier.
@@ -571,7 +572,7 @@ scope. `private` and `export` may prefix the declaration through the common
 ### 3.6 Tests
 
 ```ebnf
-test-declaration = [ "const" ], "test", [ STRING_LITERAL ], test-block;
+test-declaration = [ function-modifier ], "test", [ STRING_LITERAL ], test-block;
 
 test-block = "{", { statement }, "}";
 ```
@@ -579,6 +580,9 @@ test-block = "{", { statement }, "}";
 A test declaration is a top-level item and cannot follow `export`. It has no
 parameter or result syntax. A name is optional; explicit names must be unique
 within their module. Anonymous tests are identified by source location in reports.
+`async test` admits await and lexical children. `const test` and `const async test`
+execute during analysis; both admit static asynchronous operations. Combined
+modifiers accept either order, with `const async test` as the canonical spelling.
 
 `check`, `require`, `fail`, and the printing names are ordinary identifiers.
 Their calls use the ordinary expression grammar in tests, functions, and lambdas.

@@ -318,7 +318,8 @@ already be valid UTF-8; invalid text violates the runtime contract and traps.
 `diagnostics/trap.hpp` supplies source-positioned termination for violated runtime
 checks.
 `testing/testing.hpp` supplies inline-test execution contexts, failure records,
-and reporting in `carven::runtime`.
+and reporting in `carven::runtime`. `testing/async.hpp` drives asynchronous test
+roots through child closure and reports root cancellation to the active test.
 
 `text/text.hpp` supplies owning String, borrowed text views, UTF-8 validation,
 scalar encoding and decoding, and native representation conversions. Its

@@ -143,7 +143,7 @@ auto fixture(SourceManager& sources, DiagnosticSink& diagnostics, std::size_t wi
     compilation.define_test(
         test,
         TestDeclaration {
-            .is_const = false,
+            .execution = TestExecution::Synchronous,
             .module_id = module_id,
             .source = {.label = compilation.intern_spelling("coverage"), .origin = origin},
             .body = reservation.id(),

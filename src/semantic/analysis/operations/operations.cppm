@@ -218,7 +218,7 @@ auto pointer_shape(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
     -> std::optional<PointerShape>;
 
 auto pointer_narrows(
-    const ProgramDraft& draft,
+    ProgramDraft& draft,
     ConstructionTypeRef source,
     ConstructionTypeRef target
 ) noexcept -> bool;
@@ -231,7 +231,7 @@ auto constrain_invariant_type(
 ) noexcept -> bool;
 
 auto type_shapes_compatible(
-    const ProgramDraft& draft,
+    ProgramDraft& draft,
     ConstructionTypeRef left,
     ConstructionTypeRef right
 ) noexcept -> bool;
@@ -280,7 +280,7 @@ auto cast_uses_cpp(
 ) noexcept -> bool;
 
 auto decide_cast(
-    const ProgramDraft& draft,
+    ProgramDraft& draft,
     ConstructionTypeRef source,
     ConstructionTypeRef target,
     bool source_is_numeric_enum

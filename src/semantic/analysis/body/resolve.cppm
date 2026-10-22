@@ -13,6 +13,7 @@ auto resolve_body(
     StructuredBodyDraft body,
     const TypeResolution& types,
     const CanonicalTypeStore& canonical_types,
+    const DeclarationStore& declarations,
     const std::vector<CallStopEffect>& call_stops,
     const FailureSolution& failures,
     const FailureSetStore& failure_sets,

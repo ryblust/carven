@@ -178,7 +178,7 @@ auto record_shape(ProgramDraft& draft, ConstructionTypeRef type) noexcept
     return RecordShape {
         .owner = *generic,
         .kind = record->kind,
-        .name = record->contract.name,
+        .name = *record->contract.name,
         .fields = std::move(fields)
     };
 }

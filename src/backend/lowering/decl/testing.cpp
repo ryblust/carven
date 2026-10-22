@@ -6,6 +6,7 @@ import :backend.lowering.body;
 import :backend.lowering.context;
 import :backend.lowering.decl;
 import :backend.lowering.decl.lowerer;
+import :backend.realization.operation;
 import :backend.target.builder;
 import :backend.target.decl;
 import :backend.target.expr;
@@ -54,7 +55,7 @@ auto lower_test(ModuleLowering& context, TestID id) noexcept -> TargetItem {
         BodyLoweringInputs {
             .parameters = {},
             .captures = {},
-            .exit = TestBodyExit {},
+            .exit = TestBodyExit {.execution = test.execution},
         }
     );
     return source_item(
@@ -63,7 +64,9 @@ auto lower_test(ModuleLowering& context, TestID id) noexcept -> TargetItem {
         TargetDecl {TargetFunctionDecl {
             .name = TargetName {context.names().test_function(id)},
             .parameters = {},
-            .result = context.intrinsic_type(TargetSymbol::Void, false),
+            .result = test.execution == TestExecution::Asynchronous
+                ? context.async_void_type(TargetSymbol::RuntimeAsyncOperation)
+                : context.intrinsic_type(TargetSymbol::Void, false),
             .form =
                 TargetFreeFunctionDefinition {
                     .body = std::move(lowered.statements),
@@ -100,12 +103,17 @@ auto lower_module_test_runner(ModuleLowering& context, std::span<const TestID> t
                 ),
             }
         ));
-        body.push_back(generated_statement(
-            TargetExprStmt {
-                .expression =
-                    call_expression(name_expression(context.names().test_function(id)), {}),
-            }
-        ));
+        auto invocation = call_expression(name_expression(context.names().test_function(id)), {});
+        if (test.execution == TestExecution::Asynchronous) {
+            invocation = call_expression(
+                intrinsic_expression(TargetSymbol::RuntimeRunAsyncTest),
+                target_expressions(
+                    std::move(invocation),
+                    source_site_expression(context, test.source.origin)
+                )
+            );
+        }
+        body.push_back(generated_statement(TargetExprStmt {.expression = std::move(invocation)}));
         body.push_back(generated_statement(
             TargetExprStmt {
                 .expression = test_context_member_call(local, "end_case", {}),

@@ -54,10 +54,6 @@ const TestSuite suite([] static noexcept {
                 DiagnosticCode::AccessBorrowConflict
             },
             std::pair {
-                std::string_view("fn helper() { require(false); } async fn bad() { helper(); }"),
-                DiagnosticCode::AsyncAdmission
-            },
-            std::pair {
                 std::string_view(
                     "async fn leaf() -> i32 => 1; fn bad() { let op = leaf(); let alias = op; }"
                 ),
@@ -903,7 +899,6 @@ const TestSuite suite([] static noexcept {
                                                                    .bodies = {},
                                                                    .records = {},
                                                                    .enum_payloads = {},
-                                                                   .call_stops = {},
                                                                    .failures = {},
                                                                }
                                                            ))
@@ -939,7 +934,6 @@ const TestSuite suite([] static noexcept {
                                                                        .bodies = {},
                                                                        .records = {},
                                                                        .enum_payloads = {},
-                                                                       .call_stops = {},
                                                                        .failures = {},
                                                                    }
                                                                ))
@@ -1352,7 +1346,9 @@ fn known_view(value: i32) -> i32 {
                         }
                         expect_equal(
                             std::holds_alternative<CppImportImplementation>(
-                                program.declarations().callable(*call->target).implementation
+                                program.declarations()
+                                    .callable(std::get<CallableID>(*call->target))
+                                    .implementation
                             ),
                             true
                         );

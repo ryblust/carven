@@ -1,0 +1,173 @@
+import std::async using { cancel_requested, cancel_point, yield_once }
+
+private async fn close_during_stop(&started: bool, marker: i32) {
+    started = true;
+    println("async child started", marker);
+    while !cancel_requested() {
+        await yield_once();
+    }
+    println("async child closed", marker);
+}
+
+private async fn wait_started(&started: bool) {
+    // The child updates this borrowed flag while its parent yields.
+    while !started {
+        await yield_once();
+    }
+}
+
+private fn require_from_helper() {
+    require(false, "async helper require stopped");
+    println("unreachable async require helper");
+}
+
+private fn fail_from_helper() {
+    fail("async helper fail stopped");
+    println("unreachable async fail helper");
+}
+
+private async fn require_async(delayed: bool) {
+    if delayed { await yield_once(); }
+    require(false, "async require helper stopped");
+    println("unreachable async require body");
+}
+
+private async fn fail_async(delayed: bool) {
+    if delayed { await yield_once(); }
+    let stop = []() {
+        fail("async fail helper stopped");
+    };
+    stop();
+    println("unreachable async fail body");
+}
+
+private async fn generic_stop<T>(&&value: T) {
+    let tag = 7;
+    let stop = [tag](&&item: T) {
+        let _ = &&item;
+        require(tag == 0, "generic async callback stopped");
+    };
+    await yield_once();
+    stop(&&value);
+    println("unreachable generic async helper");
+}
+
+private async fn stop_from_child() {
+    await yield_once();
+    require(false, "async child stopped its root");
+    println("unreachable stopped async child");
+}
+
+private async fn accept_child_cancellation() {
+    println("async child cancellation requested", cancel_requested());
+    await cancel_point();
+    println("unreachable async cancelled child");
+}
+
+async test "Async testing: a failed check continues after suspension" {
+    await yield_once();
+    check(false, "async check continued");
+    await yield_once();
+    println("async after check");
+}
+
+async test "Async testing: require closes nested children and stops" {
+    if true {
+        var outer_started = false;
+        async let outer = close_during_stop(&outer_started, 1);
+        await wait_started(&outer_started);
+        if true {
+            var inner_started = false;
+            async let inner = close_during_stop(&inner_started, 2);
+            await wait_started(&inner_started);
+            require(false, "async direct require stopped");
+            println("unreachable async direct require");
+            cancel inner;
+        }
+        cancel outer;
+    }
+    println("unreachable async require scope");
+}
+
+async test "Async testing: fail closes a child and stops" {
+    var started = false;
+    async let child = close_during_stop(&started, 3);
+    await wait_started(&started);
+    fail("async direct fail stopped");
+    println("unreachable async direct fail");
+}
+
+async test "Async testing: synchronous require helper stops after suspension" {
+    var started = false;
+    async let child = close_during_stop(&started, 4);
+    await wait_started(&started);
+    require_from_helper();
+    println("unreachable async require caller");
+    cancel child;
+}
+
+async test "Async testing: synchronous fail helper stops after suspension" {
+    var started = false;
+    async let child = close_during_stop(&started, 5);
+    await wait_started(&started);
+    fail_from_helper();
+    println("unreachable async fail caller");
+}
+
+async test "Async testing: accepted child cancellation fails only its test" {
+    var started = false;
+    async let sibling = close_during_stop(&started, 6);
+    await wait_started(&started);
+    async let child = accept_child_cancellation();
+    cancel child;
+    await child;
+    println("unreachable async cancelled test");
+    cancel sibling;
+}
+
+async test "Async testing: async require stops before its first suspension" {
+    await require_async(false);
+    println("unreachable async early require caller");
+}
+
+async test "Async testing: async require stops after suspension" {
+    await require_async(true);
+    println("unreachable async late require caller");
+}
+
+async test "Async testing: async fail stops before its first suspension" {
+    await fail_async(false);
+    println("unreachable async early fail caller");
+}
+
+async test "Async testing: async fail stops after suspension" {
+    await fail_async(true);
+    println("unreachable async late fail caller");
+}
+
+async test "Async testing: a generic closure stops after suspension" {
+    await generic_stop(&&42);
+    println("unreachable generic async caller");
+}
+
+async test "Async testing: a stopped child stops its parent and sibling" {
+    var started = false;
+    async let sibling = close_during_stop(&started, 7);
+    await wait_started(&started);
+    async let child = stop_from_child();
+    await child;
+    println("unreachable stopped async parent");
+    cancel sibling;
+}
+
+async test "Async testing: later async tests have a fresh context" {
+    check(!cancel_requested());
+    await yield_once();
+    check(!cancel_requested());
+    println("async later passed");
+}
+
+test "Async testing: later synchronous tests have a fresh context" {
+    check(!cancel_requested());
+    println("sync after async passed");
+}

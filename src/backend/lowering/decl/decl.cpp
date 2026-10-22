@@ -117,8 +117,28 @@ auto lower_declaration(
     return result;
 }
 
-auto lower_forward_declarations(ModuleLowering& context, NominalDeclarationRef declaration) noexcept
-    -> std::vector<TargetItem> {
+auto lower_forward_declarations(
+    ModuleLowering& context,
+    TargetTypeDefinitionRef definition
+) noexcept -> std::vector<TargetItem> {
+    if (const auto* callable = std::get_if<CallableID>(&definition)) {
+        return target_items(compiler_item(
+            TargetDecl {TargetStructForwardDecl {
+                .name = context.names()
+                            .closure_type_name(context.active_module(), *callable)
+                            .components()
+                            .back(),
+            }},
+            TargetCompilerReason::ArtifactScaffolding
+        ));
+    }
+    const auto declaration = definition.visit([](auto id) static noexcept -> NominalDeclarationRef {
+        if constexpr (std::same_as<decltype(id), CallableID>) {
+            invariant_violation("closure forward declaration took nominal path");
+        } else {
+            return id;
+        }
+    });
     auto value = declaration.visit(
         Overloaded {
             [&](StructID id) noexcept -> TargetDecl {
@@ -316,7 +336,7 @@ auto lower_module_schedule(
     auto& context = artifact.module_context(schedule.module_id);
     auto result = LoweredModuleSchedule {
         .source_fragments = {},
-        .nominal_declarations = {},
+        .type_declarations = {},
         .private_declarations = {},
         .private_items = {},
         .module_items = {},
@@ -348,22 +368,19 @@ auto lower_module_schedule(
             },
         });
     }
-    for (const auto nominal : schedule.source_nominal_order) {
-        append_items(result.nominal_declarations, lower_forward_declarations(context, nominal));
-    }
-    for (const auto nominal : schedule.source_nominal_order) {
+    auto nominal_types = std::flat_map<TargetTypeDefinitionRef, std::vector<TargetItem>>();
+    for (const auto nominal : schedule.private_nominals) {
+        const auto definition =
+            nominal.visit([](auto id) static noexcept -> TargetTypeDefinitionRef { return id; });
         auto lowered = lower_declaration(
             context,
-            nominal.visit([]<typename ID>(ID id) static noexcept -> DeclarationRef {
-                static_assert(std::same_as<ID, StructID> || std::same_as<ID, EnumID>);
-                return id;
-            }),
+            nominal.visit([](auto id) static noexcept -> DeclarationRef { return id; }),
             false
         );
-        append_items(result.nominal_declarations, context.take_query_aliases());
-        append_items(result.nominal_declarations, std::move(lowered));
+        auto items = context.take_query_aliases();
+        append_items(items, std::move(lowered));
+        nominal_types.emplace(definition, std::move(items));
     }
-    append_items(result.nominal_declarations, context.take_enum_factories());
     auto functions = std::flat_map<CallableID, FunctionID>();
     for (const auto item : module_decl.items) {
         const auto* function = std::get_if<FunctionID>(&item);
@@ -403,15 +420,36 @@ auto lower_module_schedule(
     };
     auto function_declarations = std::vector<TargetItem>();
     auto function_definitions = std::flat_map<FunctionID, std::vector<TargetItem>>();
-    auto closure_types = std::flat_map<CallableID, TargetItem>();
+    auto closure_types = std::flat_map<CallableID, std::vector<TargetItem>>();
+    const auto collect_closure_type = [&](ModuleLowering& owner, CallableID callable) noexcept {
+        auto lowered = lower_closure_type(owner, callable);
+        auto items = owner.take_query_aliases();
+        items.push_back(std::move(lowered));
+        closure_types.emplace(callable, std::move(items));
+    };
     auto closure_bodies = std::flat_map<CallableID, TargetItem>();
     auto use_placed = std::map<CallableID, TargetItem>();
     while (const auto definition = artifact.next_definition()) {
         const auto callable = *definition;
         if (target_definition_placement(context.semantic(), callable)
             == TargetDefinitionPlacement::Use) {
-            auto& owner = artifact.module_context(context.names().callable_owner(callable));
-            use_placed.emplace(callable, lower_use_placed_function(owner, callable, false));
+            const auto closure = std::holds_alternative<ClosureBodyImplementation>(
+                declarations.callable(callable).implementation
+            );
+            const auto provider = closure ? context.names().closure_owner(callable)
+                                          : context.names().callable_owner(callable);
+            auto& owner = artifact.module_context(provider);
+            if (closure) {
+                if (!std::ranges::contains(
+                        artifact.plan().module_schedule(provider).interface_callables,
+                        callable
+                    )) {
+                    collect_closure_type(owner, callable);
+                }
+                use_placed.emplace(callable, lower_closure_body(owner, callable));
+            } else {
+                use_placed.emplace(callable, lower_use_placed_function(owner, callable, false));
+            }
             continue;
         }
         if (const auto found = functions.find(callable); found != functions.end()) {
@@ -427,29 +465,65 @@ auto lower_module_schedule(
             );
         } else {
             if (!externally_linked(callable)) {
-                closure_types.emplace(callable, lower_closure_type(context, callable));
+                collect_closure_type(context, callable);
             }
             closure_bodies.emplace(callable, lower_closure_body(context, callable));
         }
     }
-    for (const auto callable : schedule.closure_definitions) {
-        if (closure_types.contains(callable)) {
-            result.private_declarations.push_back(compiler_item(
-                TargetDecl {TargetStructForwardDecl {
-                    .name = context.names()
-                                .closure_type_name(context.active_module(), callable)
-                                .components()
-                                .back(),
-                }},
-                TargetCompilerReason::ArtifactScaffolding
+    const auto wrap_closure = [&](CallableID callable, std::vector<TargetItem> items) noexcept {
+        const auto provider = context.names().closure_owner(callable);
+        if (target_definition_placement(context.semantic(), callable)
+                != TargetDefinitionPlacement::Use
+            && !externally_linked(callable)) {
+            items = target_items(namespace_item(
+                std::nullopt,
+                std::move(items),
+                TargetCompilerReason::ArtifactScaffolding,
+                true
             ));
         }
+        return wrap(provider, std::move(items));
+    };
+    const auto emit_type = [&](TargetTypeDefinitionRef definition, bool forward) noexcept {
+        definition.visit([&](auto id) noexcept {
+            if constexpr (std::same_as<decltype(id), CallableID>) {
+                const auto found = closure_types.find(id);
+                if (found == closure_types.end()) {
+                    return;
+                }
+                if (forward) {
+                    result.type_declarations.push_back(wrap_closure(
+                        id,
+                        lower_forward_declarations(
+                            artifact.module_context(context.names().closure_owner(id)),
+                            definition
+                        )
+                    ));
+                } else {
+                    result.type_declarations.push_back(wrap_closure(id, std::move(found->second)));
+                }
+            } else {
+                const auto found = nominal_types.find(definition);
+                if (found == nominal_types.end()) {
+                    return;
+                }
+                result.type_declarations.push_back(wrap(
+                    schedule.module_id,
+                    forward ? lower_forward_declarations(context, definition)
+                            : std::move(found->second)
+                ));
+            }
+        });
+    };
+    for (const auto definition : artifact.plan().type_definitions()) {
+        emit_type(definition, true);
     }
+    for (const auto definition : artifact.plan().type_definitions()) {
+        emit_type(definition, false);
+    }
+    result.type_declarations.push_back(wrap(schedule.module_id, context.take_enum_factories()));
     append_items(result.private_declarations, std::move(function_declarations));
     for (const auto callable : schedule.closure_definitions) {
-        if (const auto found = closure_types.find(callable); found != closure_types.end()) {
-            result.private_declarations.push_back(std::move(found->second));
-        }
         if (const auto found = closure_bodies.find(callable); found != closure_bodies.end()) {
             auto& destination =
                 externally_linked(callable) ? result.module_items : result.private_items;
@@ -489,7 +563,11 @@ auto lower_module_schedule(
         visit(id);
     }
     const auto definition_owner = [&](CallableID id) noexcept {
-        return context.names().callable_owner(id);
+        return std::holds_alternative<ClosureBodyImplementation>(
+                   declarations.callable(id).implementation
+               )
+            ? context.names().closure_owner(id)
+            : context.names().callable_owner(id);
     };
     // Consecutive items of one owner share its namespace block.
     const auto group = [&](const auto& ids, auto lower) noexcept {
@@ -506,6 +584,11 @@ auto lower_module_schedule(
         }
         return groups;
     };
+    std::erase_if(forward, [&](CallableID id) noexcept {
+        return std::holds_alternative<ClosureBodyImplementation>(
+            declarations.callable(id).implementation
+        );
+    });
     result.shared_declarations = group(forward, [&](ModuleID owner, CallableID id) noexcept {
         return lower_use_placed_function(artifact.module_context(owner), id, true);
     });

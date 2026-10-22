@@ -1,14 +1,15 @@
-# Sequence views and pipeline calls
+# Sequence views, methods, and pipeline calls
 
 - **Status:** Accepted
 - **Implementation:** Not started
-- **Scope:** Pipeline call syntax, bounded sequence builtins, reusable lazy Read views, and their static execution and realization
+- **Scope:** Bounded sequence operations through free functions and methods, reusable lazy Read views, pipeline calls, and shared static execution and realization; the joint delivery includes Generator sources and explicit per-step pipeline input access
 
 ## Summary
 
-Provide a small set of sequence operations that compose through ordinary calls
-and a `|>` operator. The first version contains `filter`, `map`, `take`,
-`collect`, and `fold`. Existing `for` loops consume the resulting views.
+Provide a small set of sequence operations that compose through methods,
+ordinary calls, and a `|>` operator. The first version contains `filter`, `map`,
+`take`, `collect`, and `fold`, with shared operation contracts across entries.
+Existing `for` loops consume the resulting views.
 Functions can package a processing rule by returning a view with an inferred
 concrete type.
 
@@ -16,11 +17,20 @@ Views describe demand-driven traversal. `collect` creates an owning result;
 `fold` performs ordered accumulation. Use ordinary `for` bodies for imperative
 processing at the consumption site.
 
-Source semantics are independent of target APIs. Ordinary nested calls and
-pipeline calls provide the same checked contracts to semantic execution and
-C++ generation.
+Source semantics are independent of target APIs. Methods, ordinary nested calls,
+and pipeline calls supply the same operation contracts to semantic execution
+and C++ generation, using each form's existing argument/receiver binding rules.
 
-The examples describe the accepted design, which is not yet implemented.
+Examples distinguish the accepted design from draft extensions. Neither is
+implemented yet.
+
+The synchronous-generator proposal selects a draft joint delivery with all five
+operations through methods and free functions, saved/returned views, one-shot
+sources, explicit-access pipes, and static execution. Its Generator extension
+remains Draft; the restartable Read-view design remains
+Accepted. Joint-delivery pipeline steps use explicit argument access, including
+for temporary inputs. Vector-held views remain accepted but are outside that
+joint implementation slice. Completing that slice is partial implementation here.
 
 ## Context
 
@@ -63,7 +73,8 @@ traversal, additional combinators, and ECS facilities are outside this version.
 
 The five APIs are builtins in `std::sequence`. Compiler knowledge supplies
 concrete view and result types, callback admission, retained backing, and stage
-checks. Pipeline syntax elaborates to ordinary calls. Standard Craft and user
+checks. Type methods and free functions bind to shared operation contracts;
+pipeline syntax elaborates to ordinary calls. Standard Craft and user
 functions package processing rules using these calls; no public iterator or
 higher-order generic protocol is required by this delivery. Shared native view
 storage and traversal support belong to Runtime Craft, with realization using
@@ -79,11 +90,145 @@ for each slice and require its complete lifetime contract before admission.
 The design's collection-held view semantics remain accepted; completion of a
 smaller slice is partial implementation of this proposal.
 
+### Generator sources and joint delivery
+
+The Draft [synchronous-generator proposal](generators.md) owns the Generator
+type, reserved `yield`, explicit advancement, producer ownership and failure,
+early destruction, and static execution. It adds a separate one-shot source
+mode to these five APIs; it does not change restartable views into generators.
+The contracts below continue to describe restartable Read views unless that
+proposal explicitly specifies the one-shot extension.
+
+| Operation | Accepted restartable path | Draft one-shot extension |
+| --- | --- | --- |
+| `filter`, `map`, `take` | Read source; copyable descriptor; fresh traversal progress | Take source; move-only owning adapter; progress advances once |
+| `collect` | Copy borrowed elements or deliver independent mapped values | Transfer independent delivered items into admitted Vector storage |
+| `fold` | Read source and copyable Read initial | Take source; same Read initial and combiner rules |
+| Failure | Empty outward callback failures and infallible traversal | Retain producer failures through adapters; terminal calls and next handle them explicitly |
+| `for` | Read-view traversal with ordinary bindings | Explicit Take of an infallible one-shot source, including temporaries; fallible iteration uses next |
+| Pipeline | First-argument insertion into ordinary Read calls | General per-step input markers: omitted means Read, `&` means Write, and `&&` means Take; markers remain mandatory for temporaries |
+| Methods | Existing Read `self` binding; reusable view remains available | Existing `&&self` binding; named and temporary receivers are consumed alike |
+
+The proposed joint implementation includes all five APIs as methods and free
+functions with shared semantics, pipeline syntax,
+local/saved/returned views, concrete runtime callback closures, cross-module
+publication, const execution with named const callbacks, and one-shot generator
+composition. Vector elements containing reusable views remain part of this
+accepted design but are deferred from that implementation slice. Their contained
+callable/loan tracking and unknown-index handling are not prerequisites for
+local/returned composition. Generator and one-shot-adapter Vector elements are
+also outside the slice and require their own move-only storage contract.
+
+The accepted decisions and validation requirements below retain their scope
+except for the Read-only input restriction, extended by `DEC-12` with explicit
+per-step markers, and extended by `DEC-14` with real sequence methods. `DEC-13`
+is withdrawn; temporary omission and grouped-input access changes are outside
+the delivery. The joint delivery does not complete
+or remove collection-held views or establish acceptance of the generator draft.
+
 ### Source design
+
+#### Sequence methods and shared operation contracts
+
+The joint delivery provides the five operations as real methods on Read slices,
+integer Range values, restartable views, Generator, and one-shot adapters. Arrays
+and owning Vectors enter through their existing slice conversion or `.slice()`;
+this delivery adds no separate array/Vector method family. The methods and the
+existing free functions are public entries of `std::sequence`.
+
+| Operation | Restartable-source receiver | One-shot-source receiver | Other arguments |
+| --- | --- | --- | --- |
+| `.filter(predicate)` | `self` (Read) | `&&self` (Take) | Read predicate |
+| `.map(transform)` | `self` (Read) | `&&self` (Take) | Read transform |
+| `.take(count)` | `self` (Read) | `&&self` (Take) | Read usize count |
+| `.collect()` | `self` (Read) | `&&self` (Take) | None |
+| `.fold(initial, combine)` | `self` (Read) | `&&self` (Take) | Existing copyable Read initial and Read combine |
+
+Generator and one-shot adapters additionally provide `.next()` with `&self`,
+sharing the free `next(&source)` advancement contract owned by the generator
+proposal. It requires a mutable available receiver and does not consume it.
+
+These are existing instance-receiver modes. A named Generator and a temporary
+Generator use the same `&&self` binding rule; a consuming method makes a named
+receiver unavailable. No call-site `&&` is required on an implicit receiver and
+no rule distinguishes named and temporary receivers. Partial-owner Take,
+non-owning Read receivers passed to consuming methods, and live-loan conflicts
+remain invalid under ordinary instance-operation checking.
+
+```carven
+let source = parsed_values(input);
+let result = source
+    .filter(positive)
+    .map(square)
+    .take(3)
+    .collect()?;
+// source is consumed by filter; it cannot be reused.
+```
+
+This changes no explicit argument rule. Every explicit Take argument still
+requires `&&`, including temporary results; Write arguments still require `&`.
+The free-function and pipe versions therefore keep the explicit source marker
+at every consuming call:
+
+```carven
+let result = parsed_values(input)
+    |> &&filter(positive)
+    |> &&map(square)
+    |> &&take(3)
+    |> &&collect()?;
+```
+
+The two examples are alternative inputs to the same checked operation contracts,
+not separate processing algorithms. Method and free-function identities bind to
+one operation kind with the same source mode, callback contract, concrete
+adapter/result type, captures, and failure set. Share admission, demand, lifetime,
+cleanup, static execution, interpreter operations, and runtime realization. Do
+not introduce an extra adapter or generator frame just to expose a method entry.
+
+In particular, both entries preserve these contracts:
+
+- Restartable views copy descriptors/callback state under the existing construction
+  rules and retain source backing. Composition never borrows an expiring receiver
+  descriptor merely because the source expression uses a dot.
+- One-shot adapters own the receiver after Take and retain all upstream backing.
+  Each request, rejected item, mapped holder, prefix limit, failure, and early
+  destruction follows the same rules as the free-function path.
+- Lazy methods do not advance the producer or invoke element callbacks during
+  construction. The specified `take(0)` close and final-item close behavior is
+  identical on both paths.
+- Callback outward failures remain empty in this delivery. Producer failures
+  remain latent through lazy methods and are handled on advancement or terminals
+  with ordinary `?` or catches. A method does not erase a source failure set.
+- Const capability, known producer/callback proof, execution budgets and freezing
+  checks are identical. Method syntax does not make an unknown or non-const
+  target statically consumable.
+
+Methods preserve normal receiver-before-explicit-arguments evaluation. Free calls
+and expanded pipes preserve normal callee-first and left-to-right arguments.
+For the fixed provided operation identities, matched source/callback expressions
+have the same observable construction and consumption order. Do not rewrite a
+method through a mutable or shadowed free-function binding to force textual
+identity between different call forms.
+
+Method discovery uses the canonical receiver type or concrete adapter shape.
+It does not search for a same-named local/free function, depend on importing that
+free-function name, or turn arbitrary functions into extension methods. A local
+binding named map can shadow an imported free function but cannot replace the
+sequence method. Type aliases and inferred cross-module adapter results retain
+method availability through their canonical published type facts. This adds no
+public iterable protocol or extra capability on an otherwise unknown generic
+receiver. Method values remain excluded under existing instance-operation rules.
+
+Prefer method chains in sequence-focused teaching examples. Use ordinary calls
+and pipes to compose module/user functions, select imported aliases, or make
+individual source-access boundaries explicit. Mixed expressions retain the same
+normal syntax, for example `source.filter(positive).collect()? |> summarize()`
+when summarize takes Read. A pipe's right side remains a named call; coexistence
+does not add member-call rewriting there.
 
 #### Pipeline calls
 
-Pipeline call composition is:
+Unmarked pipeline call composition retains Read input:
 
 ```carven
 source |> operation(a, b)
@@ -93,54 +238,156 @@ source |> first(a) |> second(b)
 // Same calls as second(first(source, a), b).
 ```
 
-Pipelines associate to the left. Each step inserts its left operand as the
-first explicit argument of the call on the right. The selected callable follows
+Pipelines associate to the left. Each step inserts its left operand as the first
+explicit argument of the named call on the right. The selected callable follows
 ordinary lookup, arity, contextual typing, access, stage, and failure rules.
-The operator is available to ordinary user functions as well as sequence APIs.
+The operator applies to ordinary user functions and local callable names as well
+as sequence APIs.
 
-The right side is one explicit call to a name or qualified name, optionally with
-existing type arguments and a trailing `?`. A name can resolve to a local
-callable binding. Bare callables, member-call rewriting, arbitrary callee
-expressions, partial application, and argument placeholders are not admitted.
+The joint delivery adds an optional input access marker to each pipeline step:
 
-`|>` binds less tightly than ranges and all ordinary binary operators. It adds
-one expression level below the existing range production:
+```carven
+source |> &operation(a, b)
+// Same call as operation(&source, a, b).
+
+source |> &&operation(a, b)
+// Same call as operation(&&source, a, b).
+```
+
+The step marker specifies the inserted first argument's access. It is syntax
+inside the named pipeline-call production, not an access expression applied to
+the callee or result. Omission means Read, `&` means Write, and `&&` means Take.
+All explicit arguments on the right keep their own access markers.
+
+A Take parameter always requires written `&&`, including when its argument is
+a literal, construction, function result, or preceding adapter result. A Write
+parameter always requires written `&`. Apply the same exact marker matching to
+ordinary calls and pipelines, at every argument position. Existing value/place
+and lifetime facts still validate a marked operand; they do not make the marker
+optional. No implicit copying, last-use inference, or temporary-specific
+omission is introduced.
+
+This rule concerns explicit call arguments and the pipe's inserted first
+argument. Existing implicit instance-receiver binding through `self`, `&self`,
+or `&&self` remains unchanged; a pipe step is not a method receiver.
+
+Each step states its input access independently. There is no inherited mode:
+
+```carven
+source |> &&first(a) |> &&second(b)
+// second(&&first(&&source, a), b)
+
+source |> &&first(a) |> inspect()
+// inspect(first(&&source, a)); inspect takes Read.
+
+source |> &&fold(initial, combine)
+// fold(&&source, initial, combine); initial and combine remain Read.
+```
+
+This rule is independent of Generator identity and applies to all named calls.
+A missing or incorrect marker gives the corresponding ordinary-call diagnostic,
+even when an unmarked temporary could physically be moved. Read-view APIs do
+not require Take merely because the operator supports it.
+
+The right side is one explicit call to a name or qualified name, with the
+optional input access marker, existing type arguments, and optional trailing
+`?`. Bare callables, member-call rewriting, arbitrary callee expressions, partial
+application, and argument placeholders are outside the initial grammar.
+
+`|>` binds less tightly than ranges and ordinary binary operators:
 
 ```ebnf
 expression = access-expression | pipeline-expression;
 pipeline-expression = range-expression, { "|>", pipeline-call };
-pipeline-call = named-callee, [ type-arguments ], call-operation,
-                [ propagation-operation ];
+pipeline-call = [ access-marker ], named-callee, [ type-arguments ],
+                call-operation, [ propagation-operation ];
 named-callee = [ "::" ], IDENTIFIER,
                { "::", identifier-shaped-name };
 ```
 
-The reused productions keep their current meaning. Using a pipeline result in a
-postfix or binary operation requires grouping, as in
-`(values |> collect()).slice()` or `(values |> fold(0, add)) + 1`.
-A trailing `?` propagates from that step's inserted call:
+Use grouping for postfix or binary operations on an entire pipeline result,
+such as `(values |> collect()).slice()` or `(values |> fold(0, add)) + 1`.
+A trailing `?` propagates from that step's ordinary call:
 
 ```carven
 0..10 |> take(3)          // take(0..10, 3)
 value |> convert()?      // convert(value)?
 values |> inspect(&log)  // inspect(values, &log)
+source |> &&collect()?   // collect(&&source)?
 ```
 
-The inserted argument is unmarked Read. Grouped Write or Take inputs are
-rejected; calls requiring either on their first parameter use ordinary syntax.
-Arguments on the right retain their access markers. A leading marker still
-covers the whole expression: `use(&value |> produce())` is
-`use(&produce(value))`, subject to normal access checking.
+Grouped access expressions on the left are not an alternate pipeline input
+annotation: use `source |> &&operation()` or `source |> &operation()` instead.
+The withdrawn draft's transparent-group argument-marker rule is not introduced.
+Parenthesized ordinary inner calls remain valid when their own access and
+lifetime checks pass.
 
-Every left operand and explicit argument is evaluated once. Evaluation order,
-callee selection, full-expression temporary lifetimes, and cleanup are those of
-the equivalent ordinary calls. In particular, ordinary calls select their
-callees before evaluating arguments; pipeline spelling does not introduce
-separate statement boundaries or a different callee-selection order.
+A leading access marker outside a pipeline step still applies to the whole
+expression under the existing precedence:
 
-Calls execute normally; deferred element processing belongs to each adapter's
-contract. Pipeline spelling supplies no implicit access, propagation, or stage
-change.
+```carven
+use(&value |> produce())
+// use(&produce(value))
+
+use(&&value |> produce())
+// use(&&produce(value))
+```
+
+The inserted input in these examples remains Read. A step marker is required to
+change it. No existing access expression is reinterpreted because a pipe occurs
+inside its operand.
+
+Every expression is evaluated once. Callee selection, argument evaluation,
+full-expression temporary lifetimes, propagation, and cleanup follow the nested
+ordinary calls. A pipe does not introduce sequential local declarations or
+statement boundaries. A later argument failure does not restore an earlier
+taken owner; already acquired arguments receive ordinary cleanup. Complete-owner,
+writable-place, access-conflict, and native-boundary checks remain unchanged.
+
+Lazy execution belongs to the selected API contract. Pipe syntax does not
+implicitly start a producer, observe advancement failures, or establish const
+capability. Static admission and interpretation use the same expanded calls.
+
+#### Ownership notation and alternatives
+
+The selected rule optimizes predictability: the declared parameter access tells
+the caller which marker to write. Users do not classify temporary expressions
+before deciding whether a Take marker is optional. Fewer source characters alone
+do not establish lower user complexity.
+
+| Alternative | Consequence | Selection |
+| --- | --- | --- |
+| Omit Take for temporary results | Users distinguish existing storage from independent results; calls and tools need a new eligibility rule | Withdrawn; retain exact marker matching |
+| Carry Take across a complete pipe | Access becomes ambient and must interact with intermediate Read and Write calls | Do not introduce |
+| Adapt a borrowed mutable generator | Source lifetime, aliasing, pause/resume, and destruction differ from owning adapters | Evaluate only for an independently needed borrowed-source API |
+| Declare real sequence instance methods | Reuse existing Read/Take receivers and bind both public forms to one operation contract | Included in this delivery; explicit pipes and free functions remain available |
+| Package a recurring domain pipeline in an ordinary function | Callers cross one explicit ownership boundary; the helper keeps explicit markers internally | Use when the processing rule is independently reusable |
+
+For a recurring infallible numeric processing rule, ordinary code can expose:
+
+```carven
+fn first_positive_squares(&&source: Generator<i32>, limit: usize) -> Vector<i32> =>
+    source
+        |> &&filter(positive)
+        |> &&map(square)
+        |> &&take(limit)
+        |> &&collect();
+
+// In a caller with its own source:
+let result = source |> &&first_positive_squares(3);
+```
+
+The names above illustrate a domain rule. This requires no new function or
+ownership mechanism and does not waive internal argument markers. Keep one-off
+pipelines explicit; do not add a standard abstraction merely to hide `&&`.
+Formatter alignment and parameter hints can improve readability without changing
+source semantics, but are not new requirements of this delivery.
+
+The selected methods use ordinary receiver contracts, including consuming named
+owners without an explicit argument marker. They are genuine type operations,
+not syntax aliases for arbitrary free functions. Keep that ownership behavior
+explicit in method documentation; it is the existing instance-operation model,
+not temporary-specific omission. The shared method contract is defined above.
 
 #### Builtin API identity
 
@@ -154,8 +401,10 @@ import std::sequence using { filter, map, take, collect, fold }
 Single-name selections may omit braces; multiple-name selections require them.
 Builtin recognition follows the resolved declaration identity, including import
 aliases. A user declaration named `map` keeps its own meaning. Builtins use
-direct calls, including pipeline calls; passing a builtin itself as a callable
-value is outside the first version. User wrapper functions are ordinary callables.
+direct free or method calls, including expanded pipeline calls; passing a
+builtin itself as a callable value is outside the first version. Method lookup
+uses its receiver's canonical type and needs no import of the corresponding
+free-function binding. User wrapper functions remain ordinary callables.
 
 The contracts below describe concrete call checking. `T`, `U`, and `A` in the
 table are explanatory type names, not proposed public generic declarations.
@@ -381,7 +630,39 @@ directly or by value inside a collection or product.
 ### Examples
 
 The proposed module and builtins are used below. The surrounding syntax follows
-the existing function, aggregate, ownership, and static-execution rules.
+the existing function, aggregate, ownership, and static-execution rules. The
+one-shot composition examples also use the general per-step input access rule.
+
+#### Explicit input access
+
+```carven
+let result = parsed_values(input)
+    |> &&filter(positive)
+    |> &&map(square)
+    |> &&take(3)
+    |> &&collect()?;
+```
+
+Every adapter and terminal takes its upstream explicitly, even though the first
+input and all intermediate results are temporary. Omitting a required marker
+produces the same access diagnostic as in the ordinary-call form.
+
+The same syntax applies to an ordinary Write-input function:
+
+```carven
+fn increment(&value: i32) -> i32 {
+    value += 1;
+    return value;
+}
+
+var count = 0;
+let result = count |> &increment();
+// increment(&count): both count and result are 1.
+```
+
+Read, Write, and Take steps can be mixed according to the selected callables'
+contracts. No step changes the access of the next one. Read-view sequence APIs
+retain their existing unmarked calls.
 
 #### Reusable data processing
 
@@ -477,6 +758,18 @@ const total: i32 =
 // 56: delivers 0, 4, 16, 36 and stops without requesting the next source item.
 ```
 
+The method entry uses the same Read sources, named const callbacks, demand, and
+freezing contract:
+
+```carven
+const method_total: i32 = (0..1_000_000)
+    .filter(even)
+    .map(square)
+    .take(4)
+    .fold(0, add);
+// Also 56; no free-operation import is needed for method lookup.
+```
+
 This result follows bounded static traversal. It does not require constructing
 the million source values or emitting C++ constant expressions.
 
@@ -511,8 +804,11 @@ the callback `const fn` enables consumption in the static stage as well.
 Analysis resolves the selected builtin and publishes its concrete source shape,
 element and result types, callback identities and captures, operand order,
 access, retained backing requirements, and construction versus traversal
-contracts. Pipeline elaboration produces the same calls and facts as ordinary
-syntax, including through wrapper functions and returned views.
+contracts. Free and method entries normalize to one operation kind and checked
+source/callback contract; method receiver binding retains its existing access.
+Pipeline elaboration produces ordinary calls with the same facts, including
+through wrapper functions and returned views. Entry spelling must not select a
+different carrier type or duplicate traversal, effect, or cleanup analysis.
 
 - Concrete view types use canonical type and signature completion. Their finite
   shape records adapter kind, upstream type, callback type, and derived element
@@ -534,8 +830,10 @@ syntax, including through wrapper functions and returned views.
 - Before checked source regions are released, callable/type surfaces and closure
   reference ordering retain view types, upstream descriptors, callbacks,
   captures, and required callable references. This includes module results,
-  forwarding, and staged bodies. Returning views across ordinary Carven modules
-  and crafts is supported.
+  forwarding, and staged bodies. Publish method availability and canonical
+  operation identities for inferred adapter types, independent of free-function
+  import bindings. Returning views across ordinary Carven modules and crafts is
+  supported.
 - Target naming and artifact planning own carrier names, placement, complete
   definitions, and callable dependencies. Private dependencies keep their Carven
   visibility through existing interface closure; native support uses existing
@@ -600,7 +898,7 @@ threshold or particular optimization.
 
 ## Decision record
 
-| ID | Agreed decision and reason |
+| ID | Decision and reason |
 | --- | --- |
 | `DEC-01` | Include `\|>` as left-associated first-argument call composition for readability; retain ordinary call semantics |
 | `DEC-02` | Start with five bounded sequence APIs and existing `for`; domain processing uses ordinary functions |
@@ -613,11 +911,21 @@ threshold or particular optimization.
 | `DEC-09` | Give fold an owning accumulator from a copyable Read initial value; retain normal delivery and copying rules without implicit Take |
 | `DEC-10` | Publish view types and dependencies through existing type contents, callable surfaces, closure ordering, naming, and artifact planning |
 | `DEC-11` | Support concrete named functions and closures in native and interpreted sequence execution; retain separate static callback admission and native-provider boundaries |
-| `OPEN-01` | Closed: one named call per step, precedence below ranges, explicit per-step propagation, and an unmarked Read inserted argument |
+| `DEC-12` | Joint-delivery choice: optional per-step `&`/`&&` marks the inserted first argument for all named calls; omission stays Read and Take markers remain required even for temporaries; extends only OPEN-01's Read-only restriction |
+| `DEC-13` | Withdrawn: omit Take for independent temporary results and admit grouped input access; exact marker matching is retained to avoid user-side value-category decisions |
+| `DEC-14` | Joint-delivery choice: include genuine methods for the five operations alongside free functions and explicit-access pipes; reuse Read/Take receivers and one shared operation contract, without temporary omission or extension-method rewriting |
+| `OPEN-01` | Closed original rule: one named call per step, precedence below ranges, explicit per-step propagation, and unmarked Read input; DEC-12 adds explicit Write/Take steps without changing unmarked semantics |
 | `OPEN-02` | Closed: retain upstream descriptors and concrete callback storage by ordinary copy or value delivery; preserve source loans and clean up per-element holders |
 | `OPEN-03` | Closed: use `std::sequence`, inferred concrete view types including Vector elements, ordinary copying and borrowing, source-shape diagnostics, and existing publication gates |
 
 ## Implementation
+
+The Draft joint delivery described above starts with local, saved, and returned
+views plus Generator sources and all five operations through methods, free
+functions, and explicit-access pipes. It defers the accepted
+Vector-held-view slice. The steps below describe the full accepted Read-view
+contract; finish and validate only the selected storage positions before calling
+that slice implemented, and retain Partial status for this proposal as a whole.
 
 Use direct traversal, a returned reusable view, and a Vector of views to identify
 shared work and storage-specific work before selecting the first implementation
@@ -629,9 +937,28 @@ formatter. Elaborate pipeline forms into ordinary checked calls with source
 provenance for diagnostics and tooling. Preserve range parsing, argument access,
 postfix propagation, and call evaluation order.
 
+For the joint delivery, parse one optional input access marker in each named
+pipeline call and retain its span. Expand a marked step into an ordinary
+`ASTAccessExpr` on the inserted first argument; an unmarked step adds no marker.
+Use existing concrete, generic, builtin, and native argument-access checks.
+Do not classify a temporary to omit its marker, move the callee, change an
+explicit later argument, or propagate an input mode into the next step.
+Reject duplicate markers and grouped left-input access annotations. Preserve
+callee selection, cleanup, and full-expression lifetimes without introducing
+sequential evaluation temporaries. No general call-binder relaxation is needed.
+
 Provide the five identities in `std::sequence`. Add concrete view type facts,
 callback checking, descriptor construction, and Read iteration admission. Use
 existing owning-copy rules for retained callbacks and fold initialization.
+
+Add the five real method entries on the selected source families. Bind Read
+receivers for restartable sources and Take receivers for one-shot sources using
+existing instance-call rules; do not change explicit argument checks. Normalize
+both entries to shared semantic operations before ownership, effect, stage, and
+realization consumers. Add canonical method discovery for unspellable adapter
+types and preserve it across publication. No general extension-method mechanism,
+free-function fallback for member lookup, or second traversal implementation is
+required.
 
 Integrate view operations with the checking and publication mechanisms above.
 Extend the structured executor and backend realization for construction,
@@ -651,8 +978,12 @@ for the selected contract and corresponding reference documentation.
 
 | Contract | Required evidence |
 | --- | --- |
-| Pipeline grammar | Cover range and logical inputs, grouping, type arguments, named callable bindings, per-step propagation, and whole-expression access markers; reject bare or member callees and marked inserted inputs |
-| Pipeline equivalence | Compare ordinary and pipeline calls with argument effects, aliased callable state, nested calls, and temporary lifetimes; include qualified and shadowed names |
+| Pipeline grammar | Cover ranges, logical inputs, grouping, type arguments, named callable bindings, optional per-step access, propagation and outer access precedence; reject duplicate step markers, bare/member callees, placeholders and grouped left-input access annotations |
+| Pipeline equivalence | Compare ordinary and pipeline calls with argument effects, aliased callable state, nested calls, temporary lifetimes, Write places, Take availability, and failures after source acquisition; include qualified and shadowed names |
+| Pipeline access | Require exact Read/Write/Take matching for named and temporary inputs; cover missing and incorrect markers, mixed-mode chains, explicit later arguments, unchanged callee identity and no inherited input mode |
+| Method binding | All five methods on slices, ranges, views, Generator and one-shot adapters; consume named/temporary Take receivers, retain Read sources, reject partial/non-owning receivers and borrow conflicts, and keep explicit argument markers mandatory |
+| Shared entries | Matched method/free/pipe programs share adapter types, demand, capture work, failures, zero/final take cleanup, and results; verify ordinary receiver/argument evaluation and no duplicate runtime work |
+| Method discovery | Inferred/cross-module adapter methods and type aliases work without importing free-function names; local shadowing cannot replace a method; reject arbitrary extension-method fallback and method-value extraction |
 | Bounded checking | Diagnose wrong source types, callback arity, access, predicate result, accumulator result, unfinished failure contracts, and unsupported callable forms |
 | Demand | Count callback execution for rejected filters, mapped candidates, nested limits, empty sources, `take(0)`, short input, early `break`, reversed ranges, and closed ranges at integer maxima |
 | Reuse | Return, copy, forward, and capture views under existing storage rules; consume with both `for` and terminals and repeat traversal with owned and aliased callback state |
@@ -661,7 +992,7 @@ for the selected contract and corresponding reference documentation.
 | View element storage | Collect, insert, copy, select, remove, replace, and clear views, including views held in element products; track owned captures and borrowed sources, reject escapes of local backing, protect borrowed element storage, and release backing loans on cleanup |
 | Native and interpreted execution | Compare pure Carven sequence programs using named functions, ordinary closure calls, and closure callbacks; cover owned and Write captures, callable selection before arguments, view copies and Vector storage, repeated traversal, effects, and cleanup; reached native interactions without a provider retain interpreter diagnostics |
 | Static admission | Admit construction retaining a runtime function identity; reject unused const consumers invoking it through returned or forwarded views, including fold combiners; admit named const callbacks and reject static closure invocation under the first-version boundary |
-| Static execution | Use the same admitted named callbacks and inputs at runtime and in static roots; verify the `56` example, `const for` demand and bound-element freezing, discarded elements, budgets, failure diagnostics, and rejected unconsumed view constants, including views inside collections or products |
+| Static execution | Use the same admitted named callbacks and inputs through methods/free calls/pipes at runtime and in static roots; verify the `56` example, `const for` demand and bound-element freezing, discarded elements, budgets, failure diagnostics, and rejected unconsumed view constants, including views inside collections or products |
 | Module publication | Return, forward, copy, and consume views across Carven modules; include concrete closure captures and legal private dependencies; verify native definitions and headers use published facts after source-region release |
 | Realization | Verify demand, effects, cleanup, retained state, and absence of intermediate result collections independently of the chosen C++ form |
 | Effects | Preserve callback and construction work for known results, repeated traversals, aliased captures, and opaque native calls |

@@ -177,35 +177,34 @@ async fn fresh_turn_boundary() -> i32 {
     return trace;
 }
 
-async fn run_core() -> i32 {
+async test "Async execution: cold operations, recovery, capture, and structured children" {
     var trace: i32 = 0;
     let operation = write_later(&trace, 9);
-    assert(trace == 0);
-    assert(await operation == 9);
-    assert(trace == 9);
-    assert(await cold(3) == 4);
+    check(trace == 0);
+    check(await operation == 9);
+    check(trace == 9);
+    check(await cold(3) == 4);
     let selected = if true { leaf(4) } else { other(4) };
-    assert(await selected == 5);
-    assert((if await leaf(0) == 1 { await leaf(5) } else { await other(5) }) == 6);
-    assert(await recover() == 7);
-    assert(await catch_synchronous() == 7);
-    assert(await catch_after_close() == 19);
+    check(await selected == 5);
+    check((if await leaf(0) == 1 { await leaf(5) } else { await other(5) }) == 6);
+    check(await recover() == 7);
+    check(await catch_synchronous() == 7);
+    check(await catch_after_close() == 19);
     async let child = leaf(10);
-    assert(await child == 11);
+    check(await child == 11);
     async let constructed = leaf(await leaf(12));
-    assert(await constructed == 14);
-    assert(await structured(true) == 21);
-    assert(await structured(false) == 22);
-    assert(await stepped() == 2);
+    check(await constructed == 14);
+    check(await structured(true) == 21);
+    check(await structured(false) == 22);
+    check(await stepped() == 2);
     var finished: i32 = 0;
     async let sibling = delayed(&finished);
-    assert(await leaf(11) == 12);
-    assert(finished == 0);
+    check(await leaf(11) == 12);
+    check(finished == 0);
     cancel sibling;
-    assert(!cancel_requested());
-    assert(await repeated_returns() == 58);
-    assert(await fresh_capture() == 124433);
-    assert(await fresh_turn_boundary() == 1384);
-    assert(await stored_factory() == 1284);
-    return 19;
+    check(!cancel_requested());
+    check(await repeated_returns() == 58);
+    check(await fresh_capture() == 124433);
+    check(await fresh_turn_boundary() == 1384);
+    check(await stored_factory() == 1284);
 }

@@ -173,6 +173,7 @@ struct ASTConstBlock final {
 
 struct ASTTestDecl final {
     bool is_const;
+    std::optional<Span> async_span;
     Span keyword_span;
     std::optional<ASTBlockLabel> label;
     ASTBlockID body;

@@ -168,7 +168,8 @@ auto BodyElaborator::run(const ASTCallableBody& source_body) noexcept
 auto BodyBatchElaborator::run() noexcept -> AnalysisTask<void> {
     for (const auto definition : draft->generic_declaration_ids()) {
         const auto source = draft->generic_declaration_copy(definition);
-        if (!std::holds_alternative<GenericFunctionDefinition>(source)) {
+        const auto* callable = std::get_if<GenericCallableDefinition>(&source);
+        if (!callable || !callable->contract.name) {
             continue;
         }
         const auto& symbol = *catalog_data.symbol(catalog_data.generic_symbol(definition));
@@ -209,10 +210,13 @@ auto BodyBatchElaborator::run() noexcept -> AnalysisTask<void> {
             const auto body_id = reservation.id();
             const auto source =
                 block_source(source_module.module_id, test.keyword_span, test.label);
+            const auto execution = test.is_const ? TestExecution::Static
+                : test.async_span                ? TestExecution::Asynchronous
+                                                 : TestExecution::Synchronous;
             draft->define_test(
                 test_form->test,
                 TestDeclaration {
-                    .is_const = test.is_const,
+                    .execution = execution,
                     .module_id = source_module.declaration,
                     .source = source,
                     .body = body_id,
@@ -232,12 +236,13 @@ auto BodyBatchElaborator::run() noexcept -> AnalysisTask<void> {
                 std::nullopt,
                 true
             );
-            elaborator.static_body = test.is_const;
+            elaborator.static_body = execution == TestExecution::Static;
+            elaborator.async_body = execution == TestExecution::Asynchronous;
             auto body = (co_await elaborator.run(test.body));
             if (!body.has_value()) {
                 continue;
             }
-            if (test.is_const) {
+            if (execution == TestExecution::Static) {
                 static_body_roots.push_back({.body = body_id, .source = source});
             }
             if (elaborator.observe_sources) {
@@ -538,7 +543,7 @@ auto BodyBatchElaborator::ensure_generic_function(
     ProgramModuleID requester,
     Span span
 ) noexcept -> AnalysisTask<void> {
-    if (draft->has_generic_function_body(definition)) {
+    if (draft->has_generic_callable_body(definition)) {
         co_return {};
     }
     auto [found, inserted] = generic_states.try_emplace(definition, Unvisited {});
@@ -558,7 +563,7 @@ auto BodyBatchElaborator::ensure_generic_function(
         co_return declared;
     }
     auto function =
-        std::get<GenericFunctionDefinition>(draft->generic_declaration_copy(definition));
+        std::get<GenericCallableDefinition>(draft->generic_declaration_copy(definition));
     if (std::holds_alternative<Analyzing>(state)) {
         if (!function.infer_result) {
             co_return {};
@@ -582,6 +587,7 @@ auto BodyBatchElaborator::ensure_generic_function(
         function.signature.policy,
         function.contract.origin
     );
+    const auto parameters = draft->generic_parameter_contract_copy(definition);
     auto elaborator = BodyElaborator(
         *this,
         symbol.module_id,
@@ -594,8 +600,8 @@ auto BodyBatchElaborator::ensure_generic_function(
         false,
         GenericTypeContext {
             .definition = definition,
-            .parameters = function.contract.parameters,
-            .parameter_kinds = function.contract.parameter_kinds
+            .parameters = parameters.parameters,
+            .parameter_kinds = parameters.parameter_kinds
         },
         true
     );
@@ -616,12 +622,12 @@ auto BodyBatchElaborator::ensure_generic_function(
         co_return std::unexpected(body.error());
     }
     if (function.infer_result) {
-        draft->complete_generic_function_result(definition, elaborator.inferred_result_type());
+        draft->complete_generic_callable_result(definition, elaborator.inferred_result_type());
     }
     if (elaborator.observe_sources) {
         draft->source_analysis()->add_body(std::move(elaborator.source_occurrences));
     }
-    draft->set_generic_function_body(definition, std::move(*body));
+    draft->set_generic_callable_body(definition, std::move(*body));
     state = Complete {};
     co_return {};
 }

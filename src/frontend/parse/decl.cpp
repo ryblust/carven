@@ -311,9 +311,9 @@ auto Parser::parse_top_level_item() noexcept -> std::optional<ASTItemID> {
         return std::nullopt;
     }
 
-    if (async_span && !check(TokenKind::Fn)) {
+    if (async_span && !check(TokenKind::Fn) && !(is_bare && check(TokenKind::Test))) {
         fail(
-            "async modifier must introduce a function declaration",
+            "async modifier must introduce a function or test declaration",
             *async_span,
             DiagnosticCode::Syntax
         );
@@ -385,7 +385,7 @@ auto Parser::parse_top_level_item() noexcept -> std::optional<ASTItemID> {
         });
     }
     if (is_bare && check(TokenKind::Test)) {
-        auto parsed = parse_test(const_span.has_value());
+        auto parsed = parse_test(const_span.has_value(), async_span);
         if (!parsed) {
             return std::nullopt;
         }
@@ -402,7 +402,8 @@ auto Parser::parse_top_level_item() noexcept -> std::optional<ASTItemID> {
     return std::nullopt;
 }
 
-auto Parser::parse_test(bool is_const) noexcept -> std::optional<std::pair<Span, ASTTestDecl>> {
+auto Parser::parse_test(bool is_const, std::optional<Span> async_span) noexcept
+    -> std::optional<std::pair<Span, ASTTestDecl>> {
     const auto keyword = expect(TokenKind::Test, "expected 'test'");
     auto label = parse_block_label();
     const auto body = parse_ordinary_block();
@@ -414,6 +415,7 @@ auto Parser::parse_test(bool is_const) noexcept -> std::optional<std::pair<Span,
             builder.block(*body).span,
             ASTTestDecl {
                 .is_const = is_const,
+                .async_span = async_span,
                 .keyword_span = keyword.span,
                 .label = std::move(label),
                 .body = *body,

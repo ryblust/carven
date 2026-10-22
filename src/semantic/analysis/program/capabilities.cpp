@@ -52,8 +52,7 @@ auto compute_equality_capabilities(
                     depend(element);
                 }
             } else if (const auto* parameter = std::get_if<GenericTypeParameter>(&expression)) {
-                const auto contract =
-                    draft.generic_declaration_contract_copy(parameter->definition);
+                const auto contract = draft.generic_parameter_contract_copy(parameter->definition);
                 supported[index] = std::ranges::contains(
                     contract.parameter_bounds[parameter->index],
                     BuiltinCapability::Equal
@@ -163,7 +162,7 @@ auto type_satisfies_capability(
     if (const auto* generic = std::get_if<GenericTypeID>(&type)) {
         const auto shape = draft.generic_type_copy(*generic);
         if (const auto* parameter = std::get_if<GenericTypeParameter>(&shape)) {
-            const auto contract = draft.generic_declaration_contract_copy(parameter->definition);
+            const auto contract = draft.generic_parameter_contract_copy(parameter->definition);
             return std::ranges::contains(contract.parameter_bounds[parameter->index], capability);
         }
         if (const auto* concrete = std::get_if<TypeID>(&shape)) {

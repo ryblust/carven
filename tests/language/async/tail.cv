@@ -48,12 +48,12 @@ async fn yielding(depth: i32) -> i32 {
 
 const rotated = await rotate(1, 2, 7);
 
-async fn run_tail() {
-    assert(await rotate(1, 2, 7) == rotated);
+async test "Async tail calls: argument order and deep recursion" {
+    check(await rotate(1, 2, 7) == rotated);
     let saved = rotate(1, 2, 16384);
-    assert(await saved == 12);
-    assert(await ordered(1, 2, 1) == 222);
-    assert(await nested(32) == 7);
-    assert(await matched(32) == 9);
-    assert(await yielding(32) == 7);
+    check(await saved == 12);
+    check(await ordered(1, 2, 1) == 222);
+    check(await nested(32) == 7);
+    check(await matched(32) == 9);
+    check(await yielding(32) == 7);
 }

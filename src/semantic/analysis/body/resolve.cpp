@@ -3,6 +3,7 @@ module carven:semantic.analysis.body.resolve.impl;
 import :diagnostics.builder;
 import :diagnostics.code;
 import :semantic.analysis.body.resolve;
+import :semantic.semir.callable;
 import :semantic.semir.children;
 import :semantic.semir.evaluation;
 import :semantic.semir.table;
@@ -17,6 +18,7 @@ public:
     BodyResolver(
         const TypeResolution& types,
         const CanonicalTypeStore& canonical_types,
+        const DeclarationStore& declarations,
         const std::vector<CallStopEffect>& call_stops,
         const FailureSolution& failures,
         const FailureSetStore& failure_sets,
@@ -42,6 +44,7 @@ public:
 private:
     const TypeResolution& types;
     const CanonicalTypeStore& canonical_types;
+    const DeclarationStore& declarations;
     const std::vector<CallStopEffect>& call_stops;
     const FailureSolution& failures;
     const FailureSetStore& failure_sets;
@@ -52,6 +55,7 @@ private:
 BodyResolver::BodyResolver(
     const TypeResolution& types,
     const CanonicalTypeStore& canonical_types,
+    const DeclarationStore& declarations,
     const std::vector<CallStopEffect>& call_stops,
     const FailureSolution& failures,
     const FailureSetStore& failure_sets,
@@ -60,6 +64,7 @@ BodyResolver::BodyResolver(
 ) noexcept
     : types(types),
       canonical_types(canonical_types),
+      declarations(declarations),
       call_stops(call_stops),
       failures(failures),
       failure_sets(failure_sets),
@@ -114,8 +119,9 @@ auto BodyResolver::operator()(SemanticExpression& value) noexcept -> void {
         (*this)(call->callee_failures);
         const auto& type =
             canonical_types.type(types.resolve(call->callee->type.construction())).value;
-        if (call->target) {
-            value.exits_call = call_stops[call->target->index()] != CallStopEffect::None;
+        const auto direct = direct_call_target(declarations, *call);
+        if (direct) {
+            value.exits_call = call_stops[direct->index()] != CallStopEffect::None;
         } else if (const auto* function = std::get_if<FunctionTypeValue>(&type)) {
             value.exits_call = call_stops[function->callable.index()] != CallStopEffect::None;
         } else if (const auto* closure = std::get_if<ClosureTypeValue>(&type)) {
@@ -249,6 +255,7 @@ auto resolve_body(
     StructuredBodyDraft body,
     const TypeResolution& types,
     const CanonicalTypeStore& canonical_types,
+    const DeclarationStore& declarations,
     const std::vector<CallStopEffect>& call_stops,
     const FailureSolution& failures,
     const FailureSetStore& failure_sets,
@@ -258,6 +265,7 @@ auto resolve_body(
     const auto resolve = BodyResolver(
         types,
         canonical_types,
+        declarations,
         call_stops,
         failures,
         failure_sets,

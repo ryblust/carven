@@ -192,11 +192,12 @@ runtime code or test entries.
 
 ## Static execution of functions
 
-Static roots can call only explicitly declared `const fn` Carven
-functions, including in local and module constant initializers, array extents,
-`const` blocks, and static tests. Arguments follow the declared type and access
-rules. Every function body undergoes ordinary type, effect, ownership, and
-lifetime validation. A `const fn` can also run at runtime; a runtime call remains
+Static roots can call named Carven functions declared `const fn` and lambdas
+whose bodies satisfy static execution requirements. This applies in local and
+module constant initializers, array extents, `const` blocks, and static tests.
+Arguments follow the declared type and access rules. Every function body undergoes
+ordinary type, effect, ownership, and lifetime validation. A `const fn` can also run
+at runtime; a runtime call remains
 an ordinary call even when all arguments happen to be known.
 
 `const` declares that a callable can execute in the static stage; it does not
@@ -211,9 +212,11 @@ The compiler checks the contract before execution; executing an entire function
 in the static stage does not make its ordinary parameters static inputs.
 
 Each `const fn` definition checks its signature and semantically reachable
-operations for executor capability. Reachable source calls, including through local
-callable bindings, must select a known `const fn`. Unsupported operations or
-unproven callees produce `CV-CONST-ADMISSION` at the definition.
+operations for executor capability. Reachable named source calls must select a
+known `const fn`. Known lambda bodies are checked recursively under the same
+rules. An unknown callable-view parameter does not establish static capability.
+Unsupported operations or unproven callees produce `CV-CONST-ADMISSION` at the
+definition.
 Operations after an unconditional return still receive ordinary semantic checks
 but need no executor capability. Paths
 selected by call arguments remain part of the definition's capability check.
@@ -353,10 +356,16 @@ Erased pointer formatting in static execution produces `const@nonnull` or
 text operations. Non-null erased pointers, including erased C string pointers,
 remain execution-local.
 
-Static and interpreted execution support direct function-to-view adaptation and
-same-type callable-view copies. Widening an existing view requires a target
-borrow and is unsupported for live elements. Empty arrays require no element
-adaptation. An unresolved adaptation identity produces an execution diagnostic.
+Static and interpreted execution support closure owners, value and Write
+captures, and function and closure callable views. Closure copies preserve value
+snapshots and Write aliases. Callable-view copies retain their target; widening
+a view borrows its storage and observes later rebinding. Array adaptation applies
+these rules to each element. Closure calls select their object identity before
+evaluating arguments. Each capture use selects that object's current captured
+value or Write target.
+
+Closure owners and callable views remain execution-local and cannot be frozen as
+constant values. Their invocation results follow ordinary constant-value rules.
 
 Native operations and calls through callable values without an executable Carven
 body remain outside the static execution subset. Ordinary type, access, ownership

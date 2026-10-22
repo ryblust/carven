@@ -59,7 +59,7 @@ struct PendingFunctionContract final {
 };
 
 struct ConstructionCallableShape final {
-    std::optional<TypeID> owning_type;
+    std::optional<ConstructionTypeRef> owning_type;
     CallableExecutionKind execution;
     std::vector<ConstructionCallableParameter> parameters;
     ConstructionTypeRef result;
@@ -163,6 +163,15 @@ public:
     auto construction_type_copy(TypeTermID type) const noexcept -> ConstructionType override;
     auto reserve_generic_declaration() noexcept -> GenericDeclarationID;
 
+    auto append_generic_closure(
+        GenericDeclarationID parameter_scope,
+        ProgramOriginID origin,
+        ConstructionCallableContract signature
+    ) noexcept -> GenericDeclarationID;
+
+    auto generic_parameter_owner(GenericDeclarationID definition) const noexcept
+        -> GenericDeclarationID;
+
     auto define_generic_declaration(
         GenericDeclarationID id,
         GenericDeclarationDefinition definition
@@ -194,6 +203,9 @@ public:
     auto generic_declaration_contract_copy(GenericDeclarationID definition) const noexcept
         -> GenericDeclarationContract;
 
+    auto generic_parameter_contract_copy(GenericDeclarationID definition) const noexcept
+        -> GenericDeclarationContract;
+
     auto check_generic_bounds(
         GenericDeclarationID definition,
         std::span<const GenericArgument> arguments,
@@ -208,12 +220,12 @@ public:
 
     auto reserve_generic_body(GenericDeclarationID definition) noexcept -> BodyReservation;
 
-    auto set_generic_function_body(
+    auto set_generic_callable_body(
         GenericDeclarationID definition,
         StructuredBodyDraft body
     ) noexcept -> void;
 
-    auto has_generic_function_body(GenericDeclarationID definition) const noexcept -> bool;
+    auto has_generic_callable_body(GenericDeclarationID definition) const noexcept -> bool;
 
     auto require_type_formation(
         TypeFormationRequirement requirement,
@@ -228,10 +240,10 @@ public:
 
     auto validate_generic_type_formations() noexcept -> AnalysisResult<void>;
 
-    auto generic_function_body(GenericDeclarationID definition) const noexcept
+    auto generic_callable_body(GenericDeclarationID definition) const noexcept
         -> const StructuredBodyDraft&;
 
-    auto complete_generic_function_result(
+    auto complete_generic_callable_result(
         GenericDeclarationID definition,
         ConstructionTypeRef result
     ) noexcept -> void;
@@ -263,7 +275,7 @@ public:
         ProgramOriginID origin
     ) noexcept -> bool;
 
-    auto substitute_function_type(
+    auto substitute_callable_type(
         ConstructionTypeRef type,
         GenericDeclarationID definition,
         std::span<const CanonicalGenericArgument> arguments,
@@ -307,7 +319,7 @@ public:
         std::span<const CanonicalGenericArgument> environment
     ) noexcept -> AnalysisResult<CallableID>;
 
-    auto instantiate_generic_function(
+    auto instantiate_generic_callable(
         GenericDeclarationID definition,
         std::span<const CanonicalGenericArgument> arguments,
         ProgramOriginID origin
@@ -386,10 +398,10 @@ public:
     auto callable_signature_copy(CallableSignatureID id) const noexcept
         -> CallableSignature override;
 
-    auto callable_shape(ConstructionTypeRef type) const noexcept
+    auto callable_shape(ConstructionTypeRef type) noexcept
         -> std::optional<ConstructionCallableShape>;
 
-    auto callable_contract(ConstructionTypeRef type) const noexcept
+    auto callable_contract(ConstructionTypeRef type) noexcept
         -> std::optional<ConstructionCallableContract>;
 
     auto function_declaration_ids() const noexcept -> std::vector<FunctionID>;
@@ -500,11 +512,6 @@ private:
         Bodies,
     };
 
-    struct CallStopFacts final {
-        std::vector<CallStopEffect> callables;
-        std::map<GenericDeclarationID, CallStopEffect> definitions;
-    };
-
     ProgramDraft(
         SyntaxProgramParts parts,
         DiagnosticSink& sink,
@@ -527,7 +534,7 @@ private:
         const TypeResolution& resolved_types,
         const DeclarationStore& declarations,
         const GenericAnalysisSnapshot& generics
-    ) const noexcept -> CallStopFacts;
+    ) const noexcept -> std::vector<CallStopEffect>;
 
     auto verify_body(const SemIRBody& body, const DeclarationStore& declarations) const noexcept
         -> void;
@@ -599,9 +606,9 @@ private:
 
         std::vector<std::optional<GenericDeclarationDefinition>> generic_definitions;
         std::map<GenericDeclarationID, std::unique_ptr<StructuredBodyDraft>>
-            generic_function_bodies;
+            generic_callable_bodies;
 
-        struct GenericFunctionInstanceSlot final {
+        struct GenericCallableInstanceSlot final {
             GenericDeclarationID definition;
             CanonicalGenericEnvironment arguments;
             CallableID callable;
@@ -609,9 +616,9 @@ private:
             std::variant<Progress, AnalysisFailure> state;
         };
 
-        std::vector<GenericFunctionInstanceSlot> generic_function_instances;
+        std::vector<GenericCallableInstanceSlot> generic_callable_instances;
         std::map<std::pair<GenericDeclarationID, CanonicalGenericEnvironment>, std::size_t>
-            generic_function_instance_index;
+            generic_callable_instance_index;
         std::map<GenericTypeID, std::vector<ConstructionTypeRef>> generic_record_shapes;
         std::map<GenericTypeID, std::vector<std::vector<ConstructionTypeRef>>> generic_enum_shapes;
         std::vector<GenericTypeExpression> generic_types;

@@ -100,7 +100,9 @@ const TestSuite suite([] static noexcept {
             }
         }
         for (const auto entry : program.tests().entries()) {
-            expect(entry.value.body.has_value() != entry.value.is_const);
+            expect(
+                entry.value.body.has_value() != (entry.value.execution == TestExecution::Static)
+            );
             if (entry.value.body) {
                 expect(program.bodies().body(*entry.value.body).kind() == BodyKind::Test);
             }
@@ -169,7 +171,7 @@ const TestSuite suite([] static noexcept {
                         body.region(),
                         [&](const SemanticExpression& value) noexcept {
                             if (const auto* construction = std::get_if<SemClosure>(&value.value)) {
-                                expect(construction->callable == *closure);
+                                expect(std::get<CallableID>(construction->callable) == *closure);
                                 ++occurrences;
                             }
                         }
@@ -262,7 +264,7 @@ const TestSuite suite([] static noexcept {
             builder.define_test(
                 test,
                 TestDeclaration {
-                    .is_const = false,
+                    .execution = TestExecution::Synchronous,
                     .module_id = module_id,
                     .source =
                         {.label = builder.intern_spelling("publication topology"),

@@ -30,7 +30,8 @@ auto unsupported_vector_element_shape(const Shape& value) noexcept
         }
     } else if constexpr (std::same_as<Shape, GenericCppQueryType>) {
         return "Vector native elements require a named storage type";
-    } else if constexpr (std::same_as<Shape, ClosureTypeValue>
+    } else if constexpr (std::same_as<Shape, GenericClosureType>
+                         || std::same_as<Shape, ClosureTypeValue>
                          || std::same_as<Shape, FunctionTypeValue>
                          || std::same_as<Shape, CallableViewTypeValue>
                          || std::same_as<Shape, ConstructionCallableViewTypeValue>
@@ -229,7 +230,7 @@ auto ProgramDraft::validate_vector_elements() noexcept -> AnalysisResult<void> {
         definition.visit([&](const auto& source) noexcept {
             if constexpr (std::same_as<
                               std::remove_cvref_t<decltype(source)>,
-                              GenericFunctionDefinition>) {
+                              GenericCallableDefinition>) {
                 const auto check = [&](ConstructionTypeRef type) noexcept {
                     if (const auto* symbolic = std::get_if<GenericTypeID>(&type)) {
                         visit(*symbolic, false, source.contract.origin, 0uz);

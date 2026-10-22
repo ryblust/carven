@@ -3,6 +3,7 @@ module carven:backend.lowering.body;
 import :backend.lowering.context;
 import :backend.target.name;
 import :backend.target.stmt;
+import :semantic.semir.decl;
 import :semantic.semir.ids;
 import std;
 
@@ -10,7 +11,9 @@ struct CallableBodyExit final {
     CallableID callable_id;
 };
 
-struct TestBodyExit final {};
+struct TestBodyExit final {
+    TestExecution execution;
+};
 
 using BodyExit = std::variant<CallableBodyExit, TestBodyExit>;
 

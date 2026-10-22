@@ -55,6 +55,13 @@ auto BodyRealizer::emit_return(
         return;
     }
     const auto async_return = is_async() && std::holds_alternative<LoweringReturnResult>(result);
+    if (async_return && context.is_void(result_type())) {
+        if (value) {
+            destination.emit(discard_statement(std::move(*value)), true);
+        }
+        emit_stateless_completion(CompletionState::Success, destination);
+        return;
+    }
     if (std::holds_alternative<LoweringReturnResult>(result)) {
         if (const auto* callable = std::get_if<CallableBodyExit>(&inputs.exit)) {
             const auto& signature = context.semantic().callable_signatures().signature(
@@ -117,7 +124,12 @@ auto BodyRealizer::emit_return(
         if (!value) {
             invariant_violation("async return did not construct Completion");
         }
-        emit_completion(std::move(*value), LoweringExitKind::FunctionReturn, destination);
+        emit_completion(
+            std::move(*value),
+            LoweringExitKind::FunctionReturn,
+            CompletionEvaluation::BeforeCleanup,
+            destination
+        );
         return;
     }
     destination.terminate(
@@ -199,6 +211,7 @@ auto BodyRealizer::deliver_failure(
                 target_expressions(std::move(value))
             ),
             LoweringExitKind::Failure,
+            CompletionEvaluation::BeforeCleanup,
             destination
         );
         return;
@@ -471,6 +484,7 @@ auto BodyRealizer::result_expression(
                 emit_completion(
                     require_expression(std::move(*completion)),
                     LoweringExitKind::FunctionReturn,
+                    CompletionEvaluation::BeforeCleanup,
                     destination
                 );
             } else {

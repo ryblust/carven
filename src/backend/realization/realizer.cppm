@@ -34,6 +34,7 @@ private:
     static constexpr auto callable_scope = TargetScopeID {.ordinal = 0};
 
     auto is_async() const noexcept -> bool;
+    auto result_type() const noexcept -> TypeID;
     auto completion_type() noexcept -> TargetTypeID;
 
     auto select_await_producer(const SemanticExpression& source) noexcept
@@ -58,9 +59,16 @@ private:
     auto async_closing_locals(std::size_t retained) const noexcept -> std::vector<TargetLocalID>;
     auto leave_async_scopes(std::size_t retained) noexcept -> void;
 
+    enum class CompletionEvaluation { BeforeCleanup, AfterCleanup };
+    enum class CompletionState { Success, Stopped, Cancelled };
+
+    auto emit_stateless_completion(CompletionState state, LoweringStmtBuilder& destination) noexcept
+        -> void;
+
     auto emit_completion(
         TargetExpr completion,
         LoweringExitKind kind,
+        CompletionEvaluation evaluation,
         LoweringStmtBuilder& destination
     ) noexcept -> void;
 

@@ -295,9 +295,53 @@ auto AnalysisModelView::concrete_type(ConstructionTypeRef type) const noexcept
 }
 
 auto AnalysisModelView::callable_identity(ConstructionTypeRef type) const noexcept
-    -> std::optional<CallableID> {
+    -> std::optional<ConstructionCallableRef> {
+    if (std::holds_alternative<GenericClosureType>(shape(type))) {
+        return std::get<GenericTypeID>(type);
+    }
     const auto concrete = concrete_type(type);
-    return concrete ? ::callable_identity(program, *concrete) : std::nullopt;
+    if (concrete) {
+        if (const auto callable = ::callable_identity(program, *concrete)) {
+            return *callable;
+        }
+    }
+    return std::nullopt;
+}
+
+auto AnalysisModelView::callable_body(ConstructionCallableRef callable) const noexcept
+    -> std::optional<AnalysisBodyID> {
+    if (const auto* generic = std::get_if<GenericTypeID>(&callable)) {
+        return std::get<GenericClosureType>(generics.generic_type(*generic)).definition;
+    }
+    const auto body = program.declarations().body_for_callable(std::get<CallableID>(callable));
+    return body ? std::optional<AnalysisBodyID>(*body) : std::nullopt;
+}
+
+auto AnalysisModelView::callable_contract(ConstructionCallableRef callable) const noexcept
+    -> ConstructionCallableContract {
+    if (const auto* generic = std::get_if<GenericTypeID>(&callable)) {
+        const auto& closure = std::get<GenericClosureType>(generics.generic_type(*generic));
+        return std::get<GenericCallableDefinition>(generics.definition(closure.definition))
+            .signature;
+    }
+    const auto& signature = program.callable_signatures().signature(
+        program.declarations().callable(std::get<CallableID>(callable)).signature
+    );
+    auto parameters = std::vector<ConstructionCallableParameter>();
+    for (const auto& parameter : signature.parameters) {
+        parameters.push_back({
+            .stage = parameter.stage,
+            .access = parameter.access,
+            .type = parameter.type,
+        });
+    }
+    return {
+        .execution = signature.execution,
+        .parameters = std::move(parameters),
+        .result = signature.result,
+        .failures = signature.failures,
+        .policy = FailureContractPolicy::Declared,
+    };
 }
 
 auto AnalysisModelView::callable_adaptation(
@@ -333,12 +377,12 @@ auto AnalysisModelView::callable_adaptation(
     if (std::holds_alternative<FunctionTypeValue>(shape(from))) {
         return {.kind = CallableAdaptationKind::FunctionTarget, .callable = callable};
     }
-    const auto body = program.declarations().body_for_callable(*callable);
+    const auto body = callable_body(*callable);
     if (!body) {
         invariant_violation("closure adaptation requires a completed body");
     }
     return {
-        .kind = program.bodies().body(*body).inputs().captures.empty()
+        .kind = this->body(*body).inputs().captures.empty()
             ? CallableAdaptationKind::StatelessClosure
             : CallableAdaptationKind::BorrowObject,
         .callable = callable

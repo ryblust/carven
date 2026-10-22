@@ -1,4 +1,4 @@
-module carven:semantic.analysis.generics.functions.impl;
+module carven:semantic.analysis.generics.callables.impl;
 
 import :diagnostics.builder;
 import :semantic.analysis.construction.limits;
@@ -10,7 +10,7 @@ import :support.invariant;
 import :support.visit;
 import std;
 
-auto ProgramDraft::substitute_function_type(
+auto ProgramDraft::substitute_callable_type(
     ConstructionTypeRef type,
     GenericDeclarationID definition,
     std::span<const CanonicalGenericArgument> arguments,
@@ -19,12 +19,34 @@ auto ProgramDraft::substitute_function_type(
 ) noexcept -> AnalysisResult<ConstructionTypeRef> {
     if (!effects) {
         auto session = make_failure_instantiation(definition, generic_environment(arguments));
-        return substitute_function_type(type, definition, arguments, origin, &session);
+        return substitute_callable_type(type, definition, arguments, origin, &session);
     }
     if (const auto* generic = std::get_if<GenericTypeID>(&type)) {
         const auto shape = generic_type_copy(*generic);
+        if (const auto* closure = std::get_if<GenericClosureType>(&shape)) {
+            const auto environment = substitute_generic_environment(
+                closure->arguments,
+                definition,
+                generic_environment(arguments),
+                effects
+            );
+            const auto closed = normalize_generic_environment(environment, origin);
+            if (!closed) {
+                return intern_generic_type(
+                    GenericClosureType {
+                        .definition = closure->definition,
+                        .arguments = environment,
+                    }
+                );
+            }
+            auto callable = instantiate_generic_callable(closure->definition, *closed, origin);
+            if (!callable) {
+                return std::unexpected(callable.error());
+            }
+            return intern_type({.value = ClosureTypeValue {.callable = *callable}});
+        }
         const auto child = [&](ConstructionTypeRef type) noexcept {
-            return substitute_function_type(type, definition, arguments, origin, effects);
+            return substitute_callable_type(type, definition, arguments, origin, effects);
         };
         if (const auto* array = std::get_if<GenericArrayType>(&shape)) {
             auto element = child(array->element);
@@ -94,7 +116,7 @@ auto ProgramDraft::substitute_function_type(
         if (error) {
             return;
         }
-        auto changed = substitute_function_type(field, definition, arguments, origin, effects);
+        auto changed = substitute_callable_type(field, definition, arguments, origin, effects);
         if (!changed) {
             error = changed.error();
         } else {
@@ -134,19 +156,19 @@ auto ProgramDraft::substitute_function_type(
     return append_construction_type(std::move(source));
 }
 
-auto ProgramDraft::instantiate_generic_function(
+auto ProgramDraft::instantiate_generic_callable(
     GenericDeclarationID definition,
     std::span<const CanonicalGenericArgument> arguments,
     ProgramOriginID origin
 ) noexcept -> AnalysisResult<CallableID> {
     const auto declaration = generic_declaration_copy(definition);
-    const auto* function = std::get_if<GenericFunctionDefinition>(&declaration);
-    if (!function || !has_generic_function_body(definition)) {
+    const auto* function = std::get_if<GenericCallableDefinition>(&declaration);
+    if (!function || !has_generic_callable_body(definition)) {
         return std::unexpected(
             diagnostics().error(
                 DiagnosticBuilder(
                     DiagnosticCode::TypeGenericDefinition,
-                    "generic function instantiation requires its checked definition body"
+                    "generic callable instantiation requires its checked definition body"
                 )
                     .primary(source_span(origin))
                     .build()
@@ -155,26 +177,27 @@ auto ProgramDraft::instantiate_generic_function(
     }
     const auto key =
         std::pair(definition, CanonicalGenericEnvironment(arguments.begin(), arguments.end()));
-    if (const auto found = storage.generic_function_instance_index.find(key);
-        found != storage.generic_function_instance_index.end()) {
-        const auto& slot = storage.generic_function_instances[found->second];
+    if (const auto found = storage.generic_callable_instance_index.find(key);
+        found != storage.generic_callable_instance_index.end()) {
+        const auto& slot = storage.generic_callable_instances[found->second];
         if (const auto* failure = std::get_if<AnalysisFailure>(&slot.state)) {
             return std::unexpected(*failure);
         }
         return slot.callable;
     }
-    if (arguments.size() != function->contract.parameters.size()) {
+    const auto parameters = generic_parameter_contract_copy(definition);
+    if (arguments.size() != parameters.parameters.size()) {
         return std::unexpected(
             diagnostics().error(DiagnosticBuilder(
                                     DiagnosticCode::TypeGenericArguments,
-                                    "generic function argument count differs from its declaration"
+                                    "generic callable argument count differs from its declaration"
             )
                                     .primary(source_span(origin))
                                     .build())
         );
     }
     for (const auto [index, argument] : std::views::enumerate(arguments)) {
-        if (!generic_argument_matches(function->contract.parameter_kinds[index], argument)) {
+        if (!generic_argument_matches(parameters.parameter_kinds[index], argument)) {
             return std::unexpected(
                 diagnostics().error(DiagnosticBuilder(
                                         DiagnosticCode::TypeGenericArguments,
@@ -210,12 +233,12 @@ auto ProgramDraft::instantiate_generic_function(
             )
         );
     }
-    if (storage.generic_function_instances.size() >= maximum_generic_instances
+    if (storage.generic_callable_instances.size() >= maximum_generic_instances
         || storage.generic_instance_depth >= maximum_generic_depth) {
         return std::unexpected(
             diagnostics().error(DiagnosticBuilder(
                                     DiagnosticCode::TypeGenericLimits,
-                                    "generic function construction exceeded its instance budget"
+                                    "generic callable construction exceeded its instance budget"
             )
                                     .primary(source_span(origin))
                                     .build())
@@ -230,53 +253,63 @@ auto ProgramDraft::instantiate_generic_function(
     };
 
     const auto depth = Depth {.value = storage.generic_instance_depth};
-    auto effects = make_failure_instantiation(definition, formation_arguments);
+    const auto parameter_owner = generic_parameter_owner(definition);
+    auto effects = make_failure_instantiation(parameter_owner, formation_arguments);
     auto contract = function->signature;
     contract.failures = effects.substitute(contract.failures);
     for (auto& parameter : contract.parameters) {
         auto type =
-            substitute_function_type(parameter.type, definition, key.second, origin, &effects);
+            substitute_callable_type(parameter.type, parameter_owner, key.second, origin, &effects);
         if (!type) {
             return std::unexpected(type.error());
         }
         parameter.type = *type;
     }
     auto result =
-        substitute_function_type(contract.result, definition, key.second, origin, &effects);
+        substitute_callable_type(contract.result, parameter_owner, key.second, origin, &effects);
     if (!result) {
         return std::unexpected(result.error());
     }
     contract.result = *result;
     const auto callable = storage.declarations.append_body_callable(std::move(contract));
-    const auto function_id = storage.declarations.append_function_instance({
-        .module_id = function->contract.module_id,
-        .name = function->contract.name,
-        .origin = function->contract.origin,
-        .visibility = DeclarationVisibility::Module,
-        .callable = callable,
-        .entry_point = std::nullopt,
-        .cpp_export_origin = std::nullopt,
-        .is_const = function->is_const,
-    });
-    storage.functions_by_callable.emplace(callable, function_id);
-    const auto reservation = reserve_body(BodyKind::Function);
+    if (function->contract.name) {
+        const auto function_id = storage.declarations.append_function_instance({
+            .module_id = function->contract.module_id,
+            .name = *function->contract.name,
+            .origin = function->contract.origin,
+            .visibility = DeclarationVisibility::Module,
+            .callable = callable,
+            .entry_point = std::nullopt,
+            .cpp_export_origin = std::nullopt,
+            .is_const = function->is_const,
+        });
+        storage.functions_by_callable.emplace(callable, function_id);
+    }
+    const auto reservation =
+        reserve_body(function->contract.name ? BodyKind::Function : BodyKind::Closure);
     const auto body_id = reservation.id();
-    complete_callable(callable, FunctionBodyImplementation {.body = body_id});
-    const auto slot_index = storage.generic_function_instances.size();
-    storage.generic_function_instance_index.emplace(key, slot_index);
-    storage.generic_function_instances.push_back({
+    complete_callable(
+        callable,
+        function->contract.name
+            ? CallableImplementation {FunctionBodyImplementation {.body = body_id}}
+            : CallableImplementation {ClosureBodyImplementation {.body = body_id}}
+    );
+    const auto slot_index = storage.generic_callable_instances.size();
+    storage.generic_callable_instance_index.emplace(key, slot_index);
+    storage.generic_callable_instances.push_back({
         .definition = definition,
         .arguments = key.second,
         .callable = callable,
-        .state = ConstructionStorage::GenericFunctionInstanceSlot::Progress::Instantiating,
+        .state = ConstructionStorage::GenericCallableInstanceSlot::Progress::Instantiating,
     });
-    const auto& source = generic_function_body(definition);
+    const auto& source = generic_callable_body(definition);
     auto error = std::optional<AnalysisFailure>();
     const auto substitute = [&](ConstructionTypeRef& type) noexcept {
         if (error) {
             return;
         }
-        auto resolved = substitute_function_type(type, definition, key.second, origin, &effects);
+        auto resolved =
+            substitute_callable_type(type, parameter_owner, key.second, origin, &effects);
         if (!resolved) {
             error = resolved.error();
         } else {
@@ -293,7 +326,8 @@ auto ProgramDraft::instantiate_generic_function(
         if (!generic || error) {
             return;
         }
-        auto resolved = resolve_generic_type(*generic, definition, key.second, origin, &effects);
+        auto resolved =
+            resolve_generic_type(*generic, parameter_owner, key.second, origin, &effects);
         if (!resolved) {
             error = resolved.error();
             return;
@@ -312,7 +346,7 @@ auto ProgramDraft::instantiate_generic_function(
         }
         const auto selected = *generic;
         auto resolved =
-            resolve_generic_type(selected.owner, definition, key.second, origin, &effects);
+            resolve_generic_type(selected.owner, parameter_owner, key.second, origin, &effects);
         if (!resolved) {
             error = resolved.error();
             return;
@@ -345,9 +379,34 @@ auto ProgramDraft::instantiate_generic_function(
         [&](SemanticExpression& expression) noexcept {
             substitute_body_type(expression.type);
             expression.failures = BodyFailures(effects.substitute(expression.failures.reference()));
+            if (auto* closure = std::get_if<SemClosure>(&expression.value)) {
+                if (const auto* lexical = std::get_if<GenericTypeID>(&closure->callable);
+                    lexical && !error) {
+                    auto reference = ConstructionTypeRef(*lexical);
+                    substitute(reference);
+                    if (const auto* type = std::get_if<TypeID>(&reference)) {
+                        const auto shape = type_copy(*type);
+                        closure->callable = std::get<ClosureTypeValue>(shape.value).callable;
+                    } else if (const auto* type = std::get_if<GenericTypeID>(&reference)) {
+                        closure->callable = *type;
+                    }
+                }
+            }
             if (auto* call = std::get_if<SemCall>(&expression.value)) {
                 call->callee_failures =
                     BodyFailures(effects.substitute(call->callee_failures.reference()));
+                if (call->target) {
+                    if (const auto* lexical = std::get_if<GenericTypeID>(&*call->target)) {
+                        auto reference = ConstructionTypeRef(*lexical);
+                        substitute(reference);
+                        if (const auto* type = std::get_if<TypeID>(&reference)) {
+                            const auto shape = type_copy(*type);
+                            call->target = std::get<ClosureTypeValue>(shape.value).callable;
+                        } else if (const auto* type = std::get_if<GenericTypeID>(&reference)) {
+                            call->target = *type;
+                        }
+                    }
+                }
             }
             if (auto* call = std::get_if<SemGenericCall>(&expression.value)) {
                 call->callee_failures =
@@ -417,9 +476,9 @@ auto ProgramDraft::instantiate_generic_function(
         auto closed = true;
         for (const auto& argument : call->environment) {
             if (const auto* type = std::get_if<ConstructionTypeRef>(&argument)) {
-                auto result = substitute_function_type(
+                auto result = substitute_callable_type(
                     *type,
-                    definition,
+                    parameter_owner,
                     key.second,
                     expression.origin,
                     &effects
@@ -459,7 +518,7 @@ auto ProgramDraft::instantiate_generic_function(
         visit_semantic_nodes(*residual, calls);
     }
     if (error) {
-        storage.generic_function_instances[slot_index].state = *error;
+        storage.generic_callable_instances[slot_index].state = *error;
         return std::unexpected(*error);
     }
     add_body_draft({
@@ -475,7 +534,7 @@ auto ProgramDraft::instantiate_generic_function(
         .specialized = std::nullopt,
         .generic_definition = definition,
     });
-    storage.generic_function_instances[slot_index].state =
-        ConstructionStorage::GenericFunctionInstanceSlot::Progress::Complete;
+    storage.generic_callable_instances[slot_index].state =
+        ConstructionStorage::GenericCallableInstanceSlot::Progress::Complete;
     return callable;
 }

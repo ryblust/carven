@@ -333,18 +333,17 @@ auto OwnershipBodyAnalyzer::append_failures(
 }
 
 auto OwnershipBodyAnalyzer::call(
-    CallableID callable,
+    ConstructionCallableRef callable,
     const OwnershipRelationships& captures,
     std::optional<OwnershipPlace> capture_owner,
     std::span<const OwnershipCallArgument> arguments,
     OwnershipState state,
-    ProgramOriginID origin
+    ProgramOriginID origin,
+    std::optional<ConstructionFailureRef> actual_failures
 ) noexcept -> OwnershipFlow {
-    const auto target_id = program.declarations().body_for_callable(callable);
+    const auto target_id = analysis.model.callable_body(callable);
     if (!target_id.has_value()) {
-        const auto& contract = program.callable_signatures().signature(
-            program.declarations().callable(callable).signature
-        );
+        const auto contract = analysis.model.callable_contract(callable);
         return call_contract(contract, arguments, std::move(state), origin);
     }
     return call_body(
@@ -353,7 +352,8 @@ auto OwnershipBodyAnalyzer::call(
         std::move(capture_owner),
         arguments,
         std::move(state),
-        origin
+        origin,
+        actual_failures
     );
 }
 

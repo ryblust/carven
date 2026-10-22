@@ -30,6 +30,18 @@ import :support.unique_indirect;
 import :support.visit;
 import std;
 
+namespace {
+
+auto builtin_result_type(BuiltinFunction function) noexcept -> BuiltinType {
+    switch (function) {
+        case BuiltinFunction::Hash:  return BuiltinType::U64;
+        case BuiltinFunction::Equal: return BuiltinType::Bool;
+        default:                     return BuiltinType::Void;
+    }
+}
+
+} // namespace
+
 auto BodyElaborator::select_name(const ASTNameExpr& name, Span span) noexcept
     -> AnalysisTask<SelectedExpression> {
     const auto text = spelling(name.name_span);
@@ -335,11 +347,11 @@ auto BodyElaborator::builtin_operation(
     std::vector<SemCallArgument> operands
 ) noexcept -> SemanticExpression {
     const auto site = origin(selection.span);
-    const auto result_type = draft().builtin_type(BuiltinType::Void);
+    const auto result_type = draft().builtin_type(builtin_result_type(selection.function));
     const auto kind = selection.function;
     if (kind == BuiltinFunction::Hash) {
         return builder.make_expression(
-            draft().builtin_type(BuiltinType::U64),
+            result_type,
             builder.lifetime(),
             site,
             SemHash {.operand = UniqueIndirect(std::move(operands.front().expression))}
@@ -347,7 +359,7 @@ auto BodyElaborator::builtin_operation(
     }
     if (kind == BuiltinFunction::Equal) {
         return builder.make_expression(
-            draft().builtin_type(BuiltinType::Bool),
+            result_type,
             builder.lifetime(),
             site,
             SemBinary {
@@ -428,31 +440,30 @@ auto BodyElaborator::builtin_callable(
     std::span<const ConstructionCallableParameter> parameters,
     std::span<const Span> argument_spans
 ) noexcept -> AnalysisResult<BuiltExpression> {
-    auto environment = GenericEnvironment();
-    for (const auto& parameter : parameters) {
-        environment.emplace_back(parameter.type);
-    }
     const auto site = origin(selection.span);
-    const auto canonical = draft().normalize_generic_environment(environment, site);
-    if (!canonical) {
-        if (const auto failure = draft().diagnostics().failure()) {
-            return std::unexpected(*failure);
-        }
-        return std::unexpected(fail(
-            selection.span,
-            DiagnosticCode::TypeGenericDefinition,
-            "generic function closures require a parameterized callable representation"
-        ));
+    auto signature_parameters = std::vector(parameters.begin(), parameters.end());
+    for (auto& parameter : signature_parameters) {
+        parameter.type = unwrap_type_alias(draft(), parameter.type);
     }
-    auto closed_parameters = std::vector(parameters.begin(), parameters.end());
-    for (auto index = 0uz; index < closed_parameters.size(); ++index) {
-        closed_parameters[index].type = std::get<TypeID>((*canonical)[index]);
-    }
-    auto valid = validate_builtin(selection, closed_parameters, argument_spans);
+    auto valid = validate_builtin(selection, signature_parameters, argument_spans);
     if (!valid) {
         return std::unexpected(valid.error());
     }
-    auto reservation = draft().reserve_body(BodyKind::Closure);
+    const auto result_type = draft().builtin_type(builtin_result_type(selection.function));
+    const auto failures = draft().add_empty_failure_term();
+    auto signature = ConstructionCallableContract {
+        .execution = CallableExecutionKind::Synchronous,
+        .parameters = std::move(signature_parameters),
+        .result = result_type,
+        .failures = failures,
+        .policy = FailureContractPolicy::Declared,
+    };
+    auto definition = std::optional<GenericDeclarationID>();
+    if (generic_context) {
+        definition = draft().append_generic_closure(generic_context->definition, site, signature);
+    }
+    auto reservation = definition ? draft().reserve_generic_body(*definition)
+                                  : draft().reserve_body(BodyKind::Closure);
     const auto body_id = reservation.id();
     auto builder = BodyBuilder(std::move(reservation), draft());
     const auto lexical =
@@ -461,7 +472,7 @@ auto BodyElaborator::builtin_callable(
         builder.add_lifetime_region(lexical, LifetimeRegionKind::FullExpression, site);
     builder.set_lifetime(full);
     auto operands = std::vector<SemCallArgument>();
-    for (const auto& [index, parameter] : std::views::enumerate(closed_parameters)) {
+    for (const auto& [index, parameter] : std::views::enumerate(signature.parameters)) {
         const auto binding = builder.add_parameter(
             draft().intern_spelling(std::format("value{}", index)),
             parameter.type,
@@ -472,9 +483,7 @@ auto BodyElaborator::builtin_callable(
         auto input = builder.binding_expression(binding.binding).expression;
         operands.push_back({.access = parameter.access, .expression = std::move(input)});
     }
-    const auto failures = draft().add_empty_failure_term();
     auto operation = builtin_operation(builder, selection, std::move(operands));
-    const auto result_type = operation.type.construction();
     auto statements = std::vector<SemanticStatement>();
     const auto returns_value = !is_void_type(draft(), result_type);
     if (returns_value) {
@@ -512,18 +521,29 @@ auto BodyElaborator::builtin_callable(
 
         }
     );
-    const auto callable = draft().append_body_callable(
-        ConstructionCallableContract {
-            .execution = CallableExecutionKind::Synchronous,
-            .parameters = std::move(closed_parameters),
-            .result = result_type,
-            .failures = failures,
-            .policy = FailureContractPolicy::Declared
+    const auto callable = [&]() noexcept -> ConstructionCallableRef {
+        if (definition) {
+            draft().complete_generic_callable_result(*definition, result_type);
+            draft().set_generic_callable_body(*definition, std::move(body));
+            return draft().intern_generic_type(
+                GenericClosureType {
+                    .definition = *definition,
+                    .arguments = draft().generic_parameter_environment(*definition),
+                }
+            );
         }
-    );
-    draft().complete_callable(callable, ClosureBodyImplementation {.body = body_id});
-    draft().add_body_draft(std::move(body));
-    const auto type = draft().intern_type({.value = ClosureTypeValue {.callable = callable}});
+        const auto id = draft().append_body_callable(std::move(signature));
+        draft().complete_callable(id, ClosureBodyImplementation {.body = body_id});
+        draft().add_body_draft(std::move(body));
+        return id;
+    }();
+    const auto type = callable.visit([&](const auto id) noexcept -> ConstructionTypeRef {
+        if constexpr (std::same_as<std::remove_cvref_t<decltype(id)>, CallableID>) {
+            return draft().intern_type({.value = ClosureTypeValue {.callable = id}});
+        } else {
+            return id;
+        }
+    });
     return BuiltExpression {
         .storage = UniqueIndirect {BodyExpressionStorage {active_builder().make_expression(
             type,

@@ -290,7 +290,7 @@ auto NullabilityBodyAnalyzer::failures(
 auto NullabilityBodyAnalyzer::call_execution(GenericDeclarationID definition) const noexcept
     -> CallableExecutionKind {
     const auto& declaration = analysis.generics.definition(definition);
-    const auto* function = std::get_if<GenericFunctionDefinition>(&declaration);
+    const auto* function = std::get_if<GenericCallableDefinition>(&declaration);
     if (!function) {
         invariant_violation("generic call requires a function definition");
     }

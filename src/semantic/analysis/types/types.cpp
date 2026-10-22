@@ -390,7 +390,7 @@ auto resolve_named_value(
                 co_return std::unexpected(ready.error());
             }
         }
-        const auto contract = draft.generic_declaration_contract_copy(generic->definition);
+        const auto contract = draft.generic_parameter_contract_copy(generic->definition);
         if (named.arguments.size() != contract.parameter_kinds.size()) {
             co_return std::unexpected(fail(
                 draft,

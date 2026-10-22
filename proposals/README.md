@@ -17,7 +17,8 @@ mechanisms appear only where they explain that remaining scope.
 | Proposal | Decision owned here |
 | --- | --- |
 | [Generic extensions](generic-extensions.md) | Source-defined static capabilities, associated types, and finite boundary extensions |
-| [Sequence views and pipeline calls](sequence-pipelines.md) | Pipeline call composition, bounded lazy Read sequence APIs, traversal, and static execution |
+| [Sequence views, methods, and pipeline calls](sequence-pipelines.md) | Shared sequence method/free-function contracts, explicit-access pipes, lazy Read views, traversal, static execution, and joint delivery scope |
+| [Synchronous generators](generators.md) | Generator production, suspension, ownership, failure, early destruction, const execution, and shared one-shot method/free-function composition |
 | [Operator capabilities](operator-capabilities.md) | Mapping existing tokens to checked operations, canonical evidence, and operand/result contracts |
 | [Dynamic values](dynamic-values.md) | Erased holding forms, nominal conformance, and dispatch |
 | [Dynamic ownership](dynamic-ownership.md) | Unique/shared and native resource owners, allocator policy, construction in owned storage, and move-only Vector capabilities |

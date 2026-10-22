@@ -17,14 +17,14 @@ async fn collect() -> (void, i32) {
     return (await empty, await number);
 }
 
-async fn run_tuples() {
+async test "Async tuples: unit results and owned operations" {
     let (empty, number) = await collect();
-    assert(empty == ());
-    assert(number == 42);
+    check(empty == ());
+    check(number == 42);
     let pending = successful_number();
     let product = (true, &&pending, ());
     let forwarded = forward(&&product);
-    assert(forwarded.0);
+    check(forwarded.0);
     let _ = forwarded.2;
-    assert(await (&&forwarded).1 == 42);
+    check(await (&&forwarded).1 == 42);
 }

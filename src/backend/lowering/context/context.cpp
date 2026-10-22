@@ -240,7 +240,8 @@ auto ModuleLowering::callable_name(CallableID id) noexcept -> TargetName {
 
 auto ModuleLowering::closure_type_name(CallableID id, TypeNameScope scope) noexcept -> TargetName {
     const auto provider = names().closure_owner(id);
-    if (provider == module_id) {
+    if (provider == module_id
+        || target_definition_placement(semantic(), id) == TargetDefinitionPlacement::Use) {
         require_callable(id);
     }
     artifact_lowering.require_interface(provider);

@@ -1,7 +1,3 @@
-#include <carven/runtime/execution/execution.hpp>
-
-#include <carven/api/tests/interop/async/ownership.hpp>
-
 #include <cstdio>
 #include <cstdlib>
 #include <string_view>
@@ -11,7 +7,6 @@ auto run_net_cases() noexcept -> void;
 auto run_timer_cases() noexcept -> void;
 auto run_cleanup_cases() noexcept -> void;
 auto run_stop_case() noexcept -> int;
-auto run_async_allocation_cases() noexcept -> void;
 
 #if defined(__unix__) || defined(__APPLE__)
 auto run_pipe_cases() noexcept -> void;
@@ -36,14 +31,6 @@ auto main(int argc, char** argv) noexcept -> int {
         run_cleanup_cases();
     } else if (operation == "native-stop") {
         return run_stop_case();
-    } else if (operation == "ownership") {
-        auto result = carven::runtime::execution::drive_root(
-            carven::api::tests::interop::async::ownership::run_ownership()
-        );
-        if (result.success_if() == nullptr) {
-            return EXIT_FAILURE;
-        }
-        run_async_allocation_cases();
 #if defined(__unix__) || defined(__APPLE__)
     } else if (operation == "pipe") {
         run_pipe_cases();

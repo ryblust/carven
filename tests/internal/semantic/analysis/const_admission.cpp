@@ -32,7 +32,7 @@ const {
 )");
             const auto provider = sources.append_virtual("provider.cv", R"(
 import <carven/std/channel/native.hpp> using carven::standard::channel;
-export const fn close_native(handle: channel::Handle) { channel::close(handle); }
+const fn close_native(handle: channel::Handle) { channel::close(handle); }
 )");
             require(application.has_value() && provider.has_value());
             const auto inputs = std::array {
@@ -498,7 +498,6 @@ const fn parallelism() -> i32 => process::parallelism() as i32;
             "return allowed(ordinary(), if true { throw Failure {}; } else { throw Failure {}; }); }",
             "import(cpp) fn native(); fn ordinary() { native(); } const fn guaranteed() { ordinary(); }",
             "const fn guaranteed(action: fn() -> i32) -> i32 => action();",
-            "const fn guaranteed() -> i32 { let action = []() => 1; return action(); }",
         });
         each(rejected, std::identity {}, [&](const auto& source) noexcept {
             const auto diagnostics = analyze_test_errors(std::string(source));

@@ -25,89 +25,9 @@ auto entry_count(Entries entries) noexcept -> std::size_t {
     return result;
 }
 
-auto nominal_origin(const SemIRProgram& semantic, NominalDeclarationRef nominal) noexcept
-    -> ProgramOriginID {
-    return nominal.visit(
-        Overloaded {
-            [&](StructID id) noexcept { return semantic.declarations().structure(id).origin; },
-            [&](EnumID id) noexcept { return semantic.declarations().enumeration(id).origin; },
-        }
-    );
-}
-
-auto nominal_name(const SemIRProgram& semantic, NominalDeclarationRef nominal) noexcept
-    -> ProgramSpellingID {
-    return nominal.visit(
-        Overloaded {
-            [&](StructID id) noexcept { return semantic.declarations().structure(id).name; },
-            [&](EnumID id) noexcept { return semantic.declarations().enumeration(id).name; },
-        }
-    );
-}
-
 auto module_path(const SemIRProgram& semantic, ModuleID id) noexcept -> std::string_view {
     const auto& declaration = semantic.declarations().module_decl(id);
     return semantic.provenance().module_record(declaration.provenance_module).path.value();
-}
-
-auto nominal_key(const SemIRProgram& semantic, NominalDeclarationRef nominal) noexcept
-    -> std::tuple<std::string, std::uint32_t, std::string, std::size_t> {
-    const auto owner = target_owner_module(semantic, target_declaration_ref(nominal));
-    return {
-        std::string(module_path(semantic, owner)),
-        semantic.provenance().location(nominal_origin(semantic, nominal)).line,
-        std::string(semantic.provenance().spelling(nominal_name(semantic, nominal))),
-        nominal.visit([]<typename ID>(ID id) static noexcept -> std::size_t {
-            static_assert(std::same_as<ID, StructID> || std::same_as<ID, EnumID>);
-            return id.index();
-        }),
-    };
-}
-
-auto target_nominal_order(const SemIRProgram& semantic) noexcept
-    -> std::vector<NominalDeclarationRef> {
-    auto source_order = std::vector<NominalDeclarationRef>();
-    source_order.reserve(
-        entry_count(semantic.declarations().structures())
-        + entry_count(semantic.declarations().enumerations())
-    );
-    for (const auto structure : semantic.declarations().structures()) {
-        source_order.push_back(NominalDeclarationRef {structure.id});
-    }
-    for (const auto enumeration : semantic.declarations().enumerations()) {
-        source_order.push_back(NominalDeclarationRef {enumeration.id});
-    }
-    std::ranges::sort(source_order, [&](const auto left, const auto right) noexcept {
-        return nominal_key(semantic, left) < nominal_key(semantic, right);
-    });
-
-    auto visited = std::flat_set<NominalDeclarationRef>();
-    auto active = std::flat_set<NominalDeclarationRef>();
-    auto result = std::vector<NominalDeclarationRef>();
-    const auto append = [&](this const auto& self, NominalDeclarationRef nominal) noexcept -> void {
-        if (visited.contains(nominal)) {
-            return;
-        }
-        if (!active.insert(nominal).second) {
-            // Storage cycles were rejected by analysis. Recursive callable
-            // type formation remains delegated to C++.
-            return;
-        }
-        auto dependencies = target_nominal_dependencies(semantic, nominal);
-        std::ranges::sort(dependencies, [&](const auto left, const auto right) noexcept {
-            return nominal_key(semantic, left) < nominal_key(semantic, right);
-        });
-        for (const auto dependency : dependencies) {
-            self(dependency);
-        }
-        active.erase(nominal);
-        visited.insert(nominal);
-        result.push_back(nominal);
-    };
-    for (const auto nominal : source_order) {
-        append(nominal);
-    }
-    return result;
 }
 
 auto interface_nominal(const SemIRProgram& semantic, NominalDeclarationRef nominal) noexcept
@@ -147,13 +67,21 @@ auto plan_artifacts(
     const TargetPlanningRequest& request,
     const std::flat_set<ModuleID>& library_modules,
     const TargetClosureCatalog& closures,
+    std::span<const TargetTypeDefinitionRef> type_order,
     const TargetNamePlan& names,
     TargetPlanIdentity identity
 ) noexcept -> TargetPlanTable<TargetArtifactPlan, TargetArtifactID> {
     const auto& declarations = semantic.declarations();
     const auto provenance = semantic.provenance();
     const auto module_count = entry_count(declarations.modules());
-    const auto ordered_nominals = target_nominal_order(semantic);
+    auto ordered_nominals = std::vector<NominalDeclarationRef>();
+    for (const auto definition : type_order) {
+        definition.visit([&](auto id) noexcept {
+            if constexpr (!std::same_as<decltype(id), CallableID>) {
+                ordered_nominals.push_back(id);
+            }
+        });
+    }
     auto providers = std::vector<FunctionID>();
     auto provider_modules = std::flat_set<ModuleID>();
     for (const auto function : declarations.functions()) {
@@ -181,7 +109,7 @@ auto plan_artifacts(
         module_by_index[module_record.id.index()] = module_record.id;
         schedules[module_record.id.index()] = TargetModuleSchedule {
             .module_id = module_record.id,
-            .source_nominal_order = {},
+            .private_nominals = {},
             .closure_definitions = {},
             .interface_callables = {},
             .emitted_tests = {},
@@ -222,7 +150,7 @@ auto plan_artifacts(
                     [](ModuleConstantID) static noexcept {},
                     [&](TestID id) noexcept {
                         if (test_mode != TestGenerationMode::None
-                            && !semantic.tests().test(id).is_const) {
+                            && semantic.tests().test(id).execution != TestExecution::Static) {
                             schedules[module_record.id.index()]->emitted_tests.push_back(id);
                         }
                     },
@@ -249,14 +177,20 @@ auto plan_artifacts(
     for (;;) {
         auto added = false;
         for (const auto& requirements : references.surface_requirements) {
-            for (const auto& [nominal, completeness] : requirements) {
-                if (completeness == TargetTypeCompleteness::Declaration
-                    || !interface_nominals.insert(nominal).second) {
+            for (const auto& [definition, completeness] : requirements) {
+                if (completeness == TargetTypeCompleteness::Declaration) {
                     continue;
                 }
-                const auto owner = target_owner_module(semantic, target_declaration_ref(nominal));
-                surface_declarations[owner.index()].push_back(target_declaration_ref(nominal));
-                added = true;
+                definition.visit([&](auto id) noexcept {
+                    if constexpr (std::same_as<decltype(id), CallableID>) {
+                        interface_callables.insert(id);
+                    } else if (interface_nominals.insert(NominalDeclarationRef {id}).second) {
+                        const auto declaration = DeclarationRef {id};
+                        const auto owner = target_owner_module(semantic, declaration);
+                        surface_declarations[owner.index()].push_back(declaration);
+                        added = true;
+                    }
+                });
             }
         }
         for (const auto& callables : references.surface_callables) {
@@ -288,7 +222,7 @@ auto plan_artifacts(
             continue;
         }
         const auto owner = target_owner_module(semantic, target_declaration_ref(nominal));
-        schedules[owner.index()]->source_nominal_order.push_back(nominal);
+        schedules[owner.index()]->private_nominals.push_back(nominal);
     }
     auto exposed_closures = std::flat_set<CallableID>();
     for (const auto callable : interface_callables) {
@@ -326,11 +260,11 @@ auto plan_artifacts(
                 complete_dependencies[index].insert(owner);
             }
         }
-        for (const auto& [nominal, completeness] : references.surface_requirements[index]) {
+        for (const auto& [definition, completeness] : references.surface_requirements[index]) {
             if (completeness == TargetTypeCompleteness::Declaration) {
                 continue;
             }
-            const auto dependency = target_owner_module(semantic, target_declaration_ref(nominal));
+            const auto dependency = target_type_owner(semantic, definition);
             if (dependency != module_id) {
                 complete_dependencies[index].insert(dependency);
             }
@@ -342,7 +276,10 @@ auto plan_artifacts(
         // Even a private provider with only primitive signature types needs an
         // interface component for its generated support header.
         if (!surface_declarations[module_id.index()].empty()
-            || provider_modules.contains(module_id)) {
+            || provider_modules.contains(module_id)
+            || std::ranges::any_of(exposed_closures, [&](CallableID callable) noexcept {
+                   return closures.owner(callable) == module_id;
+               })) {
             surface_modules.push_back(module_id);
         }
     }
@@ -394,15 +331,24 @@ auto plan_artifacts(
         }
     }
 
-    auto component_nominals =
-        std::vector<std::vector<NominalDeclarationRef>>(component_members.size());
-    for (const auto nominal : ordered_nominals) {
-        if (!interface_nominals.contains(nominal)) {
+    const auto exposed_definition = [&](TargetTypeDefinitionRef definition) noexcept {
+        return definition.visit([&](auto id) noexcept {
+            if constexpr (std::same_as<decltype(id), CallableID>) {
+                return exposed_closures.contains(id);
+            } else {
+                return interface_nominals.contains(NominalDeclarationRef {id});
+            }
+        });
+    };
+    auto component_definitions =
+        std::vector<std::vector<TargetTypeDefinitionRef>>(component_members.size());
+    for (const auto definition : type_order) {
+        if (!exposed_definition(definition)) {
             continue;
         }
-        const auto owner = target_owner_module(semantic, target_declaration_ref(nominal));
+        const auto owner = target_type_owner(semantic, definition);
         if (const auto component = module_component[owner.index()]) {
-            component_nominals[*component].push_back(nominal);
+            component_definitions[*component].push_back(definition);
         }
     }
 
@@ -424,16 +370,16 @@ auto plan_artifacts(
         };
         include_predecessors(component_index);
 
-        auto forwards = std::flat_set<NominalDeclarationRef>();
-        for (const auto nominal : component_nominals[component_index]) {
-            forwards.insert(nominal);
+        auto forwards = std::flat_set<TargetTypeDefinitionRef>();
+        for (const auto definition : component_definitions[component_index]) {
+            forwards.insert(definition);
         }
         for (const auto member : component_members[component_index]) {
-            for (const auto& [nominal, completeness] :
+            for (const auto& [definition, completeness] :
                  references.surface_requirements[member.index()]) {
-                const auto owner = target_owner_module(semantic, target_declaration_ref(nominal));
+                const auto owner = target_type_owner(semantic, definition);
                 const auto owner_component = module_component[owner.index()];
-                if (interface_nominals.contains(nominal)
+                if (exposed_definition(definition)
                     && owner_component.has_value()
                     && (*owner_component == component_index
                         || included_components[*owner_component])) {
@@ -442,39 +388,28 @@ auto plan_artifacts(
                 if (completeness != TargetTypeCompleteness::Declaration) {
                     invariant_violation("complete interface dependency was not included");
                 }
-                forwards.insert(nominal);
+                forwards.insert(definition);
             }
         }
-        auto ordered_forwards =
-            std::vector<NominalDeclarationRef>(forwards.begin(), forwards.end());
-        std::ranges::sort(ordered_forwards, [&](const auto left, const auto right) noexcept {
-            return nominal_key(semantic, left) < nominal_key(semantic, right);
-        });
         auto forward_declarations = std::vector<TargetInterfaceForwardDeclaration>();
-        for (const auto nominal : ordered_forwards) {
-            forward_declarations.push_back({
-                .module_id = target_owner_module(semantic, target_declaration_ref(nominal)),
-                .declaration = nominal,
-            });
+        for (const auto definition : type_order) {
+            if (forwards.contains(definition)) {
+                forward_declarations.push_back({
+                    .module_id = target_type_owner(semantic, definition),
+                    .declaration = definition,
+                });
+            }
         }
 
         auto interface_declarations = std::vector<TargetInterfaceDeclaration>();
-        for (const auto nominal : component_nominals[component_index]) {
-            const auto owner = target_owner_module(semantic, target_declaration_ref(nominal));
+        for (const auto definition : component_definitions[component_index]) {
             interface_declarations.push_back({
-                .module_id = owner,
-                .declaration = nominal.visit(
+                .module_id = target_type_owner(semantic, definition),
+                .declaration = definition.visit(
                     [](auto id) static noexcept
                         -> std::variant<FunctionID, StructID, EnumID, CallableID> { return id; }
                 ),
             });
-        }
-        for (const auto callable_id : closures.definition_order) {
-            const auto owner = closures.owner(callable_id);
-            if (exposed_closures.contains(callable_id)
-                && std::ranges::contains(component_members[component_index], owner)) {
-                interface_declarations.push_back({.module_id = owner, .declaration = callable_id});
-            }
         }
         for (const auto member : component_members[component_index]) {
             for (const auto item : declarations.module_decl(member).items) {
@@ -518,10 +453,15 @@ auto plan_artifacts(
         const auto& namespace_name =
             names.module_names(component_members[component_index].front()).module_namespace_name;
         auto host_nominals = std::vector<NominalDeclarationRef>();
-        for (const auto nominal : component_nominals[component_index]) {
-            if (references.host_nominals.contains(nominal)) {
-                host_nominals.push_back(nominal);
-            }
+        for (const auto definition : component_definitions[component_index]) {
+            definition.visit([&](auto id) noexcept {
+                if constexpr (!std::same_as<decltype(id), CallableID>) {
+                    const auto nominal = NominalDeclarationRef {id};
+                    if (references.host_nominals.contains(nominal)) {
+                        host_nominals.push_back(nominal);
+                    }
+                }
+            });
         }
         auto native_providers = std::vector<FunctionID>();
         for (const auto provider : providers) {

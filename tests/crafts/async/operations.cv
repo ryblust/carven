@@ -8,17 +8,17 @@ const async fn check_channel() {
     let sending = channel.send(&&bytes);
     match channel.try_receive() {
         .Pending => {},
-        _ => assert(false),
+        _ => fail("send must remain cold"),
     }
-    assert(await sending);
+    require(await sending);
     match await channel.receive() {
-        .Data(data) => assert(data.length() == 3 && data[1] == 255),
-        .End => assert(false),
+        .Data(data) => check(data.length() == 3 && data[1] == 255),
+        .End => check(false),
     }
-    assert(channel.try_send(&&[]));
+    check(channel.try_send(&&[]));
     match channel.try_receive() {
-        .Data(data) => assert(data.is_empty()),
-        _ => assert(false),
+        .Data(data) => check(data.is_empty()),
+        _ => check(false),
     }
     async let waiting = channel.receive();
     await yield_once();
@@ -26,20 +26,27 @@ const async fn check_channel() {
     channel.close();
     match channel.try_receive() {
         .End => {},
-        _ => assert(false),
+        _ => check(false),
     }
     match await channel.receive() {
         .End => {},
-        .Data(_) => assert(false),
+        .Data(_) => check(false),
     }
 }
 
-const {
+const test "Byte channel: static send, receive, and cancellation" {
     await check_channel();
 }
 
-async fn main() throw IOError {
+async test "Byte channel: native send, receive, and cancellation" {
     await check_channel();
+}
+
+async test "Async output: native stdout write completes" {
     let output = Vector<u8>::from_slice("native async: stdout, channel, cancellation\n".bytes);
-    await write_stdout_async(&&output)?;
+    try {
+        await write_stdout_async(&&output)?;
+    } catch {
+        IOError(_) => fail("unexpected stdout failure"),
+    }
 }

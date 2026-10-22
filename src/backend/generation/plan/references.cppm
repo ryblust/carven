@@ -6,6 +6,8 @@ import :semantic.semir.program;
 import :semantic.visibility;
 import std;
 
+using TargetTypeDefinitionRef = std::variant<StructID, EnumID, CallableID>;
+
 enum class TargetTypeCompleteness {
     Declaration,
     // The carrier layout can precede the element; its operations cannot.
@@ -17,7 +19,8 @@ enum class TargetTypeCompleteness {
 // dependencies in their checked bodies belong to their owner's target surface.
 // Private source declarations retain their original source visibility.
 struct TargetReferenceFacts final {
-    std::vector<std::flat_map<NominalDeclarationRef, TargetTypeCompleteness>> surface_requirements;
+    std::vector<std::flat_map<TargetTypeDefinitionRef, TargetTypeCompleteness>>
+        surface_requirements;
     std::vector<std::flat_set<CallableID>> surface_callables;
     std::flat_set<NominalDeclarationRef> host_nominals;
 };
@@ -36,7 +39,10 @@ auto collect_target_references(
     std::span<const FunctionID> providers
 ) noexcept -> TargetReferenceFacts;
 
-auto target_nominal_dependencies(
+auto target_type_owner(const SemIRProgram& semantic, TargetTypeDefinitionRef definition) noexcept
+    -> ModuleID;
+
+auto target_type_definition_order(
     const SemIRProgram& semantic,
-    NominalDeclarationRef nominal
-) noexcept -> std::vector<NominalDeclarationRef>;
+    std::span<const CallableID> closures
+) noexcept -> std::vector<TargetTypeDefinitionRef>;

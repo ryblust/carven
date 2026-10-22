@@ -9,6 +9,7 @@ import :semantic.semir.children;
 import :semantic.semir.completion;
 import :semantic.semir.constant;
 import :semantic.semir.decl;
+import :semantic.semir.generic;
 import :semantic.semir.program;
 import :semantic.semir.structured;
 import :semantic.semir.table;
@@ -224,9 +225,12 @@ auto BodyBuilder::remember_initializer(
 }
 
 auto BodyBuilder::known_callable(const SemanticExpression& expression) const noexcept
-    -> std::optional<CallableID> {
+    -> std::optional<ConstructionCallableRef> {
     if (const auto* callable = std::get_if<SemCallable>(&expression.value)) {
         return callable->callable;
+    }
+    if (const auto* closure = std::get_if<SemClosure>(&expression.value)) {
+        return closure->callable;
     }
     if (const auto* adaptation = std::get_if<SemBorrowCallable>(&expression.value)) {
         return known_callable(*adaptation->source);
@@ -235,6 +239,18 @@ auto BodyBuilder::known_callable(const SemanticExpression& expression) const noe
         const auto found = local_callables.find(binding->binding);
         if (found != local_callables.end()) {
             return found->second;
+        }
+    }
+    const auto type = unwrap_type_alias(draft, expression.type.construction());
+    if (const auto* concrete = std::get_if<TypeID>(&type)) {
+        const auto shape = draft.type_copy(*concrete);
+        if (const auto* closure = std::get_if<ClosureTypeValue>(&shape.value)) {
+            return closure->callable;
+        }
+    } else if (const auto* generic = std::get_if<GenericTypeID>(&type)) {
+        const auto shape = draft.generic_type_copy(*generic);
+        if (std::holds_alternative<GenericClosureType>(shape)) {
+            return *generic;
         }
     }
     return std::nullopt;

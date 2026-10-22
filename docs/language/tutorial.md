@@ -541,7 +541,25 @@ the source. Run ordinary tests in the interpreter's supported subset:
 carven interpret --tests tests.cv
 ```
 
-This command selects runtime tests and leaves the program entry unexecuted.
+Use `async test` when a test needs to await an operation or start a child:
+
+```carven
+import std::async using yield_once;
+
+async fn next(value: i32) -> i32 {
+    await yield_once();
+    return value + 1;
+}
+
+async test "awaited result" {
+    check(await next(41) == 42);
+}
+```
+
+The runner waits for each test and its children before starting the next test.
+`check`, `require`, and `fail` keep the active test context across await.
+
+`interpret --tests` selects runtime tests and leaves the program entry unexecuted.
 `compile --tests` generates the corresponding C++ test sources. `const` blocks
 and `const test` execute during analysis in all these modes, and with `check`.
 
@@ -570,8 +588,9 @@ module scope have no guaranteed order. Their locals and control flow follow the 
 supported execution rules as `const fn` calls. Add a string before `{` when a block
 needs a label in diagnostics: `const "prepare table" { ... }`. Labels need not be unique.
 
-Use `const test` to execute a test during compilation. Both `test` and
-`const test` may omit the name; an anonymous failure reports its source location.
+Use `const test` to execute a test during compilation. Static tests also admit
+await and lexical children; `const async test` selects the same static execution.
+Every test form may omit the name; an anonymous failure reports its source location.
 Explicit names remain unique within a module. It shares the ordinary
 `check`, `require`, `fail`, and print operations, within the supported compile-time
 execution subset:
@@ -597,7 +616,9 @@ The first test runs during Carven compilation and produces no runtime test
 function. A failed check makes compilation fail. The ordinary test checks the
 generated C++ when run natively, or the runtime semantics when run with
 `interpret --tests`. A `const fn` definition checks that its reachable operations
-and callees support compile-time execution; those callees must also be `const fn`.
+support compile-time execution. Named source callees must be `const fn`; known
+lambda signatures and bodies are checked recursively. Unknown callable targets
+fail admission.
 Each invocation still checks execution limits and dynamic errors. The same
 function has the same arithmetic and output behavior at runtime.
 Use `carven check source.cv` to evaluate the `const` blocks, initializers, and

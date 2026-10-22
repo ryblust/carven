@@ -244,8 +244,9 @@ local case_specs = {
 if not is_plat("windows", "mingw") then
     case_specs["commands/native_async"] = {
         case_dir = "../crafts/async", inputs = {"operations.cv"},
-        args = {"interpret", "operations.cv"},
+        args = {"interpret", "--tests", "operations.cv"},
         stdout_contains = {"native async: stdout, channel, cancellation\n"},
+        stderr_contains = {"tests: 2 passed; 0 failed"},
     }
 end
 
@@ -279,6 +280,8 @@ end
 local interpretation = {
     fixtures = {
         ["../../../language/functions/interpreted_runtime.cv"] = "shared.cv",
+        ["../../../language/functions/lambdas.cv"] = "lambdas.cv",
+        ["../../../language/functions/generic_closures.cv"] = "generic_closures.cv",
         ["../../../language/types/pointer_graph.cv"] = "local_graph.cv",
         ["../../../language/types/pointer_delivery.cv"] = "pointer_delivery.cv",
         ["../../../language/text/backing_identity.cv"] = "text_backing.cv",
@@ -291,7 +294,6 @@ local interpretation = {
     inputs = {
         "input.cv", "implicit_recovery.cv", "wrapping.cv",
         "declarations.cv", "main.cv", "floating.cv", "typed_failures.cv",
-        "async_waiting_entry.cv", "async_composition_entry.cv", "async_scheduling_entry.cv",
         "failure.cv", "limit.cv", "static_only.cv", "static_failure.cv",
     },
     cases = {
@@ -331,18 +333,22 @@ local interpretation = {
             args = {"interpret", "--max-steps", "-1", "input.cv"}, exit_code = 1,
             stderr_contains = {"nonnegative integer"},
         },
-        ["async-waiting"] = {args = {"interpret", "async_waiting_entry.cv", "async_waiting.cv"}},
-        ["async-composition"] = {args = {"interpret", "async_composition_entry.cv", "async_composition.cv"}},
+        ["async-waiting"] = {args = {"interpret", "--tests", "async_waiting.cv"},
+            stderr_contains = {"tests: 1 passed; 0 failed"}},
+        ["async-composition"] = {args = {"interpret", "--tests", "async_composition.cv"},
+            stderr_contains = {"tests: 1 passed; 0 failed"}},
         ["shared-runtime"] = {args = {"interpret", "--tests", "shared.cv"}, stdout_contains = {"shared runtime test\n"},
             stderr_contains = {"tests: 1 passed; 0 failed"}},
+        ["closures"] = {args = {"interpret", "--tests", "lambdas.cv", "generic_closures.cv"},
+            stderr_contains = {"tests: 17 passed; 0 failed"}},
         ["pointer-graph"] = {args = {"interpret", "--tests", "local_graph.cv"},
             stderr_contains = {"tests: 1 passed; 0 failed"}},
         ["pointer-delivery"] = {args = {"interpret", "--tests", "pointer_delivery.cv"},
             stderr_contains = {"tests: 1 passed; 0 failed"}},
         ["text-backing"] = {args = {"interpret", "--tests", "text_backing.cv"},
             stderr_contains = {"tests: 1 passed; 0 failed"}},
-        ["async-scheduling"] = {args = {"interpret", "async_scheduling_entry.cv", "async_scheduling.cv"},
-            stderr_contains = {"CV-LINT-UNUSED-LOCAL", "unused local binding"}},
+        ["async-scheduling"] = {args = {"interpret", "--tests", "async_scheduling.cv"},
+            stderr_contains = {"tests: 1 passed; 0 failed"}},
         ["typed-failures"] = {
             args = {"interpret", "typed_failures.cv"},
             stdout = "typed_failures.txt",
@@ -534,6 +540,22 @@ case_specs["commands/test_report"] = {
         "input.cv:57:5: error: check failed", "input.cv:56:1", "second anonymous failure",
         "input.cv:61:5: error: check failed", "name: \"\"", "explicit empty label", "tests: 1 passed; 6 failed",
     },
+}
+
+case_specs["commands/async_tests"] = {
+    case_dir = "commands/interpretation",
+    fixtures = {["../../../language/testing/async_control.cv"] = "async_control.cv"},
+    args = {"interpret", "--tests", "async_control.cv"}, exit_code = 1,
+    stdout_ordered = {"async after check", "async child started 1", "async child started 2",
+        "async child started 3", "async child started 4", "async child started 5", "async child started 6",
+        "async child cancellation requested true", "async child closed 6",
+        "async child started 7", "async later passed", "sync after async passed"},
+    stdout_not_contains = {"unreachable", "async child closed 1", "async child closed 2",
+        "async child closed 3", "async child closed 4", "async child closed 5", "async child closed 7"},
+    stderr_contains = {"async check continued", "async direct require stopped", "async direct fail stopped",
+        "async helper require stopped", "async helper fail stopped", "cancellation escaped the test",
+        "async require helper stopped", "async fail helper stopped",
+        "generic async callback stopped", "async child stopped its root", "tests: 2 passed; 12 failed"},
 }
 
 case_specs["commands/anonymous_tests"] = {

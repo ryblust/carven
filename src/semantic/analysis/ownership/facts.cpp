@@ -76,12 +76,13 @@ auto observe_relation_demand(
                     !is_scalar_write_type(model, expression.type.construction());
             }
         } else if constexpr (std::same_as<Operation, SemCall>) {
-            auto target = operation.target;
+            auto target = operation.target
+                ? std::optional<ConstructionCallableRef>(*operation.target)
+                : std::nullopt;
             if (!target) {
                 target = model.callable_identity(operation.callee->type.construction());
             }
-            const auto external =
-                !target || !program.declarations().body_for_callable(*target).has_value();
+            const auto external = !target || !model.callable_body(*target).has_value();
             demand.observes_relations |= !target
                 || (external && !is_scalar_write_type(model, expression.type.construction()));
             for (const auto& argument : operation.arguments) {

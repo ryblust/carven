@@ -58,7 +58,7 @@ auto DeclResolver::ensure_available(
             draft.generic_declaration_copy(definition_id)
                 .visit(
                     Overloaded {
-                        [&](const GenericFunctionDefinition& function) noexcept {
+                        [&](const GenericCallableDefinition& function) noexcept {
                             for (const auto& parameter : function.signature.parameters) {
                                 if (const auto* type =
                                         std::get_if<GenericTypeID>(&parameter.type)) {

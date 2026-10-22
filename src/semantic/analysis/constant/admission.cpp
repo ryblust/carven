@@ -39,7 +39,13 @@ private:
         ProgramOriginID origin
     ) noexcept -> bool;
     auto check_body(const StructuredBodyDraft& body) noexcept -> void;
-    auto check_call(std::optional<CallableID> target, ProgramOriginID origin) noexcept -> void;
+    auto check_call(CallableID target, ProgramOriginID origin) noexcept -> void;
+    auto check_call(GenericTypeID target, ProgramOriginID origin) noexcept -> void;
+    auto check_call(
+        std::optional<ConstructionCallableRef> target,
+        const SemanticExpression& callee,
+        ProgramOriginID origin
+    ) noexcept -> void;
     auto check_call(GenericDeclarationID target, ProgramOriginID origin) noexcept -> void;
 
     ProgramDraft& draft;
@@ -54,6 +60,7 @@ private:
     };
 
     std::vector<PendingFailures> pending_failures;
+    std::set<ConstructionCallableRef> checked_closures;
 };
 
 ConstFunctionValidator::ConstFunctionValidator(
@@ -76,8 +83,8 @@ auto ConstFunctionValidator::run() noexcept -> AnalysisResult<void> {
     }
     for (const auto id : draft.generic_declaration_ids()) {
         const auto source = draft.generic_declaration_copy(id);
-        const auto* function = std::get_if<GenericFunctionDefinition>(&source);
-        if (!function || !function->is_const) {
+        const auto* function = std::get_if<GenericCallableDefinition>(&source);
+        if (!function || !function->contract.name || !function->is_const) {
             continue;
         }
         contract_origin = function->contract.origin;
@@ -234,15 +241,15 @@ auto ConstFunctionValidator::check_contract(
 auto ConstFunctionValidator::check_generic_function(GenericDeclarationID definition) noexcept
     -> void {
     const auto source =
-        std::get<GenericFunctionDefinition>(draft.generic_declaration_copy(definition));
+        std::get<GenericCallableDefinition>(draft.generic_declaration_copy(definition));
     if (!check_contract(source.signature, source.contract.origin)) {
         return;
     }
-    if (!draft.has_generic_function_body(definition)) {
+    if (!draft.has_generic_callable_body(definition)) {
         reject(source.contract.origin, "generic function has no checked compile-time body");
         return;
     }
-    check_body(draft.generic_function_body(definition));
+    check_body(draft.generic_callable_body(definition));
 }
 
 auto ConstFunctionValidator::check_function(FunctionID function) noexcept -> void {
@@ -270,20 +277,25 @@ auto ConstFunctionValidator::check_function(FunctionID function) noexcept -> voi
     check_body(draft.body_draft(*body));
 }
 
-auto ConstFunctionValidator::check_call(
-    std::optional<CallableID> target,
-    ProgramOriginID origin
-) noexcept -> void {
-    if (!target) {
-        reject(origin, "cannot prove compile-time capability of indirect call target");
-        return;
-    }
-    if (const auto implementation = draft.callable_implementation_copy(*target); implementation
+auto ConstFunctionValidator::check_call(CallableID target, ProgramOriginID origin) noexcept
+    -> void {
+    if (const auto implementation = draft.callable_implementation_copy(target); implementation
         && (std::holds_alternative<NumberParseImplementation>(*implementation)
             || std::holds_alternative<ProvidedFunctionImplementation>(*implementation))) {
         return;
     }
-    const auto function = draft.function_for_callable(*target);
+    if (const auto implementation = draft.callable_implementation_copy(target)) {
+        if (const auto* closure = std::get_if<ClosureBodyImplementation>(&*implementation)) {
+            if (checked_closures.emplace(target).second) {
+                const auto contract = draft.construction_callable_contract_copy(target);
+                if (check_contract(contract, origin)) {
+                    check_body(draft.body_draft(closure->body));
+                }
+            }
+            return;
+        }
+    }
+    const auto function = draft.function_for_callable(target);
     if (!function) {
         reject(origin, "call target has no compile-time provider");
         return;
@@ -299,10 +311,47 @@ auto ConstFunctionValidator::check_call(
     ProgramOriginID origin
 ) noexcept -> void {
     const auto source = draft.generic_declaration_copy(target);
-    const auto* function = std::get_if<GenericFunctionDefinition>(&source);
+    const auto* function = std::get_if<GenericCallableDefinition>(&source);
     if (!function || !function->is_const) {
         reject(origin, "const fn can only call an explicitly declared const fn");
     }
+}
+
+auto ConstFunctionValidator::check_call(GenericTypeID target, ProgramOriginID origin) noexcept
+    -> void {
+    const auto shape = draft.generic_type_copy(target);
+    const auto& closure = std::get<GenericClosureType>(shape);
+    if (checked_closures.emplace(target).second) {
+        const auto contract = draft.callable_contract(ConstructionTypeRef(target));
+        if (check_contract(*contract, origin)) {
+            check_body(draft.generic_callable_body(closure.definition));
+        }
+    }
+}
+
+auto ConstFunctionValidator::check_call(
+    std::optional<ConstructionCallableRef> target,
+    const SemanticExpression& callee,
+    ProgramOriginID origin
+) noexcept -> void {
+    if (!target) {
+        const auto type = callee.type.construction();
+        if (const auto* generic = std::get_if<GenericTypeID>(&type)) {
+            if (std::holds_alternative<GenericClosureType>(draft.generic_type_copy(*generic))) {
+                target = *generic;
+            }
+        } else if (const auto* concrete = std::get_if<TypeID>(&type)) {
+            const auto shape = draft.type_copy(*concrete);
+            if (const auto* closure = std::get_if<ClosureTypeValue>(&shape.value)) {
+                target = closure->callable;
+            }
+        }
+    }
+    if (!target) {
+        reject(origin, "cannot prove compile-time capability of indirect call target");
+        return;
+    }
+    target->visit([&](const auto callable) noexcept { check_call(callable, origin); });
 }
 
 auto ConstFunctionValidator::check_body(const StructuredBodyDraft& body) noexcept -> void {
@@ -387,7 +436,7 @@ auto ConstFunctionValidator::check_body(const StructuredBodyDraft& body) noexcep
                         if constexpr (std::same_as<Operation, SemCall>
                                       || std::same_as<Operation, SemColdCall>) {
                             if (expression->operation_reachable) {
-                                check_call(operation.target, expression->origin);
+                                check_call(operation.target, *operation.callee, expression->origin);
                             }
                         } else if constexpr (std::same_as<Operation, SemGenericCall>) {
                             if (expression->operation_reachable) {

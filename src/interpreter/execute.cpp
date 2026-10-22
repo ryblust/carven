@@ -256,7 +256,7 @@ auto InterpreterContext::run_tests() noexcept
     -> std::expected<std::vector<InterpreterTestResult>, ExecutionHalt> {
     auto selected = std::vector<TestID>();
     for (const auto row : program.tests().entries()) {
-        if (!row.value.is_const) {
+        if (row.value.execution != TestExecution::Static) {
             selected.push_back(row.id);
         }
     }

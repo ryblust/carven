@@ -234,11 +234,11 @@ auto BodyPreparation::operands(
                     semantic.types().type(value.callee->type.resolved()).value
                 );
                 add(*value.callee, closure ? PreparedUse::ConstPlace : PreparedUse::OperandValue);
-                if (value.target) {
+                if (semantic.direct_call_target(value)) {
                     result.back().demand = PreparedDemand::Effects;
                 }
                 const auto target = value.target
-                    ? value.target
+                    ? std::optional(std::get<CallableID>(*value.target))
                     : callable_identity(semantic, value.callee->type.resolved());
                 for (const auto [index, input] : std::views::enumerate(value.arguments)) {
                     value_read(

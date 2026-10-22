@@ -4,6 +4,7 @@ import :diagnostics.builder;
 import :semantic.analysis.construction.limits;
 import :semantic.analysis.operations;
 import :semantic.analysis.program;
+import :semantic.semir.generic;
 import :semantic.semir.traversal;
 import :support.invariant;
 import std;
@@ -28,7 +29,7 @@ auto ProgramDraft::require_type_formation(
             if (!definition) {
                 invariant_violation("dependent type formation lacks a generic definition owner");
             }
-            auto& function = std::get<GenericFunctionDefinition>(
+            auto& function = std::get<GenericCallableDefinition>(
                 *storage.generic_definitions.at(definition->index())
             );
             function.type_formations.push_back(requirement);
@@ -93,10 +94,12 @@ auto ProgramDraft::check_generic_type_formations(
             );
         }
         const auto& [owner, environment] = current.key;
+        const auto parameter_owner = generic_parameter_owner(owner);
         const auto source = generic_declaration_copy(owner);
-        const auto& function = std::get<GenericFunctionDefinition>(source);
+        const auto& function = std::get<GenericCallableDefinition>(source);
         for (const auto& requirement : function.type_formations) {
-            const auto type = substitute_generic_type(requirement.type, owner, environment);
+            const auto type =
+                substitute_generic_type(requirement.type, parameter_owner, environment);
             switch (type_formation_status(*this, requirement.kind, type)) {
                 case TypeFormationStatus::Supported:
                 case TypeFormationStatus::NativeDelegated:
@@ -126,21 +129,41 @@ auto ProgramDraft::check_generic_type_formations(
         }
         // An analyzing callee is an unresolved edge, never an empty contract.
         // The full definition batch and every concrete instance require closure.
-        if (!has_generic_function_body(owner)) {
+        if (!has_generic_callable_body(owner)) {
             closure = TypeFormationClosure::Pending;
             continue;
         }
         const auto calls = [&](const SemanticExpression& expression) noexcept {
-            const auto* call = std::get_if<SemGenericCall>(&expression.value);
-            if (!call) {
+            auto callee = std::optional<GenericDeclarationID>();
+            auto arguments = std::span<const GenericArgument>();
+            auto closure_type = std::optional<GenericClosureType>();
+            if (const auto* call = std::get_if<SemGenericCall>(&expression.value)) {
+                callee = call->definition;
+                arguments = call->environment;
+            } else {
+                auto identity = std::optional<ConstructionCallableRef>();
+                if (const auto* closure = std::get_if<SemClosure>(&expression.value)) {
+                    identity = closure->callable;
+                } else if (const auto* call = std::get_if<SemCall>(&expression.value)) {
+                    identity = call->target;
+                }
+                if (identity) {
+                    if (const auto* type = std::get_if<GenericTypeID>(&*identity)) {
+                        closure_type = std::get<GenericClosureType>(generic_type_copy(*type));
+                        callee = closure_type->definition;
+                        arguments = closure_type->arguments;
+                    }
+                }
+            }
+            if (!callee) {
                 return;
             }
-            auto effects = make_failure_instantiation(owner, environment);
+            auto effects = make_failure_instantiation(parameter_owner, environment);
             auto types =
-                substitute_generic_environment(call->environment, owner, environment, &effects);
-            pending.push_back({{call->definition, std::move(types)}, expression.origin});
+                substitute_generic_environment(arguments, parameter_owner, environment, &effects);
+            pending.push_back({{*callee, std::move(types)}, expression.origin});
         };
-        const auto& body = generic_function_body(owner);
+        const auto& body = generic_callable_body(owner);
         visit_semantic_nodes(body.region, calls);
         if (body.residual) {
             visit_semantic_nodes(*body.residual, calls);
@@ -158,7 +181,7 @@ auto ProgramDraft::validate_generic_type_formations() noexcept -> AnalysisResult
     }
     for (const auto definition : generic_declaration_ids()) {
         const auto source = generic_declaration_copy(definition);
-        const auto* function = std::get_if<GenericFunctionDefinition>(&source);
+        const auto* function = std::get_if<GenericCallableDefinition>(&source);
         if (!function) {
             continue;
         }

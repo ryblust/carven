@@ -118,7 +118,7 @@ auto BodyElaborator::variable_statement(const ASTVariableDecl& source) noexcept
             co_return std::unexpected(fail(
                 source.span,
                 DiagnosticCode::AsyncAdmission,
-                "async let requires one inferred named let binding in an async fn or const execution"
+                "async let requires one inferred named let binding in an async fn, async test, or const execution"
             ));
         }
         auto built = co_await expression(*source.initializer, true);

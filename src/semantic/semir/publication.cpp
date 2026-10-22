@@ -230,11 +230,12 @@ auto validate_publication_topology(
             if (closure == nullptr) {
                 return;
             }
-            if (!declarations.contains(closure->callable)) {
+            const auto* callable = std::get_if<CallableID>(&closure->callable);
+            if (callable == nullptr || !declarations.contains(*callable)) {
                 invariant_violation("closure expression used an invalid callable");
             }
             if (!std::holds_alternative<ClosureBodyImplementation>(
-                    declarations.callable(closure->callable).implementation
+                    declarations.callable(*callable).implementation
                 )) {
                 invariant_violation("closure expression used a non-closure callable");
             }

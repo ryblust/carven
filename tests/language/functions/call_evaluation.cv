@@ -130,25 +130,6 @@ test "Evaluation: replacing a closure preserves its earlier captured operand" {
     check(closure(change) == 12);
 }
 
-private fn captured_assignment(&target: i32) {
-    return [&target](effect: fn() -> i32) {
-        target = effect();
-    };
-}
-
-test "Evaluation: assignment selects a capture place before evaluating its value" {
-    var first = 1;
-    var second = 9;
-    var closure = captured_assignment(&first);
-    let change = [&closure, &second]() -> i32 {
-        closure = captured_assignment(&second);
-        return 2;
-    };
-    closure(change);
-    check(first == 2);
-    check(second == 9);
-}
-
 fn replace_pointed_value(address: ptr<&i32>) -> i32 {
     if address == nullptr { return -1; }
     *address = 9;

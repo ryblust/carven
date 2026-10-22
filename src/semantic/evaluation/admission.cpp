@@ -65,6 +65,7 @@ auto supported_execution_type(const ExecutionValueAccess& values, ConstructionTy
                         || std::same_as<Shape, ConstructionSliceTypeValue>
                         || std::same_as<Shape, GenericSliceType>
                         || std::same_as<Shape, FunctionTypeValue>
+                        || std::same_as<Shape, ClosureTypeValue>
                         || std::same_as<Shape, CallableViewTypeValue>
                         || std::same_as<Shape, ConstructionCallableViewTypeValue>
                         || std::same_as<Shape, GenericCallableViewType>

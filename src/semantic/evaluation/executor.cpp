@@ -279,6 +279,9 @@ auto SemanticExecutor::value_size(
         if (depth > maximum_constant_aggregate_depth) {
             return fail_limit();
         }
+        if (std::holds_alternative<ExecutionReference>(current)) {
+            return {};
+        }
         const auto compound = execution_compound_view(values, current);
         if (const auto* bytes =
                 compound ? std::get_if<ExecutionByteView>(&compound->elements) : nullptr) {
@@ -404,8 +407,14 @@ auto SemanticExecutor::constructed_value(ExecutionValue value, ProgramOriginID o
     if (std::holds_alternative<ExecutionAggregateValue>(value)
         || std::holds_alternative<ExecutionEnumValue>(value)) {
         const auto target = execution_type_reference(values, execution_value_type(values, value));
-        if (auto typed = deliver_aggregate(value, target, origin, 0uz); !typed) {
-            return std::unexpected(std::move(typed.error()));
+        const auto closure =
+            visit_execution_type(values, target, [](const auto& shape) static noexcept {
+                return std::same_as<std::remove_cvref_t<decltype(shape)>, ClosureTypeValue>;
+            });
+        if (!closure) {
+            if (auto typed = deliver_aggregate(value, target, origin, 0uz); !typed) {
+                return std::unexpected(std::move(typed.error()));
+            }
         }
         if (auto* aggregate = std::get_if<ExecutionAggregateValue>(&value)) {
             if (const auto element = byte_sequence_element(target)) {
@@ -896,17 +905,27 @@ auto SemanticExecutor::release_region(ExecutionFrame& frame, LifetimeRegionID li
     }
 }
 
-auto SemanticExecutor::slot_value(
+auto SemanticExecutor::slot_place(
     ExecutionFrame& frame,
-    std::size_t index,
+    LocalBindingID binding,
     ProgramOriginID origin
-) noexcept -> ExecutionResult<ExecutionRead> {
-    const auto& slot = frame.slots.at(index);
+) noexcept -> ExecutionResult<ExecutionPlace> {
+    const auto& slot = frame.slots.at(binding.index());
     if (const auto* owner = std::get_if<ExecutionOwner>(&slot)) {
-        return observed(owner->place, origin);
+        return owner->place;
     }
     if (const auto* alias = std::get_if<ExecutionPlace>(&slot)) {
-        return observed(*alias, origin);
+        const auto storage = frame.body->binding_storage(binding);
+        const auto* capture = std::get_if<CaptureBindingStorage>(&storage);
+        if (capture != nullptr && capture->mode == CaptureMode::Write) {
+            // Follow the current capture field until this occurrence selects its place.
+            auto stored = observed(*alias, origin);
+            if (!stored) {
+                return std::unexpected(std::move(stored.error()));
+            }
+            return std::get<ExecutionReference>(stored->get()).target;
+        }
+        return *alias;
     }
     const auto taken = std::holds_alternative<ExecutionTaken>(slot);
     return std::unexpected(fail(
@@ -947,15 +966,7 @@ auto SemanticExecutor::place(ExecutionFrame& frame, const SemanticExpression& ex
         co_return retained_storage(constant->constant, expression.origin);
     }
     if (const auto* name = std::get_if<SemBinding>(&expression.value)) {
-        const auto& slot = frame.slots.at(name->binding.index());
-        if (const auto* alias = std::get_if<ExecutionPlace>(&slot)) {
-            co_return *alias;
-        }
-        if (const auto* owner = std::get_if<ExecutionOwner>(&slot)) {
-            co_return owner->place;
-        }
-        auto unavailable = slot_value(frame, name->binding.index(), expression.origin);
-        co_return std::unexpected(std::move(unavailable.error()));
+        co_return slot_place(frame, name->binding, expression.origin);
     }
     if (std::holds_alternative<SemCpp>(expression.value)
         || std::holds_alternative<SemCppCall>(expression.value)) {
@@ -1134,6 +1145,15 @@ auto SemanticExecutor::detach_views(
     ProgramOriginID origin,
     std::size_t depth
 ) noexcept -> ExecutionResult<ExecutionValue> {
+    const auto* function = std::get_if<ExecutionFunction>(&value);
+    if (std::holds_alternative<ExecutionReference>(value)
+        || (function && std::holds_alternative<ExecutionPlace>(function->target))) {
+        return std::unexpected(fail(
+            origin,
+            ExecutionReason::Admission,
+            "borrowed callable storage cannot leave execution"
+        ));
+    }
     if (depth > maximum_constant_aggregate_depth) {
         return std::unexpected(
             fail(origin, ExecutionReason::Limit, "aggregate exceeds its nesting limit")
@@ -1340,21 +1360,129 @@ auto SemanticExecutor::argument_use(AccessMode access) noexcept -> OperandUse {
     std::unreachable();
 }
 
-auto SemanticExecutor::check_callable_adaptation(
-    ConstructionTypeRef source,
+auto SemanticExecutor::callable_invocation(
+    const ExecutionFunction& callee,
+    ProgramOriginID origin
+) noexcept -> ExecutionResult<ExecutionInvocation> {
+    auto target = callee.target;
+    for (auto depth = 0uz; depth <= maximum_constant_depth; ++depth) {
+        if (const auto* callable = std::get_if<CallableID>(&target)) {
+            return ExecutionInvocation {.callable = *callable, .environment = std::nullopt};
+        }
+        const auto selected = std::get<ExecutionPlace>(target);
+        auto value = observed(selected, origin);
+        if (!value) {
+            return std::unexpected(std::move(value.error()));
+        }
+        if (const auto* function = std::get_if<ExecutionFunction>(&value->get())) {
+            target = function->target;
+            continue;
+        }
+        const auto closure = visit_execution_type(
+            values,
+            execution_value_type(values, value->get()),
+            [](const auto& shape) static noexcept -> std::optional<CallableID> {
+                if constexpr (std::
+                                  same_as<std::remove_cvref_t<decltype(shape)>, ClosureTypeValue>) {
+                    return shape.callable;
+                }
+                return std::nullopt;
+            }
+        );
+        if (closure) {
+            return ExecutionInvocation {.callable = *closure, .environment = selected};
+        }
+        return std::unexpected(fail(origin, ExecutionReason::Evaluation, "value is not callable"));
+    }
+    return std::unexpected(
+        fail(origin, ExecutionReason::Limit, "callable borrowing exceeds its nesting limit")
+    );
+}
+
+auto SemanticExecutor::adapt_callable(
+    ExecutionFrame& frame,
+    const SemanticExpression& source,
     ConstructionTypeRef target,
     ProgramOriginID origin
-) noexcept -> ExecutionResult<void> {
-    const auto adaptation = query_callable_adaptation(values, source, target);
-    if (!adaptation || adaptation->borrows_storage()) {
-        return std::unexpected(fail(
+) noexcept -> ExecutionTask<ExecutionValue> {
+    const auto adaptation = query_callable_adaptation(values, source.type.construction(), target);
+    if (!adaptation) {
+        co_return std::unexpected(fail(
             origin,
             ExecutionReason::Evaluation,
-            adaptation ? "borrowing a callable object is not supported in execution"
-                       : "callable adaptation target identity is not known during execution"
+            "callable adaptation target identity is not known during execution"
         ));
     }
-    return {};
+    if (!adaptation->borrows_storage()) {
+        auto copied = co_await value(frame, source);
+        if (!copied) {
+            co_return std::unexpected(std::move(copied.error()));
+        }
+        if (auto delivered = deliver_value(*copied, target, origin, 0uz); !delivered) {
+            co_return std::unexpected(std::move(delivered.error()));
+        }
+        co_return copied;
+    }
+    auto borrowed = co_await operand(frame, source, OperandUse::Borrow, origin);
+    if (!borrowed) {
+        co_return std::unexpected(std::move(borrowed.error()));
+    }
+    co_return adapt_callable_storage(std::get<ExecutionPlace>(*borrowed), target, origin, 0uz);
+}
+
+auto SemanticExecutor::adapt_callable_storage(
+    ExecutionPlace source,
+    ConstructionTypeRef target,
+    ProgramOriginID origin,
+    std::size_t depth
+) noexcept -> ExecutionResult<ExecutionValue> {
+    if (depth > maximum_constant_aggregate_depth) {
+        return std::unexpected(
+            fail(origin, ExecutionReason::Limit, "aggregate exceeds its nesting limit")
+        );
+    }
+    auto stored = observed(source, origin);
+    if (!stored) {
+        return std::unexpected(std::move(stored.error()));
+    }
+    const auto element = sequence_element_type(target);
+    if (!element) {
+        if (const auto* closure = std::get_if<ExecutionAggregateValue>(&stored->get());
+            closure && closure->elements.empty()) {
+            auto invocation =
+                callable_invocation(ExecutionFunction {.type = target, .target = source}, origin);
+            if (!invocation) {
+                return std::unexpected(std::move(invocation.error()));
+            }
+            return ExecutionFunction {.type = target, .target = invocation->callable};
+        }
+        return ExecutionFunction {.type = target, .target = std::move(source)};
+    }
+    const auto compound = execution_compound_view(values, stored->get());
+    if (!compound) {
+        invariant_violation("callable array adaptation has no aggregate storage");
+    }
+    if (auto checked = account_aggregate(compound->size(), origin); !checked) {
+        return std::unexpected(std::move(checked.error()));
+    }
+    auto elements = std::vector<ExecutionValue>();
+    for (auto index = 0uz; index < compound->size(); ++index) {
+        auto projected = memory.project(source, index);
+        if (!projected) {
+            return std::unexpected(
+                fail(origin, ExecutionReason::Evaluation, "callable backing is no longer alive")
+            );
+        }
+        auto adapted = adapt_callable_storage(std::move(*projected), *element, origin, depth + 1uz);
+        if (!adapted) {
+            return std::unexpected(std::move(adapted.error()));
+        }
+        elements.push_back(std::move(*adapted));
+    }
+    return constructed_value(
+        ExecutionAggregateValue {.type = target, .elements = std::move(elements), .capacity = 0uz},
+        origin
+    );
 }
 
 auto SemanticExecutor::operand(
@@ -1445,6 +1573,15 @@ auto SemanticExecutor::admit_host_value(ExecutionValue value, ProgramOriginID or
     // domain without constructing a second copy of the admitted value.
     const auto account = [&](this const auto& self,
                              ExecutionValue& current) noexcept -> ExecutionResult<void> {
+        const auto* function = std::get_if<ExecutionFunction>(&current);
+        if (std::holds_alternative<ExecutionReference>(current)
+            || (function && std::holds_alternative<ExecutionPlace>(function->target))) {
+            return std::unexpected(fail(
+                origin,
+                ExecutionReason::Admission,
+                "host values cannot borrow execution storage"
+            ));
+        }
         if (const auto* text = std::get_if<ExecutionOwnedText>(&current)) {
             return account_bytes(text->bytes().size(), origin);
         }
@@ -1471,7 +1608,8 @@ auto SemanticExecutor::admit_host_value(ExecutionValue value, ProgramOriginID or
 auto SemanticExecutor::call(
     ExecutionCallSite site,
     std::vector<ExecutionOperand> arguments,
-    ProgramOriginID origin
+    ProgramOriginID origin,
+    std::optional<ExecutionPlace> environment
 ) noexcept -> ExecutionTask<ExecutionValue> {
     const auto* callable = std::get_if<CallableID>(&site);
     const auto function = callable ? context.function_for_callable(*callable) : std::nullopt;
@@ -1640,6 +1778,22 @@ auto SemanticExecutor::call(
             .children = {},
         };
         const auto execute = [&]() noexcept -> ExecutionTask<ExecutionValue> {
+            const auto captures = body.captures();
+            for (auto index = 0uz; index < captures.size(); ++index) {
+                if (!environment) {
+                    invariant_violation("closure call has no capture storage");
+                }
+                auto capture = memory.project(*environment, index);
+                if (!capture) {
+                    co_return std::unexpected(fail(
+                        origin,
+                        ExecutionReason::Evaluation,
+                        "closure backing is no longer alive"
+                    ));
+                }
+                const auto binding = captures[index];
+                frame.slots[binding.index()] = std::move(*capture);
+            }
             for (auto index = 0uz; index < arguments.size(); ++index) {
                 const auto binding = parameters[index];
                 auto& argument = arguments[index];
@@ -1737,7 +1891,8 @@ auto SemanticExecutor::escaped(ExecutionFailure failure) noexcept -> ExecutionFa
                 .cause =
                     ExecutionIssue {
                         .reason = ExecutionReason::Evaluation,
-                        .message = "cancellation escaped execution without a consumer",
+                        .message = testing ? "cancellation escaped the test"
+                                           : "cancellation escaped execution without a consumer",
                         .termination = ExecutionTermination::StopRoot,
                     },
                 .fields = {},

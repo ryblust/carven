@@ -23,7 +23,7 @@ import std;
 
 namespace {
 
-struct TestStopExpectation final {
+struct StopExpectation final {
     std::string_view name;
     bool stops;
 };
@@ -40,14 +40,14 @@ auto control_callable(const SemIRProgram& program, std::string_view name) noexce
 
 auto check_call_stops(
     const SemIRProgram& program,
-    std::span<const TestStopExpectation> expected
+    std::span<const StopExpectation> expected
 ) noexcept -> void {
-    each(expected, &TestStopExpectation::name, [&](const auto& input) noexcept {
+    each(expected, &StopExpectation::name, [&](const auto& input) noexcept {
         const auto callable = control_callable(program, input.name);
         if (!expect(callable.has_value())) {
             return;
         }
-        expect_equal(program.may_stop_test(*callable), input.stops);
+        expect_equal(program.may_stop(*callable), input.stops);
     });
 }
 
@@ -612,7 +612,7 @@ const TestSuite suite([] static noexcept {
         fn call_view(action: fn() -> void) { action(); }
         fn closure() { []() { fail(); }(); }
     )");
-            constexpr auto expected = std::to_array<TestStopExpectation>({
+            constexpr auto expected = std::to_array<StopExpectation>({
                 {.name = "forward", .stops = true},
                 {.name = "middle", .stops = true},
                 {.name = "stop", .stops = true},
@@ -659,7 +659,6 @@ const TestSuite suite([] static noexcept {
                 return;
             }
             expect(program.may_stop(*callable)).note("function = ", name);
-            expect(!program.may_stop_test(*callable)).note("function = ", name);
         }
         const auto failure = control_callable(program, "declared_failure");
         if (expect(failure.has_value())) {
@@ -689,7 +688,7 @@ const TestSuite suite([] static noexcept {
                 return;
             }
             expect(returned->value->exits_call);
-            expect(program.may_stop_test(*callable)).note("function = ", name);
+            expect(program.may_stop(*callable)).note("function = ", name);
         }
         for (const auto entry : program.tests().entries()) {
             const auto& body = program.bodies().body(*entry.value.body);
@@ -715,13 +714,13 @@ const TestSuite suite([] static noexcept {
         fn selected_caller() -> i32 { return selected(); }
         fn ordinary_caller() -> i32 { return ordinary(); }
     )");
-        constexpr auto expected = std::to_array<TestStopExpectation>({
+        constexpr auto expected = std::to_array<StopExpectation>({
             {.name = "selected", .stops = false},
             {.name = "ordinary", .stops = true},
             {.name = "selected_caller", .stops = false},
             {.name = "ordinary_caller", .stops = true},
         });
-        each(expected, &TestStopExpectation::name, [&](const auto& input) noexcept {
+        each(expected, &StopExpectation::name, [&](const auto& input) noexcept {
             const auto callable = control_callable(program, input.name);
             if (!expect(callable.has_value())) {
                 return;
@@ -737,7 +736,7 @@ const TestSuite suite([] static noexcept {
             }
             expect_equal(returned->value->exits_call, input.stops);
             expect_equal(body.region().exits_call, input.stops);
-            expect_equal(program.may_stop_test(*callable), input.stops);
+            expect_equal(program.may_stop(*callable), input.stops);
         });
     };
 
@@ -1092,7 +1091,7 @@ const TestSuite suite([] static noexcept {
         fn forward() { quiet(); }
         fn conditional(flag: bool) { assert(flag, message()); }
     )");
-        constexpr auto expected = std::to_array<TestStopExpectation>({
+        constexpr auto expected = std::to_array<StopExpectation>({
             {.name = "message", .stops = true},
             {.name = "quiet", .stops = true},
             {.name = "forward", .stops = true},
@@ -1125,7 +1124,7 @@ const TestSuite suite([] static noexcept {
         fn known_stopping() -> i32 { let view: fn() -> i32 = stopping; return view(); }
         fn dynamic(view: fn() -> i32) -> i32 => view();
     )");
-            constexpr auto expected = std::to_array<TestStopExpectation>({
+            constexpr auto expected = std::to_array<StopExpectation>({
                 {.name = "plain", .stops = false},
                 {.name = "stopping", .stops = true},
                 {.name = "known_plain", .stops = false},

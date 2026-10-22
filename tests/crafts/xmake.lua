@@ -31,7 +31,7 @@ target("carven-test-native-async")
     set_group("crafts")
     set_kind("binary")
     set_languages("c++20")
-    add_rules("@carven/carven")
+    add_rules("@carven/carven", {tests = true})
     add_files("async/operations.cv")
     if not is_plat("windows", "mingw") then
         add_tests("operations", {run_timeout = 30000})

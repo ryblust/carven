@@ -14,9 +14,9 @@ OwnershipRecursionBuilder::OwnershipRecursionBuilder(const AnalysisModelView& mo
     adjacency.resize(ordinals.size() + 1uz);
 }
 
-auto OwnershipRecursionBuilder::body_ordinal(CallableID callable) const noexcept
+auto OwnershipRecursionBuilder::body_ordinal(ConstructionCallableRef callable) const noexcept
     -> std::optional<std::uint32_t> {
-    const auto body = program.declarations().body_for_callable(callable);
+    const auto body = model.callable_body(callable);
     if (!body.has_value()) {
         return std::nullopt;
     }
@@ -34,7 +34,8 @@ auto OwnershipRecursionBuilder::observe(const SemanticExpression& expression) no
     // callable value. Direct callee operands are not escaping values.
     // One shared node preserves reachability without expanding callers × targets.
     if (const auto* call = std::get_if<SemCall>(&expression.value)) {
-        auto target = call->target;
+        auto target =
+            call->target ? std::optional<ConstructionCallableRef>(*call->target) : std::nullopt;
         if (!target.has_value()) {
             target = model.callable_identity(call->callee->type.construction());
         }

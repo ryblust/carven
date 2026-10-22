@@ -10,16 +10,7 @@ import :source.provenance;
 import :source.provenance.ids;
 import std;
 
-enum class CallStopEffect : std::uint8_t { None = 0, Test = 1, Runtime = 2, TestAndRuntime = 3 };
-
-constexpr auto combine_call_stops(CallStopEffect left, CallStopEffect right) noexcept
-    -> CallStopEffect {
-    return static_cast<CallStopEffect>(std::to_underlying(left) | std::to_underlying(right));
-}
-
-constexpr auto includes_test_stop(CallStopEffect effect) noexcept -> bool {
-    return (std::to_underlying(effect) & std::to_underlying(CallStopEffect::Test)) != 0;
-}
+enum class CallStopEffect : std::uint8_t { None, MayStop };
 
 enum class CppHeaderDelimiter {
     AngleBrackets,
@@ -41,6 +32,8 @@ struct CppHeaderDependency final {
 struct CppSourceFragment final {
     ProgramOriginID payload_origin;
 };
+
+using ConstructionCallableRef = std::variant<CallableID, GenericTypeID>;
 
 using DeclarationRef = std::variant<FunctionID, StructID, EnumID, ModuleConstantID>;
 using NominalDeclarationRef = std::variant<StructID, EnumID>;
@@ -193,11 +186,13 @@ struct BlockSource final {
 auto block_display_name(CompilationProvenanceView provenance, const BlockSource& source) noexcept
     -> std::string;
 
+enum class TestExecution { Static, Synchronous, Asynchronous };
+
 struct TestDeclaration final {
-    bool is_const;
+    TestExecution execution;
     ModuleID module_id;
     BlockSource source;
-    // Static tests retain their result metadata, but no executable body.
+    // Static tests have no body after executable publication.
     std::optional<BodyID> body;
 };
 

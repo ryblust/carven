@@ -24,54 +24,58 @@ async fn protected(&started: i32, &closed: i32) -> i32 throw Timeout + TimeRange
     return await deadline(cooperative(&started, &closed), 1s)?;
 }
 
-async fn run_timeout() throw TimeRangeError {
-    var started = 0;
-    let zero = try {
-        let _ = await deadline(touch(&started), 0ns)?;
-        false
-    } catch {
-        Timeout(_) => true,
-        TimeRangeError(_) => false,
-    };
-    let negative = try {
-        let _ = await deadline(touch(&started), -9223372036854775808ns)?;
-        false
-    } catch {
-        Timeout(_) => true,
-        TimeRangeError(_) => false,
-    };
-    let expired = try {
-        let _ = await deadline(delayed(7, 100ms), 1ms)?;
-        false
-    } catch {
-        Timeout(_) => true,
-        TimeRangeError(_) => false,
-    };
-    let completed = try {
-        await deadline(touch(&started), 100ms)? == 42
-    } catch {
-        Timeout(_) => false,
-        TimeRangeError(_) => false,
-    };
-    assert(zero && negative && expired && completed && started == 1);
-    var closed = 0;
-    let drained = try {
-        let _ = await deadline(cooperative(&started, &closed), 1ms)?;
-        false
-    } catch {
-        Timeout(_) => true,
-        TimeRangeError(_) => false,
-    };
-    assert(drained && started == 2 && closed == 1);
+async test "Async timeout: expiration, completion, and cooperative cleanup" {
+    try {
+        var started = 0;
+        let zero = try {
+            let _ = await deadline(touch(&started), 0ns)?;
+            false
+        } catch {
+            Timeout(_) => true,
+            TimeRangeError(_) => false,
+        };
+        let negative = try {
+            let _ = await deadline(touch(&started), -9223372036854775808ns)?;
+            false
+        } catch {
+            Timeout(_) => true,
+            TimeRangeError(_) => false,
+        };
+        let expired = try {
+            let _ = await deadline(delayed(7, 100ms), 1ms)?;
+            false
+        } catch {
+            Timeout(_) => true,
+            TimeRangeError(_) => false,
+        };
+        let completed = try {
+            await deadline(touch(&started), 100ms)? == 42
+        } catch {
+            Timeout(_) => false,
+            TimeRangeError(_) => false,
+        };
+        check(zero && negative && expired && completed && started == 1);
+        var closed = 0;
+        let drained = try {
+            let _ = await deadline(cooperative(&started, &closed), 1ms)?;
+            false
+        } catch {
+            Timeout(_) => true,
+            TimeRangeError(_) => false,
+        };
+        check(drained && started == 2 && closed == 1);
 
-    async let parent = protected(&started, &closed);
-    // cooperative() increments started through a mutable borrow while this task yields.
-    // Generated C++ triggers bugprone-infinite-loop, which misses that coroutine update.
-    while started != 3 {
-        await yield_once();
+        async let parent = protected(&started, &closed);
+        // cooperative() increments started through a mutable borrow while this task yields.
+        // Generated C++ triggers bugprone-infinite-loop, which misses that coroutine update.
+        while started != 3 {
+            await yield_once();
+        }
+        cancel parent;
+        let (_, cancelled) = await wait_ready(parent);
+        await close(parent);
+        check(cancelled && closed == 2);
+    } catch {
+        TimeRangeError(_) => fail("unexpected time range failure"),
     }
-    cancel parent;
-    let (_, cancelled) = await wait_ready(parent);
-    await close(parent);
-    assert(cancelled && closed == 2);
 }

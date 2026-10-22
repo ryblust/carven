@@ -43,8 +43,8 @@ struct SemIRProgramArtifactState final {
     ImmutableProgramTable<GenericDeclarationContract, GenericDeclarationID>
         generic_declaration_store;
     std::vector<GenericNominalInstance> generic_instance_store;
-    std::vector<GenericFunctionInstance> generic_function_store;
-    std::map<CallableID, std::size_t> generic_instance_functions;
+    std::vector<GenericCallableInstance> generic_callable_store;
+    std::map<CallableID, std::size_t> generic_instance_callables;
     std::map<NominalDeclarationRef, std::size_t> generic_instance_nominals;
     std::map<std::pair<FunctionID, std::vector<ConstantID>>, CallableID> static_instance_index;
     std::map<CallableID, std::size_t> instance_callables;
@@ -69,8 +69,8 @@ SemIRProgram::SemIRProgram(SemIRProgramArtifactState state) noexcept
       static_instance_store(std::move(state.static_instance_store)),
       generic_declaration_store(std::move(state.generic_declaration_store)),
       generic_instance_store(std::move(state.generic_instance_store)),
-      generic_function_store(std::move(state.generic_function_store)),
-      generic_instance_functions(std::move(state.generic_instance_functions)),
+      generic_callable_store(std::move(state.generic_callable_store)),
+      generic_instance_callables(std::move(state.generic_instance_callables)),
       generic_instance_nominals(std::move(state.generic_instance_nominals)),
       static_instance_index(std::move(state.static_instance_index)),
       instance_callables(std::move(state.instance_callables)),
@@ -507,8 +507,8 @@ public:
             value.static_instance_store,
             value.generic_declaration_store,
             value.generic_instance_store,
-            value.generic_function_store,
-            value.generic_instance_functions,
+            value.generic_callable_store,
+            value.generic_instance_callables,
             value.generic_instance_nominals,
             value.static_instance_index,
             value.instance_callables,
@@ -962,7 +962,7 @@ public:
                 record_body_bounds(result, *body.definition);
             }
         }
-        for (const auto& [id, body] : value.generic_function_bodies) {
+        for (const auto& [id, body] : value.generic_callable_bodies) {
             static_cast<void>(id);
             if (body) {
                 record_body_bounds(result, *body);
@@ -988,7 +988,7 @@ public:
                 record_body_nodes(context, *body.definition);
             }
         }
-        for (const auto& [id, body] : value.generic_function_bodies) {
+        for (const auto& [id, body] : value.generic_callable_bodies) {
             static_cast<void>(id);
             if (body) {
                 record_body_nodes(context, *body);
@@ -1682,7 +1682,7 @@ struct SemanticHeaderContext final {};
 
 enum class SemanticArtifactKind : std::uint32_t { Program = 1, Definitions = 2 };
 
-constexpr auto semantic_artifact_revision = 3u << 16u;
+constexpr auto semantic_artifact_revision = 6u << 16u;
 
 auto write_semantic_nodes(BinaryWriter& writer, SemanticArtifactContext& context) noexcept -> void {
     writer.unsigned_value(context.node_order.size(), 8);

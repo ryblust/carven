@@ -38,6 +38,7 @@ enum class TargetSymbol {
     RuntimeTupleGet,
     RuntimeHashValue,
     RuntimeReportTestFailure,
+    RuntimeRunAsyncTest,
     RuntimeAssertionFailed,
     RuntimeOutcome,
     RuntimeAsyncOperation,

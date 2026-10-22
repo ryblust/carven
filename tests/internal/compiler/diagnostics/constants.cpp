@@ -251,7 +251,7 @@ const TestSuite suite([] static noexcept {
         expect_equal(diagnostic_count(result.error(), DiagnosticCode::TypeMemberUnresolved), 0uz);
     };
 
-    "Top-level constants: closure initializers report unsupported execution"_test =
+    "Top-level constants: closure owners cannot become retained constants"_test =
         [] static noexcept {
             auto sources = SourceManager();
             static constexpr auto modules = std::to_array<ModuleFixture>({
@@ -268,7 +268,7 @@ const TestSuite suite([] static noexcept {
                 return;
             }
             expect_equal(result.error().size(), 1uz);
-            expect_equal(diagnostic_count(result.error(), DiagnosticCode::ConstAdmission), 1uz);
+            expect_equal(diagnostic_count(result.error(), DiagnosticCode::ConstInitializer), 1uz);
         };
 
     "Top-level constants: a nullary enum case remains a value"_test = [] static noexcept {

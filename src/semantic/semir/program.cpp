@@ -2,6 +2,7 @@ module carven:semantic.semir.program.impl;
 
 import :semantic.semir.async;
 import :semantic.semir.body;
+import :semantic.semir.callable;
 import :semantic.semir.constant;
 import :semantic.semir.decl;
 import :semantic.semir.identity;
@@ -63,7 +64,7 @@ SemIRProgram::SemIRProgram(
     std::vector<StaticInstance> static_instances,
     std::vector<GenericDeclarationContract> generic_declarations,
     std::vector<GenericNominalInstance> generic_instances,
-    std::vector<GenericFunctionInstance> generic_functions,
+    std::vector<GenericCallableInstance> generic_callables,
     std::vector<CallStopEffect> call_stops
 ) noexcept
     : program_identity(identity),
@@ -78,14 +79,14 @@ SemIRProgram::SemIRProgram(
       static_instance_store(std::move(static_instances)),
       generic_declaration_store(identity, std::move(generic_declarations)),
       generic_instance_store(std::move(generic_instances)),
-      generic_function_store(std::move(generic_functions)),
+      generic_callable_store(std::move(generic_callables)),
       call_stops(std::move(call_stops)) {
     for (const auto entry : generic_declaration_store.entries()) {
         const auto& contract = entry.value;
 
         static_cast<void>(declaration_store.module_decl(contract.module_id));
 
-        if (!compilation_provenance.view().contains(contract.name)
+        if ((contract.name && !compilation_provenance.view().contains(*contract.name))
             || !compilation_provenance.view().contains(contract.origin)) {
             invariant_violation("generic declaration contract has foreign provenance");
         }
@@ -116,7 +117,7 @@ SemIRProgram::SemIRProgram(
 
     for (auto generic_index = 0uz; generic_index < generic_instance_store.size(); ++generic_index) {
         const auto& instance = generic_instance_store[generic_index];
-        const auto& definition = generic_declaration_contract(instance.definition);
+        const auto& definition = generic_parameter_contract(instance.definition);
         if (instance.arguments.size() != definition.parameters.size()
             || !generic_keys.emplace(instance.definition, instance.arguments).second
             || !generic_instance_nominals.emplace(instance.declaration, generic_index).second) {
@@ -142,21 +143,27 @@ SemIRProgram::SemIRProgram(
             }
         );
     }
-    for (auto index = 0uz; index < generic_function_store.size(); ++index) {
-        const auto& instance = generic_function_store[index];
+    for (auto index = 0uz; index < generic_callable_store.size(); ++index) {
+        const auto& instance = generic_callable_store[index];
         const auto& definition = generic_declaration_contract(instance.definition);
+        const auto& parameters = generic_parameter_contract(instance.definition);
         const auto function = declaration_store.function_for_callable(instance.callable);
-        if (!function
-            || declaration_store.function(*function).module_id != definition.module_id
-            || instance.arguments.size() != definition.parameters.size()
+        const auto source_matches = definition.name
+            ? function && declaration_store.function(*function).module_id == definition.module_id
+            : !function
+                && std::holds_alternative<ClosureBodyImplementation>(
+                    declaration_store.callable(instance.callable).implementation
+                );
+        if (!source_matches
+            || instance.arguments.size() != parameters.parameters.size()
             || !generic_keys.emplace(instance.definition, instance.arguments).second
-            || !generic_instance_functions.emplace(instance.callable, index).second) {
+            || !generic_instance_callables.emplace(instance.callable, index).second) {
             invariant_violation(
                 "published generic function instances have noncanonical identities"
             );
         }
         for (const auto [parameter, argument] : std::views::enumerate(instance.arguments)) {
-            if (!generic_argument_matches(definition.parameter_kinds[parameter], argument)) {
+            if (!generic_argument_matches(parameters.parameter_kinds[parameter], argument)) {
                 invariant_violation(
                     "published generic function argument has a mismatched parameter domain"
                 );
@@ -217,7 +224,7 @@ SemIRProgram::SemIRProgram(
         }
     }
     for (const auto entry : test_store.entries()) {
-        if (entry.value.is_const) {
+        if (entry.value.execution == TestExecution::Static) {
             executed_bodies[entry.value.body->index()] = false;
         }
     }
@@ -265,11 +272,6 @@ auto SemIRProgram::await_completion_may_be_cancelled(
     return found->second;
 }
 
-auto SemIRProgram::may_stop_test(CallableID callable_id) const noexcept -> bool {
-    static_cast<void>(declaration_store.callable(callable_id));
-    return includes_test_stop(call_stops.at(callable_id.index()));
-}
-
 auto SemIRProgram::may_stop(CallableID callable_id) const noexcept -> bool {
     static_cast<void>(declaration_store.callable(callable_id));
     return call_stops.at(callable_id.index()) != CallStopEffect::None;
@@ -290,12 +292,19 @@ auto SemIRProgram::may_stop(TypeID type) const noexcept -> bool {
 }
 
 auto SemIRProgram::may_stop(const SemCall& call) const noexcept -> bool {
-    return call.target ? may_stop(*call.target) : may_stop(call.callee->type.resolved());
+    const auto target = direct_call_target(call);
+    return target ? may_stop(*target) : may_stop(call.callee->type.resolved());
+}
+
+auto SemIRProgram::direct_call_target(const SemCall& call) const noexcept
+    -> std::optional<CallableID> {
+    return ::direct_call_target(declaration_store, call);
 }
 
 auto SemIRProgram::call_signature(const SemCall& call) const noexcept -> CallableSignatureID {
-    return call.target ? declaration_store.callable(*call.target).signature
-                       : call_signature(call.callee->type.resolved());
+    const auto target = direct_call_target(call);
+    return target ? declaration_store.callable(*target).signature
+                  : call_signature(call.callee->type.resolved());
 }
 
 auto SemIRProgram::call_signature(TypeID type) const noexcept -> CallableSignatureID {
@@ -511,7 +520,7 @@ auto source_nominal_identity(
     if (const auto* instance = program.generic_nominal_instance(nominal)) {
         const auto& declaration = program.generic_declaration_contract(instance->definition);
         name = std::string(source_module_name(program, declaration.module_id)) + "."
-            + std::string(program.provenance().spelling(declaration.name)) + '<';
+            + std::string(program.provenance().spelling(*declaration.name)) + '<';
         auto plain_seen = std::set<NominalDeclarationRef>();
         for (const auto [index, argument] : std::views::enumerate(instance->arguments)) {
             if (index != 0) {
@@ -741,6 +750,13 @@ auto SemIRProgram::generic_declaration_contract(GenericDeclarationID id) const n
     return generic_declaration_store.get(id);
 }
 
+auto SemIRProgram::generic_parameter_contract(GenericDeclarationID id) const noexcept
+    -> const GenericDeclarationContract& {
+    const auto& contract = generic_declaration_contract(id);
+    return contract.parameter_scope ? generic_declaration_contract(*contract.parameter_scope)
+                                    : contract;
+}
+
 auto SemIRProgram::generic_nominal_instances() const noexcept
     -> std::span<const GenericNominalInstance> {
     return generic_instance_store;
@@ -757,16 +773,16 @@ auto SemIRProgram::static_instances() const noexcept -> std::span<const StaticIn
     return static_instance_store;
 }
 
-auto SemIRProgram::generic_function_instances() const noexcept
-    -> std::span<const GenericFunctionInstance> {
-    return generic_function_store;
+auto SemIRProgram::generic_callable_instances() const noexcept
+    -> std::span<const GenericCallableInstance> {
+    return generic_callable_store;
 }
 
-auto SemIRProgram::generic_function_instance(CallableID callable) const noexcept
-    -> const GenericFunctionInstance* {
-    const auto found = generic_instance_functions.find(callable);
-    return found == generic_instance_functions.end() ? nullptr
-                                                     : &generic_function_store[found->second];
+auto SemIRProgram::generic_callable_instance(CallableID callable) const noexcept
+    -> const GenericCallableInstance* {
+    const auto found = generic_instance_callables.find(callable);
+    return found == generic_instance_callables.end() ? nullptr
+                                                     : &generic_callable_store[found->second];
 }
 
 auto SemIRProgram::static_instance(CallableID callable) const noexcept -> const StaticInstance* {

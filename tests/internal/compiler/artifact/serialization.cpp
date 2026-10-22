@@ -79,6 +79,8 @@ fn retained_vector() -> u8x32 => vector;
 fn retained_mask() -> mask32 => mask;
 fn retained_floating() -> f32x8 => floating;
 test "runtime" { check(true); }
+async test "async runtime" { await yielding(); check(true); }
+const async test "async static" { check(true); }
 )cv");
             const auto unit = CheckedUnit {
                 .program = std::move(program),

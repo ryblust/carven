@@ -175,7 +175,8 @@ auto lower_closure_body(ModuleLowering& context, CallableID callable_id) noexcep
             .result = context.callable_result(callable_id),
             .body = std::move(lowered.statements),
             .const_qualified = true,
-            .inline_specifier = false,
+            .inline_specifier = target_definition_placement(context.semantic(), callable_id)
+                == TargetDefinitionPlacement::Use,
         }}
     );
 }

@@ -87,6 +87,74 @@ auto require_text(
 }
 
 const TestSuite suite([] static noexcept {
+    "Constant closures: calls require proven static capability"_test = [] static noexcept {
+        for (const auto source : std::to_array<std::string_view>({
+                 R"(fn runtime() -> i32 => 1;
+const fn invalid() -> i32 { let callback = []() => runtime(); return callback(); })",
+                 R"(fn runtime() -> i32 => 1;
+const fn invalid<T>(&&value: T) -> T {
+    let callback = []() => runtime();
+    let _ = callback();
+    return &&value;
+})",
+             })) {
+            expect_diagnostic(
+                analyze_test_errors(std::string(source)),
+                DiagnosticCode::ConstAdmission
+            );
+        }
+    };
+
+    "Constant closures: invocation may produce constants but owners cannot freeze"_test =
+        [] static noexcept {
+            const auto program = analyze_test_program(R"(
+const fn value() -> i32 {
+    let captured = 40;
+    let callback = [captured](offset: i32) => captured + offset;
+    return callback(2);
+}
+const result = value();
+)");
+            require_integer(module_constant(program, "result"), 42);
+            expect_diagnostic(
+                analyze_test_errors(R"(
+const fn make() {
+    let value = 7;
+    return [value]() => value;
+}
+const callback = make();
+)"),
+                DiagnosticCode::ConstInitializer
+            );
+        };
+
+    "Constant async tests: composition executes once during analysis"_test = [] static noexcept {
+        auto output = std::string();
+        const auto write_output = [&](ExecutionOutputStream, std::string_view bytes) noexcept {
+            output.append(bytes);
+        };
+        const auto program = analyze_async_program(
+            R"(import std::async using yield_once;
+const async fn value(number: i32) -> i32 { await yield_once(); return number; }
+const async test "composition" {
+    async let first = value(3);
+    async let second = value(4);
+    require(await first + await second == 7);
+    println("compiled");
+}
+const async test "second" { check(await value(5) == 5); }
+const test "implicit static async" { check(await value(9) == 9); }
+)",
+            write_output
+        );
+        expect_equal(output, std::string("compiled\n"));
+        expect_equal(program.tests().entries().size(), 3uz);
+        for (const auto entry : program.tests().entries()) {
+            expect_equal(entry.value.execution, TestExecution::Static);
+            expect(!entry.value.body);
+        }
+    };
+
     "Constant async: borrowed output targets survive scheduling and nested extent execution"_test =
         [] static noexcept {
             auto output = std::string();

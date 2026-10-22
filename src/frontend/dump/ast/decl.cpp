@@ -484,8 +484,9 @@ auto ASTDumper::render_top_level_item(
                     prefix,
                     is_last,
                     std::format(
-                        "{}TestDeclaration {}",
+                        "{}{}TestDeclaration {}",
                         declaration.is_const ? "Const" : "",
+                        declaration.async_span ? "Async" : "",
                         format_dump_span(item.span)
                     )
                 );

@@ -88,6 +88,34 @@ auto check_timeout_contract(const ContractCase& input) noexcept -> void {
 }
 
 const TestSuite suite([] static noexcept {
+    "Async tests: source helpers share ordinary test operations"_test = [] static noexcept {
+        check_contract({
+            .name = "async helpers can report and stop their active test",
+            .source = R"(
+fn stop() { fail(); }
+async fn require_value<T>() { require(false); }
+async fn relay<T>() { await require_value<T>(); stop(); }
+async test { await relay<i32>(); }
+)",
+            .rejection = std::nullopt,
+        });
+    };
+
+    "Async tests: ordinary roots still reject await and async roots must recover failures"_test =
+        [] static noexcept {
+            check_contract({
+                .name = "ordinary test cannot await",
+                .source = "async fn value() {} test { await value(); }",
+                .rejection = DiagnosticCode::AsyncAdmission,
+            });
+            check_contract({
+                .name = "async test cannot propagate a nominal failure",
+                .source = "struct Failure {} async fn broken() throw Failure { throw Failure {}; } "
+                          "async test { await broken()?; }",
+                .rejection = DiagnosticCode::EffectRootUnhandled,
+            });
+        };
+
     "Async contracts: generic definitions and concrete instances share admission"_test =
         [] static noexcept {
             constexpr auto cases = std::array {
@@ -220,112 +248,6 @@ fn invalid<U>(&&pending: Operation<i32>) -> Operation<Operation<i32>> {
 async fn sink<T>(&&value: T) {}
 fn dependent<U>(&&value: U) -> Operation<void> => sink(&&value);
 fn closed<U>(&&values: [i32; 1]) -> Operation<void> => sink<[i32; 1]>(&&values);
-)",
-                    .rejection = std::nullopt
-                },
-                ContractCase {
-                    .name = "unused async definition rejects a direct test-stop effect",
-                    .source = "async fn invalid<T>() { require(false); }",
-                    .rejection = DiagnosticCode::AsyncAdmission
-                },
-                ContractCase {
-                    .name = "unused async definition rejects a concrete helper test-stop effect",
-                    .source = R"(
-fn stop() { fail(); }
-async fn invalid<T>() { stop(); }
-)",
-                    .rejection = DiagnosticCode::AsyncAdmission
-                },
-                ContractCase {
-                    .name = "unused async definition rejects transitive generic helper test-stop",
-                    .source = R"(
-fn stop<T>() { require(false); }
-fn relay<T>() { stop<T>(); }
-async fn invalid<T>() { relay<T>(); }
-)",
-                    .rejection = DiagnosticCode::AsyncAdmission
-                },
-                ContractCase {
-                    .name = "recursive generic helper propagates test-stop through the same graph",
-                    .source = R"(
-fn stop<T>(again: bool) -> void {
-    if again { stop<T>(false); } else { fail(); }
-}
-async fn invalid<T>() { stop<T>(true); }
-)",
-                    .rejection = DiagnosticCode::AsyncAdmission
-                },
-                ContractCase {
-                    .name = "ordinary generic branches retain conservative test-stop effects",
-                    .source = R"(
-fn skipped<T>() { if false { fail(); } check(true); }
-async fn invalid<T>() { skipped<T>(); }
-)",
-                    .rejection = DiagnosticCode::AsyncAdmission
-                },
-                ContractCase {
-                    .name =
-                        "ordinary helpers retain conservative test-stop effects in false branches",
-                    .source = R"(
-fn skipped() { if false { fail(); } check(true); }
-async fn invalid() { skipped(); }
-)",
-                    .rejection = DiagnosticCode::AsyncAdmission
-                },
-                ContractCase {
-                    .name =
-                        "ordinary true branches retain later conditions and else report effects",
-                    .source = R"(
-fn stop() -> bool { require(false); return false; }
-fn skipped<T>() {
-    if true { check(true); } else if stop() { fail(); } else { require(false); }
-}
-async fn invalid<T>() { skipped<T>(); }
-)",
-                    .rejection = DiagnosticCode::AsyncAdmission
-                },
-                ContractCase {
-                    .name =
-                        "ordinary short circuit and loop nodes retain conservative test-stop effects",
-                    .source = R"(
-fn stop() -> bool { fail(); }
-fn skipped<T>() {
-    let conjunction = false && stop(); let disjunction = true || stop();
-    for ; false; { fail(); }
-}
-async fn invalid<T>() { skipped<T>(); }
-)",
-                    .rejection = DiagnosticCode::AsyncAdmission
-                },
-                ContractCase {
-                    .name = "executed false conditions retain their stopping call effect",
-                    .source = R"(
-fn stop() -> bool { require(false); return false; }
-async fn invalid<T>() { if stop() { check(true); } }
-)",
-                    .rejection = DiagnosticCode::AsyncAdmission
-                },
-                ContractCase {
-                    .name = "static selection removes test-stop effects for ordinary callers",
-                    .source = R"(
-fn skipped() { const if false { fail(); } check(true); }
-async fn valid() { skipped(); }
-)",
-                    .rejection = std::nullopt
-                },
-                ContractCase {
-                    .name = "generic callers share concrete helper static effect selection",
-                    .source = R"(
-fn skipped() { const if false { fail(); } check(true); }
-async fn valid<T>() { skipped(); }
-)",
-                    .rejection = std::nullopt
-                },
-                ContractCase {
-                    .name = "nonstopping generic helpers remain admissible",
-                    .source = R"(
-fn checked<T>() { check(true); }
-async fn valid<T>() { checked<T>(); }
 )",
                     .rejection = std::nullopt
                 },
@@ -1415,7 +1337,7 @@ async fn run() -> i32 => await leaf(false);)",
         constexpr auto cases = std::array {
             ContractCase {
                 .name = "native import and source export share async completion",
-                .source = R"(export struct Error { code: i32 }
+                .source = R"(struct Error { code: i32 }
 private import(cpp) async fn provider(context: ::Context) -> i32 throw Error;
 export(cpp) async fn run(context: ::Context) -> i32 throw Error {
     return await provider(context)?;

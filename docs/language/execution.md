@@ -84,8 +84,35 @@ must be unique within its module and cannot be `main`. Tests participate in
 parsing and semantic analysis regardless of whether the compiler is asked to
 emit test artifacts. A test must handle every failure.
 
-`const test "name" { ... }` explicitly selects static execution. The
-string is optional for both `test` and `const test`; anonymous failures report
+`test "name" { ... }` runs synchronously. Use `async test "name" { ... }`
+to await operations and start lexical children directly in the test body:
+
+```carven
+import std::async using yield_once;
+
+async fn value() -> i32 {
+    await yield_once();
+    return 42;
+}
+
+async test "child completes" {
+    async let child = value();
+    check(await child == 42);
+}
+```
+
+The runner executes tests sequentially. Each asynchronous test has its own root
+and closes its lexical children before the runner starts the next test. Test
+reporting remains active across await and child execution. Failed `require` and
+`fail` stop the test and its children and release their local values before the
+next test. Cancellation of the root marks the test as failed, and the runner
+continues to the next test. Tests cannot declare outward failures. Synchronous runtime
+test bodies cannot await.
+
+`const test "name" { ... }` explicitly selects static execution.
+`const async test "name" { ... }` also selects static execution; both forms admit
+await and lexical children within the supported static subset. The
+string is optional for every test form; anonymous failures report
 the test's file, line, and column. Explicit names must be unique within a module.
 Its body uses the static-execution operation and type subset, including direct
 `const fn` calls, calls through local bindings of named `const fn`, printing, and
@@ -95,7 +122,7 @@ test artifact selection. Tests follow the compilation batch's module order and s
 order within each module. Each test has a fresh execution budget and local storage.
 Failed-check diagnostic text consumes the same cumulative text-work budget as output
 and text construction. Passing static tests generate no test functions or runtime
-runner entries. Ordinary `test` bodies retain runtime execution.
+runner entries. Ordinary `test` and `async test` bodies retain runtime execution.
 
 Static `check` failures are compilation errors and execution continues. Failed
 `require` and `fail` stop the current test, including nested Carven calls; the
@@ -133,8 +160,10 @@ A builtin used as a value requires an expected concrete `fn(...) -> void`
 signature, for example `let stop: fn() -> void = fail;`. It then follows ordinary
 callable-view borrowing and failure-widening rules. No testing context argument
 is exposed to source code. The runner supplies the current test context for
-`check`, `require`, and `fail` along the synchronous Carven call chain. Using these
-operations without an active test violates the runtime contract. Native execution
+`check`, `require`, and `fail` along the Carven call chain. Asynchronous tests
+retain that context across await and child execution, including calls through
+synchronous and asynchronous helpers. Using these operations without an active
+test violates the runtime contract. Native execution
 reports the operation's source position and aborts; interpreted execution
 diagnoses the same position.
 

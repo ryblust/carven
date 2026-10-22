@@ -122,9 +122,11 @@ public:
     ExecutionBody(const StructuredBodyDraft& body, const SemanticRegion& region) noexcept;
     ExecutionBody(const SemIRBody& body, const SemanticRegion& region) noexcept;
     ExecutionBody(const StructuredBodyDraft& body, const SemanticExpression& expression) noexcept;
+
     auto kind() const noexcept -> BodyKind;
     auto region() const noexcept -> const SemanticRegion&;
     auto parameters() const noexcept -> std::span<const LocalBindingID>;
+    auto captures() const noexcept -> std::span<const LocalBindingID>;
     auto binding_count() const noexcept -> std::size_t;
     auto binding_type(LocalBindingID id) const noexcept -> ConstructionTypeRef;
     auto binding_access(LocalBindingID id) const noexcept -> AccessMode;

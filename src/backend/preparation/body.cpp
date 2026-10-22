@@ -176,16 +176,16 @@ struct PreparationVisitor final {
 
 } // namespace
 
-BodyPreparation::BodyPreparation(const SemIRProgram& semantic, BodyID body) noexcept
+BodyPreparation::BodyPreparation(
+    const SemIRProgram& semantic,
+    BodyID body,
+    CallableExecutionKind execution
+) noexcept
     : semantic(semantic),
       metadata(semantic.bodies().body(body)),
+      execution_kind(execution),
       unstable(unstable_bindings(semantic, metadata)) {
-    const auto callable = semantic.declarations().callable_for_body(metadata.id());
-    const auto async_body = callable
-        && semantic.callable_signatures()
-                .signature(semantic.declarations().callable(*callable).signature)
-                .execution
-            == CallableExecutionKind::Async;
+    const auto async_body = execution == CallableExecutionKind::Async;
     auto statement_contexts = std::unordered_map<const SemanticStatement*, bool>();
     const auto child_context = [&](const auto& node) noexcept -> bool {
         using Node = std::remove_cvref_t<decltype(node)>;
@@ -413,6 +413,10 @@ auto BodyPreparation::argument(const SemCallArgument& source) const noexcept -> 
         use = PreparedUse::ReadPointer;
     }
     return operand(source.expression, use);
+}
+
+auto BodyPreparation::execution() const noexcept -> CallableExecutionKind {
+    return execution_kind;
 }
 
 auto BodyPreparation::requires_coroutine_context(const SemanticRegion& source) const noexcept

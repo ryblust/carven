@@ -114,6 +114,11 @@ auto target_symbol_info(TargetSymbol symbol) noexcept -> TargetSymbolInfo {
                 "::carven::runtime::report_test_failure",
                 "carven/runtime/testing/testing.hpp"
             );
+        case TargetSymbol::RuntimeRunAsyncTest:
+            return runtime_symbol_info(
+                "::carven::runtime::run_async_test",
+                "carven/runtime/testing/async.hpp"
+            );
         case TargetSymbol::RuntimeAsyncOperation:
             return runtime_symbol_info(
                 "::carven::runtime::execution::AsyncOperation",

@@ -69,6 +69,20 @@ target("carven-test-interop-print")
     })
 target_end()
 
+target("carven-test-interop-async-values")
+    set_default(false)
+    set_group("interop")
+    set_kind("binary")
+    add_rules("@carven/carven", {tests = true})
+    set_languages("c++20")
+    add_includedirs(interop_dir)
+    for _, case in ipairs({"fixed", "tracked", "tail"}) do
+        add_files(path.join(interop_dir, "async", case .. ".cv"))
+        add_files(path.join(interop_dir, "async", case .. ".cpp"))
+    end
+    add_tests("default", {run_timeout = 30000})
+target_end()
+
 target("carven-test-interop-native")
     set_default(false)
     set_group("interop")
@@ -83,13 +97,8 @@ target("carven-test-interop-native")
     })
     add_files(path.join(interop_dir, "async", "net.cv"), path.join(interop_dir, "async", "net.cpp"))
     add_files(path.join(interop_dir, "async", "timer.cpp"))
-    add_files(path.join(interop_dir, "async", "ownership.cv"))
     add_files(path.join(interop_dir, "async", "cleanup.cv"))
     add_files(path.join(interop_dir, "async", "cleanup.cpp"))
-    for _, case in ipairs({"fixed", "tracked", "tail"}) do
-        add_files(path.join(interop_dir, "async", case .. ".cv"))
-        add_files(path.join(interop_dir, "async", case .. ".cpp"))
-    end
     if is_plat("macosx", "linux") then
         for _, case in ipairs({"bridge", "transfer"}) do
             add_files(path.join(interop_dir, "async", case .. ".cv"))
@@ -105,7 +114,7 @@ target("carven-test-interop-native")
     if is_plat("linux") then
         add_syslinks("pthread")
     end
-    local cases = {"ownership", "net", "timer", "cleanup"}
+    local cases = {"net", "timer", "cleanup"}
     if is_plat("macosx", "linux") then
         table.insert(cases, "pipe")
         table.insert(cases, "bridge")

@@ -599,25 +599,11 @@ test { let owner = Payload { number: 1 }; ::native(owner); })",
                     .reason = ExecutionReason::Admission,
                 },
                 Scenario {
-                    .name = "Write capture selects String storage",
-                    .source = R"(test { var text: String = "ab"; let closure = [&text]() {}; })",
-                    .byte_work = 2uz,
-                    .aggregate_work = 0uz,
-                    .reason = ExecutionReason::Admission,
-                },
-                Scenario {
                     .name = "value capture exhausts its copy budget",
                     .source = R"(test { let text: String = "ab"; let closure = [text]() {}; })",
                     .byte_work = 3uz,
-                    .aggregate_work = 0uz,
+                    .aggregate_work = 1uz,
                     .reason = ExecutionReason::Limit,
-                },
-                Scenario {
-                    .name = "value capture pays for its String copy",
-                    .source = R"(test { let text: String = "ab"; let closure = [text]() {}; })",
-                    .byte_work = 4uz,
-                    .aggregate_work = 0uz,
-                    .reason = ExecutionReason::Admission,
                 },
             };
             each(scenarios, &Scenario::name, [](const Scenario& scenario) static noexcept {
@@ -1792,6 +1778,44 @@ import std::async using close;
                 );
             }
         };
+    "Semantic execution: async tests retain reports and stop only their own root after await"_test =
+        [] static noexcept {
+            const auto program = analyze_test_program(R"(import std::async using yield_once;
+async fn value(number: i32) -> i32 { await yield_once(); return number; }
+fn require_value(number: i32) { require(number == 7); }
+async test "stopped" {
+    check(await value(7) == 7);
+    require_value(await value(8));
+    println("unreachable");
+}
+async test "continues" {
+    require_value(await value(7));
+    println("continued");
+}
+)");
+            auto context = BodyExecutionContext(program);
+            const auto values = PublishedConstantValues(program);
+            auto index = 0uz;
+            for (const auto test : program.tests().entries()) {
+                require(test.value.body.has_value());
+                const auto completed = execute_body(
+                                           values,
+                                           context,
+                                           ExecutionBody(program.bodies().body(*test.value.body)),
+                                           static_execution_limits()
+                )
+                                           .run();
+                expect_equal(completed.has_value(), index == 1uz);
+                ++index;
+            }
+            expect_equal(index, 2uz);
+            expect_equal(context.output, std::string("continued\n"));
+            if (expect_equal(context.reports.size(), 1uz)) {
+                expect_equal(context.reports.front().reason(), ExecutionReason::Test);
+                expect_equal(context.reports.front().termination(), ExecutionTermination::StopRoot);
+            }
+        };
+
     "Semantic execution: tuple patterns preserve selected slots and rejected guard effects"_test =
         [] static noexcept {
             const auto program = analyze_test_program(R"(

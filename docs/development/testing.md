@@ -113,8 +113,10 @@ construction.
 Observe control flow through values and local counters or traces. Observe ownership
 through construction, transfer, mutation, execution, and destruction. Include
 conditional paths and recovered failures. Use native fixtures only for observations
-Carven cannot express. Use observable progress to establish async order; do not
-infer suspension or input consumption from fixed sleeps.
+Carven cannot express. Use `async test` for asynchronous test bodies and await
+operations directly; keep explicit async entry or native-driver fixtures when
+that boundary is the contract under test. Use observable progress to establish
+async order; do not infer suspension or input consumption from fixed sleeps.
 
 Use exact text for output contracts, raw payload preservation, and serialization
 encoding. Do not fix generated temporary names, selected helpers, complete bodies,

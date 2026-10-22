@@ -21,23 +21,26 @@ import :support.invariant;
 import std;
 
 auto BodyRealizer::is_async() const noexcept -> bool {
-    const auto* callable = std::get_if<CallableBodyExit>(&inputs.exit);
-    return callable != nullptr
-        && context.semantic()
-               .callable_signatures()
-               .signature(
-                   context.semantic().declarations().callable(callable->callable_id).signature
-               )
-               .execution
-        == CallableExecutionKind::Async;
+    return preparation.execution() == CallableExecutionKind::Async;
+}
+
+auto BodyRealizer::result_type() const noexcept -> TypeID {
+    if (const auto* callable = std::get_if<CallableBodyExit>(&inputs.exit)) {
+        const auto& signature = context.semantic().callable_signatures().signature(
+            context.semantic().declarations().callable(callable->callable_id).signature
+        );
+        return signature.result;
+    }
+    return context.semantic().types().builtin_type(BuiltinType::Void);
 }
 
 auto BodyRealizer::completion_type() noexcept -> TargetTypeID {
     const auto* callable = std::get_if<CallableBodyExit>(&inputs.exit);
-    if (callable == nullptr || !is_async()) {
+    if (!is_async()) {
         invariant_violation("async completion requested for an ordinary body");
     }
-    return context.callable_completion(callable->callable_id);
+    return callable != nullptr ? context.callable_completion(callable->callable_id)
+                               : context.async_void_type(TargetSymbol::RuntimeAsyncCompletion);
 }
 
 auto BodyRealizer::begin_async_region(
@@ -131,9 +134,31 @@ auto BodyRealizer::end_async_scopes(std::size_t retained, LoweringStmtBuilder& d
     }
 }
 
+auto BodyRealizer::emit_stateless_completion(
+    CompletionState state,
+    LoweringStmtBuilder& destination
+) noexcept -> void {
+    const auto factory = state == CompletionState::Success ? "success"
+        : state == CompletionState::Stopped                ? "stopped"
+                                                           : "cancelled";
+    const auto kind = state == CompletionState::Success ? LoweringExitKind::FunctionReturn
+        : state == CompletionState::Stopped             ? LoweringExitKind::Failure
+                                                        : LoweringExitKind::Cancelled;
+    emit_completion(
+        call_expression(
+            static_member_expression(completion_type(), TargetIdentifier::from_spelling(factory)),
+            {}
+        ),
+        kind,
+        CompletionEvaluation::AfterCleanup,
+        destination
+    );
+}
+
 auto BodyRealizer::emit_completion(
     TargetExpr completion,
     LoweringExitKind kind,
+    CompletionEvaluation evaluation,
     LoweringStmtBuilder& destination
 ) noexcept -> void {
     if (local_result_exit) {
@@ -155,25 +180,22 @@ auto BodyRealizer::emit_completion(
         );
         return;
     }
-    // The selected completion outlives every lexical cleanup hop.
-    if (!pending_completion) {
-        pending_completion = LoweringDeferredStorage {
-            .local = fresh_local(TargetTemporaryNameKind::Outcome),
-            .value_type = completion_type(),
-        };
+    if (evaluation == CompletionEvaluation::BeforeCleanup) {
+        // Owned payloads are selected before their source storage leaves scope.
+        if (!pending_completion) {
+            pending_completion = LoweringDeferredStorage {
+                .local = fresh_local(TargetTemporaryNameKind::Outcome),
+                .value_type = completion_type(),
+            };
+        }
+        initialize_deferred(*pending_completion, std::move(completion), destination);
+        completion = call_expression(
+            intrinsic_expression(TargetSymbol::StdMove),
+            target_expressions(dereference_expression(name_expression(pending_completion->local)))
+        );
     }
-    initialize_deferred(*pending_completion, std::move(completion), destination);
     emit_async_exit(
-        generated_statement(
-            TargetCoReturnStmt {
-                .expression = call_expression(
-                    intrinsic_expression(TargetSymbol::StdMove),
-                    target_expressions(
-                        dereference_expression(name_expression(pending_completion->local))
-                    )
-                ),
-            }
-        ),
+        generated_statement(TargetCoReturnStmt {.expression = std::move(completion)}),
         {kind, 0},
         async_closing_locals(0uz),
         kind == LoweringExitKind::Failure || kind == LoweringExitKind::Cancelled,
@@ -204,17 +226,7 @@ auto BodyRealizer::check_stopped(LoweringStmtBuilder& destination) noexcept -> v
 }
 
 auto BodyRealizer::emit_cancelled(LoweringStmtBuilder& destination) noexcept -> void {
-    emit_completion(
-        call_expression(
-            static_member_expression(
-                completion_type(),
-                TargetIdentifier::from_spelling("cancelled")
-            ),
-            {}
-        ),
-        LoweringExitKind::Cancelled,
-        destination
-    );
+    emit_stateless_completion(CompletionState::Cancelled, destination);
 }
 
 auto BodyRealizer::ExpressionBuilder::native_await_intrinsic(const SemAwait& source) noexcept
@@ -336,11 +348,7 @@ auto BodyRealizer::ExpressionBuilder::consume_await(
     owner.check_stopped(statements);
     if (separate_exits && may_cancel) {
         auto cancelled = LoweringStmtBuilder();
-        if (same_completion) {
-            owner.emit_completion(transfer(), LoweringExitKind::Cancelled, cancelled);
-        } else {
-            owner.emit_cancelled(cancelled);
-        }
+        owner.emit_cancelled(cancelled);
         statements.record_exits(cancelled.exits());
         statements.emit(
             generated_statement(
@@ -356,7 +364,12 @@ auto BodyRealizer::ExpressionBuilder::consume_await(
     if (separate_exits && may_fail) {
         auto failure = LoweringStmtBuilder();
         if (same_completion && !owner.current_failure) {
-            owner.emit_completion(transfer(), LoweringExitKind::Failure, failure);
+            owner.emit_completion(
+                transfer(),
+                LoweringExitKind::Failure,
+                CompletionEvaluation::BeforeCleanup,
+                failure
+            );
         } else {
             owner.transfer_failure(
                 OutcomeFailureSource {
@@ -543,7 +556,7 @@ auto BodyRealizer::ExpressionBuilder::fuse_call(
         );
         result = LoweringAssignResult {.local = *storage};
     }
-    const auto preparation = BodyPreparation(program, body);
+    const auto preparation = BodyPreparation(program, body, signature.execution);
     owner.fusion.active.push_back(call.target);
     auto realized =
         BodyRealizer(owner.context, preparation, std::move(inputs), &owner, result).finish();
@@ -569,9 +582,14 @@ auto BodyRealizer::ExpressionBuilder::fuse_factory(
     ResultDemand demand
 ) noexcept -> void {
     const auto& route = *producer.factory;
-    auto inputs = snapshot_parameters(*call.target, route.body, std::move(operands));
-    owner.fusion.active.push_back(*call.target);
-    const auto preparation = BodyPreparation(owner.context.semantic(), route.body);
+    const auto& program = owner.context.semantic();
+    const auto target = *program.direct_call_target(call);
+    auto inputs = snapshot_parameters(target, route.body, std::move(operands));
+    owner.fusion.active.push_back(target);
+    const auto execution = program.callable_signatures()
+                               .signature(program.declarations().callable(target).signature)
+                               .execution;
+    const auto preparation = BodyPreparation(program, route.body, execution);
     auto factory = BodyRealizer(owner.context, preparation, std::move(inputs), &owner);
     auto arguments = std::vector<TargetExpr>();
     for (const auto& argument : route.returned->arguments) {

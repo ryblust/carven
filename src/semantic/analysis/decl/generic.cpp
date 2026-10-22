@@ -47,7 +47,7 @@ auto DeclResolver::resolve_generic_declaration(
             if (!resolved) {
                 co_return std::unexpected(resolved.error());
             }
-            auto inherited = draft.generic_declaration_contract_copy(*owner);
+            auto inherited = draft.generic_parameter_contract_copy(*owner);
             parameters = std::move(inherited.parameters);
             policies = std::move(inherited.parameter_kinds);
             bounds = std::move(inherited.parameter_bounds);
@@ -165,6 +165,7 @@ auto DeclResolver::resolve_generic_declaration(
         .name = draft.intern_spelling(symbol.name),
         .origin = declaration_source_origin(draft, symbol.module_id, item.span),
         .visibility = symbol.visibility,
+        .parameter_scope = std::nullopt,
         .parameters = {},
         .audience_dependencies = {},
         .parameter_kinds = std::move(policies),
@@ -250,7 +251,10 @@ auto DeclResolver::resolve_generic_declaration(
                             self(self, type, origin);
                         });
                     },
-                    [&](const GenericNominalApplication& application) noexcept {
+                    [&]<typename Application>(const Application& application) noexcept
+                        requires (std::same_as<Application, GenericNominalApplication>
+                                  || std::same_as<Application, GenericClosureType>)
+                    {
                         contract.audience_dependencies.push_back(
                             {.reference = application.definition, .origin = origin}
                         );
@@ -274,7 +278,7 @@ auto DeclResolver::resolve_generic_declaration(
                             );
                         }
                     },
-                }
+                    }
             );
     };
     const auto type_reference = [&](GenericTypeID type) noexcept -> ConstructionTypeRef {
@@ -476,7 +480,7 @@ auto DeclResolver::resolve_generic_declaration(
         contract.parameters = std::move(parameters);
         draft.define_generic_declaration(
             form.definition,
-            GenericFunctionDefinition {
+            GenericCallableDefinition {
                 .contract = std::move(contract),
                 .signature =
                     {.execution = function->async_span ? CallableExecutionKind::Async

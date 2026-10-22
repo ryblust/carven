@@ -466,12 +466,14 @@ TargetPlan::TargetPlan(
     TargetPlanIdentity identity,
     TargetNamePlan names,
     FailureABI failure_abi,
+    std::vector<TargetTypeDefinitionRef> type_order,
     TargetPlanTable<TargetArtifactPlan, TargetArtifactID> artifacts
 ) noexcept
     : source_identity(semantic_identity),
       plan_identity(identity),
       name_plan(std::move(names)),
       failure_abi_plan(std::move(failure_abi)),
+      type_order(std::move(type_order)),
       artifact_plans(std::move(artifacts)) {
     if (name_plan.semantic_owner() != source_identity
         || failure_abi_plan.semantic_owner() != source_identity) {
@@ -506,7 +508,7 @@ TargetPlan::TargetPlan(
 
 auto target_definition_placement(const SemIRProgram& semantic, CallableID callable) noexcept
     -> TargetDefinitionPlacement {
-    if (semantic.static_instance(callable) || semantic.generic_function_instance(callable)) {
+    if (semantic.static_instance(callable) || semantic.generic_callable_instance(callable)) {
         return TargetDefinitionPlacement::Use;
     }
     return semantic.is_source_template(callable) ? TargetDefinitionPlacement::None
@@ -522,15 +524,18 @@ auto TargetPlan::build(
         invariant_violation("target planning requires resolved library membership");
     }
     const auto identity = TargetPlanIdentity::fresh();
-    const auto closures = plan_closures(semantic);
+    auto closures = plan_closures(semantic);
+    auto type_order = target_type_definition_order(semantic, closures.definitions);
     auto names = plan_names(semantic, request, library_modules, closures);
     auto failures = plan_failure_abi(semantic);
-    auto artifacts = plan_artifacts(semantic, request, library_modules, closures, names, identity);
+    auto artifacts =
+        plan_artifacts(semantic, request, library_modules, closures, type_order, names, identity);
     return TargetPlan(
         semantic.identity(),
         identity,
         std::move(names),
         std::move(failures),
+        std::move(type_order),
         std::move(artifacts)
     );
 }
@@ -558,6 +563,10 @@ auto TargetPlan::artifacts() const noexcept
 
 auto TargetPlan::artifact_count() const noexcept -> std::size_t {
     return artifact_plans.size();
+}
+
+auto TargetPlan::type_definitions() const noexcept -> std::span<const TargetTypeDefinitionRef> {
+    return type_order;
 }
 
 auto TargetPlan::artifact(TargetArtifactID id) const noexcept -> const TargetArtifactPlan& {

@@ -46,16 +46,10 @@ private async fn parent() -> ::Fixed throw ParentFailure {
     return await forward();
 }
 
-async fn run_fixed() throw ParentFailure + Timeout + TimeRangeError {
-    assert(await fixed_aligned_frames());
-    assert(
-        (fixed_created(), fixed_destroyed(), fixed_live(), fixed_trace(), fixed_identity_stable())
-            == (0, 0, 0, 0, 0)
-    );
-    if true {
-        let held = await parent()?;
-        assert(held.at_construction_address() as bool);
-        assert(
+async test "Async native values: immovable identity and completion cleanup" {
+    try {
+        check(await fixed_aligned_frames());
+        check(
             (
                 fixed_created(),
                 fixed_destroyed(),
@@ -63,48 +57,72 @@ async fn run_fixed() throw ParentFailure + Timeout + TimeRangeError {
                 fixed_trace(),
                 fixed_identity_stable()
             )
-                == (1, 0, 1, 1, 1)
+                == (0, 0, 0, 0, 0)
         );
-    }
-    assert(
-        (fixed_created(), fixed_destroyed(), fixed_live(), fixed_trace(), fixed_identity_stable())
-            == (1, 1, 0, 12, 0)
-    );
-    if true {
-        let held = await timeout(parent(), 1s)?;
-        assert(held.at_construction_address() as bool);
-        assert(fixed_created() == 2 && fixed_destroyed() == 1 && fixed_live() == 1);
-        assert(fixed_identity_stable() == 1);
-    }
-    assert(fixed_destroyed() == 2 && fixed_live() == 0);
-    if true {
-        let held = sync_selected(false);
-        assert(held.at_construction_address() as bool);
-        assert(fixed_created() == 3 && fixed_destroyed() == 2 && fixed_live() == 1);
-        assert(fixed_identity_stable() == 1);
-    }
-    assert(fixed_destroyed() == 3 && fixed_live() == 0);
-    if true {
-        let held = if fixed_created() != 3 { sync_fixed() } else { ::Fixed {} };
-        assert(held.at_construction_address() as bool);
-        assert(fixed_created() == 4 && fixed_destroyed() == 3 && fixed_live() == 1);
-        assert(fixed_identity_stable() == 1);
-    }
-    assert(fixed_destroyed() == 4 && fixed_live() == 0);
-    if true {
-        let held = try {
-            nominal_fixed(false)?
-        } catch {
-            ParentFailure(_) => ::Fixed {}
-        };
-        assert(held.at_construction_address() as bool);
-        assert(fixed_created() == 5 && fixed_destroyed() == 4 && fixed_live() == 1);
-        assert(fixed_identity_stable() == 1);
-    }
-    assert(fixed_destroyed() == 5 && fixed_live() == 0);
+        if true {
+            let held = await parent()?;
+            check(held.at_construction_address() as bool);
+            check(
+                (
+                    fixed_created(),
+                    fixed_destroyed(),
+                    fixed_live(),
+                    fixed_trace(),
+                    fixed_identity_stable()
+                )
+                    == (1, 0, 1, 1, 1)
+            );
+        }
+        check(
+            (
+                fixed_created(),
+                fixed_destroyed(),
+                fixed_live(),
+                fixed_trace(),
+                fixed_identity_stable()
+            )
+                == (1, 1, 0, 12, 0)
+        );
+        if true {
+            let held = await timeout(parent(), 1s)?;
+            check(held.at_construction_address() as bool);
+            check(fixed_created() == 2 && fixed_destroyed() == 1 && fixed_live() == 1);
+            check(fixed_identity_stable() == 1);
+        }
+        check(fixed_destroyed() == 2 && fixed_live() == 0);
+        if true {
+            let held = sync_selected(false);
+            check(held.at_construction_address() as bool);
+            check(fixed_created() == 3 && fixed_destroyed() == 2 && fixed_live() == 1);
+            check(fixed_identity_stable() == 1);
+        }
+        check(fixed_destroyed() == 3 && fixed_live() == 0);
+        if true {
+            let held = if fixed_created() != 3 { sync_fixed() } else { ::Fixed {} };
+            check(held.at_construction_address() as bool);
+            check(fixed_created() == 4 && fixed_destroyed() == 3 && fixed_live() == 1);
+            check(fixed_identity_stable() == 1);
+        }
+        check(fixed_destroyed() == 4 && fixed_live() == 0);
+        if true {
+            let held = try {
+                nominal_fixed(false)?
+            } catch {
+                ParentFailure(_) => ::Fixed {}
+            };
+            check(held.at_construction_address() as bool);
+            check(fixed_created() == 5 && fixed_destroyed() == 4 && fixed_live() == 1);
+            check(fixed_identity_stable() == 1);
+        }
+        check(fixed_destroyed() == 5 && fixed_live() == 0);
 
-    async let candidate = timeout(fixed_cancel_on_destroy(), 1s);
-    let (_, cancelled) = await wait_ready(candidate);
-    await close(candidate);
-    assert(cancelled && fixed_completion_cancel_observed());
+        async let candidate = timeout(fixed_cancel_on_destroy(), 1s);
+        let (_, cancelled) = await wait_ready(candidate);
+        await close(candidate);
+        check(cancelled && fixed_completion_cancel_observed());
+    } catch {
+        ParentFailure(_) => fail("unexpected parent failure"),
+        Timeout(_) => fail("unexpected native value timeout"),
+        TimeRangeError(_) => fail("unexpected native value time range failure"),
+    }
 }

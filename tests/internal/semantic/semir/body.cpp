@@ -354,7 +354,7 @@ const TestSuite suite([] static noexcept {
             if (!expect(program.has_value())) {
                 return;
             }
-            expect(program->may_stop_test(prepared.callable));
+            expect(program->may_stop(prepared.callable));
         };
 
     "SemIR body: resolved nested regions can be delivered"_test = [] static noexcept {

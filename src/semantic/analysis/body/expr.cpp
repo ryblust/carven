@@ -23,6 +23,7 @@ import :semantic.analysis.types;
 import :semantic.analysis.validation;
 import :semantic.evaluation.operation;
 import :semantic.semir.decl;
+import :semantic.semir.generic;
 import :semantic.semir.structured;
 import :semantic.semir.type;
 import :support.invariant;
@@ -56,14 +57,6 @@ auto BodyElaborator::lambda_expression(
     Span span,
     std::optional<ConstructionTypeRef> expected
 ) noexcept -> AnalysisTask<BuiltExpression> {
-    if (generic_context) {
-        co_return std::unexpected(fail(
-            span,
-            DiagnosticCode::TypeGenericDefinition,
-            "generic function closures require a parameterized callable representation"
-        ));
-    }
-
     auto expected_view = expected ? draft().callable_shape(*expected) : std::nullopt;
     if (expected_view && expected_view->owning_type) {
         expected_view.reset();
@@ -230,17 +223,20 @@ auto BodyElaborator::lambda_expression(
         );
     }
 
-    const auto finish = [&](CallableID callable) noexcept -> BuiltExpression {
+    const auto finish = [&](ConstructionCallableRef callable) noexcept -> BuiltExpression {
         auto operands = std::vector<SemCapture>();
         operands.reserve(captures.size());
         for (auto& capture : captures) {
             operands.push_back(std::move(capture.operand));
         }
-        const auto closure_type = draft().intern_type(
-            CanonicalType {
-                .value = ClosureTypeValue {.callable = callable},
-            }
-        );
+        const auto closure_type =
+            callable.visit([&](const auto identity) noexcept -> ConstructionTypeRef {
+                if constexpr (std::same_as<std::remove_cvref_t<decltype(identity)>, CallableID>) {
+                    return draft().intern_type({.value = ClosureTypeValue {.callable = identity}});
+                } else {
+                    return identity;
+                }
+            });
         auto value = active_builder().make_expression(
             closure_type,
             active_builder().lifetime(),
@@ -256,7 +252,13 @@ auto BodyElaborator::lambda_expression(
         };
     };
     if (const auto cached = lambda_callables.find(span); cached != lambda_callables.end()) {
-        const auto contract = draft().construction_callable_contract_copy(cached->second);
+        const auto contract = cached->second.visit([&](const auto identity) noexcept {
+            if constexpr (std::same_as<std::remove_cvref_t<decltype(identity)>, CallableID>) {
+                return draft().construction_callable_contract_copy(identity);
+            } else {
+                return *draft().callable_contract(identity);
+            }
+        });
         if (expected_view && !compatible(contract.result, expected_view->result)) {
             co_return std::unexpected(fail(
                 span,
@@ -283,7 +285,7 @@ auto BodyElaborator::lambda_expression(
             *source.throw_clause,
             resolve_extent,
             nullptr,
-            nullptr,
+            generic_context ? &*generic_context : nullptr,
             observe_sources ? &source_occurrences : nullptr
         ));
         if (!members.has_value()) {
@@ -300,7 +302,22 @@ auto BodyElaborator::lambda_expression(
         failure_policy = FailureContractPolicy::Declared;
     }
 
-    auto reservation = draft().reserve_body(BodyKind::Closure);
+    auto definition = std::optional<GenericDeclarationID>();
+    if (generic_context) {
+        definition = draft().append_generic_closure(
+            generic_context->definition,
+            lambda_origin,
+            ConstructionCallableContract {
+                .execution = CallableExecutionKind::Synchronous,
+                .parameters = parameters,
+                .result = lambda_result.value_or(draft().builtin_type(BuiltinType::Void)),
+                .failures = signature_failures,
+                .policy = failure_policy,
+            }
+        );
+    }
+    auto reservation = definition ? draft().reserve_generic_body(*definition)
+                                  : draft().reserve_body(BodyKind::Closure);
     const auto body_id = reservation.id();
     auto child = BodyElaborator(
         *batch,
@@ -312,7 +329,7 @@ auto BodyElaborator::lambda_expression(
         actual_failures,
         true,
         false,
-        std::nullopt,
+        generic_context,
         observe_sources
     );
     child.lexical_class = lexical_class;
@@ -360,6 +377,19 @@ auto BodyElaborator::lambda_expression(
             );
         }
     }
+    source_occurrences.merge(std::move(child.source_occurrences));
+    if (definition) {
+        draft().complete_generic_callable_result(*definition, resolved_result);
+        draft().set_generic_callable_body(*definition, std::move(*child_body));
+        const auto closure = draft().intern_generic_type(
+            GenericClosureType {
+                .definition = *definition,
+                .arguments = draft().generic_parameter_environment(*definition),
+            }
+        );
+        lambda_callables.emplace(span, closure);
+        co_return finish(closure);
+    }
     const auto callable = draft().append_body_callable(
         ConstructionCallableContract {
             .execution = CallableExecutionKind::Synchronous,
@@ -370,7 +400,6 @@ auto BodyElaborator::lambda_expression(
         }
     );
     draft().complete_callable(callable, ClosureBodyImplementation {.body = body_id});
-    source_occurrences.merge(std::move(child.source_occurrences));
     draft().add_body_draft(std::move(*child_body));
 
     lambda_callables.emplace(span, callable);

@@ -141,10 +141,11 @@ auto prepare_await_producer(const SemIRProgram& program, const SemanticExpressio
         return producer(program, *call);
     }
     const auto* call = std::get_if<SemCall>(&operation.value);
-    if (call == nullptr || !call->target) {
+    const auto direct = call != nullptr ? program.direct_call_target(*call) : std::nullopt;
+    if (!direct) {
         return std::nullopt;
     }
-    const auto callable = *call->target;
+    const auto callable = *direct;
     const auto& declaration = program.declarations().callable(callable);
     const auto body_id = callable_body_id(declaration);
     const auto& signature = program.callable_signatures().signature(declaration.signature);
@@ -418,8 +419,9 @@ auto prepare_tail_await_loop(const SemIRProgram& program, CallableID callable) n
                 && !std::holds_alternative<SemTry>(node.value)
                 && !std::holds_alternative<SemReport>(node.value);
             if (const auto* call = std::get_if<SemCall>(&node.value)) {
-                supported &= call->target
-                    && scalar_call(program, *call->target, *call->callee, call->arguments);
+                const auto direct = program.direct_call_target(*call);
+                supported &=
+                    direct && scalar_call(program, *direct, *call->callee, call->arguments);
             } else if (const auto* cold = std::get_if<SemColdCall>(&node.value)) {
                 supported &= scalar_call(program, cold->target, *cold->callee, cold->arguments);
             }

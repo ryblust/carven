@@ -238,14 +238,19 @@ auto BodyContractVerifier::verify_expression(
                 const auto& signature =
                     program.callable_signatures().signature(program.call_signature(value));
                 if (value.target) {
+                    const auto& target = program.callable_signatures().signature(
+                        program.declarations()
+                            .callable(std::get<CallableID>(*value.target))
+                            .signature
+                    );
                     const auto& view = program.callable_signatures().signature(
                         program.call_signature(value.callee->type.resolved())
                     );
-                    if (signature.parameters != view.parameters
-                        || signature.result != view.result
+                    if (target.parameters != view.parameters
+                        || target.result != view.result
                         || !std::ranges::includes(
                             require_failure_set(view.failures).members,
-                            require_failure_set(signature.failures).members,
+                            require_failure_set(target.failures).members,
                             {},
                             &TypeID::index,
                             &TypeID::index
@@ -1025,8 +1030,9 @@ auto BodyContractVerifier::verify_expression(
                 }
             },
             [&](const SemClosure& value) noexcept {
-                const auto& closure =
-                    related_body(*program.declarations().body_for_callable(value.callable));
+                const auto& closure = related_body(
+                    *program.declarations().body_for_callable(std::get<CallableID>(value.callable))
+                );
                 if (closure.inputs().captures.size() != value.captures.size()) {
                     invariant_violation("closure capture arity mismatch");
                 }

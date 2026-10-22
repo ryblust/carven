@@ -61,7 +61,16 @@ canonical instance, visibility, and publication machinery.
 diagnostics. It does not replace the generic definition's declaration identity
 or its source declaration.
 
-Published generic function instances retain their source declaration, canonical
+Generic named functions and lexical closures share callable definitions. A
+lexical closure records the root declaration owning its type and failure-set
+parameters. Only that named declaration stores the parameter names, kinds, and
+capability bounds; construction and published programs query the same parameter
+contract through the closure's direct scope reference. Each closure retains its
+own origin and implementation dependencies. Concrete applications substitute its
+signature, captures, and body through ordinary callable instantiation.
+Builtin callable values whose signatures use enclosing generic arguments follow
+this same callable definition and instantiation model.
+Published generic callable instances retain their source definition, canonical
 arguments, and concrete callable. Target planning uses these facts for stable
 content names and inline definitions at their uses, including when the source
 template belongs to a fixed source library.
@@ -109,6 +118,10 @@ set, independently of the producing function. Async execution kind belongs to th
 callable contract; its invocation constructs a cold operation. Cold construction,
 await, lexical child startup, and compiler-defined async operations have distinct
 SemIR forms. Cancellation remains outside nominal failure identity.
+
+Each test owns an independent body and selects static, synchronous runtime, or
+asynchronous runtime execution. Static tests release their body after analysis.
+Runtime test bodies remain separate from function and closure callable contracts.
 
 Ownership analysis checks consumption, retained backing, child intent, and source
 lifetime exits through its existing flow and interprocedural queries. Those proof
@@ -257,12 +270,10 @@ callable with its expected signature. Call-stop analysis uses each callable's
 executable region, collecting direct stops and possible calls and propagating
 effects through reverse call dependencies. Ordinary branches retain their
 structural possibilities; explicit static selection contributes only its selected
-operations. Every `import(cpp)` contract admits host stops, independently of its
-implementation target and declared failures. Native callback parameters do not
-add test-stop effects: the external implementation must honor the declared
-contract. Calls through Carven callable views conservatively admit test and host
-stops. One solved effect records both causes; test-scope admission checks only the
-test cause.
+operations. Every `import(cpp)` contract and unresolved Carven callable view
+admits stopped completion, independently of its implementation target and
+declared failures. A solved may-stop fact determines whether a call needs stopped
+completion transport.
 Construction and publication use the same structural reachability and pattern
 coverage rules. Body resolution computes `exits_call` for expressions and regions
 from operation trees and solved callable stop effects. The flag conservatively
@@ -284,7 +295,7 @@ admission remain independent.
 
 Immutable locals initialized from a known function retain its identity through
 copies and callable adaptation. Calls publish that target alongside the original
-callee expression. Failure and test-stop solving use the target's contract;
+callee expression. Failure and stop solving use the target's contract;
 ownership analysis still checks evaluation and availability of the callee.
 Mutable slots, captured objects, and unresolved selections retain dynamic calls.
 
@@ -480,8 +491,8 @@ Construction establishes semantic facts before publication.
 Local construction checks its preconditions. Program validation checks owner
 and range relations, type and call contracts, lifetime and control legality,
 binding relations, declaration topology, and cross-body callable relations.
-Each declaration and body has its required unique owner. A lexical closure has
-one callable and one body; construction expressions create values of that type.
+Each declaration and body has its required unique owner. A closed lexical closure
+has one callable and one body; construction expressions create values of that type.
 An unchanged executable region checks source contracts and executable constraints
 in one traversal. Separate checked and rewritten regions each retain their
 applicable checks; rewritten native construction may establish additional value

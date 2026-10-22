@@ -173,11 +173,7 @@ auto lower_module(
         );
     };
     auto root = std::vector<TargetItem>();
-    if (!lowered.nominal_declarations.empty()) {
-        root.push_back(
-            module_namespace(schedule.module_id, std::move(lowered.nominal_declarations))
-        );
-    }
+    append_items(root, std::move(lowered.type_declarations));
     append_items(root, context.take_support());
     if (!lowered.private_declarations.empty()) {
         root.push_back(module_namespace(

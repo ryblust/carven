@@ -29,14 +29,17 @@ local function check_stream(failures, label, actual, exact, contains, ordered, u
             table.insert(failures, label .. " does not contain: " .. expected)
         end
     end
-    local offset = 1
-    for _, expected in ipairs(ordered or {}) do
-        local found = actual:find(expected, offset, true)
-        if not found then
-            table.insert(failures, label .. " is missing ordered text: " .. expected)
-            break
+    local sequences = ordered and (type(ordered[1]) == "table" and ordered or {ordered}) or {}
+    for _, sequence in ipairs(sequences) do
+        local offset = 1
+        for _, expected in ipairs(sequence) do
+            local found = actual:find(expected, offset, true)
+            if not found then
+                table.insert(failures, label .. " is missing ordered text: " .. expected)
+                break
+            end
+            offset = found + #expected
         end
-        offset = found + #expected
     end
 end
 

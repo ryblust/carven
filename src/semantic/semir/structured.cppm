@@ -222,8 +222,8 @@ struct SemCppCall final {
 
 struct SemCall final {
     OwnedSemanticExpression callee;
-    // A stable function target does not remove evaluation or availability checks of callee.
-    std::optional<CallableID> target;
+    // A stable target does not remove evaluation or availability checks of callee.
+    std::optional<ConstructionCallableRef> target;
     std::vector<SemCallArgument> arguments;
     BodyFailures callee_failures;
 };
@@ -283,7 +283,7 @@ struct SemAsyncIntrinsic final {
 };
 
 struct SemClosure final {
-    CallableID callable;
+    ConstructionCallableRef callable;
     std::vector<SemCapture> captures;
 };
 

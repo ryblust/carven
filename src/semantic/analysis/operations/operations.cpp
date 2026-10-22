@@ -213,7 +213,7 @@ enum class TypeRelation { Shape, Storage };
 using FailureEqualities = std::vector<std::pair<ConstructionFailureRef, ConstructionFailureRef>>;
 
 auto match_types(
-    const ProgramDraft& draft,
+    ProgramDraft& draft,
     ConstructionTypeRef source,
     ConstructionTypeRef target,
     TypeRelation relation
@@ -520,7 +520,7 @@ auto type_formation_status(
 }
 
 auto pointer_narrows(
-    const ProgramDraft& draft,
+    ProgramDraft& draft,
     ConstructionTypeRef source,
     ConstructionTypeRef target
 ) noexcept -> bool {
@@ -557,7 +557,7 @@ auto constrain_invariant_type(
 }
 
 auto type_shapes_compatible(
-    const ProgramDraft& draft,
+    ProgramDraft& draft,
     ConstructionTypeRef left,
     ConstructionTypeRef right
 ) noexcept -> bool {
@@ -1122,7 +1122,7 @@ auto cast_uses_cpp(
 }
 
 auto decide_cast(
-    const ProgramDraft& facts,
+    ProgramDraft& facts,
     ConstructionTypeRef source,
     ConstructionTypeRef target,
     bool numeric_enum

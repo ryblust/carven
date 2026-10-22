@@ -75,6 +75,13 @@ const TestSuite suite([] static noexcept {
                 "async fn f(){async let child=leaf();cancel child;await child?;}\n",
                 "async fn f() {\n    async let child = leaf();\n    cancel child;\n    await child?;\n}\n"
             );
+            check_format(
+                "async test{await leaf();check(true);}async test \"named\"{}"
+                "const async test{await leaf();}async const test \"static\"{}\n",
+                "async test {\n    await leaf();\n    check(true);\n}\n\n"
+                "async test \"named\" {}\n\nconst async test {\n    await leaf();\n}\n\n"
+                "async const test \"static\" {}\n"
+            );
         };
 
     "Format: examples have exact and stable output"_test = [] static noexcept {

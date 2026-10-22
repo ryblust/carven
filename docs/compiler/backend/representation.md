@@ -211,15 +211,23 @@ qualified nominal names, while module bodies retain local names. Both use the
 same dependency discovery and callable work queue. Export façades retain the
 callable result carrier, including its stopped state.
 
-Concrete closures use named structures with const call operators defined in the
-source artifact. Closures exposed by function result types publish their layouts
-in the generated interface. Noncapturing closures adapt to callable views without
-borrowing an object; the source closure expression is evaluated once.
+Concrete closures use named structures containing capture fields and const call
+operator declarations. Call operators are defined outside the structure after
+required value types are complete. Generic closure instances emit their structures
+and `inline` operators in artifacts that use them, retaining the source owner's
+module namespace and content-derived type names. Closures exposed by function
+result types publish their layouts and required capture layouts in the generated
+interface, including private nominal types. Noncapturing closures adapt to callable
+views without borrowing an object; the source closure expression is evaluated once.
 Value captures are fields and are read-only through the call operator. Write
 captures are `std::reference_wrapper<T>` fields whose referents are accessed
 through `.get()`. Capture fields permit the generated default
 C++ assignment operation to copy values and rebind reference targets.
 Callable borrows use non-owning `FunctionRef` target descriptions.
+
+Nominal and closure layouts share one definition order. Stored values and native
+trait queries impose their C++ completeness requirements; body references request
+definitions without imposing storage-layout edges.
 
 Runtime type-selected operations use `Stateless<T>` and `stateless_value<T>`
 from `runtime/value/stateless.hpp`. The contract admits unqualified empty object

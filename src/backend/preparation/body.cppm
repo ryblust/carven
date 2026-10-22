@@ -4,6 +4,7 @@ import :backend.preparation;
 import :semantic.semir.body;
 import :semantic.semir.program;
 import :semantic.semir.structured;
+import :semantic.semir.type;
 import std;
 
 // ReadBorrow observes an object. ReadPointer presents an address snapshot as
@@ -58,8 +59,14 @@ struct ExpressionSummary final {
 
 class BodyPreparation final {
 public:
-    BodyPreparation(const SemIRProgram& semantic, BodyID body) noexcept;
+    BodyPreparation(
+        const SemIRProgram& semantic,
+        BodyID body,
+        CallableExecutionKind execution
+    ) noexcept;
+
     auto body() const noexcept -> const SemIRBody&;
+    auto execution() const noexcept -> CallableExecutionKind;
     // Propagation markers select their operand; all other operations retain identity.
     static auto operation(const SemanticExpression& source) noexcept -> const SemanticExpression&;
     auto prepare(const SemanticExpression& source) const noexcept -> PreparedOperation;
@@ -82,6 +89,7 @@ private:
     auto argument(const SemCallArgument& source) const noexcept -> PreparedOperand;
     const SemIRProgram& semantic;
     const SemIRBody& metadata;
+    CallableExecutionKind execution_kind;
     std::flat_set<LocalBindingID> unstable;
     std::unordered_map<const SemanticExpression*, ExpressionSummary> summaries;
     std::unordered_map<const SemanticRegion*, bool> region_contexts;

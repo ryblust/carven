@@ -75,6 +75,12 @@ struct GenericCallableViewType final {
     auto operator<=>(const GenericCallableViewType&) const noexcept = default;
 };
 
+struct GenericClosureType final {
+    GenericDeclarationID definition;
+    GenericEnvironment arguments;
+    auto operator<=>(const GenericClosureType&) const noexcept = default;
+};
+
 struct GenericNominalApplication final {
     GenericDeclarationID definition;
     GenericEnvironment arguments;
@@ -99,6 +105,7 @@ using GenericTypeExpression = std::variant<
     GenericPointerType,
     GenericOperationType,
     GenericCallableViewType,
+    GenericClosureType,
     GenericNominalApplication,
     GenericCppNamedType,
     GenericCppQueryType>;
@@ -133,7 +140,8 @@ auto visit_generic_type_children(const GenericTypeExpression& type, Visitor&& vi
             }
         } else if constexpr (std::same_as<Shape, GenericCppQueryType>) {
             visit_cpp_query_types(shape, visitor);
-        } else if constexpr (std::same_as<Shape, GenericNominalApplication>) {
+        } else if constexpr (std::same_as<Shape, GenericNominalApplication>
+                             || std::same_as<Shape, GenericClosureType>) {
             for (const auto& argument : shape.arguments) {
                 if (const auto* type = std::get_if<ConstructionTypeRef>(&argument)) {
                     visitor(*type);
@@ -221,9 +229,11 @@ struct GenericImplementationDependencies final {
 
 struct GenericDeclarationContract final {
     ModuleID module_id;
-    ProgramSpellingID name;
+    std::optional<ProgramSpellingID> name;
     ProgramOriginID origin;
     DeclarationVisibility visibility;
+    // Lexical closures use their root definition's parameter contract.
+    std::optional<GenericDeclarationID> parameter_scope;
     std::vector<ProgramSpellingID> parameters;
     std::vector<GenericAudienceDependency> audience_dependencies;
     std::vector<GenericParameterKind> parameter_kinds;
@@ -266,7 +276,7 @@ struct TypeFormationRequirement final {
 
 enum class TypeFormationClosure { Complete, Pending };
 
-struct GenericFunctionDefinition final {
+struct GenericCallableDefinition final {
     GenericDeclarationContract contract;
     ConstructionCallableContract signature;
     bool is_const;
@@ -275,7 +285,7 @@ struct GenericFunctionDefinition final {
 };
 
 using GenericDeclarationDefinition =
-    std::variant<GenericRecordDefinition, GenericEnumDefinition, GenericFunctionDefinition>;
+    std::variant<GenericRecordDefinition, GenericEnumDefinition, GenericCallableDefinition>;
 
 // Published instances refer to ordinary concrete declarations. Their checked
 // parameterized fields are construction state and never reach lowering.
@@ -286,7 +296,7 @@ struct GenericNominalInstance final {
     ProgramOriginID origin;
 };
 
-struct GenericFunctionInstance final {
+struct GenericCallableInstance final {
     GenericDeclarationID definition;
     CanonicalGenericEnvironment arguments;
     CallableID callable;

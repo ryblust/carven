@@ -1,0 +1,174 @@
+private const fn transfer<T>(&&value: T) -> T {
+    let forward = [](&&item: T) -> T => &&item;
+    return forward(&&value);
+}
+
+struct Box<T> {
+    value: T,
+}
+
+private const fn boxed<T>(&&value: T) -> Box<T> => { value: &&value };
+
+private const fn release<T>(&&box: Box<T>) -> T => (&&box).value;
+
+private const fn replace<T>(&target: T, &&value: T) {
+    let assign = [&target](&&item: T) {
+        target = &&item;
+    };
+    let nested = [assign](&&item: T) {
+        assign(&&item);
+    };
+    nested(&&value);
+}
+
+private const fn tagged<T>(tag: i32) {
+    return [tag](&&value: T) -> (i32, T) => (tag, &&value);
+}
+
+private const fn pair<A, B>() {
+    return [](&&first: A, &&second: B) -> (A, B) => (&&first, &&second);
+}
+
+private const fn swapped<U, V>() {
+    return pair<V, U>();
+}
+
+private const fn nested<T>() {
+    return []() {
+        return []() {
+            return [](&&value: T) -> T => &&value;
+        };
+    };
+}
+
+private const fn generic_hash<T: Hash>(value: T) -> u64 {
+    let hash: fn(T) -> u64 = Hash::hash;
+    return hash(value);
+}
+
+private const fn generic_equal<T: Equal>(left: T, right: T) -> bool {
+    let equal: fn(T, T) -> bool = Equal::equal;
+    return equal(left, right);
+}
+
+private const fn exercise_generic_closures() {
+    var number = transfer(&&3);
+    replace(&number, &&7);
+    check(number == 7);
+
+    let original: String = "owned";
+    let text = transfer(&&original);
+    var target: String = "replaced";
+    replace(&target, &&text);
+    check(target.as_str() == "owned");
+
+    let annotate = tagged<String>(11);
+    if true {
+        let view: fn(&&String) -> (i32, String) = annotate;
+        let payload: String = "payload";
+        let (tag, result) = view(&&payload);
+        check(tag == 11);
+        check(result.as_str() == "payload");
+    }
+    let holder = boxed(&&annotate);
+    let released = release(&&holder);
+    let moved = transfer(&&released);
+    let payload: String = "moved";
+    let (tag, result) = moved(&&payload);
+    check(tag == 11);
+    check(result.as_str() == "moved");
+
+    let numeric = tagged<i64>(13);
+    let (numeric_tag, numeric_result) = numeric(&&17i64);
+    check((numeric_tag, numeric_result) == (13, 17i64));
+
+    let combine = swapped<i32, String>();
+    let first: String = "first";
+    let (left, right) = combine(&&first, &&19);
+    check(left.as_str() == "first");
+    check(right == 19);
+
+    let outer = nested<String>();
+    let middle = outer();
+    let inner = middle();
+    let nested_value: String = "nested";
+    let nested_result = inner(&&nested_value);
+    check(nested_result.as_str() == "nested");
+
+    check(generic_hash(42) == Hash::hash(42));
+    let key: String = "key";
+    check(generic_hash(key) == Hash::hash(key));
+    check(generic_equal(7, 7));
+    check(!generic_equal(7, 8));
+    check(generic_equal(key, key));
+    check(!generic_equal(key, target));
+}
+
+const test "Generic closures: static captures, parameters, and owned results" {
+    exercise_generic_closures();
+}
+
+test "Generic closures: captures, parameters, and owned results" {
+    exercise_generic_closures();
+}
+
+struct FirstFailure {
+    value: i32,
+}
+
+struct SecondFailure {}
+
+private const fn alternative(value: i32) -> i32 throw FirstFailure => value + 10;
+
+private const fn fallible(value: i32) -> i32 throw FirstFailure {
+    if value < 0 { throw FirstFailure { value: value }; }
+    return value;
+}
+
+private fn invoke<throw E>(action: fn() -> i32 throw E) -> i32 throw E {
+    let run = [](inner: fn() -> i32 throw E) -> i32 throw E => inner()?;
+    return run(action)?;
+}
+
+test "Closure views: widening follows source rebinding and preserves failures" {
+    let offset = 2;
+    let owner = [offset](value: i32) -> i32 throw FirstFailure => fallible(value + offset)?;
+    var source: fn(i32) -> i32 throw FirstFailure = owner;
+    let copied = source;
+    let widened: fn(i32) -> i32 throw FirstFailure + SecondFailure = source;
+    try {
+        check(copied(1)? == 3);
+        source = alternative;
+        check(widened(1)? == 11);
+        check(copied(1)? == 3);
+    } catch {
+        FirstFailure(_) => fail("unexpected first failure"),
+        SecondFailure(_) => fail("unexpected second failure"),
+    }
+    let recovered = try {
+        copied(-3)?
+    } catch {
+        FirstFailure(error) => error.value,
+    };
+    check(recovered == -1);
+
+    let rejected = [offset]() -> i32 throw FirstFailure {
+        throw FirstFailure { value: offset };
+    };
+    let generic_failure = try {
+        invoke<throw FirstFailure>(rejected)?
+    } catch {
+        FirstFailure(error) => error.value,
+    };
+    check(generic_failure == 2);
+
+    let owners = [[owner, owner]];
+    let narrow: [[fn(i32) -> i32 throw FirstFailure; 2]; 1] = owners;
+    let wide: [[fn(i32) -> i32 throw FirstFailure + SecondFailure; 2]; 1] = narrow;
+    try {
+        check(wide[0][1](3)? == 5);
+    } catch {
+        FirstFailure(_) => fail("unexpected array first failure"),
+        SecondFailure(_) => fail("unexpected array second failure"),
+    }
+}

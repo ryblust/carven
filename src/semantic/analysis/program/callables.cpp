@@ -6,7 +6,7 @@ import :semantic.semir.generic;
 import :semantic.semir.type;
 import std;
 
-auto ProgramDraft::callable_shape(ConstructionTypeRef type) const noexcept
+auto ProgramDraft::callable_shape(ConstructionTypeRef type) noexcept
     -> std::optional<ConstructionCallableShape> {
     if (const auto* concrete = std::get_if<TypeID>(&type)) {
         const auto canonical = type_copy(*concrete);
@@ -66,6 +66,27 @@ auto ProgramDraft::callable_shape(ConstructionTypeRef type) const noexcept
                 .policy = FailureContractPolicy::Declared,
             };
         }
+        if (const auto* closure = std::get_if<GenericClosureType>(&expression)) {
+            const auto definition = generic_declaration_copy(closure->definition);
+            auto contract = std::get<GenericCallableDefinition>(definition).signature;
+            const auto owner = generic_parameter_owner(closure->definition);
+            auto effects = make_failure_instantiation(owner, closure->arguments);
+            for (auto& parameter : contract.parameters) {
+                parameter.type =
+                    substitute_generic_type(parameter.type, owner, closure->arguments, &effects);
+            }
+            contract.result =
+                substitute_generic_type(contract.result, owner, closure->arguments, &effects);
+            contract.failures = effects.substitute(contract.failures);
+            return ConstructionCallableShape {
+                .owning_type = type,
+                .execution = contract.execution,
+                .parameters = contract.parameters,
+                .result = contract.result,
+                .failures = contract.failures,
+                .policy = contract.policy,
+            };
+        }
         return std::nullopt;
     }
     const auto construction = construction_type_copy(std::get<TypeTermID>(type));
@@ -83,7 +104,7 @@ auto ProgramDraft::callable_shape(ConstructionTypeRef type) const noexcept
     };
 }
 
-auto ProgramDraft::callable_contract(ConstructionTypeRef type) const noexcept
+auto ProgramDraft::callable_contract(ConstructionTypeRef type) noexcept
     -> std::optional<ConstructionCallableContract> {
     auto shape = callable_shape(type);
     if (!shape.has_value()) {

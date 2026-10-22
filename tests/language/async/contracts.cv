@@ -326,14 +326,14 @@ private async fn repeat<throw E>(&&pending: Operation<i32, throw E>, again: bool
     return (await pending)?;
 }
 
-async fn generic_owners() {
+async test "Async contracts: generic operation ownership and failure forwarding" {
     let pending: Operation<i32> = leaf(42);
     let boxed = store(&&pending);
     let released = release(&&boxed);
-    assert((await relay<Operation<i32>>(&&released)) == 42);
+    check((await relay<Operation<i32>>(&&released)) == 42);
     let item: Operation<i32> = leaf(43);
     let items = relay<[Operation<i32>; 1]>(&&[&&item]);
-    assert((await (&&items)[0]) == 43);
+    check((await (&&items)[0]) == 43);
     let rejected: Operation<i32, throw Failure> = typed_failure();
     let forwarded = relay(&&rejected);
     let result = try {
@@ -342,79 +342,77 @@ async fn generic_owners() {
         Failure(.First) => 47,
         Failure(.Second) => 0,
     };
-    assert(result == 47);
+    check(result == 47);
     let stored = store_pending(&&leaf(51));
     let selected = release(&&stored);
-    assert((await complete(&&selected)) == 51);
-    assert((await keep_first(&&leaf(53), &&leaf(59))) == 53);
-    assert((await repeat(&&leaf(67), true)) == 67);
+    check((await complete(&&selected)) == 51);
+    check((await keep_first(&&leaf(53), &&leaf(59))) == 53);
+    check((await repeat(&&leaf(67), true)) == 67);
     let failure = try {
         await complete(&&typed_failure())?
     } catch {
         Failure(.First) => 61,
         Failure(.Second) => 0,
     };
-    assert(failure == 61);
+    check(failure == 61);
 }
 
-async fn typed_owners() {
+async test "Async contracts: typed aggregate and operation ownership" {
     let text = array_text(&&["first", "second"]);
-    assert(text == "first");
+    check(text == "first");
     var texts: Vector<String> = {};
     texts.push("kept");
     let selected = sequence_text(&&texts);
-    assert(selected == "kept");
+    check(selected == "kept");
     let originals: [String; 1] = ["unchanged"];
     var copied = slice_text(&&originals.slice());
     copied.clear();
-    assert(originals[0] == "unchanged");
+    check(originals[0] == "unchanged");
     let pending: Operation<i32> = typed_relay(&&leaf(31));
-    assert((await pending) == 31);
+    check((await pending) == 31);
     let box = PendingBox { pending: leaf(37) };
-    assert((await (&&box).pending) == 37);
+    check((await (&&box).pending) == 37);
     let pair: (Operation<i32>, void) = (leaf(41), ());
     let (inner, _) = &&pair;
-    assert((await inner) == 41);
+    check((await inner) == 41);
     let array: [Operation<i32>; 1] = [leaf(43)];
-    assert((await (&&array)[0]) == 43);
+    check((await (&&array)[0]) == 43);
     let result = try {
         await typed_forward(&&typed_failure())?
     } catch {
         Failure(.First) => 47,
         Failure(.Second) => 0,
     };
-    assert(result == 47);
+    check(result == 47);
 }
 
-async fn run_contracts() {
-    await generic_owners();
-    await typed_owners();
-    assert((await operand_recovery(true)) == 7012);
-    assert((await operand_recovery(false)) == 10123);
-    assert(await match_guard() == 17);
-    assert(await catch_guard(true) == 13);
-    assert(await catch_guard(false) == 5);
-    assert(await recover_rethrow() == 10);
-    assert(await header_once() == 23);
-    assert(await wrapper_backing() == 20);
+async test "Async contracts: guards, headers, cleanup, and suspension order" {
+    check((await operand_recovery(true)) == 7012);
+    check((await operand_recovery(false)) == 10123);
+    check(await match_guard() == 17);
+    check(await catch_guard(true) == 13);
+    check(await catch_guard(false) == 5);
+    check(await recover_rethrow() == 10);
+    check(await header_once() == 23);
+    check(await wrapper_backing() == 20);
     var trace: i32 = 0;
-    assert(await pending_return(&trace) == 1);
-    assert(trace == 12);
+    check(await pending_return(&trace) == 1);
+    check(trace == 12);
     trace = 0;
     let selected = try {
         await returning_before_step(&trace)?
     } catch {
         Failure(_) => -1,
     };
-    assert(selected == 1);
-    assert(trace == 12);
-    assert(await header_child_observe() == 25);
-    assert(await header_child_continue() == 2);
-    assert(await header_child_break() == 12);
-    assert(await branch_child_closure(true) == 9);
-    assert(await branch_child_closure(false) == 3);
-    assert(await cold_capture() == 12110);
-    assert(await direct_dependency() == 129);
-    assert(await explicit_yield_boundary() == 12384);
-    assert(await return_yield_boundary() == 182);
+    check(selected == 1);
+    check(trace == 12);
+    check(await header_child_observe() == 25);
+    check(await header_child_continue() == 2);
+    check(await header_child_break() == 12);
+    check(await branch_child_closure(true) == 9);
+    check(await branch_child_closure(false) == 3);
+    check(await cold_capture() == 12110);
+    check(await direct_dependency() == 129);
+    check(await explicit_yield_boundary() == 12384);
+    check(await return_yield_boundary() == 182);
 }

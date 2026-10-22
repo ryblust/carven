@@ -193,6 +193,17 @@ auto ModuleLowering::async_type(
     });
 }
 
+auto ModuleLowering::async_void_type(TargetSymbol symbol) noexcept -> TargetTypeID {
+    return target().intern_type({
+        .value =
+            TargetIntrinsicType {
+                .symbol = symbol,
+                .type_argument_ids = {intrinsic_type(TargetSymbol::Void, false)},
+            },
+        .const_qualified = false,
+    });
+}
+
 auto ModuleLowering::callable_completion(CallableID callable_id) noexcept -> TargetTypeID {
     const auto& signature = semantic().callable_signatures().signature(
         semantic().declarations().callable(callable_id).signature
