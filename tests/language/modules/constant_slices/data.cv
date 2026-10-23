@@ -13,7 +13,7 @@ const fn make_table(offset: i32) -> [i32; 3] => [offset, offset + 2, offset + 4]
 const fn make_bytes() -> Vector<u8> {
     var result = Vector<u8>::with_capacity(8);
     result.append([0u8, 127u8, 128u8, 255u8]);
-    return &&result;
+    return result;
 }
 
 fn from_provider() -> [i32] => table;

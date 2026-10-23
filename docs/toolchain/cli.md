@@ -9,16 +9,20 @@ The examples assume `carven` is on `PATH`. Relative source paths use the current
 directory. Source paths determine their module identities as described below.
 
 ```text
-carven build [<source.cv>]
-carven run [<source.cv>|<target>] [-- <arguments>...]
+carven build
+carven run <source.cv>... [-- <arguments>...]
+carven run [<target>] [-- <arguments>...]
+carven test [<target>]
+carven format [arguments...]
+carven query
 carven compile [options...] [<input>...]
 carven check [options...] [<input>...]
 carven interpret [--tests] [--timings] [--trace] [--max-steps N] <source-file>... [-- <arguments>...]
 carven dump [tokens|ast] [--timings] <source-file>
 ```
 
-`carven --help`, `carven build --help`, `carven run --help`,
-`carven compile --help`, `carven check --help`,
+`carven --help`, `carven build --help`, `carven run --help`, `carven test --help`,
+`carven format --help`, `carven query --help`, `carven compile --help`, `carven check --help`,
 `carven interpret --help`, and `carven dump --help` print help (`-h` is also
 accepted). Top-level help lists commands; each command has its own usage and
 options. `carven --version` and `carven -V` print `carven v<version>` followed by
@@ -28,77 +32,116 @@ Windows Unicode command-line arguments are converted to UTF-8. On POSIX,
 arguments, including the executable name, must be valid UTF-8. Invalid text is
 an input error. Empty arguments are preserved.
 
+## Formatting
+
+```sh
+carven format main.cv
+carven format check src
+carven format write src
+carven format --help
+```
+
+`format` starts `carven-format` (`carven-format.exe` on Windows) from the running
+compiler's directory, after resolving the compiler's executable path. Arguments,
+current directory, standard input/output/error, and the formatter's exit code are
+preserved. It does not search `PATH`, download tools, or build the formatter.
+A missing companion is an error. Source development builds the compiler and
+formatter explicitly as separate targets.
+
+Without inputs, formatting reads stdin. `check` returns 1 for formatting changes;
+formatting errors return 2. The [formatter reference](../../tools/format/README.md)
+defines input selection and the fixed style.
+
 ## Project builds
 
-`carven build main.cv` builds a native executable at `build/main` (`build/main.exe`
-on Windows). `carven run main.cv -- arguments...` builds and runs it. An explicit
-`.cv` input selects this single-source plan independently of any project script.
-The output name comes from the source filename without `.cv` and follows the
-standard builder's target-name rules.
+`carven run main.cv helper.cv -- arguments...` builds and runs a native executable
+at `build/main` (`build/main.exe` on Windows). One or more explicit `.cv` inputs
+form one target independently of any project script; they are not run separately.
+The output name comes from the first filename without `.cv` and follows the
+standard builder's target-name rules. Entry selection follows the ordinary
+language rules, independently of file order. Sources and a project target name
+cannot be mixed; arguments for the executable follow `--`.
 
-Without an explicit `.cv` input, `carven build` and `carven run [target]` execute
-the current directory's `build.cv` as an ordinary top-level program through the
-interpreter. The file is required; commands do not search parent directories.
+`carven build` takes no arguments. It, `carven run [target]`, and
+`carven test [target]` execute the current
+directory's `build.cv` as an ordinary top-level program through the interpreter.
+The filename is a command convention; the file is required and commands do not
+search parent directories.
 A build script can have any filename:
 `carven interpret foo.cv` executes its standard-library build calls directly.
 
-A script calls `std::build.build(plan)` to construct native targets and return
-output records. Under `carven run`, each call also selects and runs an executable
-before returning. Under `carven build` or another host command, such as
-`interpret`, it only builds. Plans describe executable and static-library
-targets, source sets, native compilation and link options, and target dependencies.
+A script calls `std::build.project(plan)` to dispatch the command. `carven build`
+builds declared targets; `carven run` builds and runs the selected executable;
+`carven test` builds and runs native test programs for the declared targets;
+`carven query` prints the resolved source model as JSON without building targets.
+Use one `project` call in a queryable script. The query's `scripts` lists the build
+entry and its actual transitive source imports. Its `project` contains the project root,
+target names and exact sources, and source watch roots. Application
+source errors do not prevent querying the build plan. The script itself remains
+an ordinary program: other statements can have effects and stdout must contain
+only the query JSON for tooling consumers.
 
-The build function selects the single executable output for `carven run`;
-static libraries do not participate in selection. Multiple executable outputs
-require `carven run <target>`. All declared targets build before selection and
-execution. Each call completes before the next script statement. Arguments following `--` pass unchanged, including empty strings and
-shell characters. A failed build or nonzero program exit reports a build error
-and status 1. Source paths without a command are rejected with usage guidance.
+`carven query <source-or-artifacts>` selects another source or retained semantic
+directory; the default is `build.cv`. Run it in the project's directory. A retained
+program still executes and reads current host inputs; its caller must first check
+source freshness and the analysis manifest's `cacheable` flag. `--timings` reports
+the executed stages on stderr.
+
+`std::build.build(plan)` is an explicit build operation returning output records;
+it never runs an executable or changes behavior according to the CLI command.
+Imperative scripts may call it multiple times and manage execution themselves.
+
+Project plans describe executable and static-library targets, source sets, native
+compilation and link options, and target dependencies. `carven run` selects the
+single executable output; multiple executables require `carven run <target>`.
+Arguments after `--` pass unchanged. A failed build or nonzero program exit reports
+a build error and status 1. See [the build API](../language/build.md).
+
+`carven test [target]` runs native test blocks for the selected target, or for each
+declared target when no name is supplied. Each test program includes the target's
+explicit Carven sources and declared source dependencies; unrelated targets do
+not contribute tests. Source libraries can be tested with the default native
+toolchain. The builder preserves native options and static-library dependency
+boundaries and writes test products below `tests/<target>/` in the plan's output
+directory. Targets without runtime tests need no native test executable. A failed
+test returns status 1.
+
+The generated test entry replaces a Carven program entry. A handwritten C++
+`main` remains an ordinary native source; declare a suitable target without that
+entry when testing it. Xmake and CMake projects keep their own test targets and
+commands; `carven test` operates on the current project's `build.cv`.
 
 ## Source collection
 
-`check`, source compilation, and `interpret` analyze the explicitly supplied
-sources and their required modules from the matching toolchain's `crafts/carven/`
-inventory. They read and parse toolchain sources only when the source dependency
-closure reaches them.
-They do not scan the project's `crafts/` directory. The collector deduplicates
-files by canonical path and retains absolute physical source paths for diagnostics
-and generated source mapping. It sorts the batch by these paths. Distinct files
-with conflicting module identities are errors. Directory symlinks are not
-recursively followed when collecting toolchain sources.
+`check`, source compilation, and `interpret` start from explicitly supplied
+source roots. Imports select dependencies from the project and the matching
+Craft inventories. Ordinary project modules are located by their module paths;
+`crafts/` and the toolchain's `crafts/carven/` supply available Craft modules.
+Only the reached closure is read, parsed, and analysed.
+
+Files are deduplicated by canonical path and keep absolute physical paths for
+diagnostics and source mapping. Conflicting module identities are errors.
+Directory symlinks are not recursively followed while collecting candidates.
 
 The installed layout is `<prefix>/bin/carven` with matching resources in
 `<prefix>/crafts/carven/`. The compiler resolves its real executable path and uses
 the `crafts/` directory beside its binary directory. Missing resources report an
-incomplete installation. Development binaries locate Crafts in their containing
-source checkout, identified by `src/carven.cppm` and `crafts/carven/`. All source
-commands use this resolver.
+incomplete installation. Development binaries locate their containing source checkout using
+`src/carven.cppm` and `crafts/carven/`. All source commands share this resolver.
 
 ### Installed Crafts
 
-The project's `crafts/` directory holds installed source packages. `std::build`
-collects its `.cv` sources for application targets and compiles its `.cpp`
-providers alongside generated implementations. Scripts pass their own project
-Craft dependencies as explicit inputs, like other interpreted programs. These inventories include files in `examples/` and `tests/`.
-Carven analyzes every supplied `.cv` file and its required toolchain dependencies,
-executes their static roots and `const test` bodies, and emits runtime tests from
-explicitly supplied modules when requested.
+The project's `crafts/` directory holds source packages. Their presence makes
+modules available for imports; it does not make every file a compilation root.
+Standard and project Crafts follow the same dependency-selection rules.
+Explicit roots select runtime tests; reached modules contribute semantic checks
+and static execution. Unused modules do not contribute diagnostics or effects.
 
-Package authors or users select sources for the target platform and configuration
-before placing them in `crafts/`. Packaging tools can prepare the same installed
-layout. Installed sources must build together, with distinct module identities
-and available native dependencies. Library sources must leave
-program entry selection to the application. Keep independent examples, intentional
-compilation-failure tests, and alternative build targets outside the collected
-roots. Analysis errors and static-test failures in any collected module fail the
-command, including modules the application does not import.
-
-For custom integration, place external repositories outside the collected roots,
-for example in `thirdparty/`. Supply selected `.cv` files explicitly to Carven.
-Supply C++ sources, include paths, defines, compiler options, and libraries to the
-native build through its ordinary target configuration. Explicit `.cv` inputs
-follow the ordinary module-path rules and are combined with the matching
-toolchain sources.
+A Craft's ordinary `build.cv` describes implementation groups and link requirements.
+Compilation includes its query result in the generated manifest. The consuming
+build system selects and compiles native sources with its own target settings.
+Subdirectory build declarations can be ordinary imported functions; `carven build`
+executes only the current directory's build entry, which explicitly composes them.
 
 ## Native execution
 
@@ -136,7 +179,7 @@ Lexing and parsing accumulate across sources. Semantic analysis includes
 compile-time execution and static tests.
 Checking, compilation, and runtime commands also report source collection.
 Interpreted runs label their runtime phase `Execution`; `compile` ends with C++
-artifact output. Build and run do not accept a top-level `--timings` option.
+artifact output. Build, run, and test do not accept a top-level `--timings` option.
 
 Total time includes pipeline setup, diagnostics and command-resource cleanup.
 Stage percentages use the unrounded durations. Semantic detail intervals are
@@ -167,8 +210,8 @@ are checked by the C++ compiler.
 one input and accepts `-o <dir>`, `--timings`, and standalone
 `--help` and `-h`. Invocation, input, and analysis
 errors return status 1; success returns 0, including when warnings are reported.
-Successful checks print `carven: check passed` on stderr. With `--timings`, the
-timing report adds the duration to this success message instead of printing it twice.
+Successful checks produce only source-directed output and diagnostics.
+`--timings` adds the total and stage durations on stderr.
 
 ## Interpretation
 
@@ -289,6 +332,11 @@ identities follow the source paths.
 and a manifest, defaulting to the current directory. Use `-o <dir>` to select its
 directory or `--stdout` to inspect C++. Select at most one destination.
 
+With no input, `compile -o <dir>` writes a manifest with toolchain resources and
+empty input and artifact lists. It does not analyze standard-library sources or
+generate C++. This supports native-only consumers of Carven's headers and native
+providers. `check` still requires at least one input.
+
 | Option | Destination |
 | --- | --- |
 | `-o <dir>` | Generated artifacts below a directory |
@@ -334,23 +382,35 @@ carven compile build/checked -o build/program
 carven compile build/checked --tests -o build/tests
 ```
 
-An artifact directory containing only standard-library sources can accompany new
+An artifact directory containing checked Craft sources can accompany new
 source inputs. Its checked definitions supply generic and staged bodies; new
 instances and checks involving consumer types belong to the consuming analysis.
 Those retained modules keep their external implementation ownership when the
 consumer is retained or compiled again. An artifact used alone preserves the
 original program's source roots and implementation ownership.
-The new batch cannot redefine those standard modules. The build system owns
+The new batch cannot redefine those retained modules. The build system owns
 dependency freshness, including changes to source files and the compiler executable.
 
 `carven/manifest.json` describes the operation's loaded inputs, outputs,
-runtime-test count, and cacheability. Each input records explicit-root selection
+runtime-test count, cacheability, and toolchain resources. Top-level `include_dirs`
+contains absolute include roots; `library_roots` records candidate source directories.
+`craft_roots` lists participating Craft directories, including those without `build.cv`.
+`crafts` embeds the results of participating Crafts' ordinary `build.cv` queries,
+including source groups, interfaces, dependencies, and platform library requirements.
+`compile --no-query` leaves `crafts` empty for consumers that refresh declarations
+separately from C++ generation.
+Build consumers select implementations from this graph and the declared source libraries;
+see [artifact resources](artifacts.md).
+Artifact paths and `link_dependencies` are
+relative to the destination. Artifact `source` paths are relative to
+`workspace.root`, or absolute for sources outside that workspace.
+Each input records explicit-root selection
 as `owned`, toolchain identity as `standard`, and implementation ownership outside
 this generation as `external`. Analysis that observes host input, time, or
 waiting reports `cacheable: false`. `--stdout` writes no manifest or semantic IR.
 
 Use staging paths and check the exit status before publishing outputs. Changing
-an owned source batch invokes analysis using the selected standard definitions;
+an owned source batch invokes analysis using any retained Craft definitions;
 all selected modules participate, including their static effects and tests.
 
 ## Test emission

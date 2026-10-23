@@ -51,10 +51,8 @@ export(cpp) fn closure() => [](value: i32) => value + 3;
 export(cpp) fn view(value: str) -> str => value;
 export(cpp) fn callback(value: fn(i32) -> i32) -> i32 => contract_callback(value);
 
-export(cpp) fn failure(fail: bool) -> String throw Failure => contract_failure(
-    fail,
-    Failure { 17 }
-)?;
+export(cpp) fn failure(fail: bool) -> String throw Failure =>
+    contract_failure(fail, Failure { 17 })?;
 
 export(cpp) fn guarded_failure(fail: bool, proceed: bool) -> String throw Failure {
     require(proceed);
@@ -85,7 +83,11 @@ test "C++ contracts: owners, mutation, pointers, records, and borrowed callbacks
     let input: ptr<&i32> = ::contract_address(&number);
     let address = pointer(input);
     check(number == 9);
-    if address != nullptr { check(*address == 9); } else { check(false); }
+    if address != nullptr {
+        check(*address == 9);
+    } else {
+        check(false);
+    }
     let value = record(make_record());
     check(value.text == "record");
     check(value.count == 9);

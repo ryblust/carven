@@ -73,6 +73,9 @@ auto interpret_call(
                     site.syntax().expression(member->operand_id).span
                 );
             }
+            if constexpr (requires { site.complete_members(**type, member->name_span, true); }) {
+                site.complete_members(**type, member->name_span, true);
+            }
             if (site.external(**type)) {
                 co_return co_await site.call(source, span);
             }
@@ -192,6 +195,11 @@ auto interpret_call(
         auto operand = (co_await site.read(member->operand_id, std::nullopt));
         if (!operand.has_value()) {
             co_return std::unexpected(operand.error());
+        }
+        if constexpr (requires {
+                          site.complete_members(site.type(*operand), member->name_span, false);
+                      }) {
+            site.complete_members(site.type(*operand), member->name_span, false);
         }
         if (application) {
             co_return co_await site.member_call(source, *member, std::move(*operand), span);

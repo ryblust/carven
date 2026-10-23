@@ -28,7 +28,7 @@ template<typename Program>
 concept CanPlanProgram = requires (
     Program&& program,
     const TargetPlanningRequest& request,
-    const std::flat_set<ModuleID>& library_modules
+    const std::flat_map<ModuleID, std::size_t>& library_modules
 ) { PlannedCompilation::build(std::forward<Program>(program), request, library_modules); };
 
 static_assert(CanPlanProgram<SemIRProgram&>);
@@ -109,17 +109,16 @@ const TestSuite suite([] static noexcept {
                 );
                 const auto module_id =
                     (*semantic.generic_declaration_contracts().begin()).value.module_id;
-                const auto library = std::flat_set<ModuleID> {module_id};
+                const auto library = std::flat_map<ModuleID, std::size_t> {{module_id, 0uz}};
                 const auto compilation = PlannedCompilation::build(
                     semantic,
                     {.test_mode = TestGenerationMode::None,
                      .linkage_domain = *LinkageDomain::explicit_value(std::move(domain)),
-                     .library =
-                         SourceLibrary {
-                             .modules = {semantic_test_module_path()},
-                             .linkage_domain = *LinkageDomain::explicit_value("fixed-library"),
-                             .owned_modules = {},
-                         }},
+                     .libraries = {SourceLibrary {
+                         .modules = {semantic_test_module_path()},
+                         .linkage_domain = *LinkageDomain::explicit_value("fixed-library"),
+                         .owned_modules = {},
+                     }}},
                     library
                 );
                 auto result = std::map<BuiltinType, TargetName>();
@@ -158,7 +157,7 @@ const TestSuite suite([] static noexcept {
                 {
                     .test_mode = TestGenerationMode::None,
                     .linkage_domain = *LinkageDomain::explicit_value("query_graph"),
-                    .library = std::nullopt,
+                    .libraries = {},
                 },
                 {}
             );

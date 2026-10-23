@@ -3,9 +3,9 @@ module carven:test.internal.semantic.analysis.constant_slices;
 import :diagnostics.code;
 import :semantic.evaluation.value;
 import :semantic.semir.constant;
-import :semantic.semir.constant_access;
 import :semantic.semir.program;
 import :semantic.semir.type;
+import :semantic.semir.values;
 import :test.harness.diagnostics;
 import :test.harness.framework;
 import :test.internal.semantic.analysis.fixture;
@@ -36,7 +36,7 @@ const TestSuite suite([] static noexcept {
         const skipped = false && (build(8).slice()[0] == 8);
     )");
             auto checked = 0uz;
-            const auto values = PublishedConstantValues(program);
+            const auto values = ProgramValues(program);
             auto table = std::optional<ConstantID>();
             auto explicit_view = std::optional<ConstantID>();
             for (const auto [id, declaration] : program.declarations().module_constants()) {

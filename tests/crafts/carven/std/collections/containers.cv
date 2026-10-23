@@ -1,4 +1,4 @@
-import std::collections using { HashMap, HashSet, hash_bytes, hash_text }
+import std::collections using { ByteDigest, HashMap, HashSet, hash_bytes, hash_text }
 
 private enum Value {
     Number(i32)
@@ -7,7 +7,9 @@ private enum Value {
 private const fn expect_value(map: HashMap<String, usize>, key: String, expected: usize) {
     let value = map.find(key);
     assert(value != nullptr);
-    if value != nullptr { assert(*value == expected); }
+    if value != nullptr {
+        assert(*value == expected);
+    }
 }
 
 private const fn check_collections() {
@@ -50,7 +52,9 @@ private const fn check_collections() {
     assert(map.insert(&&("after clear" as String), &&42));
     expect_value(map, "after clear", 42);
     let writable = map.find_mut("after clear");
-    if writable != nullptr { *writable = 43; }
+    if writable != nullptr {
+        *writable = 43;
+    }
     expect_value(map, "after clear", 43);
 
     var values = HashMap<i32, Value>::new();
@@ -94,6 +98,21 @@ private const fn check_collections() {
     let text = "é\0key";
     assert(hash_text(text) == hash_bytes(text.bytes));
     assert(hash_text("") == hash_bytes([]));
+
+    var whole = ByteDigest::new();
+    whole.update([0u8, 255u8, 65u8]);
+    var chunks = ByteDigest::new();
+    chunks.update([]);
+    chunks.update([0u8]);
+    chunks.update([255u8, 65u8]);
+    assert(chunks.value() == whole.value());
+
+    let snapshot = chunks.value();
+    var copied_digest = chunks;
+    copied_digest.update([9u8]);
+    whole.update([9u8]);
+    assert(copied_digest.value() == whole.value());
+    assert(chunks.value() == snapshot && chunks.value() != copied_digest.value());
 }
 
 const test "Collections constant: owned maps and sets" {

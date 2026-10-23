@@ -228,7 +228,8 @@ One write may be active at a time; concurrent writes fail with a system busy cod
 Serialize frames with a writer task and a bounded channel.
 
 Cancellation stops the remaining write; a prefix already written stays in the
-stream. The provider temporarily enables nonblocking stdout and restores its
-original flags on completion or cancellation. Do not mix it with buffered printing,
-`write_stdout`, or external writes while active. The current provider supports
-POSIX hosts; other hosts report an unsupported system error.
+stream. On POSIX, the provider temporarily enables nonblocking stdout and restores
+its original flags on completion or cancellation. On Windows, synchronous standard
+handles use a cancellable native write; the operation retains its buffer until the
+write has finished or cancellation has completed. Do not mix it with buffered printing,
+`write_stdout`, or external writes while active.

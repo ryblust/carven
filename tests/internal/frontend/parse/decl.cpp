@@ -127,7 +127,7 @@ const TestSuite suite([] static noexcept {
             }
             for (const auto source :
                  {"async struct Bad {}", "async enum Bad { Value }", "private async test {}"}) {
-                check_rejected(source);
+                check_invalid(source);
             }
         };
 

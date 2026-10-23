@@ -45,7 +45,7 @@ auto with_compiled_source(
             TargetPlanningRequest {
                 .test_mode = TestGenerationMode::None,
                 .linkage_domain = LinkageDomain::explicit_value("test:semantics").value(),
-                .library = std::nullopt,
+                .libraries = {},
             }
         )
     );

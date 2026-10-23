@@ -31,7 +31,7 @@ for _, variant in ipairs({"native", "portable"}) do
                     })})
 
                     if implementation == "carven" then
-                        add_rules("@carven/carven")
+                        add_rules("carven")
                         add_files(case.id .. ".cv")
                     else
                         add_includedirs(path.join(os.projectdir(), "crafts"))

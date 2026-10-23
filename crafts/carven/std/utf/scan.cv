@@ -53,21 +53,23 @@ const fn push_utf8(&state: UTF8State, byte: u8) throw UTF8Error {
         next.lead = 0;
         next.remaining -= 1;
     }
+
     next.offset += 1;
-    if next.remaining == 0 { next.sequence_start = next.offset; }
+    if next.remaining == 0 => next.sequence_start = next.offset;
     state = next;
 }
 
 // Commit a prefix already checked by the vector algorithm. Only its last three
 // bytes can belong to an unfinished scalar; all earlier bytes are complete.
 private const fn commit_utf8_blocks(&state: UTF8State, bytes: [u8], start: usize, end: usize) {
-    if end == start { return; }
+    if end == start => return;
     state.offset += end - start;
     state.sequence_start = state.offset;
     state.remaining = 0;
     state.lead = 0;
+
     let last = bytes[end - 1];
-    if last < 0x80 { return; }
+    if last < 0x80 => return;
     let second = bytes[end - 2];
     let third = bytes[end - 3];
     if last >= 0xc2 {
@@ -76,11 +78,13 @@ private const fn commit_utf8_blocks(&state: UTF8State, bytes: [u8], start: usize
             state.remaining = 1;
         } else {
             state.lead = last;
-            if last < 0xf0 { state.remaining = 2; } else { state.remaining = 3; }
+            if last < 0xf0 => state.remaining = 2;
+            else => state.remaining = 3;
         }
     } else if second >= 0xe0 {
         state.sequence_start -= 2;
-        if second < 0xf0 { state.remaining = 1; } else { state.remaining = 2; }
+        if second < 0xf0 => state.remaining = 1;
+        else => state.remaining = 2;
     } else if third >= 0xf0 {
         state.sequence_start -= 3;
         state.remaining = 1;
@@ -95,17 +99,19 @@ const fn feed_utf8(&state: UTF8State, bytes: [u8]) throw UTF8Error {
         push_utf8(&state, bytes[index])?;
         index += 1;
     }
+
     let start = index;
     var previous = u8x32::splat(0);
     while bytes.length() - index >= 32 {
         let current = u8x32::load(bytes, index);
         if ((previous | current) >= 0x80).any() {
-            if invalid_utf8_block(previous, current).any() { break; }
+            if invalid_utf8_block(previous, current).any() => break;
         }
         previous = current;
         index += 32;
     }
     commit_utf8_blocks(&state, bytes, start, index);
+
     // Short tails and failed blocks use the authoritative byte transition,
     // preserving exact error positions and recoverable streaming state.
     while index < bytes.length() {
@@ -123,5 +129,5 @@ const fn feed_utf8(&state: UTF8State, bytes: [u8]) throw UTF8Error {
 }
 
 const fn check_utf8_complete(state: UTF8State) throw UTF8Error {
-    if state.remaining != 0 { throw scan_error(state, .Truncated); }
+    if state.remaining != 0 => throw scan_error(state, .Truncated);
 }

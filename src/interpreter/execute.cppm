@@ -11,7 +11,7 @@ struct InterpreterOptions final {
     ExecutionLimits limits;
     FunctionRef<void(const ExecutionTraceEvent&) noexcept> trace;
     FunctionRef<void(std::optional<TestID>, const ExecutionEvent&) noexcept> report;
-    ExecutionHostFunction host_call;
+    ExecutionNativeCall host_call;
 };
 
 // Executes a parameterless source function. The caller selects the function;

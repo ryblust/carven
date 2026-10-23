@@ -62,7 +62,7 @@ fn fail_value() -> i32 throw Failure {
         TargetPlanningRequest {
             .test_mode = TestGenerationMode::None,
             .linkage_domain = LinkageDomain::explicit_value("test:artifacts").value(),
-            .library = std::nullopt,
+            .libraries = {},
         }
     );
     return checked_artifacts(std::move(result), sources);
@@ -91,7 +91,7 @@ auto compile_opaque_raw_fixture() noexcept -> GeneratedArtifactSet {
         TargetPlanningRequest {
             .test_mode = TestGenerationMode::None,
             .linkage_domain = LinkageDomain::explicit_value("test:artifacts").value(),
-            .library = std::nullopt,
+            .libraries = {},
         }
     );
     return checked_artifacts(std::move(result), sources);
@@ -110,6 +110,7 @@ const TestSuite suite([] static noexcept {
         [] static noexcept {
             constexpr auto inputs = std::array {
                 CompilationManifestInput {.path = "app.cv", .module_path = "app"},
+                CompilationManifestInput {.path = "bridge.cpp", .module_path = {}},
                 CompilationManifestInput {
                     .path = "/sdk/std.cv",
                     .module_path = "crafts.carven.std"
@@ -119,6 +120,15 @@ const TestSuite suite([] static noexcept {
             constexpr auto standard = std::array {std::string_view("crafts.carven.std")};
             const auto manifest = format_compilation_manifest(
                 "/workspace",
+                CompilationManifestResources {
+                    .include_dirs = {"/toolchain/crafts"},
+                    .library_roots = {"/toolchain/crafts/carven"},
+                    .craft_roots = {"/toolchain/crafts/carven"},
+                    .crafts = {format_project_query(
+                        R"({"root":"/toolchain/crafts/carven","targets":[]})",
+                        std::array {std::string("/toolchain/crafts/carven/build.cv")}
+                    )},
+                },
                 inputs,
                 GeneratedArtifactSet({}),
                 1uz,
@@ -128,6 +138,11 @@ const TestSuite suite([] static noexcept {
                 standard
             );
             expect(manifest.contains("\"cacheable\": false"));
+            expect(
+                manifest.contains("\"path\": \"bridge.cpp\", \"module\": null, \"owned\": true")
+            );
+            expect(manifest.contains("\"include_dirs\": [\"/toolchain/crafts\"]"));
+            expect(manifest.contains("\"library_roots\": [\"/toolchain/crafts/carven\"]"));
             expect(manifest.contains("\"module\": \"app\", \"owned\": true, \"standard\": false"));
             expect(manifest.contains(
                 "\"module\": \"crafts.carven.std\", \"owned\": false, \"standard\": true, "
@@ -145,6 +160,12 @@ const TestSuite suite([] static noexcept {
             };
             const auto manifest = format_compilation_manifest(
                 "/workspace",
+                CompilationManifestResources {
+                    .include_dirs = {"/toolchain/雪\t\"\\"},
+                    .library_roots = {},
+                    .craft_roots = {},
+                    .crafts = {},
+                },
                 inputs,
                 GeneratedArtifactSet({GeneratedArtifact {
                     .logical_path = "nested/source.cpp",
@@ -162,6 +183,8 @@ const TestSuite suite([] static noexcept {
             );
             expect(manifest.contains("\"directory/雪\\u0009\\\"\\\\.cv\""));
             expect(manifest.contains("\"source\": \"directory/雪\\u0009\\\"\\\\.cv\""));
+            expect(manifest.contains("\"include_dirs\": [\"/toolchain/雪\\u0009\\\"\\\\\"]"));
+            expect(manifest.contains("\"crafts\": []"));
         };
 
     "Compiler generation: source libraries reject invalid selections and declarations"_test =
@@ -184,6 +207,10 @@ const TestSuite suite([] static noexcept {
                         .collect_source_observations = false,
                         .capture_output = false,
                         .host_effects = HostEffects::Deny,
+                        .completion = std::nullopt,
+                        .source_query = false,
+                        .excluded = {},
+                        .native_call = {},
                     }
                 );
                 require(semantic.program() != nullptr);
@@ -192,11 +219,11 @@ const TestSuite suite([] static noexcept {
                     TargetPlanningRequest {
                         .test_mode = TestGenerationMode::None,
                         .linkage_domain = *LinkageDomain::explicit_value("application"),
-                        .library = SourceLibrary {
+                        .libraries = {SourceLibrary {
                             .modules = std::move(modules),
                             .linkage_domain = *LinkageDomain::explicit_value("library"),
                             .owned_modules = {},
-                        },
+                        }},
                     }
                 );
                 if (expect(!generated.has_value())) {
@@ -244,14 +271,13 @@ fn answer() -> i32 => value();
                     TargetPlanningRequest {
                         .test_mode = TestGenerationMode::None,
                         .linkage_domain = *LinkageDomain::explicit_value("test:link-dependencies"),
-                        .library =
-                            SourceLibrary {
-                                .modules =
-                                    {*CanonicalModulePath::from_value("types"),
-                                     *CanonicalModulePath::from_value("unused")},
-                                .linkage_domain = *LinkageDomain::explicit_value("test:library"),
-                                .owned_modules = {},
-                            },
+                        .libraries = {SourceLibrary {
+                            .modules =
+                                {*CanonicalModulePath::from_value("types"),
+                                 *CanonicalModulePath::from_value("unused")},
+                            .linkage_domain = *LinkageDomain::explicit_value("test:library"),
+                            .owned_modules = {},
+                        }},
                     }
                 ),
                 sources
@@ -296,7 +322,7 @@ fn answer() -> i32 => value();
             const auto request = TargetPlanningRequest {
                 .test_mode = TestGenerationMode::None,
                 .linkage_domain = LinkageDomain::explicit_value("test:pipeline").value(),
-                .library = std::nullopt,
+                .libraries = {},
             };
             auto composed_output = std::string();
             auto composed_stages = std::vector<TimingStage>();
@@ -343,6 +369,10 @@ fn answer() -> i32 => value();
                     .collect_source_observations = false,
                     .capture_output = false,
                     .host_effects = HostEffects::Allow,
+                    .completion = std::nullopt,
+                    .source_query = false,
+                    .excluded = {},
+                    .native_call = {},
                 },
                 parsed
             );
@@ -432,7 +462,7 @@ fn answer() -> i32 => value();
                     TargetPlanningRequest {
                         .test_mode = TestGenerationMode::None,
                         .linkage_domain = LinkageDomain::explicit_value("test:pipeline").value(),
-                        .library = std::nullopt,
+                        .libraries = {},
                     },
                     {},
                     record_timing

@@ -6,19 +6,15 @@ struct Item {
 }
 
 fn items() -> Vector<Item> throw JSONError + JSONValueError {
-    let data = JSONValue::parse(
-        """
+    let data = JSONValue::parse("""
         [{"name":"notebook","stock":12},{"name":"pencil","stock":30}]
-    """
-    )?;
+    """)?;
     var result: Vector<Item> = [];
     for item in data.elements()? {
-        result.push(
-            {
-                name: item.get("name")?.as_str()? as String,
-                stock: item.get("stock")?.as_i64()?
-            }
-        );
+        result.push({
+            name: item.get("name")?.as_str()? as String,
+            stock: item.get("stock")?.as_i64()?
+        });
     }
-    return &&result;
+    return result;
 }

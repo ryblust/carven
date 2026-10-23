@@ -34,6 +34,10 @@ auto serialization_program(std::string_view text) noexcept -> SemIRProgram {
             .collect_source_observations = false,
             .capture_output = false,
             .host_effects = HostEffects::Deny,
+            .completion = std::nullopt,
+            .source_query = false,
+            .excluded = {},
+            .native_call = {},
         }
     );
     require(analysis.program() != nullptr).note([&]() noexcept {
@@ -106,7 +110,7 @@ const async test "async static" { check(true); }
                 const auto request = TargetPlanningRequest {
                     .test_mode = mode,
                     .linkage_domain = *LinkageDomain::explicit_value("test:semantic-artifact"),
-                    .library = std::nullopt,
+                    .libraries = {},
                 };
                 const auto expected = generate_artifacts(unit.program, request);
                 require(expected.has_value());
@@ -131,7 +135,7 @@ const async test "async static" { check(true); }
         const auto request = TargetPlanningRequest {
             .test_mode = TestGenerationMode::None,
             .linkage_domain = *LinkageDomain::explicit_value("test:semantic-artifact"),
-            .library = std::nullopt,
+            .libraries = {},
         };
         const auto expected = generate_artifacts(program, request);
         require(expected.has_value());

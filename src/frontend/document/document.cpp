@@ -1,5 +1,6 @@
 module carven:frontend.document.impl;
 
+import :diagnostics.code;
 import :diagnostics.diagnosed;
 import :diagnostics.diagnostic;
 import :frontend.document;
@@ -13,10 +14,12 @@ import std;
 
 ParsedDocument::ParsedDocument(
     std::shared_ptr<const SourceDocument> source,
+    TokenBuffer tokens,
     std::optional<SyntaxTree> syntax,
     Diagnostics diagnostics
 ) noexcept
     : input(std::move(source)),
+      lexical(std::move(tokens)),
       tree(std::move(syntax)),
       findings(std::move(diagnostics)) {}
 
@@ -26,6 +29,10 @@ auto ParsedDocument::source() const noexcept -> SourceView {
 
 auto ParsedDocument::sources() const noexcept -> const SourceManager& {
     return input->sources();
+}
+
+auto ParsedDocument::tokens() const noexcept -> std::span<const Token> {
+    return lexical.tokens();
 }
 
 auto ParsedDocument::syntax() const noexcept -> std::optional<ASTView> {
@@ -45,6 +52,10 @@ auto ParsedDocument::bind(SourceID source) const noexcept -> std::optional<Synta
     return syntax() ? std::optional(tree->bind(source)) : std::nullopt;
 }
 
+auto ParsedDocument::bind_recovered(SourceID source) const noexcept -> std::optional<SyntaxTree> {
+    return tree ? std::optional(tree->bind(source)) : std::nullopt;
+}
+
 auto ParsedDocument::diagnostics() const noexcept -> std::span<const Diagnostic> {
     return findings;
 }
@@ -52,13 +63,18 @@ auto ParsedDocument::diagnostics() const noexcept -> std::span<const Diagnostic>
 auto parse_document(std::shared_ptr<const SourceDocument> source, TimingOutput timings) noexcept
     -> std::shared_ptr<const ParsedDocument> {
     auto lexical = lex(source->source(), timings);
-    auto syntax = std::optional<SyntaxTree>();
-    if (!has_errors(lexical)) {
-        auto parsed = parse_recovering(source->sources(), lexical.value, timings);
-        syntax = std::move(parsed.value);
-        lexical.diagnostics.append_range(std::move(parsed.diagnostics));
+    auto parsed = parse_recovering(source->sources(), lexical.value, timings);
+    for (auto& diagnostic : parsed.diagnostics) {
+        // The lexer has the precise error for each Invalid token. Its generic
+        // parser diagnostic only serves standalone token-buffer callers.
+        if (diagnostic.finding.code != DiagnosticCode::Lexical) {
+            lexical.diagnostics.push_back(std::move(diagnostic));
+        }
     }
-    return std::shared_ptr<const ParsedDocument>(
-        new ParsedDocument(std::move(source), std::move(syntax), std::move(lexical.diagnostics))
-    );
+    return std::shared_ptr<const ParsedDocument>(new ParsedDocument(
+        std::move(source),
+        std::move(lexical.value),
+        std::move(parsed.value),
+        std::move(lexical.diagnostics)
+    ));
 }

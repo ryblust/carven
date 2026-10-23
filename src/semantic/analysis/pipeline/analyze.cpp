@@ -24,16 +24,20 @@ auto analyze(
     HostEffects host_effects,
     ExecutionOutput output,
     TimingOutput timings,
-    SourceAnalysisOutput source_output
+    SourceAnalysisOutput source_output,
+    AnalysisNativeCall native_call
 ) noexcept -> std::expected<Diagnosed<SemIRProgram>, Diagnostics> {
     auto result = analyze_checked(
         std::move(syntax),
         host_effects,
         false,
+        false,
         std::nullopt,
         output,
         timings,
-        source_output
+        source_output,
+        {},
+        native_call
     );
     if (!result) {
         return std::unexpected(std::move(result.error()));
@@ -48,15 +52,18 @@ auto analyze_checked(
     SyntaxProgram syntax,
     HostEffects host_effects,
     bool retain_definitions,
+    bool source_query,
     std::optional<CheckedDefinitions> seed,
     ExecutionOutput output,
     TimingOutput timings,
-    SourceAnalysisOutput source_output
+    SourceAnalysisOutput source_output,
+    SourceCompletionRequest completion,
+    AnalysisNativeCall native_call
 ) noexcept -> std::expected<Diagnosed<CheckedUnit>, Diagnostics> {
     const auto scope = TimingScope(timings, TimingStage::SemanticAnalysis);
     auto observations = std::optional<SourceAnalysisBuilder>();
-    if (source_output) {
-        observations.emplace();
+    if (source_output || completion.output) {
+        observations.emplace(completion, source_query);
     }
     auto result = [&]() noexcept -> std::expected<Diagnosed<CheckedUnit>, Diagnostics> {
         auto diagnostics = DiagnosticSink();
@@ -67,7 +74,8 @@ auto analyze_checked(
             output,
             observations ? std::addressof(*observations) : nullptr,
             timings,
-            seed ? std::addressof(*seed) : nullptr
+            seed ? std::addressof(*seed) : nullptr,
+            native_call
         );
 
         auto definitions = std::vector<std::byte>();
@@ -84,6 +92,9 @@ auto analyze_checked(
 
             const auto construction =
                 ProgramConstruction(draft, catalog.view(), import_usage).run();
+            if (observations) {
+                observations->describe(draft, catalog.view());
+            }
             if (!construction.has_value() || diagnostics.has_errors()) {
                 return std::unexpected(diagnostics.take());
             }
@@ -124,8 +135,14 @@ auto analyze_checked(
     }();
     if (observations) {
         const auto source_scope = TimingScope(timings, TimingStage::SourceObservations);
-        const auto occurrences = std::move(*observations).finish(result.has_value());
-        source_output(occurrences);
+        const auto construction_complete = observations->construction_complete();
+        const auto occurrences =
+            std::move(*observations).finish(result.has_value() && !source_query);
+        if (source_output) {
+            source_output(
+                {.occurrences = occurrences, .construction_complete = construction_complete}
+            );
+        }
     }
     return result;
 }

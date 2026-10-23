@@ -1,0 +1,53 @@
+import .protocol using ProtocolError;
+import .wire using { method_code, encode_request, decode_reply }
+import std::json using { JSONValue, JSONValueError }
+import std::process using { Process, ProcessError }
+import std::utf using UTF8Error;
+
+async fn request(
+    self: Process,
+    &&message: JSONValue
+) -> JSONValue throw ProcessError + JSONValueError + UTF8Error + ProtocolError {
+    let name = message.get("method")?;
+    let method = method_code(name.as_str()?)?;
+    let record = encode_request(message)?;
+    let owned = record;
+    await self.write_all(&&owned)?;
+    var pending: Vector<u8> = [];
+    var length: usize = 0;
+    while {
+        match await self.read(65536)? {
+            .End => throw ProtocolError::Analyzer,
+            .Data(bytes) => {
+                for byte in bytes {
+                    pending.push(byte);
+                }
+                if pending.length() < 4 => continue;
+                if length == 0 {
+                    for index in 0..4 {
+                        length = (length << 8) | (pending[index] as usize);
+                    }
+                    if length == 0
+                        || length > 16 * 1024 * 1024 => throw ProtocolError::InvalidFrame;
+                }
+                if pending.length() < length + 4 => continue;
+                if pending.length() != length + 4 => throw ProtocolError::InvalidFrame;
+                let result = decode_reply(method, pending.slice(4, pending.length()))?;
+                let ok = result.get("ok")?;
+                if !ok.as_bool()? => throw ProtocolError::Analyzer;
+                return result;
+            },
+        }
+    }
+}
+
+async fn stop_analyzer(
+    self: Process
+) throw ProcessError + JSONValueError + UTF8Error + ProtocolError {
+    var message = JSONValue::object();
+    message.set("method", &&JSONValue::string("shutdown"))?;
+    let _ = await request(self, &&message)?;
+    self.close_input()?;
+    let status = await self.wait()?;
+    if status != 0 => throw ProtocolError::Analyzer;
+}

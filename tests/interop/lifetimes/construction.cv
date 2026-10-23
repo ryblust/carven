@@ -28,7 +28,9 @@ fn boxed_after_loop(selected: bool, skip: bool) -> FixedBox {
         value: if (selected) {
             for var n = 0; n < 2; n += 1 {
                 mark(n + 1);
-                if skip { continue; }
+                if skip {
+                    continue;
+                }
                 break;
             }
             FixedOwner { 51 }
@@ -96,7 +98,9 @@ test "Lifetimes: branch return constructs nonassignable owners directly" {
 
 fn initialization_argument(succeeds: bool) -> i32 throw Failure {
     mark(2);
-    if !succeeds { throw Failure::Stop; }
+    if !succeeds {
+        throw Failure::Stop;
+    }
     return 4;
 }
 
@@ -130,7 +134,9 @@ test "Lifetimes: fallible scalar operands directly initialize immovable lexical 
 }
 
 private fn fallible_condition(succeeds: bool, threshold: i32) throw Failure {
-    if initialization_argument(succeeds)? > threshold { mark(8); }
+    if initialization_argument(succeeds)? > threshold {
+        mark(8);
+    }
     mark(9);
 }
 
@@ -225,31 +231,41 @@ struct ReturnedOwner {
     text: String,
 }
 
-fn copy_taken_native(
+fn return_taken_native(
     &&value: ::lifetime_probe::NativeTakeOwner
 ) -> ::lifetime_probe::NativeTakeOwner => value;
 
-fn copy_taken_record(&&value: ReturnedOwner) -> ReturnedOwner => value;
-
-test "Lifetimes: named return operands copy native and aggregate values" {
-    ::lifetime_probe::reset_native_take();
-    let native = ::lifetime_probe::NativeTakeOwner {};
-    let _ = copy_taken_native(&&native);
-    check(::lifetime_probe::native_take_copy_count() == 1);
-
-    ::lifetime_probe::reset_native_take();
-    let record = ReturnedOwner {
+fn return_owned_record() -> ReturnedOwner {
+    let value = ReturnedOwner {
         native: ::lifetime_probe::NativeTakeOwner {},
         text: "owned",
     };
-    let returned = copy_taken_record(&&record);
-    check(::lifetime_probe::native_take_copy_count() == 1);
+    return value;
+}
+
+fn copy_taken_record(&&value: ReturnedOwner) -> ReturnedOwner => value as ReturnedOwner;
+
+test "Lifetimes: owner returns transfer while explicit copies preserve native construction" {
+    ::lifetime_probe::reset_native_take();
+    let native = ::lifetime_probe::NativeTakeOwner {};
+    let _ = return_taken_native(&&native);
+    check(::lifetime_probe::native_take_copy_count() == 0);
+
+    ::lifetime_probe::reset_native_take();
+    let returned = return_owned_record();
+    check(::lifetime_probe::native_take_copy_count() == 0);
     check(returned.text == "owned");
+
+    let copied = copy_taken_record(&&returned);
+    check(::lifetime_probe::native_take_copy_count() == 1);
+    check(copied.text == "owned");
 }
 
 fn crossed_step(value: i32, succeeds: bool) -> i32 throw Failure {
     mark(value);
-    if !succeeds { throw Failure::Stop; }
+    if !succeeds {
+        throw Failure::Stop;
+    }
     return value;
 }
 

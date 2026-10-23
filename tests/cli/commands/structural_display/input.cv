@@ -27,12 +27,10 @@ enum Status {
 }
 
 const fn display() {
-    println(
-        Order {
-            Money { 1250 },
-            ["a", "b\n"]
-        }
-    );
+    println(Order {
+        Money { 1250 },
+        ["a", "b\n"]
+    });
     println(Status::Done(42));
     println([1, 2, 3]);
     println([',', '我']);

@@ -12,8 +12,8 @@ import :frontend.ast.storage;
 import :frontend.ast.tree;
 import :semantic.analysis.body.builder;
 import :semantic.analysis.body.context;
-import :semantic.analysis.body.expr_site;
 import :semantic.analysis.body.resolve;
+import :semantic.analysis.body.site;
 import :semantic.analysis.coverage;
 import :semantic.analysis.expr.async;
 import :semantic.analysis.expr.operand;
@@ -439,6 +439,17 @@ auto BodyElaborator::call_expression(
     const auto known_target = active_builder().known_callable(callee->expression());
     const auto* concrete_target = known_target ? std::get_if<CallableID>(&*known_target) : nullptr;
     const auto target = concrete_target ? std::optional(*concrete_target) : std::nullopt;
+    if (observe_sources) {
+        // Preserve the compiler's proven immutable-view target even if a later
+        // argument fails; owning function/closure types supply their own identity.
+        source_occurrences.call(
+            draft(),
+            ast,
+            source.callee,
+            callee->type(),
+            active_builder().source_callable(callee->expression())
+        );
+    }
     auto pending_failures = take_pending_failures(*callee);
     auto contract = callable_contract(callee->type(), ast.expression(source.callee).span);
     if (!contract.has_value()) {

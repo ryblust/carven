@@ -3,7 +3,7 @@
 #include <carven/runtime/collection/slice.hpp>
 #include <carven/runtime/collection/vector.hpp>
 #include <carven/runtime/execution/execution.hpp>
-#include <carven/runtime/io/cursor.hpp>
+#include <carven/runtime/io/stream.hpp>
 #include <carven/runtime/value/tuple.hpp>
 
 #include <coroutine>
@@ -100,7 +100,7 @@ private:
     }
 
     auto ready(Awaiter& request) noexcept -> std::optional<Completion> {
-        auto& cursor = Cursor::process();
+        auto& cursor = InputCursor::process();
         auto response = cursor.ready(request.input);
         if (!response) {
             return std::nullopt;
@@ -146,7 +146,7 @@ private:
         }
         auto result = ready(*first);
         if (!result) {
-            Cursor::process().fill();
+            InputCursor::process().fill();
             if (auto filled = ready(*first)) {
                 result.emplace(std::move(*filled));
             }
@@ -160,7 +160,7 @@ private:
         if (first == nullptr) {
             return false;
         }
-        Cursor::process().wait(deadline);
+        InputCursor::process().wait(deadline);
         return true;
     }
 

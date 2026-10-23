@@ -1,0 +1,80 @@
+import .protocol using { range, ProtocolError }
+import std::json using { JSONValue, JSONValueError, JSONValueKind }
+
+private fn number(value: JSONValue, key: str) -> usize throw JSONValueError =>
+    value.get(key)?.as_u64()? as usize;
+
+private fn call_item(
+    item: JSONValue,
+    texts: JSONValue,
+    context: str,
+    generation: i64
+) -> JSONValue throw JSONValueError + ProtocolError {
+    let uri = item.get("uri")?;
+    let text = texts.get(uri.as_str()?)?;
+    var output = JSONValue::object();
+    output.set("name", &&item.get("name")?)?;
+    output.set("kind", &&item.get("kind")?)?;
+    output.set("detail", &&item.get("detail")?)?;
+    output.set("uri", &&uri)?;
+    output.set("range", &&range(text.as_str()?, number(item, "start")?, number(item, "end")?)?)?;
+    output.set(
+        "selectionRange",
+        &&range(text.as_str()?, number(item, "selectionStart")?, number(item, "selectionEnd")?)?
+    )?;
+    var data = JSONValue::object();
+    data.set("context", &&JSONValue::string(context))?;
+    data.set("generation", &&JSONValue::integer(generation))?;
+    data.set("offset", &&item.get("selectionStart")?)?;
+    output.set("data", &&data)?;
+    return output;
+}
+
+fn call_hierarchy(
+    result: JSONValue,
+    request: JSONValue,
+    generation: i64
+) -> JSONValue throw JSONValueError + ProtocolError {
+    let method = request.get("method")?;
+    let texts = result.get("texts")?;
+    let selected = result.get("item")?;
+    var output = JSONValue::array();
+    if selected.kind() == JSONValueKind::Null => return if method.as_str()?
+        == "prepareCallHierarchy" {
+        JSONValue::null()
+    } else {
+        output
+    };
+    let context = if request.has("context")? {
+        request.get("context")?
+    } else {
+        request.get("uri")?
+    };
+    if method.as_str()? == "prepareCallHierarchy" {
+        output.push(&&call_item(selected, texts, context.as_str()?, generation)?)?;
+        return output;
+    }
+    let incoming = method.as_str()? == "incomingCalls";
+    let calls = result.get("calls")?;
+    for index in 0..calls.length()? {
+        let call = calls.at(index)?;
+        let item = call.get("item")?;
+        let caller = if incoming { item } else { selected };
+        let uri = caller.get("uri")?;
+        let text = texts.get(uri.as_str()?)?;
+        let sites = call.get("ranges")?;
+        var ranges = JSONValue::array();
+        for index in 0..sites.length()? {
+            let site = sites.at(index)?;
+            ranges.push(&&range(text.as_str()?, number(site, "start")?, number(site, "end")?)?)?;
+        }
+        var entry = JSONValue::object();
+        entry.set(
+            if incoming { "from" } else { "to" },
+            &&call_item(item, texts, context.as_str()?, generation)?
+        )?;
+        entry.set("fromRanges", &&ranges)?;
+        output.push(&&entry)?;
+    }
+    return output;
+}

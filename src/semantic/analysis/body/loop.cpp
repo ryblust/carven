@@ -361,6 +361,9 @@ auto BodyElaborator::for_statement(const ASTForStmt& source, Span span) noexcept
 }
 
 auto BodyElaborator::statement(ASTStmtID id) noexcept -> AnalysisTask<void> {
+    if (exclude_statement(id)) {
+        co_return AnalysisResult<void>();
+    }
     const auto& source = ast.statement(id);
     const auto was_reachable = reachable;
     const auto previous_failures = regions.back().failures;

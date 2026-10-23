@@ -1,5 +1,8 @@
-.vscode
+.vscode/
 .xmake/
-/build/
+.clice/
 .DS_Store
-.clice
+
+/build/
+node_modules/
+/editors/vscode/dist/

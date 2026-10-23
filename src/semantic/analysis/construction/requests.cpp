@@ -1,8 +1,8 @@
 module carven:semantic.analysis.construction.requests.impl;
 
 import :diagnostics.builder;
-import :semantic.analysis.construction.requests;
 import :semantic.analysis.construction;
+import :semantic.analysis.construction.requests;
 import :source.standard;
 import std;
 

@@ -667,20 +667,22 @@ expression. An empty ordinary block is valid.
 ### 5.2 Statement Categories
 
 ```ebnf
-statement = variable-declaration
+statement = simple-statement
           | const-block
-          | return-statement
-          | throw-statement
-          | rethrow-statement
-          | break-statement
-          | continue-statement
-          | cancel-statement
           | while-statement
           | for-statement
-          | assignment-statement
-          | update-statement
-          | expression-statement
           | control-flow-statement;
+
+simple-statement = variable-declaration
+                 | return-statement
+                 | throw-statement
+                 | rethrow-statement
+                 | break-statement
+                 | continue-statement
+                 | cancel-statement
+                 | assignment-statement
+                 | update-statement
+                 | expression-statement;
 
 assignment-statement = assignment-form, ";";
 
@@ -688,13 +690,14 @@ update-statement = update-form, ";";
 
 expression-statement = expression, ";";
 
-control-flow-statement = if-form | match-form | try-form;
+control-flow-statement = if-statement | match-form | try-form;
 
 const-block = "const", [ STRING_LITERAL ], ordinary-block;
 ```
 
-A direct unparenthesized `if-form`, `match-form`, or `try-form` at the beginning
-of a statement is terminated by its own structure.
+A direct unparenthesized `if`, `match`, or `try` at the beginning of a statement
+starts a `control-flow-statement`; it is not a `simple-statement`. Parentheses
+can make a control expression part of an expression statement.
 
 The grammar has no standalone `{ ... }` block statement.
 `const` blocks may appear at module scope or within statement blocks and do not
@@ -816,8 +819,8 @@ permitted only in range patterns. Step and implicit-reverse forms are not suppor
 
 ## 6. Branch Blocks
 
-`if-form` branches, protected `try-form` bodies, and braced match or catch arms
-use `branch-block`.
+Braced `if-statement` branches, `if-form` result branches, protected `try-form`
+bodies, and braced match or catch arms use `branch-block`.
 
 ```ebnf
 branch-block = "{", { statement }, [ branch-result ], "}";
@@ -825,8 +828,9 @@ branch-block = "{", { statement }, [ branch-result ], "}";
 branch-result = expression;
 ```
 
-A branch block is a structural component of `if-form`, `match-form`, or
-`try-form`; it is not a general expression and cannot appear independently.
+A branch block is a structural component of `if-statement`, `if-form`,
+`match-form`, or `try-form`; it is not a general expression and cannot appear
+independently.
 
 ## 7. Expressions
 
@@ -1042,14 +1046,24 @@ information is sufficient.
 ## 8. Conditional Forms
 
 ```ebnf
+if-statement = [ "const" ], "if", expression, if-statement-body,
+               { "else", "if", expression, if-statement-body },
+               [ "else", if-statement-body ];
+
+if-statement-body = branch-block | "=>", simple-statement;
+
 if-form = [ "const" ], "if", expression, branch-block,
           { "else", "if", expression, branch-block },
           [ "else", branch-block ];
 ```
 
-The same syntactic form may occur wherever an expression is admitted and at the
-beginning of a statement. Whether it requires branch results is a language
-semantic rule, not a grammar alternative.
+At the beginning of a statement, each conditional branch may use either a
+block or `=>` followed by one simple statement with its required semicolon.
+Direct nested control statements and `const` blocks require braces. All
+`else if` and `else` arms belong to the same chain.
+
+In expression position, `if-form` requires braced result branches. Arrow
+branches do not produce a value.
 
 A leading `const` makes the whole chain a static selection; `else if` arms do
 not repeat it.

@@ -6,6 +6,8 @@ function main()
         {name = "implicit_stdin", args = {}, stdin = input, stdout = expected},
         {name = "explicit_stdin", args = {"-"}, stdin = input, stdout = expected},
         {name = "check_stdin_changed", args = {"check", "-"}, stdin = input, code = 1, stdout = "stdin\n"},
+        {name = "missing_formatter", args = {}, stdin = input, code = 1,
+            diagnostic = "install or build carven-format beside carven"},
         {name = "missing_file", args = {"missing.cv"}, code = 2, diagnostic = "cannot read source file"},
         {name = "check_missing_input", args = {"check"}, stdin = input, code = 2, diagnostic = "requires an input"},
         {name = "write_missing_input", args = {"write"}, stdin = input, code = 2, diagnostic = "requires an input"},
@@ -33,11 +35,11 @@ function main()
             {args = {"write", "help"}, changed = {["help"] = expected}},
         }},
         {name = "literal_dash_path", files = {["--help"] = input},
-            args = {"--help"}, stdout = expected},
+            args = {"./--help"}, stdout = expected},
     }
     if os.host() ~= "windows" then
         table.insert(cases, {
-            name = "invalid_utf8_argument", args = {string.char(255)}, code = 2,
+            name = "invalid_utf8_argument", args = {string.char(255)}, code = 1,
             diagnostic = "process argument is not valid UTF-8",
         })
     end

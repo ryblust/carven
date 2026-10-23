@@ -2,8 +2,8 @@ module carven:semantic.analysis.program.capabilities.impl;
 
 import :semantic.analysis.operations;
 import :semantic.analysis.program;
-import :semantic.semir.type;
 import :semantic.semir.generic;
+import :semantic.semir.type;
 import :support.visit;
 import std;
 

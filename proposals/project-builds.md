@@ -1,31 +1,33 @@
-# Native project queries and generated inputs
+# Project declaration freshness and generated inputs
 
 - **Status:** Draft
-- **Scope:** Querying native build declarations and publishing generated application inputs
+- **Scope:** Declaration file/environment dependencies, refresh, and generated application inputs
 
 ## Summary
 
-Let editor tooling obtain the same target names and source selections used by
-`carven build`, before application compilation succeeds. Select a declaration
-query contract without duplicating `build.cv` or introducing another project
-configuration. Tracked generated-input publication remains deferred.
+Define declaration freshness when build scripts read additional files or
+environment values beyond their loaded source inputs and watched project roots.
+Tracked generated-input publication remains deferred.
 
 ## Context
 
-`carven build` interprets `build.cv` as an ordinary program. Scripts construct
-`BuildPlan` values and call `std::build.build` to build targets and apply CLI
-run selection. The Standard Craft owns
-source selection, object reuse, subprocess scheduling, and native outputs. The
-compiler supplies compilation results and matching resource inputs.
+`project(plan)` resolves one `BuildPlan` for query, build, run, or test. Querying
+reports target declarations without compiling application sources. Its JSON
+contains `project` with root, targets, and source roots, plus `scripts` listing
+loaded source files, including indirect build-script imports. Retained script
+analysis validates its source inputs; each query executes the script again to
+observe external files and environment values.
 
-The current project root is the working directory. Compiler inputs form an
-explicit owned source set; module identities derive from root-relative paths.
-Installed toolchain sources supply dependencies. The compiler's artifact manifest
-describes generated outputs after analysis; it is not a project declaration.
+The language server discovers `build.cv` or `xmake.lua`, watches project roots and
+reported scripts/source roots, and refreshes membership after relevant edits or
+`carven.reload`. Failed discovery retains watch dependencies and an explicit error
+state while discarding that project's target inputs.
 
-Scripts can execute arbitrary actions before and between build calls.
-They have no declaration-only query contract. An LSP needs target and source information
-while application source is incomplete and no successful build exists.
+Queries do not trace arbitrary file or environment observations. A fresh query
+observes those values, but a change outside watched inputs need not trigger one.
+Scripts can execute arbitrary actions around `project`; only its query branch
+avoids application compilation and linking. Queryable scripts publish one project
+JSON result on stdout.
 
 ## Design
 
@@ -39,51 +41,38 @@ results. Runtime Craft supplies shared value and operation support, while native
 file/process adapters remain with their Crafts and interpreted host providers.
 
 The CLI exposes declaration-query results to Workspace and editor consumers.
-Select declaration/action separation and refresh inputs for the first query
-delivery. Arbitrary-script purity analysis, tracked generation, and a general
-task graph have separate consumers and are not prerequisites for that delivery.
+Extend the existing refresh inputs only when their observations can be owned and
+invalidated consistently. Arbitrary-script purity analysis, tracked generation,
+and a general task graph have separate consumers.
 
-### Shared declarations
+### Declaration freshness
 
-Use the same `BuildPlan` and `BuildTarget` data for querying and building. Target naming and membership have one source of truth. Compilation
-and linking consume selected declarations after declaration evaluation completes.
-The API for exposing plan data to a query remains open.
+Preserve the shared resolved plan and root-relative source identities. Identify
+which additional declaration inputs change target membership, including file
+contents, directory inventories, toolchain inputs, and environment values.
+Separate those dependencies from ordinary application source-content updates.
+Build cache and generated-object details remain outside the editor contract.
 
-The query returns the project root, target names, exact application source sets,
-and matching toolchain/Crafts inputs needed by semantic analysis. Module
-identities use the existing path rule. Include the declaration inputs needed to
-refresh the selection after edits. Build cache and generated-object details are
-outside this editor contract.
-
-The query does not generate or compile application C++, link executables, or
-require an artifact manifest. Invalid application source does not prevent target
-discovery. An invalid build declaration returns a query failure rather than an
-empty successful project. A consumer may retain an earlier result only with its
-original revision and failure state visible.
+An invalid build declaration remains a query failure rather than an empty
+successful project. If a consumer retains an earlier selection, retain its
+original revision and expose the failed refresh state.
 
 ### Evaluation boundary
 
 `build.cv` is trusted Carven code. Declaration selection may read files or
 environment values. A query is therefore not a promise of arbitrary script
-purity or sandboxing. Define which capabilities declaration evaluation needs,
-and separate them from target build actions; do not implement querying by
-silently suppressing process calls in an otherwise executing build.
+purity or sandboxing. Define how additional observations participate in freshness
+without silently suppressing ordinary script operations.
 
 ## Open decisions
 
-### OPEN-01 — Separate declarations from execution
-
-Select a query API that lets ordinary scripts expose the same plan data used for
-building. Keep program entry semantics independent of project queries. Close the
-decision using single-target and shared-library projects, with the query and
-build operations consuming the same source selections.
-
 ### OPEN-02 — Discovery and refresh inputs
 
-Define project-root selection for an editor opened at the root or a subdirectory,
-and the declaration files, source inventories, and toolchain inputs that trigger
-a refresh. Distinguish source-content changes from changes to target membership.
-State how conditional file/environment reads affect selection freshness.
+The current ancestor discovery and root/script watchers establish ordinary
+project refresh. Select a contract for conditional file/environment reads and
+declaration dependencies outside those roots. Determine how toolchain changes
+invalidate selections. Close this decision by comparing refreshed selections
+with a fresh query for each supported dependency, including failed reads.
 
 ## Deferred work
 
@@ -108,8 +97,10 @@ it; source generation alone does not select that model.
 
 ## Validation
 
-Use one single-source project and one `build.cv` with two executables sharing a library.
-Compare queried and built source selections. Query before any build and while
-application source contains errors; verify no application compilation or linking
-occurs. Reject malformed build declarations explicitly. Change target membership,
-declaration dependencies, and toolchain inputs and verify selection refresh.
+Compare refreshed selections with fresh queries after loaded-script edits,
+declaration inputs outside the project, environment changes, failed reads, and
+toolchain replacement. Verify source membership and failure states for each
+supported dependency. Query before any build and while application sources have
+errors; declaration refresh must not compile or link application outputs.
+Generated-input experiments additionally cover unchanged runs, input changes,
+failed generation, obsolete outputs, and interruption before publication.

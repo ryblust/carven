@@ -7,21 +7,20 @@ It supports constant execution, interpretation, and native compilation.
 ## Parsing
 
 ```carven
-import std::toml using { parse, TOMLError, TOMLValueError }
+import std::toml using { TOMLValue, TOMLError, TOMLValueError }
 
 fn project_name(text: str) -> String throw TOMLError + TOMLValueError {
-    let document = parse(text)?;
+    let document = TOMLValue::parse(text)?;
     let project = document.get("project")?;
     return project.get("name")?.as_str()? as String;
 }
 ```
 
-`parse(text: str)` and `TOMLValue::parse(text)` return an independent `TOMLValue` tree
+`TOMLValue::parse(text: str)` returns an independent `TOMLValue` tree
 whose root is a table. Empty documents produce empty tables. `validate(text)`
-checks the same grammar and discards the tree. All three operations are `const fn`.
+checks the same grammar and discards the tree. Both operations are `const fn`.
 
-`parse_bytes(bytes: [u8])`, `TOMLValue::parse_bytes(bytes)`, and
-`validate_bytes(bytes)` first validate the entire input as UTF-8. They throw
+`TOMLValue::parse_bytes(bytes: [u8])` and `validate_bytes(bytes)` first validate the entire input as UTF-8. They throw
 `UTF8Error` before parsing when encoding is invalid; text entry points throw
 `TOMLError`. The parser implements TOML 1.0 syntax, including comments, quoted and
 dotted keys, basic and literal strings, multiline strings, integers, floats,
@@ -49,7 +48,6 @@ meaning to this module. It performs neither file access nor dependency resolutio
 | `members()` | Borrowed table members as `[(String, TOMLValue)]` in insertion order |
 | `get(key)` / `at(index)` | Independent child value |
 | `has(key)` | Whether a table contains this exact decoded key |
-| `key_at(index)` / `member_value_at(index)` | Borrowed key or independent child in insertion order |
 
 All queries are `const fn`. Except `kind`, incompatible queries throw
 `TOMLValueError::WrongKind`. Missing keys throw `MissingKey`; invalid indices throw
@@ -62,7 +60,7 @@ Values own their complete trees and can outlive the input text. `elements` and
 read-only slices use ordinary indexing and iteration:
 
 ```carven
-let document = parse("name='hello'\nversions=[1, 2]")?;
+let document = TOMLValue::parse("name='hello'\nversions=[1, 2]")?;
 for (key, value) in document.members()? {
     if key == "versions" {
         for version in value.elements()? {
@@ -74,7 +72,7 @@ for (key, value) in document.members()? {
 
 Text and collection views borrow their receiver. Keep that owner alive and do not
 replace or move it while using a view; escaping borrows are rejected. Reading a
-child into an owned `TOMLValue`, including `get`, `at`, and `member_value_at`,
+child into an owned `TOMLValue`, including `get` and `at`,
 copies that subtree. Copy text with `as String` when an independent lifetime is
 needed. The API provides parsing and queries; it does not rewrite or serialize
 TOML documents.

@@ -49,6 +49,24 @@ const TestSuite suite([] static noexcept {
             expect(ast.branch_block(*value_if.else_branch).result.has_value());
         };
 
+    "Parser control: concise if branches require one simple statement"_test = [] static noexcept {
+        parse_valid(
+            "fn act(ready) {\n"
+            " if ready => let value = 1; else if fallback() { work(); } else => return;\n"
+            " if ready => (if ready { 1 } else { 0 });\n"
+            "}\n"
+        );
+        for (const auto text : {
+                 "fn f() { if ready => work() }",
+                 "fn f() { if ready => if other => work(); }",
+                 "fn f() { if ready => while other {} }",
+                 "fn f() { if ready => const {} }",
+                 "fn f() { let value = if ready => return 1; else => return 0; }",
+             }) {
+            check_invalid(text);
+        }
+    };
+
     "Parser control: const marks static if chains and range loops"_test = [] static noexcept {
         static constexpr auto text = std::string_view(
             "fn unroll(const count: usize) {\n"

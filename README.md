@@ -52,35 +52,32 @@ and adopt Carven incrementally within existing C++ projects.
 > break existing code. Use the compiler, documentation, and examples from the
 > same revision.
 
-## Run a program
+## Install
 
-Use `carven` with its matching Crafts resources. An installed toolchain places
-the executable in `<prefix>/bin/` and its resources in `<prefix>/crafts/carven/`.
-Keep development executables in their source checkout so they can locate its
-`crafts/carven/`. For a source build, see [Development](#development).
+The first binary release is being prepared. Once published, install the latest
+precompiled toolchain from GitHub Releases.
 
-Add the directory containing `carven` (`carven.exe` on Windows) to `PATH`.
-Replace the example path with that directory's absolute path.
-
-On macOS and Linux:
+macOS and Linux:
 
 ```sh
-export PATH="/absolute/path/to/compiler-directory:$PATH"
+curl -fsSL https://github.com/ryblust/carven/releases/latest/download/install.sh | sh
 ```
 
-In Windows PowerShell:
+Commands are installed in `~/.local/bin`; add it to your `PATH`. Toolchain files
+live in `${XDG_DATA_HOME:-$HOME/.local/share}/carven`.
+
+Windows PowerShell:
 
 ```powershell
-$env:Path = "C:\path\to\compiler-directory;$env:Path"
+irm https://github.com/ryblust/carven/releases/latest/download/install.ps1 | iex
 ```
 
-These changes apply to the current terminal. To keep them for future terminals,
-add the directory in your shell startup configuration or Windows user `Path`.
-Check that the command is available:
+Add `%LOCALAPPDATA%\Programs\Carven\bin` to your user PATH.
 
-```sh
-carven --version
-```
+For VS Code, download the release's `.vsix` and use **Extensions: Install from VSIX**.
+The `carven-lang.carven` extension uses the installed toolchain; Node is not required.
+
+## Run a program
 
 Native execution requires a C++20 compiler, SDK, and linker in the environment.
 `CXX` selects the compiler, defaulting to `clang++`. Interpretation and semantic
@@ -106,9 +103,8 @@ Run the program from that directory:
 carven run main.cv
 ```
 
-It prints `42`. `answer` is computed during compilation. `carven run` builds a
-native program through `std::build`, keeps its output in `build/`, then executes
-it. Project configuration is optional.
+It prints `42`. `answer` is computed during compilation. `carven run` compiles
+and runs the program; no project configuration is required.
 
 Run the same file's supported tests through interpretation:
 
@@ -116,10 +112,8 @@ Run the same file's supported tests through interpretation:
 carven interpret --tests main.cv
 ```
 
-With `interpret --tests`, the driver runs the tests instead of the program entry and
-reports their results. Compile-time execution and
-`const test` still run during analysis. Add `--timings` to see time spent in each
-command stage.
+`interpret --tests` runs tests instead of the program entry. `const test` runs
+during analysis.
 
 Use `check` for semantic checks and compile-time execution, `interpret` to run
 the supported subset without native compilation, or `compile` to inspect or
@@ -133,9 +127,15 @@ carven compile --stdout main.cv
 
 `compile --stdout` displays generated C++; `compile -o <dir>` writes its artifacts
 below the chosen directory. Name all application sources in explicit-file commands.
-`carven build` without sources executes the current directory's `build.cv`.
-Use `carven build main.cv` or `carven run main.cv` for an explicit source.
+Use `carven run main.cv helper.cv` to build and run explicit sources as one program.
 Arguments after `carven run ... --` are passed to the program.
+
+Format Carven sources through the same CLI:
+
+```shell
+carven format write main.cv
+carven format check .
+```
 
 ## Build a project
 
@@ -143,9 +143,9 @@ With `carven` on `PATH` and a C++20 compiler available, add this
 `build.cv` beside the same `main.cv`:
 
 ```cv
-import std::build using build;
+import std::build using project;
 
-build({
+project({
     targets: [{
         name: "app",
         kind: .Executable,
@@ -166,13 +166,8 @@ carven run app
 This builds `build/app` (`build/app.exe` on Windows). `carven run app` builds and
 runs it, printing `42`.
 
-`build.cv` uses ordinary top-level statements. The `build` function constructs
-native outputs and, under `carven run`, runs the selected executable before
-returning the output records. Add targets for executables and static libraries,
-and configure native sources, include
-directories, compiler flags, and libraries as needed. Functions, conditions, and
-loops can assemble the same plan; custom tools and code generators run as
-ordinary program statements before building.
+`carven build` interprets `build.cv` as an ordinary Carven program. Use functions,
+conditions, and loops to construct the plan or run code generators.
 
 ## C++ project integration
 
@@ -181,28 +176,43 @@ directory and add this `xmake.lua`. Use Xmake 3.1.1 or later and a C++20-capable
 toolchain:
 
 ```lua
-add_repositories("carven-xmake-repo https://github.com/ryblust/carven-xmake-repo.git")
-add_requires("carven")
+includes("/path/to/carven/share/xmake/carven")
 
 target("app")
     set_kind("binary")
-    add_rules("@carven/carven")
+    add_rules("carven")
     add_files("main.cv")
 ```
 
 ```shell
 xmake build
 xmake run app
-xmake test
 ```
 
-`xmake run app` prints `42`; `xmake test` builds and runs the `twice` test from
-`main.cv`.
+`xmake run app` prints `42`. For inline tests, declare a binary target with
+`add_rules("carven", {tests = true})` and register it with `add_tests`.
 
-The package installs the compiler. The rule generates C++ from the target's Carven
-sources and registers the required implementations; Xmake manages native
-compilation, linking, and incremental builds. Add your C++ sources, include
-directories, and library dependencies with ordinary Xmake settings.
+Replace `/path/to/carven` with your toolchain installation directory. The rules
+invoke that installation's compiler.
+Declare your Carven and C++ sources, include directories, and library dependencies
+on the target. Xmake manages compilation, linking, and incremental builds.
+
+For CMake 3.21 or newer, the installed toolchain provides a package:
+
+```cmake
+cmake_minimum_required(VERSION 3.21)
+project(app LANGUAGES CXX)
+set(Carven_DIR "/path/to/carven/share/cmake/Carven")
+find_package(Carven CONFIG REQUIRED)
+
+add_executable(app)
+carven_target_sources(app main.cv)
+```
+
+Run `cmake -S . -B build`, then `cmake --build build`. CMake owns the target's
+native settings and build outputs. Your project supplies the installation path
+and prepares its build environment, locally and in CI. See the
+[CMake integration](cmake/README.md) for configuration and incremental behavior.
 
 ### Compile generated C++ directly
 
@@ -246,8 +256,7 @@ to the C++ toolchain.
 
 ## Documentation
 
-- **Run examples:** [Complete example programs](examples/README.md), including
-  [async TCP collection](examples/stream_collector/README.md)
+- **Run examples:** [Complete example programs](examples/README.md)
 - **Learn the language:** [Tutorial](docs/language/tutorial.md),
   [Grammar](docs/language/grammar.md), and [Language Reference](docs/language/README.md)
 - **Use the compiler:** [CLI Reference](docs/toolchain/cli.md) and
@@ -255,9 +264,9 @@ to the C++ toolchain.
 - **Build projects:** [Build scripts and API](docs/language/build.md)
 - **Understand the implementation:** [Compiler Architecture](docs/compiler/README.md)
   and [C++ Backend](docs/compiler/backend/README.md)
-- **Develop the repository:** [Testing](docs/development/testing.md) and
-  [C++ Conventions](docs/development/conventions.md), with
-  [Xmake support](xmake/README.md)
+- **Develop the repository:** [Testing](docs/development/testing.md),
+  [C++ Conventions](docs/development/conventions.md), [Xmake support](xmake/README.md),
+  [Editor development](editors/vscode/development.md), and [Distribution](tools/release/README.md)
 - **Explore the design:** [Design Principles](docs/development/principles.md)
   and [Proposals](proposals/README.md)
 
@@ -273,7 +282,7 @@ LLVM 23 is the validated version. On Windows, use
 `PATH` so Xmake can discover the build tools. Generated programs use C++20.
 
 Run repository build and test commands from the checkout root through `./xmakew`,
-or `.\xmakew.ps1` in Windows PowerShell. The default build selects the compiler.
+or `.\xmakew.ps1` in Windows PowerShell. The default build selects only the compiler.
 Build it before running the test suite:
 
 ```shell
@@ -281,21 +290,21 @@ Build it before running the test suite:
 ./xmakew test
 ```
 
-Run the built compiler directly through Xmake from the checkout root:
+Repository tests use this checkout's compiler and Crafts. Build outputs are in
+`build/<platform>/<arch>/<mode>/`. Run the compiler without installing it:
 
 ```shell
-./xmakew run carven --version
 ./xmakew run carven check examples/hello.cv
 ```
 
-This uses the build target without installing it or adding it to `PATH`.
-On Windows, use `.\xmakew.ps1`. Tutorial and example commands use `carven`
-directly and assume it is on `PATH`.
+Build the remaining tools explicitly when using the checkout's LSP:
 
-The compiler is written to `build/<platform>/<arch>/<mode>/` by default.
-To use it directly, run `./xmakew show -t carven` to find the `targetfile` for
-your configuration and add its containing directory to `PATH`. Keep the executable
-in the checkout so it can locate the matching Crafts resources.
+```shell
+./xmakew build -g toolchain
+```
+
+Set VS Code's `carven.serverPath` to the built `carven-lsp` executable, then run
+**Carven: Restart Language Server** after rebuilding.
 
 Format the repository's C++ and Carven sources, or check their formatting:
 

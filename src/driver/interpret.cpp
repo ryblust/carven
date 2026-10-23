@@ -1,16 +1,21 @@
 module carven:driver.interpret.impl;
 
+import :backend.generation.request;
+import :compiler.manifest;
 import :diagnostics.builder;
 import :diagnostics.code;
 import :diagnostics.report;
 import :driver.analysis;
 import :driver.diagnostic;
+import :driver.input;
 import :driver.interpret;
+import :driver.options;
 import :driver.sources;
 import :driver.timings;
 import :interpreter.execute;
 import :semantic.evaluation.display;
 import :semantic.evaluation.execution;
+import :semantic.evaluation.native;
 import :semantic.evaluation.value;
 import :semantic.semir.decl;
 import :semantic.semir.program;
@@ -181,7 +186,8 @@ auto run_interpreted_root(
     TimingOutput timings,
     bool trace,
     std::string_view module_path,
-    std::string_view function_name
+    std::string_view function_name,
+    std::span<const ExecutionNativeBinding> native_bindings
 ) noexcept -> int {
     auto diagnostic_sources = std::optional<RestoredSources>();
     auto entry = std::optional<FunctionID>();
@@ -231,8 +237,9 @@ auto run_interpreted_root(
         }
         return emit_missing_entry_error();
     }
+    auto native = ExecutionNativeHost(native_bindings, limits);
     auto options =
-        InterpreterOptions {.limits = limits, .trace = {}, .report = {}, .host_call = {}};
+        InterpreterOptions {.limits = limits, .trace = {}, .report = {}, .host_call = native};
     const auto trace_event = [&](const ExecutionTraceEvent& event) noexcept {
         trace_execution(program, event);
     };
@@ -255,7 +262,8 @@ auto run_interpreted_root(
 auto run_interpret(
     std::span<const std::string> args,
     std::string_view module_path,
-    std::string_view function_name
+    std::string_view function_name,
+    std::span<const ExecutionNativeBinding> native_bindings
 ) noexcept -> int {
     if (args.size() == 1
         && (std::string_view(args[0]) == "--help" || std::string_view(args[0]) == "-h")) {
@@ -356,7 +364,8 @@ auto run_interpret(
         }
         sources->owned_modules.push_back(source->module_path);
     }
-    const auto program = load_and_analyze_sources(*sources, output, timings.output());
+    const auto program =
+        load_and_analyze_sources(*sources, output, native_bindings, timings.output());
     if (!program) {
         return 1;
     }
@@ -368,14 +377,16 @@ auto run_interpret(
             timings.output(),
             trace,
             module_path,
-            function_name
+            function_name,
+            native_bindings
         );
         timings.set_outcome(status == 0 ? "finished" : "failed");
         return status;
     }
     auto diagnostic_sources = std::optional<RestoredSources>();
+    auto native = ExecutionNativeHost(native_bindings, limits);
     auto options =
-        InterpreterOptions {.limits = limits, .trace = {}, .report = {}, .host_call = {}};
+        InterpreterOptions {.limits = limits, .trace = {}, .report = {}, .host_call = native};
     const auto trace_event = [&](const ExecutionTraceEvent& event) noexcept {
         trace_execution(*program, event);
     };
@@ -414,11 +425,94 @@ auto run_interpret(
 
 } // namespace
 
-auto run_interpret_command(std::span<const std::string> args) noexcept -> int {
-    return run_interpret(args, {}, {});
+auto run_interpret_command(
+    std::span<const std::string> args,
+    std::span<const ExecutionNativeBinding> native_bindings
+) noexcept -> int {
+    return run_interpret(args, {}, {}, native_bindings);
 }
 
-auto run_interpret_function(std::string_view module_path, std::string_view function_name) noexcept
-    -> int {
-    return run_interpret({}, module_path, function_name);
+auto run_query_command(
+    std::span<const std::string> args,
+    std::span<const ExecutionNativeBinding> native_bindings
+) noexcept -> int {
+    auto path = std::string_view("build.cv");
+    auto selected = false;
+    auto show_timings = false;
+    for (const auto& arg : args) {
+        if (arg == "--timings") {
+            show_timings = true;
+        } else if (selected || arg.starts_with('-')) {
+            return emit_driver_error(
+                "query accepts one source or semantic artifact directory",
+                "carven"
+            );
+        } else {
+            path = arg;
+            selected = true;
+        }
+    }
+    auto timings = CommandTimings(show_timings, "query");
+    auto description = std::string();
+    const auto output = [&](ExecutionOutputStream stream, std::string_view bytes) noexcept {
+        if (stream == ExecutionOutputStream::Error) {
+            std::print(std::cerr, "{}", bytes);
+        } else {
+            description += bytes;
+        }
+    };
+    const auto options = CompilationOptions {
+        .command = CompilationCommand::Check,
+        .destination = std::nullopt,
+        .test_mode = TestGenerationMode::None,
+        .input_paths = {path},
+        .timings = show_timings,
+        .query_crafts = false,
+    };
+    const auto input = load_compilation_input(
+        locate_standard_crafts(),
+        options,
+        output,
+        timings.output(),
+        native_bindings
+    );
+    if (!input) {
+        return emit_driver_error(input.error());
+    }
+    constexpr auto unlimited = std::numeric_limits<std::size_t>::max();
+    const auto limits = ExecutionLimits {
+        .steps = unlimited,
+        .byte_work = unlimited,
+        .aggregate_work = unlimited,
+    };
+    const auto status = run_interpreted_root(
+        input->semantic.program,
+        output,
+        limits,
+        timings.output(),
+        false,
+        {},
+        {},
+        native_bindings
+    );
+    timings.set_outcome(status == 0 ? "finished" : "failed");
+    if (status != 0) {
+        return status;
+    }
+    auto scripts = std::vector<std::string>();
+    for (const auto& source : input->sources.carven) {
+        scripts.push_back(source.path);
+    }
+    std::ranges::sort(scripts);
+    scripts.erase(std::ranges::unique(scripts).begin(), scripts.end());
+    std::print("{}", format_project_query(description, scripts));
+    return 0;
+}
+
+auto run_interpret_function(
+    std::string_view module_path,
+    std::string_view function_name,
+    std::span<const ExecutionNativeBinding> native_bindings
+) noexcept -> int {
+    return run_interpret({}, module_path, function_name, native_bindings);
 }

@@ -7,6 +7,7 @@ import :compiler.analysis;
 import :compiler.compile;
 import :diagnostics.builder;
 import :diagnostics.code;
+import :semantic.analysis.program;
 import :semantic.evaluation.execution;
 import :semantic.evaluation.output;
 import :source.batch;
@@ -19,7 +20,8 @@ auto compile(
     SourceBatch batch,
     const TargetPlanningRequest& generation,
     ExecutionOutput output,
-    TimingOutput timings
+    TimingOutput timings,
+    AnalysisNativeCall native_call
 ) noexcept -> std::expected<Diagnosed<GeneratedArtifactSet>, Diagnostics> {
     const auto semantic = analyze_compilation(
         sources.snapshot(),
@@ -28,7 +30,11 @@ auto compile(
          .timings = timings,
          .collect_source_observations = false,
          .capture_output = false,
-         .host_effects = HostEffects::Allow}
+         .host_effects = HostEffects::Allow,
+         .completion = std::nullopt,
+         .source_query = false,
+         .excluded = {},
+         .native_call = native_call}
     );
     auto diagnostics = Diagnostics(semantic.diagnostics().begin(), semantic.diagnostics().end());
     if (semantic.program() == nullptr) {

@@ -22,12 +22,19 @@ auto source_name_path(const ASTNamedType& type) noexcept -> SourceNamePath;
 auto source_name_path(ASTView syntax, ASTExprID expression) noexcept
     -> std::optional<SourceNamePath>;
 
+auto source_name_available(
+    const ProgramDraft& draft,
+    ProgramModuleID module,
+    std::string_view name
+) noexcept -> bool;
+
 auto lookup_cpp_name(
     const ProgramDraft& draft,
     AnalysisCatalogView catalog,
     ImportUsage& usage,
     ProgramModuleID source_module,
-    const SourceNamePath& path
+    const SourceNamePath& path,
+    SourceObservation* observations = nullptr
 ) noexcept -> AnalysisResult<std::optional<CppNameReference>>;
 
 auto lookup_class_operation(
@@ -40,6 +47,15 @@ auto lookup_class_operation(
     bool receiver,
     Span span
 ) noexcept -> AnalysisResult<CatalogSymbolID>;
+
+auto class_declaration(const ProgramDraft& draft, ConstructionStructRef owner) noexcept
+    -> ClassDeclarationRef;
+
+auto class_representation_accessible(
+    const ProgramDraft& draft,
+    ConstructionStructRef owner,
+    std::optional<ClassDeclarationRef> lexical_class
+) noexcept -> bool;
 
 auto check_class_representation_access(
     const ProgramDraft& draft,

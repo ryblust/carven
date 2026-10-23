@@ -1,8 +1,8 @@
 module carven:semantic.format.builtin;
 
 import :semantic.semir.constant;
-import :semantic.semir.constant_access;
 import :semantic.semir.format;
+import :semantic.semir.values;
 import std;
 
 // Text borrows completed input storage through the synchronous formatting operation.

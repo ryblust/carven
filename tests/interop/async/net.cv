@@ -9,7 +9,9 @@ export(cpp) async fn transfer(
     chunk: usize
 ) -> bool throw NetError {
     let empty: Vector<u8> = [];
-    if await write(writer, &&empty)? != 0 { return false; }
+    if await write(writer, &&empty)? != 0 {
+        return false;
+    }
     let copy = payload;
     async let sending = write_all(writer, &&copy);
     var offset: usize = 0;
@@ -34,7 +36,9 @@ export(cpp) async fn transfer(
                 }
             },
         }
-        if !valid { break; }
+        if !valid {
+            break;
+        }
     }
     await sending?;
     return valid && offset == payload.length();

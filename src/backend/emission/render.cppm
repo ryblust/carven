@@ -1,6 +1,7 @@
 module carven:backend.emission.render;
 
 import :backend.emission.layout;
+import :backend.target;
 import :backend.target.decl;
 import :backend.target.expr;
 import :backend.target.ids;
@@ -11,7 +12,6 @@ import :backend.target.raw;
 import :backend.target.stmt;
 import :backend.target.type;
 import :backend.target.unit;
-import :backend.target;
 import std;
 
 struct StableInterfaceEmission final {};

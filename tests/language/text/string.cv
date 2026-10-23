@@ -20,8 +20,8 @@ enum TextChoice {
 fn view_of(text: String) -> str => text;
 fn own(text: str) -> String => text as String;
 
-fn pair_size(first: String, &&second: String) -> usize => first.byte_length()
-    + second.byte_length();
+fn pair_size(first: String, &&second: String) -> usize =>
+    first.byte_length() + second.byte_length();
 
 fn scalar_then_take(first: usize, &&second: String) -> usize => first + second.byte_length();
 
@@ -261,9 +261,9 @@ fn return_text_owner(text: str) -> String {
     return &&value;
 }
 
-fn forward_text_owner(&&text: String) -> String => &&text;
+fn forward_text_owner(&&text: String) -> String => text;
 
-test "String: explicit owner returns preserve content through local and parameter transfer" {
+test "String: explicit and implicit owner returns preserve content" {
     let local = return_text_owner("returned content");
     let forwarded = forward_text_owner(&&local);
     check(forwarded.as_str() == "returned content");

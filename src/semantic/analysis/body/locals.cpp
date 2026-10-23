@@ -7,9 +7,12 @@ import :frontend.ast.decl;
 import :semantic.analysis.body.context;
 import :semantic.analysis.catalog;
 import :semantic.analysis.names;
+import :semantic.analysis.source.completion;
 import :semantic.analysis.types;
+import :semantic.analysis.types.display;
 import :semantic.semir.body;
 import :semantic.semir.decl;
+import :semantic.semir.generic;
 import :support.invariant;
 import std;
 
@@ -24,6 +27,7 @@ auto BodyElaborator::push_frame(Span span) noexcept -> void {
                 frame_origin
             ),
             .names = {},
+            .unavailable = {},
         }
     );
 }
@@ -71,8 +75,102 @@ auto BodyElaborator::visible_locals() const noexcept -> BodyLocalNames {
     return names;
 }
 
+auto BodyElaborator::unavailable_local(std::string_view name) const noexcept
+    -> std::optional<SourceSpan> {
+    for (const auto& frame : frames | std::views::reverse) {
+        if (frame.names.contains(name)) {
+            return std::nullopt;
+        }
+        if (const auto found = frame.unavailable.find(name); found != frame.unavailable.end()) {
+            return found->second;
+        }
+    }
+    return std::nullopt;
+}
+
+auto BodyElaborator::exclude_statement(ASTStmtID id) noexcept -> bool {
+    const auto* query = draft().source_analysis();
+    const auto& statement = ast.statement(id);
+    if (!query || !query->excludes(locate(ast.source_id(), statement.span))) {
+        return false;
+    }
+    excluded_statement = statement.span;
+    if (const auto* binding = std::get_if<ASTVariableDecl>(&statement.value)) {
+        const auto visit = [&](this const auto& self,
+                               const ASTBindingTarget& target) noexcept -> void {
+            if (const auto* named = std::get_if<ASTNamedBindingTarget>(&target)) {
+                const auto location = locate(ast.source_id(), named->name_span);
+                frames.back().unavailable.insert_or_assign(spelling(named->name_span), location);
+                observe_source(named->name_span, location, std::nullopt);
+            } else if (const auto* tuple =
+                           std::get_if<UniqueIndirect<ASTTupleBindingTarget>>(&target)) {
+                for (const auto& element : (*tuple)->elements) {
+                    self(element);
+                }
+            }
+        };
+        visit(binding->target);
+    }
+    return true;
+}
+
+auto BodyElaborator::complete_names(Span span) const noexcept -> void {
+    const auto* query = draft().source_analysis();
+    if (!query || !query->requests_completion(locate(ast.source_id(), span))) {
+        return;
+    }
+    auto candidates = std::map<std::string, SourceCompletionCandidate, std::less<>>();
+    for (const auto& [name, local] : visible_locals()) {
+        if (runtime_local_outside_static_scope(name) || unavailable_local(name)) {
+            continue;
+        }
+        candidates.emplace(
+            name,
+            SourceCompletionCandidate {
+                name,
+                SourceCompletionKind::Variable,
+                type_display_name(draft(), local.type, catalog())
+            }
+        );
+    }
+    // Each selected candidate is moved into the map.
+    // NOLINTNEXTLINE(misc-const-correctness)
+    for (auto& candidate : source_name_candidates(draft(), catalog(), source_module_id, false)) {
+        if (!unavailable_local(candidate.name)) {
+            candidates.try_emplace(candidate.name, std::move(candidate));
+        }
+    }
+    for (const auto& frame : frames) {
+        for (const auto& [name, location] : frame.unavailable) {
+            if (unavailable_local(name)) {
+                candidates.insert_or_assign(
+                    name,
+                    SourceCompletionCandidate {name, SourceCompletionKind::Variable, {}}
+                );
+            }
+        }
+    }
+    auto result = std::vector<SourceCompletionCandidate>();
+    for (auto& [name, candidate] : candidates) {
+        result.push_back(std::move(candidate));
+    }
+    query->complete(result);
+}
+
 auto BodyElaborator::observe_binding(Span location, const BodyLocalStorage& local) noexcept
     -> void {
+    if (observe_sources && local.storage.binding.owner() == active_builder().identity()) {
+        const auto value = active_builder().binding_expression(local.storage.binding);
+        source_occurrences.record(
+            draft(),
+            locate(ast.source_id(), location),
+            local.definition,
+            local.type,
+            std::nullopt,
+            active_builder().source_callable(value.expression)
+        );
+        return;
+    }
     observe_source(location, local.definition, local.type);
 }
 
@@ -160,11 +258,21 @@ auto BodyElaborator::find_global(std::string_view name, Span span) noexcept
             known.append_range(frame.names.keys());
         }
         known.append_range(inherited_locals.keys());
-        co_return std::unexpected(fail(
-            span,
+        const auto suggested = closest_spelling(name, known);
+        auto diagnostic = DiagnosticBuilder(
             DiagnosticCode::NameUnresolved,
-            std::format("unresolved name '{}'{}", name, spelling_suggestion(name, known))
-        ));
+            std::format(
+                "unresolved name '{}'{}",
+                name,
+                suggested ? std::format("; did you mean '{}'?", *suggested) : std::string()
+            )
+        );
+        const auto location = locate(ast.source_id(), span);
+        diagnostic.primary(location);
+        if (suggested) {
+            diagnostic.fix(std::format("Change to '{}'", *suggested), {{location, *suggested}});
+        }
+        co_return std::unexpected(draft().diagnostics().error(diagnostic.build()));
     }
     auto selected = select_catalog_entity(
         draft(),
@@ -188,14 +296,33 @@ auto BodyElaborator::find_global(std::string_view name, Span span) noexcept
     co_return *selected;
 }
 
-auto BodyElaborator::find_enum_case(EnumID owner, std::string_view name, Span span) noexcept
-    -> std::optional<EnumCaseID> {
-    const auto selected = draft().enum_case_named(owner, name);
-    if (selected && observe_sources) {
-        const auto source = draft().construction_enum_case_declaration_copy(*selected).origin;
-        observe_source(span, draft().source_span(source), std::nullopt);
+auto BodyElaborator::observe_enum_case(Span location, ConstructionEnumCaseRef reference) noexcept
+    -> void {
+    if (!observe_sources) {
+        return;
     }
-    return selected;
+    const auto [origin, name] = [&] noexcept {
+        if (const auto* concrete = std::get_if<EnumCaseID>(&reference)) {
+            const auto declaration = draft().construction_enum_case_declaration_copy(*concrete);
+            return std::pair(declaration.origin, declaration.name);
+        }
+        const auto generic = std::get<GenericEnumCaseRef>(reference);
+        const auto application =
+            std::get<GenericNominalApplication>(draft().generic_type_copy(generic.owner));
+        const auto declaration = std::get<GenericEnumDefinition>(
+            draft().generic_declaration_copy(application.definition)
+        );
+        const auto& member = declaration.cases.at(generic.index);
+        return std::pair(member.origin, member.name);
+    }();
+    auto source = draft().source_span(origin);
+    // A case declaration begins with its name; its diagnostic origin can also
+    // include payload types or a numeric initializer.
+    source.span = Span::from_bounds(
+        source.span.start(),
+        source.span.start() + static_cast<std::uint32_t>(draft().spelling(name).size())
+    );
+    observe_source(location, source, std::nullopt);
 }
 
 auto BodyElaborator::add_parameter(

@@ -18,8 +18,13 @@ export struct ProcessExit {
     status: i32
 }
 
+export struct RunOptions {
+    directory: str,
+    output: str
+}
+
 private const fn checked(code: i32) throw ProcessError {
-    if code != 0 { throw ProcessError::System(code); }
+    if code != 0 => throw ProcessError::System(code);
 }
 
 export const fn arguments() -> Vector<String> throw ProcessError {
@@ -53,14 +58,25 @@ export const fn environment(name: str) -> String throw ProcessError {
     return (&result).take_text() as String;
 }
 
-export const fn run(program: str, arguments: [String]) -> i32 throw ProcessError => run_to(
-    program,
-    arguments,
-    ""
-)?;
+export const fn run(program: str, arguments: [String]) -> i32 throw ProcessError =>
+    run_with(program, arguments, { ... })?;
 
-export const fn run_to(program: str, arguments: [String], output: str) -> i32 throw ProcessError {
-    let result = process::run(program, arguments, output);
+export const fn run_to(program: str, arguments: [String], output: str) -> i32 throw ProcessError =>
+    run_with(
+        program,
+        arguments,
+        {
+            output: output,
+            ...
+        }
+    )?;
+
+export const fn run_with(
+    program: str,
+    arguments: [String],
+    options: RunOptions
+) -> i32 throw ProcessError {
+    let result = process::run(program, arguments, options.directory, options.output);
     checked(result.code as i32)?;
     return result.status as i32;
 }
@@ -70,10 +86,8 @@ export const fn available_parallelism() -> usize => (process::parallelism() as i
 export class Process {
     native: process::Handle,
 
-    const fn spawn(
-        program: str,
-        arguments: [String]
-    ) -> Process throw ProcessError => Process::spawn_in(program, arguments, "")?;
+    const fn spawn(program: str, arguments: [String]) -> Process throw ProcessError =>
+        Process::spawn_in(program, arguments, "")?;
 
     const fn spawn_in(
         program: str,
@@ -92,15 +106,11 @@ export class Process {
         return { native: (&result).take_process() };
     }
 
-    const fn read(
-        self,
-        limit: usize
-    ) -> Operation<ReadResult<Vector<u8>>, throw ProcessError> => read_process(self.native, limit);
+    const fn read(self, limit: usize) -> Operation<ReadResult<Vector<u8>>, throw ProcessError> =>
+        read_process(self.native, limit);
 
-    const fn write_all(
-        self,
-        &&bytes: Vector<u8>
-    ) -> Operation<void, throw ProcessError> => write_process(self.native, &&bytes);
+    const fn write_all(self, &&bytes: Vector<u8>) -> Operation<void, throw ProcessError> =>
+        write_process(self.native, &&bytes);
 
     const fn close_input(self) throw ProcessError {
         checked(process::close_input(self.native) as i32)?;
@@ -140,10 +150,10 @@ private const async fn read_process(
 ) -> ReadResult<Vector<u8>> throw ProcessError {
     assert(limit > 0);
     let bounded = if limit > 65536 { 65536usize } else { limit };
-    let pending = process::read(native, bounded);
+    let pending: Operation<process::Result> = process::read(native, bounded);
     var result = await pending;
     checked(result.code as i32)?;
-    if result.end as bool { return .End; }
+    if result.end as bool => return .End;
     return .Data((&result).take_bytes() as Vector<u8>);
 }
 
@@ -151,13 +161,13 @@ private const async fn write_process(
     native: process::Handle,
     &&bytes: Vector<u8>
 ) throw ProcessError {
-    let pending = process::write(native, &&bytes);
+    let pending: Operation<process::Result> = process::write(native, &&bytes);
     let result = await pending;
     checked(result.code as i32)?;
 }
 
 private const async fn wait_process(native: process::Handle) -> i32 throw ProcessError {
-    let pending = process::wait(native);
+    let pending: Operation<process::Result> = process::wait(native);
     let result = await pending;
     checked(result.code as i32)?;
     return result.status as i32;

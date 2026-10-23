@@ -9,12 +9,11 @@ inline constexpr auto closure_owner_content = 1u;
 inline constexpr auto callable_view_content = 2u;
 inline constexpr auto storage_owner_content = 4u;
 inline constexpr auto native_value_content = 8u;
-inline constexpr auto string_storage_content = 16u;
-inline constexpr auto operation_owner_content = 32u;
-inline constexpr auto storage_view_content = 64u;
-inline constexpr auto parametric_value_content = 128u;
-inline constexpr auto value_storage_constraint = 256u;
-inline constexpr auto all_type_contents = 511u;
+inline constexpr auto operation_owner_content = 16u;
+inline constexpr auto storage_view_content = 32u;
+inline constexpr auto parametric_value_content = 64u;
+inline constexpr auto value_storage_constraint = 128u;
+inline constexpr auto all_type_contents = 255u;
 
 struct TypeContentDependent final {
     std::size_t index;
@@ -35,10 +34,6 @@ struct TypeContents final {
     // Opaque native C++ values held by value, including inside Carven aggregates.
     // Compiler-known C string pointers propagate no contents.
     bool contains_native_value;
-    // Possible String storage held by value; zero-length arrays stop propagation.
-    // Implies contains_storage_owner.
-    bool contains_string_storage;
-
     // Rigid definition value with relationships described by its input role.
     bool contains_parametric_value;
 
@@ -108,9 +103,9 @@ auto type_content_mask(const Shape& shape, Members members, Depend depend) noexc
                          || std::same_as<Shape, GenericArrayType>) {
         depend(
             shape.element,
-            shape.extent == 0u ? all_type_contents
-                    & ~(string_storage_content | storage_view_content | parametric_value_content)
-                               : all_type_contents
+            shape.extent == 0u
+                ? all_type_contents & ~(storage_view_content | parametric_value_content)
+                : all_type_contents
         );
         return storage_owner_content;
     } else if constexpr (std::same_as<Shape, TupleTypeValue>
@@ -132,7 +127,7 @@ auto type_content_mask(const Shape& shape, Members members, Depend depend) noexc
         return storage_view_content | value_storage_constraint;
     } else if constexpr (std::same_as<Shape, BuiltinTypeValue>) {
         if (shape.kind == BuiltinType::String) {
-            return storage_owner_content | string_storage_content | value_storage_constraint;
+            return storage_owner_content | value_storage_constraint;
         }
         if (shape.kind == BuiltinType::Str || shape.kind == BuiltinType::StrCharsView) {
             return storage_view_content | value_storage_constraint;

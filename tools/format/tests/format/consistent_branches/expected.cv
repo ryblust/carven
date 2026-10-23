@@ -8,5 +8,30 @@ fn f() {
 }
 
 fn g() {
-    if ready { call(); } else {}
+    if ready {
+        call();
+    } else {
+    }
+}
+
+fn choose(flag: bool) -> i32 => if flag { 1 } else { 0 };
+
+fn values() {
+    check((if flag { first } else { second }) != nullptr);
+    let result = if flag {
+        let value = compute();
+        value
+    } else {
+        0
+    };
+    let documented = if flag {
+        1
+    } else { // fallback
+        0
+    };
+    let wide = if primary_measurement_is_available && secondary_measurement_is_available {
+        primary_measurement
+    } else {
+        secondary_measurement
+    };
 }

@@ -99,7 +99,7 @@ auto main() -> int {
         host_service(decorate_binding),
         host_service(submit_binding),
     };
-    auto options = host_call_options();
+    const auto options = host_call_options();
     auto session_options = host_session_options();
     session_options.calls = options;
     session_options.services = bindings;

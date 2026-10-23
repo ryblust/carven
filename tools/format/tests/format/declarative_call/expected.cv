@@ -1,0 +1,15 @@
+project({
+    shared_sources: ["src/shared.cv"],
+    targets: [{
+        name: "application",
+        sources: ["src/main.cv"],
+        native: { compile_flags: ["-O2"] },
+        ...
+    }],
+    ...
+});
+
+enqueue(&&prepare([
+    Item { value: 1 },
+    Item { value: 2 }
+])?);

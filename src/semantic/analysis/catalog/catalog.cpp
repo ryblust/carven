@@ -228,11 +228,19 @@ auto AnalysisCatalogView::cpp_imports(ProgramModuleID id) const noexcept
 ImportUsage::ImportUsage(std::size_t import_count) noexcept
     : used_imports(import_count, std::uint8_t {0}) {}
 
-auto ImportUsage::record(ImportBindingID import_id) noexcept -> void {
+auto ImportUsage::record(ImportBindingID import_id, std::string_view name) noexcept -> void {
     if (import_id.index() >= used_imports.size()) {
         invariant_violation("import usage references an unknown binding");
     }
     used_imports[import_id.index()] = 1;
+    used_selections.emplace(import_id, std::string(name));
+}
+
+auto ImportUsage::selection_was_used(
+    ImportBindingID import_id,
+    std::string_view name
+) const noexcept -> bool {
+    return used_selections.contains({import_id, std::string(name)});
 }
 
 auto ImportUsage::was_used(ImportBindingID import_id) const noexcept -> bool {

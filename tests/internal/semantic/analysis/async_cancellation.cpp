@@ -1,7 +1,7 @@
 module carven:test.internal.semantic.analysis.async_cancellation;
 
 import :frontend.program.parse;
-import :semantic.analyze;
+import :semantic.evaluation.execution;
 import :semantic.semir.body;
 import :semantic.semir.decl;
 import :semantic.semir.evaluation;
@@ -13,6 +13,7 @@ import :source.batch;
 import :source.manager;
 import :source.module_path;
 import :test.harness.framework;
+import :test.internal.semantic.analysis.fixture;
 import std;
 
 namespace {
@@ -30,7 +31,7 @@ auto cancellation_program(std::string_view text) noexcept -> SemIRProgram {
     };
     auto syntax = parse_program(sources, SourceBatch {.modules = inputs});
     require(syntax.has_value()).note("source = ", source_view.text);
-    auto analyzed = analyze(std::move(*syntax), HostEffects::Deny);
+    auto analyzed = analyze_test_syntax(std::move(*syntax), HostEffects::Deny);
     require(analyzed.has_value()).note("source = ", source_view.text);
     return std::move(analyzed->value);
 }
@@ -409,7 +410,6 @@ fn factory(const accepting: bool) {
 async fn ready_probe() -> i32 => await factory(false);
 async fn checked_probe() -> i32 => await factory(true);
 )");
-            expect_equal(program.static_instances().size(), 2uz);
             check_completion(program, "ready_probe", false, std::array {false});
             check_completion(program, "checked_probe", true, std::array {true});
         };

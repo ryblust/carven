@@ -2,6 +2,4 @@ import std::simd.scan using { byte_range, count_where }
 
 private const selected = byte_range(48, 57);
 
-export(cpp) fn scan_kernel(bytes: [u8]) -> usize {
-    return count_where(bytes, selected);
-}
+export(cpp) fn scan_kernel(bytes: [u8]) -> usize => count_where(bytes, selected);

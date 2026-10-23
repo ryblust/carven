@@ -21,8 +21,12 @@ fn main(args) -> ::EntryPayload throw Failure {
     let owner = ::cv_test_entry_begin(if args[0] == "recover" { 2 } else { 1 });
     let result = cv_test_entry_run_tests();
     assert(result == 0);
-    if args[0] == "throw" { throw Failure { payload: ::EntryPayload {} }; }
-    if args[0] == "propagate" { fail_entry()?; }
+    if args[0] == "throw" {
+        throw Failure { payload: ::EntryPayload {} };
+    }
+    if args[0] == "propagate" {
+        fail_entry()?;
+    }
     if args[0] == "recover" {
         try {
             fail_entry()?;

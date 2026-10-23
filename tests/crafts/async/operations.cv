@@ -2,7 +2,7 @@ import std::async using { close, yield_once }
 import std::channel using ByteChannel;
 import std::io using { IOError, write_stdout_async }
 
-const async fn check_channel() {
+private const async fn check_channel() {
     let channel = ByteChannel::new(1);
     let bytes: Vector<u8> = [0, 255, 65];
     let sending = channel.send(&&bytes);

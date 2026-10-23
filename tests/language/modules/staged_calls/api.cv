@@ -24,12 +24,10 @@ private fn unused_helper() -> i32 => 0;
 private fn step(value: i32, const lane: i32) -> i32 {
     let scale = [](input: i32) => input * 2;
     return scale(value)
-        + weigh(
-            {
-                index: lane,
-                weight: 10
-            }
-        );
+        + weigh({
+            index: lane,
+            weight: 10
+        });
 }
 
 // Callers realize these instances; the private helpers they reach stay
@@ -54,12 +52,10 @@ private struct DisplayNode {
 fn inspect_native(value: i32, const offset: i32) -> i32 {
     const weights: [i32] = [2, 3];
     let values = vector<i32> { value, weights[0] };
-    println(
-        Lane {
-            index: offset,
-            weight: values.size() as i32
-        }
-    );
+    println(Lane {
+        index: offset,
+        weight: values.size() as i32
+    });
     println(DisplayNode { children: [] });
     return (values[0] as i32) + weights[1] + offset;
 }

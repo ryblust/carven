@@ -17,6 +17,7 @@ import :frontend.ast.tree;
 import :frontend.ast.type;
 import :frontend.lex.token;
 import :frontend.literal;
+import :frontend.parse;
 import :frontend.parse.builder;
 import :source.text;
 import std;
@@ -60,11 +61,23 @@ private:
         Value value;
     };
 
+    template<typename Value>
+    struct ParsedImport final {
+        Value value;
+        bool scope_uncertain;
+    };
+
+    struct ParsedItem final {
+        std::optional<ASTItemID> value;
+        std::optional<Span> name;
+    };
+
     std::string_view source;
     SourceID source_id;
     const TokenBuffer* token_buffer;
     std::span<const Token> tokens;
     std::size_t cursor = 0;
+    bool scope_complete = true;
     bool split_right_shift = false;
     ASTBuilder builder;
     Diagnostics diagnostics;
@@ -100,6 +113,11 @@ private:
     auto enter_syntax_nesting() noexcept -> DepthGuard;
     auto preflight_delimiter_nesting() noexcept -> bool;
     auto synchronize_top_level_item(std::size_t item_start) noexcept -> void;
+    auto on_new_line() const noexcept -> bool;
+    auto on_statement_line() const noexcept -> bool;
+    auto recover_import(const Checkpoint& checkpoint) noexcept -> void;
+    auto synchronize_statement(std::size_t start, std::size_t failure) noexcept -> void;
+    auto recover_statement(const Checkpoint& checkpoint, std::size_t start) noexcept -> void;
     auto at_end() const noexcept -> bool;
     auto current() const noexcept -> Token;
     auto check(TokenKind kind) const noexcept -> bool;
@@ -125,9 +143,9 @@ private:
     static auto join(Span first, Span last) noexcept -> Span;
     auto parse_import_item(Span name) noexcept -> ASTImportItem;
     auto parse_module_reference() noexcept -> ASTModuleReference;
-    auto parse_cpp_header_import() noexcept -> ASTCppHeaderImport;
-    auto parse_module_import() noexcept -> ASTModuleImportID;
-    auto parse_top_level_item() noexcept -> std::optional<ASTItemID>;
+    auto parse_cpp_header_import() noexcept -> ParsedImport<ASTCppHeaderImport>;
+    auto parse_module_import() noexcept -> ParsedImport<ASTModuleImportID>;
+    auto parse_top_level_item() noexcept -> ParsedItem;
     auto parse_type_parameters() noexcept -> std::optional<ASTTypeParameterClause>;
 
     auto parse_enum(ASTDeclarationVisibility visibility) noexcept
@@ -215,7 +233,8 @@ private:
     auto starts_field_construction() const noexcept -> bool;
     auto try_parse_construction() noexcept -> std::optional<ASTExprID>;
     auto parse_expression_before_block() noexcept -> std::optional<ASTExprID>;
-    auto parse_if_form() noexcept -> std::optional<ASTIfForm>;
+    auto parse_if_body(bool statement) noexcept -> std::optional<ASTBranchBlockID>;
+    auto parse_if_form(bool statement) noexcept -> std::optional<ASTIfForm>;
     auto parse_match_form() noexcept -> std::optional<ASTMatchForm>;
     auto parse_match_arm() noexcept -> std::optional<ASTMatchArm>;
     auto parse_try_form() noexcept -> std::optional<ASTTryForm>;

@@ -2,8 +2,8 @@ module carven:backend.preparation.impl;
 
 import :backend.preparation;
 import :semantic.format.builtin;
-import :semantic.semir.constant_access;
 import :semantic.semir.simd;
+import :semantic.semir.values;
 import :support.invariant;
 import std;
 
@@ -88,7 +88,7 @@ auto prepare_operation(const SemIRProgram& program, const SemanticExpression& so
             .array = array != nullptr
         });
     }
-    const auto values = PublishedConstantValues(program);
+    const auto values = ProgramValues(program);
     if (const auto* format = std::get_if<SemFormat>(&source.value)) {
         auto types = std::vector<std::optional<BuiltinType>>();
         auto known = std::vector<std::optional<ConstantID>>();

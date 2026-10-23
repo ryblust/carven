@@ -267,7 +267,6 @@ The following table lists selected semantic diagnostics in the current compiler:
 | `CV-LINT-UNUSED-IMPORT` | Warning | An import selects no uniquely referenced binding |
 | `CV-LINT-UNUSED-LOCAL` | Warning | A named local binding is unused |
 | `CV-LINT-UNUSED-PARAMETER` | Warning | A named parameter is unused |
-| `CV-LINT-RETURN-COPY` | Warning | A returned owner containing `String` is copied where Take would be admitted |
 | `CV-MATCH-DUPLICATE-ALTERNATIVE` | Error | An or-pattern contains a repeated or subsumed alternative |
 | `CV-TEST-ARGUMENT-COUNT` | Error | A builtin test operation has the wrong argument count |
 | `CV-TEST-CONDITION-TYPE` | Error | A `check` or `require` condition is not exactly `bool` |

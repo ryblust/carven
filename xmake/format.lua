@@ -13,8 +13,8 @@ function main(check)
 
     local files = {}
     for _, root in ipairs({
-        "src", "include", "tests", "crafts", "examples", "benchmarks",
-        "tools/format/src", "tools/format/tests", "tools/workspace",
+        "src", "tests", "crafts", "examples", "benchmarks",
+        "tools/format/src", "tools/format/tests", "tools/workspace", "tools/analyzer", "tools/hosting",
     }) do
         for _, extension in ipairs({"cpp", "cppm", "h", "hpp"}) do
             table.join2(files, os.files(path.join(os.projectdir(), root, "**." .. extension)))
@@ -29,7 +29,7 @@ function main(check)
         os.vrunv(tool.program, args, {curdir = os.projectdir()})
     end
     local sources = {}
-    for _, root in ipairs({"crafts", "examples", "tests", "benchmarks"}) do
+    for _, root in ipairs({"crafts", "examples", "tests", "benchmarks", "tools/lsp"}) do
         for _, file in ipairs(os.files(path.join(os.projectdir(), root, "**.cv"))) do
             local relative = path.relative(file, os.projectdir()):gsub("\\", "/")
             table.insert(sources, relative)

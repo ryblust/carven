@@ -30,7 +30,9 @@ fn default_item(value: bool) -> Item => match value {
 
 fn recover(fail: bool) -> Item {
     return try {
-        if fail { throw Failed {}; }
+        if fail {
+            throw Failed {};
+        }
         { value: 4 }
     } catch {
         Failed(_) => { value: 5 },

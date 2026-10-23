@@ -12,29 +12,29 @@ private const four_byte_boundary: u8 = 64;
 private const two_continuations: u8 = 128;
 
 private const fn previous_high_flags(nibble: u8) -> u8 {
-    if nibble < 8 { return too_long; }
-    if nibble < 12 { return two_continuations; }
-    if nibble == 12 { return too_short | overlong_two; }
-    if nibble == 13 { return too_short; }
-    if nibble == 14 { return too_short | overlong_three | surrogate; }
+    if nibble < 8 => return too_long;
+    if nibble < 12 => return two_continuations;
+    if nibble == 12 => return too_short | overlong_two;
+    if nibble == 13 => return too_short;
+    if nibble == 14 => return too_short | overlong_three | surrogate;
     return too_short | too_large | four_byte_boundary;
 }
 
 private const fn previous_low_flags(nibble: u8) -> u8 {
     var flags = too_short | too_long | two_continuations;
-    if nibble == 0 { flags |= overlong_three | overlong_two | four_byte_boundary; }
-    if nibble == 1 { flags |= overlong_two; }
-    if nibble == 4 { flags |= too_large; }
-    if nibble >= 5 { flags |= too_large | four_byte_boundary; }
-    if nibble == 13 { flags |= surrogate; }
+    if nibble == 0 => flags |= overlong_three | overlong_two | four_byte_boundary;
+    if nibble == 1 => flags |= overlong_two;
+    if nibble == 4 => flags |= too_large;
+    if nibble >= 5 => flags |= too_large | four_byte_boundary;
+    if nibble == 13 => flags |= surrogate;
     return flags;
 }
 
 private const fn current_high_flags(nibble: u8) -> u8 {
-    if nibble < 8 || nibble >= 12 { return too_short; }
+    if nibble < 8 || nibble >= 12 => return too_short;
     var flags = too_long | overlong_two | two_continuations;
-    if nibble == 8 { return flags | overlong_three | four_byte_boundary; }
-    if nibble == 9 { return flags | overlong_three | too_large; }
+    if nibble == 8 => return flags | overlong_three | four_byte_boundary;
+    if nibble == 9 => return flags | overlong_three | too_large;
     return flags | surrogate | too_large;
 }
 

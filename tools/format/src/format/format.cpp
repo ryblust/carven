@@ -18,6 +18,7 @@ import :frontend.ast.stmt;
 import :frontend.ast.storage;
 import :frontend.ast.tree;
 import :frontend.ast.type;
+import :frontend.document;
 import :frontend.lex;
 import :frontend.lex.token;
 import :frontend.parse;
@@ -42,6 +43,8 @@ auto failure(SourceID source_id, Span span, std::string message) noexcept -> Dia
 enum class Separation { None, Space, SoftEmpty, SoftSpace, Hard };
 // Block keeps an empty body inline; Expanded also breaks an empty body.
 enum class BlockLayout { None, Block, Compact, Expanded };
+enum class GroupIndent { None, Continuation, Wrapped };
+enum class DelimiterLayout { Ordinary, Transparent, Wrapped };
 
 class SyntaxFormatter final {
 public:
@@ -54,7 +57,7 @@ private:
     std::span<const Token> tokens;
     std::vector<bool> prefix_operators;
     std::vector<bool> infix_operators;
-    std::vector<bool> continuation_groups;
+    std::vector<DelimiterLayout> delimiter_layouts;
     std::vector<BlockLayout> block_layouts;
     std::vector<std::optional<std::size_t>> header_starts;
     std::vector<std::size_t> minimum_breaks;
@@ -69,9 +72,15 @@ private:
     std::vector<std::optional<Separation>> separation_before;
     std::vector<std::size_t> closing_indices;
     std::vector<std::size_t> opening_indices;
-    std::vector<std::size_t> group_end_exclusive;
+
+    struct LayoutGroup final {
+        std::size_t end;
+        GroupIndent indentation;
+    };
+
+    std::vector<std::vector<LayoutGroup>> groups;
     FormattingDocument document;
-    const ASTBlock* top_level_body = nullptr;
+    const ASTBlock* top_level_body;
     auto render() noexcept -> std::string;
     auto delimiter_boundary(std::size_t index) const noexcept -> bool;
     auto block_open(Span span) const noexcept -> std::size_t;
@@ -89,38 +98,40 @@ private:
     auto mark_function_type(const ASTFunctionType& function) noexcept -> void;
 
     template<typename Form>
-    auto mark_control(const Form& form) noexcept -> void {
+    auto mark_control(const Form& form, bool is_expression) noexcept -> void {
         if constexpr (std::same_as<Form, ASTIfForm>) {
             auto branches = std::vector<BranchLayout>();
-            for (const auto& branch : form.branches) {
-                const auto open = block_open(syntax.branch_block(branch.body).span);
-                // A const chain's first header begins at its const keyword.
-                const auto header = &branch == &form.branches.front() && form.const_span
-                    ? *form.const_span
-                    : branch.keyword_span;
-                header_starts[open] = token_at(header.start());
-                branches.push_back(
-                    BranchLayout {
-                        .first = *header_starts[open],
-                        .last = closing_indices[open],
-                        .block = open,
+            const auto branch_layout = [&](ASTBranchBlockID id, std::size_t first) noexcept {
+                const auto& body = syntax.branch_block(id);
+                if (!body.arrow_span) {
+                    const auto open = block_open(body.span);
+                    if (is_expression) {
+                        header_starts[open] = first;
+                        branches.push_back(
+                            BranchLayout {
+                                .first = first,
+                                .last = token_covering(body.span.end() - 1u),
+                                .block = open,
+                            }
+                        );
+                    } else {
+                        block_layouts[open] = BlockLayout::Expanded;
                     }
-                );
+                }
+            };
+            for (const auto& branch : form.branches) {
+                branch_layout(branch.body, token_at(branch.keyword_span.start()));
             }
             if (form.else_branch) {
-                const auto open = block_open(syntax.branch_block(*form.else_branch).span);
-                header_starts[open] = open - 1uz;
-                branches.push_back(
-                    BranchLayout {
-                        .first = *header_starts[open],
-                        .last = closing_indices[open],
-                        .block = open,
-                    }
+                branch_layout(
+                    *form.else_branch,
+                    token_at(syntax.branch_block(*form.else_branch).span.start()) - 1uz
                 );
             }
-            branch_groups.push_back(std::move(branches));
-            mark_group(form.span);
-            continuation_groups[token_at(form.span.start())] = false;
+            if (is_expression) {
+                branch_groups.push_back(std::move(branches));
+            }
+            mark_group(form.span, GroupIndent::None);
         } else if constexpr (std::same_as<Form, ASTMatchForm> || std::same_as<Form, ASTTryForm>) {
             mark_block(form.span);
             block_layouts[block_open(form.span)] = BlockLayout::Expanded;
@@ -147,23 +158,27 @@ private:
                     for (const auto pipe : arm.pattern.pipe_spans) {
                         infix_operators[token_at(pipe.start())] = true;
                     }
-                    mark_group(arm.pattern.span);
-                    continuation_groups[token_at(arm.pattern.span.start())] = false;
+                    mark_group(arm.pattern.span, GroupIndent::None);
                 }
             }
             branch_groups.push_back(std::move(branches));
         }
     }
 
-    auto mark_group(Span span) noexcept -> void;
+    auto mark_group(Span span, GroupIndent indentation) noexcept -> void;
+    auto mark_callable_body(const ASTCallableBody& body) noexcept -> void;
     auto annotate() noexcept -> void;
     auto separation(std::size_t index) const noexcept -> Separation;
     auto separator(Separation value) noexcept -> FormattingNodeID;
     auto needs_separator(std::size_t index) const noexcept -> bool;
     auto gap(std::size_t index, Separation desired, bool closing) noexcept -> FormattingNodeID;
 
-    auto sequence(std::size_t start, std::size_t end, Separation first, bool inside_group) noexcept
-        -> FormattingNodeID;
+    auto sequence(
+        std::size_t start,
+        std::size_t end,
+        Separation first,
+        std::optional<GroupIndent> group
+    ) noexcept -> FormattingNodeID;
 };
 
 SyntaxFormatter::SyntaxFormatter(
@@ -175,14 +190,15 @@ SyntaxFormatter::SyntaxFormatter(
       tokens(source.token_buffer().tokens()),
       prefix_operators(tokens.size(), false),
       infix_operators(tokens.size(), false),
-      continuation_groups(tokens.size(), true),
+      delimiter_layouts(tokens.size(), DelimiterLayout::Ordinary),
       block_layouts(tokens.size(), BlockLayout::None),
       header_starts(tokens.size()),
       minimum_breaks(tokens.size() + 1uz, 0),
       separation_before(tokens.size(), std::nullopt),
       closing_indices(tokens.size(), 0),
       opening_indices(tokens.size(), 0),
-      group_end_exclusive(tokens.size(), 0) {
+      groups(tokens.size()),
+      top_level_body(nullptr) {
     for (const auto& item : syntax.items()) {
         if (const auto* function = std::get_if<ASTFunctionDecl>(&item.value);
             function != nullptr && function->is_implicit_entry) {
@@ -223,6 +239,9 @@ auto SyntaxFormatter::format() noexcept -> std::string {
         invariant_violation("Formatter parsed syntax has unclosed delimiters");
     }
     annotate();
+    for (auto& entries : groups) {
+        std::ranges::sort(entries, {}, &LayoutGroup::end);
+    }
     select_compact_blocks();
     // Decisions only move from compact to expanded. Observe actual layout,
     // including the header's column, before adding declaration separators.
@@ -335,7 +354,7 @@ auto SyntaxFormatter::format() noexcept -> std::string {
 auto SyntaxFormatter::render() noexcept -> std::string {
     document = FormattingDocument();
     auto parts =
-        std::vector<FormattingNodeID> {sequence(0, tokens.size(), Separation::None, false)};
+        std::vector<FormattingNodeID> {sequence(0, tokens.size(), Separation::None, std::nullopt)};
     parts.push_back(
         gap(tokens.size(), tokens.empty() ? Separation::None : Separation::Hard, false)
     );
@@ -394,7 +413,9 @@ auto SyntaxFormatter::select_compact_blocks() noexcept -> void {
         }
     }
     for (const auto& block : syntax.branch_blocks()) {
-        if (simple(block.statements) && (!block.result || block.statements.empty())) {
+        if (!block.arrow_span
+            && simple(block.statements)
+            && (!block.result || block.statements.empty())) {
             consider_compact(block.span, block_open(block.span));
         }
     }
@@ -500,10 +521,22 @@ auto SyntaxFormatter::mark_function_type(const ASTFunctionType& function) noexce
     }
 }
 
-auto SyntaxFormatter::mark_group(Span span) noexcept -> void {
+auto SyntaxFormatter::mark_group(Span span, GroupIndent indentation) noexcept -> void {
     const auto start = token_at(span.start());
-    group_end_exclusive[start] =
-        std::max(group_end_exclusive[start], token_covering(span.end() - 1u) + 1uz);
+    const auto end = token_covering(span.end() - 1u) + 1uz;
+    groups[start].push_back(LayoutGroup {.end = end, .indentation = indentation});
+}
+
+auto SyntaxFormatter::mark_callable_body(const ASTCallableBody& body) noexcept -> void {
+    if (const auto* expression = std::get_if<ASTExpressionBody>(&body)) {
+        const auto span = syntax.expression(expression->expression).span;
+        const auto first = token_at(span.start());
+        mark_group(
+            Span::from_bounds(expression->arrow_span.start(), span.end()),
+            GroupIndent::Wrapped
+        );
+        separation_before[first] = Separation::SoftSpace;
+    }
 }
 
 auto SyntaxFormatter::annotate() noexcept -> void {
@@ -516,6 +549,30 @@ auto SyntaxFormatter::annotate() noexcept -> void {
             || std::holds_alternative<ASTArrayExpr>(element->value)
             || std::holds_alternative<ASTArrayRepeatExpr>(element->value);
     };
+    const auto attach_singleton =
+        [&](Span span, ASTExprID element, DelimiterLayout layout) noexcept {
+            const auto argument = syntax.expression(element).span;
+            const auto first = token_at(argument.start());
+            const auto last = token_covering(argument.end() - 1u);
+            const auto close = token_covering(span.end() - 1u);
+            const auto comment = [&](std::size_t index) noexcept {
+                return std::ranges::any_of(
+                    source.trivia_before(index),
+                    [](const SourceTrivia& trivia) static noexcept {
+                        return trivia.kind == SourceTriviaKind::LineComment;
+                    }
+                );
+            };
+            auto separated = comment(first);
+            for (auto index = last + 1uz; index <= close; ++index) {
+                separated = separated || comment(index);
+            }
+            // The element supplies its own layout and indentation. Comments
+            // outside it retain ordinary list layout.
+            if (!separated) {
+                delimiter_layouts[opening_indices[close]] = layout;
+            }
+        };
     for (const auto& item : syntax.module_imports()) {
         separation_before[token_at(item.span.start())] = Separation::Hard;
     }
@@ -551,8 +608,7 @@ auto SyntaxFormatter::annotate() noexcept -> void {
             continue;
         }
         separation_before[token_at(item.span.start())] = Separation::Hard;
-        mark_group(item.span);
-        continuation_groups[token_at(item.span.start())] = false;
+        mark_group(item.span, GroupIndent::None);
         item.value.visit([&](const auto& value) noexcept {
             using T = std::decay_t<decltype(value)>;
             if constexpr (std::same_as<T, ASTRecordDecl>
@@ -583,6 +639,9 @@ auto SyntaxFormatter::annotate() noexcept -> void {
                 for (const auto& parameter : value.parameters) {
                     mark_parameter(parameter);
                 }
+                if (const auto* body = std::get_if<ASTFunctionBody>(&value.implementation)) {
+                    mark_callable_body(body->body);
+                }
             }
         });
     }
@@ -603,7 +662,7 @@ auto SyntaxFormatter::annotate() noexcept -> void {
             } else if constexpr (std::same_as<T, ASTCancelStmt>) {
                 separation_before[token_at(value.keyword_span.start()) + 1uz] = Separation::Space;
             } else if constexpr (std::same_as<T, ASTForStmt>) {
-                mark_group(value.header.span);
+                mark_group(value.header.span, GroupIndent::Continuation);
                 const auto end = token_covering(value.header.span.end() - 1u);
                 for (auto i = token_at(value.header.span.start()); i < end; ++i) {
                     if (closing_indices[i] != 0) {
@@ -624,7 +683,7 @@ auto SyntaxFormatter::annotate() noexcept -> void {
             if constexpr (std::same_as<T, ASTForStmt> || std::same_as<T, ASTWhileStmt>) {
                 block_layouts[block_open(syntax.block(value.body).span)] = BlockLayout::Expanded;
             }
-            mark_control(value);
+            mark_control(value, false);
         });
     }
     for (const auto& block : syntax.blocks()) {
@@ -634,13 +693,31 @@ auto SyntaxFormatter::annotate() noexcept -> void {
         mark_block(block.span);
     }
     for (const auto& block : syntax.branch_blocks()) {
+        if (block.arrow_span) {
+            separation_before[token_at(syntax.statement(block.statements.front()).span.start())] =
+                Separation::Space;
+            continue;
+        }
         mark_block(block.span);
         if (block.result) {
             separation_before[token_at(syntax.expression(*block.result).span.start())] =
                 Separation::Hard;
         }
     }
+    auto chained = std::vector<bool>(syntax.expressions().size(), false);
     for (const auto& expression : syntax.expressions()) {
+        if (const auto* binary = std::get_if<ASTBinaryExpr>(&expression.value)) {
+            const auto* left = std::get_if<ASTBinaryExpr>(&syntax.expression(binary->left).value);
+            if (left && left->op == binary->op) {
+                chained[binary->left.index()] = true;
+            }
+        } else if (const auto* cast = std::get_if<ASTCastExpr>(&expression.value)) {
+            if (std::holds_alternative<ASTCastExpr>(syntax.expression(cast->operand_id).value)) {
+                chained[cast->operand_id.index()] = true;
+            }
+        }
+    }
+    for (const auto& [expression_index, expression] : std::views::enumerate(syntax.expressions())) {
         expression.value.visit([&](const auto& value) noexcept {
             using T = std::decay_t<decltype(value)>;
             if constexpr (std::same_as<T, ASTPrefixExpr>) {
@@ -659,8 +736,13 @@ auto SyntaxFormatter::annotate() noexcept -> void {
                 prefix_operators[token_at(value.marker_span.start())] = true;
             } else if constexpr (std::same_as<T, ASTBinaryExpr> || std::same_as<T, ASTCastExpr>) {
                 infix_operators[token_at(value.operator_span.start())] = true;
-                mark_group(expression.span);
+                if (!chained[expression_index]) {
+                    mark_group(expression.span, GroupIndent::Continuation);
+                }
+            } else if constexpr (std::same_as<T, ASTGroupExpr>) {
+                attach_singleton(expression.span, value.expression, DelimiterLayout::Transparent);
             } else if constexpr (std::same_as<T, ASTLambdaExpr>) {
+                mark_callable_body(value.body);
                 for (const auto& parameter : value.parameters) {
                     mark_parameter(parameter);
                 }
@@ -673,7 +755,22 @@ auto SyntaxFormatter::annotate() noexcept -> void {
                 mark_angles(value.arguments_span);
                 separation_before[token_covering(value.arguments_span.end() - 1u) + 1uz] =
                     Separation::None;
+            } else if constexpr (std::same_as<T, ASTCallExpr>) {
+                if (value.arguments.size() == 1uz) {
+                    attach_singleton(
+                        expression.span,
+                        value.arguments.front(),
+                        DelimiterLayout::Wrapped
+                    );
+                }
             } else if constexpr (std::same_as<T, ASTArrayExpr>) {
+                if (value.element_ids.size() == 1uz) {
+                    attach_singleton(
+                        expression.span,
+                        value.element_ids.front(),
+                        DelimiterLayout::Wrapped
+                    );
+                }
                 if (value.element_ids.size() > 1uz
                     && std::ranges::any_of(value.element_ids, structured)) {
                     block_layouts[token_at(expression.span.start())] = BlockLayout::Expanded;
@@ -683,7 +780,7 @@ auto SyntaxFormatter::annotate() noexcept -> void {
                     }
                 }
             } else if constexpr (std::same_as<T, ASTArrayRepeatExpr>) {
-                mark_group(expression.span);
+                mark_group(expression.span, GroupIndent::Continuation);
                 separation_before[token_at(syntax.expression(value.extent).span.start())] =
                     Separation::Space;
             } else if constexpr (std::same_as<T, ASTConstructionExpr>) {
@@ -745,12 +842,12 @@ auto SyntaxFormatter::annotate() noexcept -> void {
                     });
                 }
             }
-            mark_control(value);
+            mark_control(value, true);
         });
     }
     for (const auto& pattern : syntax.patterns()) {
         if (std::holds_alternative<ASTTuplePattern>(pattern.value)) {
-            mark_group(pattern.span);
+            mark_group(pattern.span, GroupIndent::Continuation);
         } else if (const auto* binding = std::get_if<ASTBindingPattern>(&pattern.value);
                    binding && binding->mode == ASTAccessMode::Write) {
             prefix_operators[token_at(binding->marker_span->start())] = true;
@@ -760,7 +857,7 @@ auto SyntaxFormatter::annotate() noexcept -> void {
             for (const auto pipe : alternatives->pipe_spans) {
                 infix_operators[token_at(pipe.start())] = true;
             }
-            mark_group(pattern.span);
+            mark_group(pattern.span, GroupIndent::Continuation);
         } else if (const auto* constraint = std::get_if<ASTConstraintPattern>(&pattern.value)) {
             if (const auto* array = std::get_if<ASTArrayType>(&constraint->operand.value)) {
                 separation_before[token_at(syntax.expression(array->extent).span.start())] =
@@ -952,21 +1049,28 @@ auto SyntaxFormatter::sequence(
     std::size_t start,
     std::size_t end,
     Separation first,
-    bool inside_group
+    std::optional<GroupIndent> group
 ) noexcept -> FormattingNodeID {
     auto result = std::vector<FormattingNodeID>();
+    auto continuation = std::optional<std::size_t>();
     for (auto index = start; index < end; ++index) {
-        result.push_back(
-            inside_group && index == start
-                ? document.text("")
-                : gap(index, index == start ? first : separation(index), false)
-        );
-        if (!(inside_group && index == start)
-            && group_end_exclusive[index] > index + 1uz
-            && group_end_exclusive[index] <= end) {
-            const auto last = group_end_exclusive[index];
-            result.push_back(document.group(sequence(index, last, Separation::None, true)));
-            index = last - 1uz;
+        const auto spacing = index == start ? first : separation(index);
+        if ((group == GroupIndent::Continuation || group == GroupIndent::Wrapped)
+            && !continuation
+            && index != start
+            && spacing == Separation::SoftSpace) {
+            continuation = result.size();
+        }
+        result.push_back(group && index == start ? document.text("") : gap(index, spacing, false));
+        const auto limit = group && index == start ? end - 1uz : end;
+        const auto after = std::ranges::upper_bound(groups[index], limit, {}, &LayoutGroup::end);
+        if (after != groups[index].begin()) {
+            const auto& nested = *std::prev(after);
+            const auto body = sequence(index, nested.end, Separation::None, nested.indentation);
+            result.push_back(
+                nested.indentation == GroupIndent::Wrapped ? body : document.group(body)
+            );
+            index = nested.end - 1uz;
             continue;
         }
         if (closing_indices[index] != 0) {
@@ -977,35 +1081,64 @@ auto SyntaxFormatter::sequence(
                 layout == BlockLayout::Expanded || (layout == BlockLayout::Block && nonempty_block);
             const auto interpolation = tokens[index].kind == TokenKind::InterpolationStart
                 || tokens[index].kind == TokenKind::InterpolationOpen;
+            const auto delimiter = delimiter_layouts[index];
+            const auto attached = delimiter != DelimiterLayout::Ordinary;
             const auto brace_list = tokens[index].kind == TokenKind::LeftBrace
                 && layout == BlockLayout::None
                 && close != index + 1uz;
-            const auto boundary = interpolation ? Separation::None
-                : expanded_block                ? Separation::Hard
-                : nonempty_block                ? Separation::SoftSpace
-                : brace_list                    ? Separation::SoftSpace
-                                                : Separation::SoftEmpty;
-            auto parts = std::vector<FormattingNodeID> {
-                document.verbatim(source.spelling(tokens[index].span))
-            };
-            const auto inner = sequence(index + 1uz, close, boundary, false);
+            const auto boundary = interpolation || attached ? Separation::None
+                : expanded_block                            ? Separation::Hard
+                : close == index + 1uz                      ? Separation::None
+                : nonempty_block                            ? Separation::SoftSpace
+                : brace_list                                ? Separation::SoftSpace
+                                                            : Separation::SoftEmpty;
+            const auto opening = document.verbatim(source.spelling(tokens[index].span));
+            const auto closing = document.text(source.spelling(tokens[close].span));
+            auto parts = std::vector<FormattingNodeID> {opening};
+            const auto inner = sequence(index + 1uz, close, boundary, std::nullopt);
             parts.push_back(
-                tokens[index].kind == TokenKind::InterpolationStart ? inner : document.indent(inner)
+                tokens[index].kind == TokenKind::InterpolationStart || attached
+                    ? inner
+                    : document.indent(inner)
             );
             parts.push_back(gap(close, boundary, true));
-            parts.push_back(document.text(source.spelling(tokens[close].span)));
+            parts.push_back(closing);
             const auto body = document.concat(std::move(parts));
-            result.push_back(expanded_block ? body : document.group(body));
+            if (delimiter == DelimiterLayout::Wrapped) {
+                const auto edge = separator(Separation::SoftEmpty);
+                const auto tail = document.concat({edge, closing});
+                const auto normal = document.group(document.concat(
+                    {opening, document.indent(document.concat({edge, inner})), tail}
+                ));
+                result.push_back(document.wrap(normal, document.group(body), inner, edge, tail));
+            } else {
+                result.push_back(expanded_block ? body : document.group(body));
+            }
             index = close;
         } else {
             result.push_back(document.verbatim(source.spelling(tokens[index].span)));
         }
     }
-    if (inside_group && continuation_groups[start] && result.size() > 2uz) {
-        auto rest = std::vector<FormattingNodeID>(result.begin() + 2, result.end());
-        return document.concat(
-            {result[0], result[1], document.indent(document.concat(std::move(rest)))}
-        );
+    if (continuation) {
+        const auto split = result.begin() + static_cast<std::ptrdiff_t>(*continuation);
+        auto rest = std::vector<FormattingNodeID>(split, result.end());
+        result.erase(split, result.end());
+        if (group == GroupIndent::Wrapped) {
+            const auto prefix = document.concat(std::move(result));
+            const auto boundary = rest.front();
+            const auto element =
+                document.concat(std::vector<FormattingNodeID>(rest.begin() + 1, rest.end()));
+            return document.wrap(
+                document.concat(
+                    {prefix, document.indent(document.group(document.concat(std::move(rest))))}
+                ),
+                document.concat({prefix, document.text(" "), element}),
+                element,
+                boundary,
+                document.text("")
+            );
+        }
+        result.push_back(document.indent(document.group(document.concat(std::move(rest)))));
     }
     return document.concat(std::move(result));
 }
@@ -1069,15 +1202,18 @@ auto import_commas(const FormattingSource& source, ASTView syntax) noexcept -> s
 }
 
 auto mask_import_trailing_commas(const FormattingSource& source, ASTView syntax) noexcept
-    -> std::string {
-    auto result = std::string(source.text());
+    -> std::optional<std::string> {
+    auto result = std::optional<std::string>();
     const auto tokens = source.token_buffer().tokens();
     for (const auto [open, close] : import_list_bounds(source, syntax) | std::views::reverse) {
         const auto last = close - 1uz;
         // A comment before an existing comma forces a multiline list. Retain
         // that comma and its comment boundary rather than moving punctuation.
         if (tokens[last].kind == TokenKind::Comma && comments(source, last).empty()) {
-            result[tokens[last].span.start()] = ' ';
+            if (!result) {
+                result.emplace(source.text());
+            }
+            (*result)[tokens[last].span.start()] = ' ';
         }
     }
     return result;
@@ -1088,6 +1224,10 @@ auto with_multiline_import_commas(
     ASTView syntax,
     std::string output
 ) noexcept -> std::string {
+    const auto lists = import_list_bounds(source, syntax);
+    if (lists.empty()) {
+        return output;
+    }
     const auto scanned =
         lex(SourceView {
             .source_id = source.token_buffer().source_id(),
@@ -1098,7 +1238,7 @@ auto with_multiline_import_commas(
     if (has_errors(scanned) || tokens.size() != source.token_buffer().tokens().size()) {
         return output; // The format boundary validates generated output.
     }
-    for (const auto [open, close] : import_list_bounds(source, syntax) | std::views::reverse) {
+    for (const auto [open, close] : lists | std::views::reverse) {
         const auto begin = tokens[open].span.start();
         const auto end = tokens[close].span.end();
         if (tokens[close - 1uz].kind != TokenKind::Comma
@@ -1145,6 +1285,55 @@ auto same_tokens_and_comments(
     }
 }
 
+auto format_syntax(
+    const SourceManager& sources,
+    SourceID source_id,
+    const FormattingSource& input,
+    ASTView syntax
+) noexcept -> std::expected<std::string, Diagnostics> {
+    // Replacing optional commas with spaces preserves the original AST offsets.
+    // Layout uses that AST directly; the normalized token buffer is not parsed.
+    auto normalized = std::optional<FormattingSource>();
+    if (const auto text = mask_import_trailing_commas(input, syntax)) {
+        auto scanned = FormattingSource::scan(
+            SourceView {
+                .source_id = source_id,
+                .text = *text,
+                .origin = sources.view(source_id).origin,
+            }
+        );
+        if (!scanned) {
+            return std::unexpected(scanned.error());
+        }
+        normalized.emplace(std::move(*scanned));
+    }
+    const auto& layout_input = normalized ? *normalized : input;
+    auto result = SyntaxFormatter(layout_input, syntax).format();
+    result = align_formatted_array_rows(layout_input, syntax, std::move(result), line_width);
+    result = with_multiline_import_commas(layout_input, syntax, std::move(result));
+    auto output_sources = SourceManager();
+    const auto output_id = output_sources.append_virtual("formatter output", result);
+    if (!output_id) {
+        return std::unexpected(
+            failure(source_id, Span::at(0), "carven format: output exceeds source size limit")
+        );
+    }
+    const auto output = FormattingSource::scan(output_sources.view(*output_id));
+    if (!output) {
+        return std::unexpected(output.error());
+    }
+    const auto output_syntax = parse(output_sources, output->token_buffer());
+    if (!output_syntax
+        || !same_tokens_and_comments(input, syntax, *output, output_syntax->view())) {
+        return std::unexpected(failure(
+            source_id,
+            Span::at(0),
+            "carven format: output validation failed; no formatted output was produced"
+        ));
+    }
+    return result;
+}
+
 } // namespace
 
 auto format_source(const SourceManager& sources, SourceID source_id) noexcept
@@ -1157,42 +1346,20 @@ auto format_source(const SourceManager& sources, SourceID source_id) noexcept
     if (!syntax) {
         return std::unexpected(syntax.error());
     }
-    // Replacing optional commas with spaces preserves the original AST offsets.
-    // Layout uses that AST directly; the normalized token buffer is not parsed.
-    const auto layout_text = mask_import_trailing_commas(*input, syntax->view());
-    const auto layout_input = FormattingSource::scan(
-        SourceView {
-            .source_id = source_id,
-            .text = layout_text,
-            .origin = sources.view(source_id).origin,
-        }
-    );
-    if (!layout_input) {
-        return std::unexpected(layout_input.error());
-    }
-    auto result = SyntaxFormatter(*layout_input, syntax->view()).format();
-    result =
-        align_formatted_array_rows(*layout_input, syntax->view(), std::move(result), line_width);
-    result = with_multiline_import_commas(*layout_input, syntax->view(), std::move(result));
-    auto output_sources = SourceManager();
-    const auto output_id = output_sources.append_virtual("formatter output", result);
-    if (!output_id) {
+    return format_syntax(sources, source_id, *input, syntax->view());
+}
+
+auto format_document(const ParsedDocument& document) noexcept
+    -> std::expected<std::string, Diagnostics> {
+    const auto syntax = document.syntax();
+    if (!syntax) {
         return std::unexpected(
-            failure(source_id, Span::at(0), "carven-format: output exceeds source size limit")
+            Diagnostics(document.diagnostics().begin(), document.diagnostics().end())
         );
     }
-    const auto output = FormattingSource::scan(output_sources.view(*output_id));
-    if (!output) {
-        return std::unexpected(output.error());
+    const auto input = FormattingSource::scan(document.source());
+    if (!input) {
+        return std::unexpected(input.error());
     }
-    const auto output_syntax = parse(output_sources, output->token_buffer());
-    if (!output_syntax
-        || !same_tokens_and_comments(*input, syntax->view(), *output, output_syntax->view())) {
-        return std::unexpected(failure(
-            source_id,
-            Span::at(0),
-            "carven-format: output validation failed; no formatted output was produced"
-        ));
-    }
-    return result;
+    return format_syntax(document.sources(), document.source().source_id, *input, *syntax);
 }

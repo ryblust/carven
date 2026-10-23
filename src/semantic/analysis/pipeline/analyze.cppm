@@ -17,7 +17,8 @@ auto analyze(
     HostEffects host_effects,
     ExecutionOutput output = {},
     TimingOutput timings = {},
-    SourceAnalysisOutput source_output = {}
+    SourceAnalysisOutput source_output = {},
+    AnalysisNativeCall native_call = {}
 ) noexcept -> std::expected<Diagnosed<SemIRProgram>, Diagnostics>;
 
 // A seed contributes the checked prefix whose provenance parse_program has
@@ -26,8 +27,11 @@ auto analyze_checked(
     SyntaxProgram syntax,
     HostEffects host_effects,
     bool retain_definitions,
+    bool source_query,
     std::optional<CheckedDefinitions> seed = std::nullopt,
     ExecutionOutput output = {},
     TimingOutput timings = {},
-    SourceAnalysisOutput source_output = {}
+    SourceAnalysisOutput source_output = {},
+    SourceCompletionRequest completion = {},
+    AnalysisNativeCall native_call = {}
 ) noexcept -> std::expected<Diagnosed<CheckedUnit>, Diagnostics>;

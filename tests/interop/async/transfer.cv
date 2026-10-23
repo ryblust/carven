@@ -24,7 +24,9 @@ export(cpp) async fn copy(reader: Context, writer: Context) -> u64 throw IOError
     var total: u64 = 0;
     while {
         let count = await transfer_read(reader)?;
-        if count == 0 { return total; }
+        if count == 0 {
+            return total;
+        }
         transfer_copy_buffer(writer, reader, count);
         for var offset: i32 = 0; offset < count;
         {

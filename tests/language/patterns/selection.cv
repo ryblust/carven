@@ -44,18 +44,17 @@ private struct BoundFailure {}
 
 private fn bound(&trace: i32, digit: i32, value: i32, reject: bool) -> i32 throw BoundFailure {
     trace = trace * 10 + digit;
-    if reject { throw BoundFailure {}; }
+    if reject {
+        throw BoundFailure {};
+    }
     return value;
 }
 
-private fn select_bound(
-    value: i32,
-    &trace: i32,
-    reject: bool
-) -> i32 throw BoundFailure => match value {
-    (bound(&trace, 1, 0, reject)?)..=(bound(&trace, 2, 10, false)?) => 1,
-    _ => 2,
-};
+private fn select_bound(value: i32, &trace: i32, reject: bool) -> i32 throw BoundFailure =>
+    match value {
+        (bound(&trace, 1, 0, reject)?)..=(bound(&trace, 2, 10, false)?) => 1,
+        _ => 2,
+    };
 
 test "Pattern selection: residual products preserve source and guard selection" {
     check(select_pair(.Values(true, true)) == 1);

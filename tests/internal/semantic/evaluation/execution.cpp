@@ -8,11 +8,11 @@ import :semantic.analysis.stage.session;
 import :semantic.evaluation.display;
 import :semantic.evaluation.execution;
 import :semantic.evaluation.value;
-import :semantic.semir.constant_access;
 import :semantic.semir.decl;
 import :semantic.semir.program;
 import :semantic.semir.structured;
 import :semantic.semir.type;
+import :semantic.semir.values;
 import :source.batch;
 import :source.manager;
 import :source.text;
@@ -609,7 +609,7 @@ test { let owner = Payload { number: 1 }; ::native(owner); })",
             each(scenarios, &Scenario::name, [](const Scenario& scenario) static noexcept {
                 const auto program = analyze_test_program(std::string(scenario.source));
                 auto context = BodyExecutionContext(program);
-                const auto values = PublishedConstantValues(program);
+                const auto values = ProgramValues(program);
                 const auto tests = program.tests().entries();
                 if (!expect(!std::ranges::empty(tests))) {
                     return;
@@ -653,7 +653,7 @@ test { let owner = Payload { number: 1 }; ::native(owner); })",
     );
 })");
             auto context = BodyExecutionContext(program);
-            const auto values = PublishedConstantValues(program);
+            const auto values = ProgramValues(program);
             const auto tests = program.tests().entries();
             if (!expect(!std::ranges::empty(tests))) {
                 return;
@@ -801,7 +801,7 @@ test { let owner = Payload { number: 1 }; ::native(owner); })",
                     )
                 );
                 auto context = BodyExecutionContext(program);
-                const auto values = PublishedConstantValues(program);
+                const auto values = ProgramValues(program);
                 const auto tests = program.tests().entries();
                 if (!expect(!std::ranges::empty(tests))) {
                     return;
@@ -873,7 +873,7 @@ test { let owner = Payload { number: 1 }; ::native(owner); })",
                     std::format("test {{ check(false, \"{}\"); }}", scenario.message)
                 );
                 auto context = BodyExecutionContext(program);
-                const auto values = PublishedConstantValues(program);
+                const auto values = ProgramValues(program);
                 const auto tests = program.tests().entries();
                 if (!expect(!std::ranges::empty(tests))) {
                     return;
@@ -1109,24 +1109,16 @@ test { let owner = Payload { number: 1 }; ::native(owner); })",
             };
 
             constexpr auto scenarios = std::array {
+                Scenario {R"(var text: String = "ab"; text.append("c"); return text;)", 3uz, "abc"},
+                Scenario {R"(var text: String = "ab"; text.push('我'); return text;)", 5uz, "ab我"},
                 Scenario {
-                    R"(var text: String = "ab"; text.append("c"); return &&text;)",
-                    3uz,
-                    "abc"
-                },
-                Scenario {
-                    R"(var text: String = "ab"; text.push('我'); return &&text;)",
-                    5uz,
-                    "ab我"
-                },
-                Scenario {
-                    R"(var text: String = "ab"; text.append_format(f"{'我'}"); return &&text;)",
+                    R"(var text: String = "ab"; text.append_format(f"{'我'}"); return text;)",
                     8uz,
                     "ab我"
                 },
-                Scenario {R"(let text: String = "ab"; let copy = text; return &&copy;)", 4uz, "ab"},
+                Scenario {R"(let text: String = "ab"; let copy = text; return copy;)", 4uz, "ab"},
                 Scenario {
-                    R"(var text: String = "ab"; text.clear(); text.append("cd"); return &&text;)",
+                    R"(var text: String = "ab"; text.clear(); text.append("cd"); return text;)",
                     4uz,
                     "cd"
                 },
@@ -1567,7 +1559,7 @@ test { let owner = Payload { number: 1 }; ::native(owner); })",
                 }
             )");
         auto context = BodyExecutionContext(program);
-        const auto values = PublishedConstantValues(program);
+        const auto values = ProgramValues(program);
         const auto tests = program.tests().entries();
         require(!std::ranges::empty(tests));
         const auto test = *tests.begin();
@@ -1794,7 +1786,7 @@ async test "continues" {
 }
 )");
             auto context = BodyExecutionContext(program);
-            const auto values = PublishedConstantValues(program);
+            const auto values = ProgramValues(program);
             auto index = 0uz;
             for (const auto test : program.tests().entries()) {
                 require(test.value.body.has_value());
@@ -1841,7 +1833,7 @@ async test "continues" {
                 }
             )");
             auto context = BodyExecutionContext(program);
-            const auto values = PublishedConstantValues(program);
+            const auto values = ProgramValues(program);
             const auto tests = program.tests().entries();
             require(!std::ranges::empty(tests));
             const auto test = *tests.begin();

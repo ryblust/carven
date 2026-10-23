@@ -24,7 +24,8 @@ auto ProgramDraft::begin(
     ExecutionOutput output,
     SourceAnalysisBuilder* source_analysis,
     TimingOutput timings,
-    CheckedDefinitions* seed
+    CheckedDefinitions* seed,
+    AnalysisNativeCall native_call
 ) noexcept -> ProgramDraft {
     return ProgramDraft(
         std::move(syntax).decompose(),
@@ -33,7 +34,8 @@ auto ProgramDraft::begin(
         source_analysis,
         timings,
         host_effects,
-        seed
+        seed,
+        native_call
     );
 }
 
@@ -44,7 +46,8 @@ ProgramDraft::ProgramDraft(
     SourceAnalysisBuilder* source_analysis,
     TimingOutput timings,
     HostEffects host_effects,
-    CheckedDefinitions* seed
+    CheckedDefinitions* seed,
+    AnalysisNativeCall native_call
 ) noexcept
     : program_identity(seed ? seed->program_identity : ProgramIdentity::fresh()),
       provenance_appender(std::move(parts.provenance)),
@@ -53,6 +56,7 @@ ProgramDraft::ProgramDraft(
       source_observer(source_analysis),
       analysis_timings(timings),
       execution_host_effects(host_effects),
+      execution_native_call(native_call),
       state(State::Declarations),
       syntax_by_module(std::move(parts.syntax_by_module)),
       resolved_import_graph(std::move(parts.resolved_import_graph)),
@@ -75,6 +79,10 @@ auto ProgramDraft::timings() const noexcept -> TimingOutput {
 
 auto ProgramDraft::host_effects() const noexcept -> HostEffects {
     return execution_host_effects;
+}
+
+auto ProgramDraft::native_call() const noexcept -> AnalysisNativeCall {
+    return execution_native_call;
 }
 
 auto ProgramDraft::source_analysis() const noexcept -> SourceAnalysisBuilder* {
@@ -386,6 +394,55 @@ auto ProgramDraft::body_for_callable(CallableID id) const noexcept -> std::optio
 auto ProgramDraft::construction_struct_declaration_copy(StructID id) const noexcept
     -> ConstructionStructDeclaration {
     return storage.declarations.construction_view().structure(id);
+}
+
+auto ProgramDraft::module_path(ModuleID module_id) const noexcept -> std::string {
+    return std::string(
+        module_path_copy(module_declaration_copy(module_id).provenance_module).value()
+    );
+}
+
+auto ProgramDraft::struct_declaration_copy(StructID structure) const noexcept
+    -> std::optional<StructDeclaration> {
+    const auto source = construction_struct_declaration_copy(structure);
+    auto result = StructDeclaration {
+        .kind = source.kind,
+        .module_id = source.module_id,
+        .name = source.name,
+        .origin = source.origin,
+        .visibility = source.visibility,
+        .fields = {}
+    };
+    for (const auto& field : source.fields) {
+        const auto type = execution_type_reference(*this, field.type);
+        const auto* canonical = std::get_if<TypeID>(&type);
+        if (canonical == nullptr) {
+            return std::nullopt;
+        }
+        result.fields.push_back({.name = field.name, .type = *canonical, .origin = field.origin});
+    }
+    return result;
+}
+
+auto ProgramDraft::enum_case_declaration_copy(EnumCaseID enum_case) const noexcept
+    -> std::optional<EnumCaseDeclaration> {
+    const auto source = construction_enum_case_declaration_copy(enum_case);
+    auto result = EnumCaseDeclaration {
+        .owner = source.owner,
+        .name = source.name,
+        .origin = source.origin,
+        .payload_types = {},
+        .constant = source.constant
+    };
+    for (const auto member : source.payload_types) {
+        const auto type = execution_type_reference(*this, member);
+        const auto* canonical = std::get_if<TypeID>(&type);
+        if (canonical == nullptr) {
+            return std::nullopt;
+        }
+        result.payload_types.push_back(*canonical);
+    }
+    return result;
 }
 
 auto ProgramDraft::struct_field_types(StructID structure) const noexcept

@@ -11,7 +11,7 @@ private const fn append_quoted(text: str, &output: String) {
         let stop = find_from(bytes, offset, escaped_bytes);
         // ASCII escape boundaries cannot split a scalar in valid UTF-8.
         output.append(str::from_utf8_unchecked(bytes.slice(offset, stop)));
-        if stop == bytes.length() { break; }
+        if stop == bytes.length() => break;
         let byte = bytes[stop];
         match byte {
             0x22 => output.append("\\\""),
@@ -44,21 +44,23 @@ private const fn append_value(
         .Number => output.append(value.number_text()?),
         .String => append_quoted(value.as_str()?, &output),
         .Array => {
-            if depth == 64 { throw JSONValueError::DepthLimit; }
+            if depth == 64 => throw JSONValueError::DepthLimit;
             output.push('[');
             var first = true;
             for item in value.elements()? {
-                if first { first = false; } else { output.push(','); }
+                if first => first = false;
+                else => output.push(',');
                 append_value(item, &output, depth + 1)?;
             }
             output.push(']');
         },
         .Object => {
-            if depth == 64 { throw JSONValueError::DepthLimit; }
+            if depth == 64 => throw JSONValueError::DepthLimit;
             output.push('{');
             var first = true;
             for (key, child) in value.members()? {
-                if first { first = false; } else { output.push(','); }
+                if first => first = false;
+                else => output.push(',');
                 append_quoted(key, &output);
                 output.push(':');
                 append_value(child, &output, depth + 1)?;
@@ -71,5 +73,5 @@ private const fn append_value(
 const fn serialize_value(value: JSONValue) -> String throw JSONValueError {
     var output = String {};
     append_value(value, &output, 0)?;
-    return &&output;
+    return output;
 }

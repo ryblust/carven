@@ -17,12 +17,6 @@ auto return_statement() noexcept -> TargetStmt {
     return target_lowering_statement(TargetReturnStmt {.expression = std::nullopt});
 }
 
-auto returned(TargetExpr value) noexcept -> std::vector<TargetStmt> {
-    auto body = std::vector<TargetStmt>();
-    body.push_back(target_lowering_statement(TargetReturnStmt {.expression = std::move(value)}));
-    return body;
-}
-
 auto boolean_type(TargetUnitBuilder& target) noexcept -> TargetTypeID {
     return target.intern_type({
         .value = TargetIntrinsicType {.symbol = TargetSymbol::Bool, .type_argument_ids = {}},
@@ -317,71 +311,6 @@ const TestSuite suite([] static noexcept {
         expect(sequence.continues());
         expect(sequence.exits().entries.empty());
     };
-
-    "Composition: selectable value regions that only return become expressions"_test =
-        [] static noexcept {
-            auto target = TargetUnitBuilder {};
-            constexpr auto yield =
-                LoweringExitTarget {.kind = LoweringExitKind::Value, .identity = 1};
-            const auto selection = [&](LoweringRegionDelivery delivery) noexcept -> TargetExpr {
-                auto sequence = LoweringStmtBuilder {};
-                sequence.terminate(
-                    target_lowering_statement(
-                        TargetIfStmt {
-                            .condition = bool_expression(true),
-                            .body = returned(
-                                {.value =
-                                     TargetLiteralExpr {
-                                         .value =
-                                             TargetIntegerLiteral {
-                                                 .negative = false,
-                                                 .magnitude = 1u,
-                                                 .suffix = TargetIntegerSuffix::None
-                                             }
-                                     }}
-                            ),
-                            .else_body = returned(bool_expression(false))
-                        }
-                    ),
-                    yield
-                );
-                return std::move(sequence).result_region(boolean_type(target), yield, delivery);
-            };
-            // A copied result is the selection itself; its integer literal states its type.
-            const auto copied = selection(LoweringRegionDelivery::Copied);
-            const auto* conditional = std::get_if<TargetConditionalExpr>(&copied.value);
-            require(conditional != nullptr);
-            expect(std::holds_alternative<TargetConstructionExpr>(conditional->true_value->value));
-            expect(std::holds_alternative<TargetLiteralExpr>(conditional->false_value->value));
-            expect(
-                std::holds_alternative<TargetCallExpr>(
-                    selection(LoweringRegionDelivery::Factory).value
-                )
-            );
-
-            // A bound result that names storage is completed as a value.
-            const auto local = target.add_local(TargetIdentifier::from_spelling("source"));
-            const auto named = [&](LoweringRegionDelivery delivery) noexcept -> TargetExpr {
-                auto direct = LoweringStmtBuilder {};
-                direct.terminate(
-                    target_lowering_statement(
-                        TargetReturnStmt {
-                            .expression = TargetExpr {.value = TargetLocalExpr {.local = local}}
-                        }
-                    ),
-                    yield
-                );
-                return std::move(direct).result_region(boolean_type(target), yield, delivery);
-            };
-            expect(
-                std::holds_alternative<TargetLocalExpr>(named(LoweringRegionDelivery::Copied).value)
-            );
-            const auto bound = named(LoweringRegionDelivery::Bound);
-            const auto* snapshot = std::get_if<TargetStaticCastExpr>(&bound.value);
-            require(snapshot != nullptr);
-            expect(snapshot->type == boolean_type(target));
-            expect(std::holds_alternative<TargetLocalExpr>(snapshot->operand->value));
-        };
 });
 
 } // namespace

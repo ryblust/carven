@@ -3,7 +3,9 @@ struct BadDigit {
 }
 
 const async fn decode_digit(value: u8) -> u32 throw BadDigit {
-    if value < 48u8 || value > 57u8 { throw BadDigit { value: value }; }
+    if value < 48u8 || value > 57u8 {
+        throw BadDigit { value: value };
+    }
     return (value - 48u8) as u32;
 }
 

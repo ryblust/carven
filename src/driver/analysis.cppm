@@ -3,6 +3,7 @@ module carven:driver.analysis;
 import :driver.sources;
 import :semantic.analysis.program;
 import :semantic.analysis.program.checked;
+import :semantic.evaluation.native;
 import :semantic.evaluation.output;
 import :semantic.semir.program;
 import :support.timing;
@@ -13,6 +14,7 @@ import std;
 auto load_and_analyze_sources(
     CommandSources& inputs,
     ExecutionOutput output,
+    std::span<const ExecutionNativeBinding> native_bindings,
     TimingOutput timings = {}
 ) noexcept -> std::optional<SemIRProgram>;
 
@@ -21,5 +23,6 @@ auto load_and_analyze_checked_sources(
     std::optional<CheckedDefinitions> seed,
     bool retain_definitions,
     ExecutionOutput output,
+    std::span<const ExecutionNativeBinding> native_bindings,
     TimingOutput timings = {}
 ) noexcept -> std::optional<CheckedUnit>;

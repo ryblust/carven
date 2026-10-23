@@ -18,8 +18,8 @@ import :semantic.analysis.constant.literal;
 import :semantic.analysis.coverage;
 import :semantic.analysis.expr.scope;
 import :semantic.analysis.operations;
-import :semantic.analysis.types.display;
 import :semantic.analysis.types;
+import :semantic.analysis.types.display;
 import :semantic.analysis.validation;
 import :semantic.evaluation.operation;
 import :semantic.semir.async;
@@ -102,14 +102,7 @@ auto BodyElaborator::constant_initializer(
 
 auto BodyElaborator::variable_statement(const ASTVariableDecl& source) noexcept
     -> AnalysisTask<void> {
-    if (!source.initializer.has_value()) {
-        co_return std::unexpected(fail(
-            source.span,
-            DiagnosticCode::ConstInitializer,
-            "every binding declaration requires an initializer"
-        ));
-    }
-    if (source.async_span) {
+    if (source.async_span && source.initializer) {
         const auto* named = std::get_if<ASTNamedBindingTarget>(&source.target);
         if ((!async_body && !static_stage())
             || source.kind != ASTBindingKind::Let
@@ -171,6 +164,18 @@ auto BodyElaborator::variable_statement(const ASTVariableDecl& source) noexcept
             co_return std::unexpected(resolved.error());
         }
         declared = *resolved;
+    }
+    if (declared) {
+        if (const auto* named = std::get_if<ASTNamedBindingTarget>(&source.target)) {
+            observe_source(named->name_span, locate(ast.source_id(), named->name_span), *declared);
+        }
+    }
+    if (!source.initializer.has_value()) {
+        co_return std::unexpected(fail(
+            source.span,
+            DiagnosticCode::ConstInitializer,
+            "every binding declaration requires an initializer"
+        ));
     }
     if (std::holds_alternative<UniqueIndirect<ASTTupleBindingTarget>>(source.target)) {
         auto value = source.kind == ASTBindingKind::Const
@@ -634,6 +639,17 @@ auto BodyElaborator::return_statement(
                 DiagnosticCode::TypeReturnValue,
                 "void callable requires a void return operand"
             ));
+        }
+        if (const auto* binding = std::get_if<SemBinding>(&built->expression().value);
+            built->takeable
+            && binding != nullptr
+            && binding->binding.owner() == active_builder().identity()) {
+            auto transferred =
+                consume_value(*built, ast.expression(*operand).span, AccessMode::Take);
+            if (!transferred) {
+                co_return std::unexpected(transferred.error());
+            }
+            *built->storage = std::move(*transferred);
         }
         if (!does_not_complete(*built)) {
             if (!result_type.has_value()) {

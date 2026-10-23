@@ -60,7 +60,7 @@ fn main(args) throw MixerError {
             throw MixerError::InvalidOption(error);
         },
         MixError(error) => {
-            if error == .Gain { eprintln(usage); }
+            if error == .Gain => eprintln(usage);
             throw MixerError::Mixing(error);
         },
     }

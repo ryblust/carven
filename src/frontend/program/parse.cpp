@@ -262,7 +262,8 @@ auto parse_program(
     SourceBatch batch,
     TimingOutput timings,
     std::span<const ParsedSourceInput> parsed,
-    std::optional<CompilationProvenance> imported
+    std::optional<CompilationProvenance> imported,
+    bool source_query
 ) noexcept -> std::expected<SyntaxProgram, Diagnostics> {
     const auto inputs = batch.modules;
     auto input_diagnostics = validate_inputs(sources, inputs);
@@ -348,7 +349,9 @@ auto parse_program(
         const auto document = found == retained.end()
             ? parse_document(SourceDocument::retain(sources, input->source_id), timings)
             : found->second;
-        for (auto diagnostic : document->diagnostics()) {
+        for (auto diagnostic : source_query && document->recovered_syntax()
+                 ? std::span<const Diagnostic>()
+                 : document->diagnostics()) {
             const auto rebind = [&](SourceSpan& span) noexcept {
                 span.source_id = input->source_id;
             };
@@ -363,9 +366,15 @@ auto parse_program(
                     rebind(*note.span);
                 }
             }
+            for (auto& fix : diagnostic.attachment.fixes) {
+                for (auto& edit : fix.edits) {
+                    rebind(edit.span);
+                }
+            }
             diagnostics.emit(std::move(diagnostic));
         }
-        auto syntax_tree = document->bind(input->source_id);
+        auto syntax_tree = source_query ? document->bind_recovered(input->source_id)
+                                        : document->bind(input->source_id);
         if (syntax_tree) {
             syntax_trees.push_back(std::move(*syntax_tree));
         }

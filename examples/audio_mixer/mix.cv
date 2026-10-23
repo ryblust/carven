@@ -25,10 +25,11 @@ const gains: Gains = {
 
 // Mixing stays the same in static execution and native SIMD execution.
 const fn mix(voice: [f32], music: [f32], gain: Gains) -> Mix throw MixError {
-    if voice.length() != music.length() { throw MixError::Length; }
-    if !gain.voice.is_finite() || !gain.music.is_finite() || gain.voice < 0.0 || gain.music < 0.0 {
-        throw MixError::Gain;
-    }
+    if voice.length() != music.length() => throw MixError::Length;
+    if !gain.voice.is_finite()
+        || !gain.music.is_finite()
+        || gain.voice < 0.0
+        || gain.music < 0.0 => throw MixError::Gain;
     var output: Mix = {};
     output.samples.reserve(voice.length());
     for index in 0..block_count(voice) {
@@ -36,7 +37,7 @@ const fn mix(voice: [f32], music: [f32], gain: Gains) -> Mix throw MixError {
         let right = load_block(music, index * 8);
         let combined = left.value * gain.voice + right.value * gain.music;
         // Inspect the original values before clipping can hide overflow.
-        if ((~combined.is_finite()) & left.active).any() { throw MixError::NonFinite; }
+        if ((~combined.is_finite()) & left.active).any() => throw MixError::NonFinite;
         // Include active lanes: the final block may contain fewer than eight samples.
         output.clipped += ((combined.abs() > 1.0) & left.active).count();
         let bounded = combined.clamp(-1.0, 1.0);
@@ -50,7 +51,7 @@ const fn mix(voice: [f32], music: [f32], gain: Gains) -> Mix throw MixError {
             output.peak = output.peak.max(value.abs());
         }
     }
-    return &&output;
+    return output;
 }
 
 const fn rms(value: Mix) -> f64 => if value.samples.is_empty() {
@@ -63,8 +64,7 @@ private const fn verify_tail() -> bool throw MixError {
     let voice: [f32; 9] = [0.5; 9];
     let music: [f32; 9] = [0.25, -0.25, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 2.0];
     let output = mix(voice, music, gains)?;
-    return output.samples.length()
-        == 9
+    return output.samples.length() == 9
         && output.clipped == 1
         && output.samples[0] == 0.625
         && output.samples[1] == 0.375
@@ -73,23 +73,19 @@ private const fn verify_tail() -> bool throw MixError {
 }
 
 const test "mixing clips the active tail at compile time" {
-    check(
-        try {
-            verify_tail()?
-        } catch {
-            MixError(_) => false
-        }
-    );
+    check(try {
+        verify_tail()?
+    } catch {
+        MixError(_) => false
+    });
 }
 
 test "mixing clips the active tail and preserves sample order" {
-    check(
-        try {
-            verify_tail()?
-        } catch {
-            MixError(_) => false
-        }
-    );
+    check(try {
+        verify_tail()?
+    } catch {
+        MixError(_) => false
+    });
 }
 
 test "mixing rejects mismatched tracks and invalid gains" {
@@ -113,13 +109,11 @@ test "mixing rejects mismatched tracks and invalid gains" {
         MixError(error) => error == .Gain
     };
     check(mismatch && invalid);
-    check(
-        try {
-            rms(mix([], [], gains)?) == 0.0
-        } catch {
-            MixError(_) => false
-        }
-    );
+    check(try {
+        rms(mix([], [], gains)?) == 0.0
+    } catch {
+        MixError(_) => false
+    });
 }
 
 test "mixing rejects nonfinite gains and overflowing samples" {
@@ -153,20 +147,18 @@ test "mixing rejects nonfinite gains and overflowing samples" {
 }
 
 test "mixing reports the root mean square" {
-    check(
-        try {
-            let value = mix(
-                [0.3f32, -0.4],
-                [0.0f32; 2],
-                {
-                    voice: 1.0,
-                    music: 0.0
-                }
-            )?;
-            let result = rms(value);
-            result > 0.35355 && result < 0.35356
-        } catch {
-            MixError(_) => false
-        }
-    );
+    check(try {
+        let value = mix(
+            [0.3f32, -0.4],
+            [0.0f32; 2],
+            {
+                voice: 1.0,
+                music: 0.0
+            }
+        )?;
+        let result = rms(value);
+        result > 0.35355 && result < 0.35356
+    } catch {
+        MixError(_) => false
+    });
 }

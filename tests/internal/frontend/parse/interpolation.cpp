@@ -49,7 +49,7 @@ const TestSuite suite([] static noexcept {
                 R"(fn bad(s: str) { match s { f"x" => {}, } })",
             };
             each(sources, std::identity {}, [](const char* source) static noexcept {
-                check_rejected(source);
+                check_invalid(source);
             });
         };
 });

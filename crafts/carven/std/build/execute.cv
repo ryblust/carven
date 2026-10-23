@@ -1,0 +1,511 @@
+import .compilation using compile_plan;
+import .fingerprint using fingerprint;
+
+import .inputs using {
+    BuildInput,
+    ImplementationIndex,
+    compilation_inputs,
+    implementation_files,
+    index_implementations,
+    input_closure,
+    record_dependencies,
+    required_syslinks,
+    source_roots,
+}
+
+import .objects using { compile_objects, native_identity, native_platform, object_path }
+import .plan using { ResolvedPlan, append_paths, append_carven_sources }
+
+import .platform using {
+    files,
+    run,
+    canonical,
+    process_error,
+    directory,
+    remove,
+    cached_text,
+    write_text,
+}
+
+import std::build using { BuildError, BuildOutput }
+import std::collections using { HashMap, HashSet, Lookup }
+import std::compiler using { CompilerError, read_manifest }
+import std::fs using { parent, join }
+import std::json using JSONValueError;
+
+import std::process using { ProcessError, environment, find_executable }
+
+import std::utf using ends_with;
+
+private const fn native_tool(variable: str, fallback: str) -> String throw BuildError {
+    let configured = try {
+        environment(variable)?
+    } catch {
+        ProcessError(error) => throw process_error(f"cannot read {variable}", error),
+    };
+    let selected = if configured.is_empty() { fallback } else { configured.as_str() };
+    return try {
+        find_executable(selected)?
+    } catch {
+        ProcessError(error) => throw process_error(f"cannot find tool '{selected}'", error),
+    };
+}
+
+private struct TargetCompilation {
+    roots: Vector<usize>,
+    inputs: Vector<usize>,
+    objects: Vector<String>,
+    implementations: HashSet<String>,
+}
+
+private struct CompileGroup {
+    key: String,
+    arguments: Vector<String>,
+    inputs: Vector<BuildInput>,
+    index: ImplementationIndex,
+    completed: HashSet<String>,
+    search_roots: HashSet<String>,
+    identity: String,
+}
+
+private const fn inside(path: str, root: str) -> bool {
+    var current = path as String;
+    while !current.is_empty() {
+        if current == root => return true;
+        let next = parent(current);
+        if next == current => break;
+        current = next;
+    }
+    return false;
+}
+
+private const fn search_identity(
+    roots: [String],
+    excluded: str,
+    artifacts: HashSet<String>,
+    &inventories: HashMap<String, String>
+) -> String throw BuildError {
+    var values: Vector<String> = [];
+    for root in roots {
+        let found = inventories.find(root);
+        if found != nullptr {
+            values.append([root, *found]);
+            continue;
+        }
+        // Explicit inputs below the work root remain inputs. Ancestor
+        // searches exclude compiler and build products from their inventory.
+        let excluded_root = if inside(root, excluded) { "" } else { excluded };
+        let entries = files({
+            root: root,
+            recursive: true,
+            excluded_root: excluded_root
+        })?;
+        var paths: Vector<String> = [];
+        for path in entries {
+            if !artifacts.contains(path) => paths.push(path);
+        }
+        let identity = fingerprint([], paths);
+        values.append([root, identity]);
+        let key = root;
+        inventories.insert(&&key, &&identity);
+    }
+    return fingerprint([], values);
+}
+
+private const fn provided_by_dependency(
+    source: String,
+    dependencies: [usize],
+    selected: [TargetCompilation]
+) -> bool {
+    for dependency in dependencies {
+        if selected[dependency].implementations.contains(source) => return true;
+    }
+    return false;
+}
+
+// A product record includes its output as well as every known input. Named
+// external libraries and unrestricted flags are deliberately not assumed stable.
+private const fn build_product(
+    command: [String],
+    dependencies: [String],
+    output: str,
+    state: str,
+    identity: str,
+    reusable: bool,
+    archive: bool
+) throw BuildError {
+    var paths = Vector<String>::from_slice(dependencies);
+    paths.append([command[0], output as String]);
+    var values = Vector<String>::from_slice(command);
+    values.push(identity as String);
+    let current = if reusable { fingerprint(paths, values) } else { "" };
+    if !current.is_empty() && current == cached_text(state) => return;
+    write_text(state, "")?;
+    if archive => remove(output)?;
+    run(command)?;
+    if reusable => write_text(state, fingerprint(paths, values))?;
+}
+
+private const fn test_entry(generated: str) -> Lookup<String> throw BuildError {
+    try {
+        let manifest = read_manifest(generated)?;
+        if manifest.get("runtime_test_count")?.as_i64()? == 0 => return .Missing;
+        let artifacts = manifest.get("artifacts")?;
+        for artifact in artifacts.elements()? {
+            if artifact.get("role")?.as_str()? == "test-entry" => return .Found(
+                join(generated, artifact.get("path")?.as_str()?)
+            );
+        }
+        throw BuildError { message: "test generation did not provide an entry" };
+    } catch {
+        CompilerError(error) => throw BuildError { message: error.message },
+        JSONValueError(_) => throw BuildError { message: "invalid test compilation manifest" },
+    }
+}
+
+const fn execute_plan(plan: ResolvedPlan, tests: bool) -> Vector<BuildOutput> throw BuildError {
+    var targets = plan.targets;
+    let order = plan.order;
+    let output_root = plan.output_directory;
+    let work_root = join(output_root, ".carven");
+    let generated = join(work_root, "application/generated");
+    let work_identity = plan.work_directory;
+    let project_root = plan.root;
+    let project_crafts = plan.crafts_root;
+
+    var outputs: Vector<BuildOutput> = [];
+    var artifact_index = HashSet<String>::with_capacity(targets.length());
+    var all_sources = HashSet<String>::new();
+    var selected: Vector<TargetCompilation> = [];
+    for target in targets {
+        selected.push({
+            roots: [],
+            inputs: [],
+            objects: [],
+            implementations: HashSet<String>::new()
+        });
+        if target.kind == .SourceLibrary => continue;
+        outputs.push({
+            name: target.name,
+            path: target.output,
+            kind: target.kind
+        });
+        let artifact = target.output_identity;
+        artifact_index.insert(&&artifact);
+        append_carven_sources(&all_sources, target.sources);
+        for dependency in target.dependencies {
+            if targets[dependency].kind == .SourceLibrary {
+                append_carven_sources(&all_sources, targets[dependency].sources);
+            }
+        }
+    }
+    if outputs.is_empty() || (tests && all_sources.is_empty()) => return [];
+
+    directory(work_root)?;
+    directory(join(work_root, "application"))?;
+    let compilation = compile_plan(
+        all_sources.values(),
+        generated,
+        join(work_root, "application/checked"),
+        plan.query_directory,
+        tests
+    )?;
+    if tests {
+        match test_entry(generated)? {
+            .Missing => return [],
+            .Found(entry) => {
+                for index in 0..targets.length() {
+                    if targets[index].kind == .Executable => targets[index].sources.push(entry);
+                }
+            },
+        }
+    }
+    let cxx = native_tool("CXX", "clang++")?;
+    let identity = native_identity(cxx, output_root)?;
+    var inputs = compilation_inputs(compilation)?;
+    var source_index = index_implementations(inputs);
+    for target in targets {
+        for source in target.sources {
+            if !source_index.sources.contains(source) {
+                let row = inputs.length();
+                let key = source;
+                source_index.sources.insert(&&key, &&row);
+                inputs.push({
+                    unit: .Source(
+                        source,
+                        if ends_with(source, ".cv") { .Missing } else { .Found(source) }
+                    ),
+                    dependencies: [],
+                    headers: [],
+                    syslinks: []
+                });
+            }
+        }
+    }
+    // Resolve explicit source ownership before adding this project's targets.
+    let craft_index = index_implementations(inputs);
+    let first_target = inputs.length();
+    for target in targets {
+        inputs.push({
+            unit: .Target(target.name),
+            dependencies: [],
+            headers: target.headers,
+            syslinks: target.native.syslinks
+        });
+    }
+    for row in 0..targets.length() {
+        if targets[row].kind == .SourceLibrary {
+            for source in targets[row].sources {
+                let found_source = craft_index.sources.find(source);
+                assert(found_source != nullptr);
+                inputs[first_target + row].dependencies.push(*found_source);
+            }
+        } else {
+            inputs[first_target + row].dependencies = source_roots(
+                targets[row].sources,
+                craft_index
+            )?;
+        }
+        for dependency in targets[row].dependencies {
+            inputs[first_target + row].dependencies.push(first_target + dependency);
+        }
+        selected[row].roots.push(first_target + row);
+    }
+
+    var groups: Vector<CompileGroup> = [];
+    var target_groups = HashMap<usize, usize>::new();
+    for index in 0..targets.length() {
+        if targets[index].kind == .SourceLibrary => continue;
+        let options = targets[index].native;
+        var search_roots = HashSet<String>::new();
+        append_paths(&search_roots, [project_root, project_crafts]);
+        append_paths(&search_roots, compilation.include_dirs);
+        for source in targets[index].sources {
+            if !ends_with(source, ".cv") => append_paths(&search_roots, [parent(source)]);
+        }
+        for dependency in targets[index].dependencies {
+            if targets[dependency].kind != .SourceLibrary => continue;
+            for source in targets[dependency].sources {
+                if !ends_with(source, ".cv") => append_paths(&search_roots, [parent(source)]);
+            }
+        }
+
+        var arguments: Vector<String> = [cxx, "-std=c++20", f"-I{generated}"];
+        for path in compilation.include_dirs {
+            arguments.push(f"-I{path}");
+        }
+        arguments.append(["-Icrafts", "-I."]);
+        for path in options.include_dirs {
+            let directory = canonical(path)?;
+            arguments.push(f"-I{directory}");
+            append_paths(&search_roots, [directory]);
+        }
+        for definition in options.defines {
+            arguments.push(f"-D{definition}");
+        }
+        arguments.append(options.compile_flags);
+
+        let key = fingerprint([], arguments);
+        var group = groups.length();
+        for row in 0..groups.length() {
+            if groups[row].key == key => group = row;
+        }
+        if group == groups.length() {
+            var input_index = index_implementations(inputs);
+            // Local targets already supply the selected build context. Only
+            // Craft declarations resolve otherwise unqualified source owners.
+            input_index.owners = craft_index.owners;
+            groups.push({
+                key: key,
+                arguments: &&arguments,
+                inputs: inputs,
+                index: &&input_index,
+                completed: HashSet<String>::new(),
+                search_roots: HashSet<String>::new(),
+                identity: "",
+            });
+        }
+        append_paths(&groups[group].search_roots, search_roots.values());
+        let target = index;
+        target_groups.insert(&&target, &&group);
+    }
+
+    var inventories = HashMap<String, String>::with_capacity(groups.length());
+    for group in 0..groups.length() {
+        let inputs = search_identity(
+            groups[group].search_roots.values(),
+            work_identity,
+            artifact_index,
+            &inventories
+        )?;
+        groups[group].identity = fingerprint([], [identity, inputs]);
+    }
+
+    for target in order {
+        if targets[target].kind == .SourceLibrary => continue;
+        let found_group = target_groups.find(target);
+        assert(found_group != nullptr);
+        let group = *found_group;
+        let object_root = f"{output_root}/.carven/objects/{groups[group].key}";
+        let required = implementation_files(
+            input_closure(selected[target].roots, groups[group].inputs, groups[group].index)?,
+            groups[group].inputs
+        )?;
+        var pending_sources: Vector<String> = [];
+        for source in required {
+            if !provided_by_dependency(
+                source,
+                targets[target].dependencies,
+                selected
+            ) => pending_sources.push(source);
+        }
+
+        while !pending_sources.is_empty() {
+            var sources: Vector<String> = [];
+            for source in pending_sources {
+                if provided_by_dependency(
+                    source,
+                    targets[target].dependencies,
+                    selected
+                ) => continue;
+                if !groups[group].completed.contains(source) => sources.push(source);
+            }
+            if sources.is_empty() => break;
+            let pending = compile_objects(
+                groups[group].arguments,
+                sources,
+                object_root,
+                groups[group].identity,
+                compilation.cacheable
+            )?;
+            for object in pending.files {
+                let source = object.source;
+                groups[group].completed.insert(&&source);
+            }
+            pending_sources = record_dependencies(
+                pending.files,
+                &groups[group].inputs,
+                groups[group].index
+            )?;
+        }
+
+        selected[target].inputs = input_closure(
+            selected[target].roots,
+            groups[group].inputs,
+            groups[group].index
+        )?;
+        let final_required = implementation_files(selected[target].inputs, groups[group].inputs)?;
+        for source in final_required {
+            if !provided_by_dependency(source, targets[target].dependencies, selected) {
+                let owned = source;
+                selected[target].implementations.insert(&&owned);
+                selected[target].objects.push(object_path(object_root, source));
+            }
+        }
+    }
+
+    directory(join(work_root, "products"))?;
+    for index in order {
+        let target = targets[index];
+        if target.kind == .SourceLibrary => continue;
+        let path = target.output;
+        let directory_path = parent(path);
+        if !directory_path.is_empty() => directory(directory_path)?;
+        var reachable: Vector<bool> = [];
+        for _ in targets {
+            reachable.push(false);
+        }
+        reachable[index] = true;
+        for dependency in targets[index].dependencies {
+            reachable[dependency] = true;
+        }
+
+        match target.kind {
+            .SourceLibrary => {},
+            .StaticLibrary => {
+                let archiver = native_tool("AR", "ar")?;
+                var archive: Vector<String> = [archiver, "rcs", path];
+                archive.append(selected[index].objects);
+                build_product(
+                    archive,
+                    selected[index].objects,
+                    path,
+                    f"{work_root}/products/{target.name}.state",
+                    identity,
+                    compilation.cacheable,
+                    true
+                )?;
+            },
+            .Executable => {
+                var link: Vector<String> = [cxx];
+                var link_inputs = selected[index].objects;
+                var reusable = compilation.cacheable && target.native.compile_flags.is_empty();
+                link.append(target.native.compile_flags);
+                link.append(selected[index].objects);
+                // Reverse topological order places every archive before its own dependencies.
+                var position = order.length();
+                while position > 0 {
+                    position -= 1;
+                    let dependency = order[position];
+                    if reachable[dependency]
+                        && targets[dependency].kind == .StaticLibrary
+                        && dependency != index {
+                        link.push(targets[dependency].output);
+                        link_inputs.push(targets[dependency].output);
+                    }
+                }
+                position = order.length();
+                while position > 0 {
+                    position -= 1;
+                    let dependency = order[position];
+                    if !reachable[dependency] => continue;
+                    for library_directory in targets[dependency].native.library_dirs {
+                        link.push(f"-L{canonical(library_directory)?}");
+                    }
+                    for library in targets[dependency].native.libraries {
+                        match library {
+                            .Name(name) => {
+                                link.push(f"-l{name}");
+                                reusable = false;
+                            },
+                            .File(file) => {
+                                let resolved = canonical(file)?;
+                                link.push(resolved);
+                                link_inputs.push(resolved);
+                            },
+                        }
+                    }
+                    if !targets[dependency].native.link_flags.is_empty() => reusable = false;
+                    link.append(targets[dependency].native.link_flags);
+                }
+                var input_rows = HashSet<usize>::new();
+                for dependency in order {
+                    if !reachable[dependency] => continue;
+                    for row in selected[dependency].inputs {
+                        let owned = row;
+                        input_rows.insert(&&owned);
+                    }
+                }
+                let platform = native_platform(link, f"{work_root}/link-target")?;
+                let syslinks = required_syslinks(input_rows.values(), inputs, platform);
+                if !syslinks.is_empty() => reusable = false;
+                for library in syslinks {
+                    link.push(f"-l{library}");
+                }
+                link.append(["-o", path]);
+                build_product(
+                    link,
+                    link_inputs,
+                    path,
+                    f"{work_root}/products/{target.name}.state",
+                    identity,
+                    reusable,
+                    false
+                )?;
+            },
+        }
+        println(f"Built {path}");
+    }
+
+    return outputs;
+}

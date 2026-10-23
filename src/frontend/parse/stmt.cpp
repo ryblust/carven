@@ -22,14 +22,29 @@ auto Parser::parse_ordinary_block() noexcept -> std::optional<ASTBlockID> {
     }
     const auto left = expect(TokenKind::LeftBrace, "expected '{'");
     auto statements = std::vector<ASTStmtID> {};
-    while (!failed && !check(TokenKind::RightBrace)) {
+    while (!failed && !at_end() && !check(TokenKind::RightBrace)) {
+        if (match(TokenKind::Invalid)) {
+            continue;
+        }
+        const auto checkpoint = save();
+        const auto start = cursor;
         auto statement = parse_statement();
-        if (!statement) {
+        if (statement && !failed) {
+            statements.push_back(*statement);
+            continue;
+        }
+        if (speculation_depth != 0) {
             return std::nullopt;
         }
-        statements.push_back(*statement);
+        recover_statement(checkpoint, start);
     }
-    const auto right = expect(TokenKind::RightBrace, "expected '}' after block");
+    auto right = current();
+    if (at_end() && speculation_depth == 0) {
+        fail_here("expected '}' after block");
+        failed = false;
+    } else {
+        right = expect(TokenKind::RightBrace, "expected '}' after block");
+    }
     if (failed) {
         return std::nullopt;
     }
@@ -49,49 +64,73 @@ auto Parser::parse_branch_block() noexcept -> std::optional<ASTBranchBlockID> {
     const auto left = expect(TokenKind::LeftBrace, "expected '{'");
     auto statements = std::vector<ASTStmtID> {};
     auto result_expression = std::optional<ASTExprID> {};
-    while (!failed && !check(TokenKind::RightBrace)) {
-        if (starts_unambiguous_statement()) {
-            auto statement = parse_statement();
-            if (!statement) {
+    while (!failed && !at_end() && !check(TokenKind::RightBrace)) {
+        if (match(TokenKind::Invalid)) {
+            continue;
+        }
+        const auto checkpoint = save();
+        const auto count = statements.size();
+        const auto start = cursor;
+        const auto parsed = [&]() noexcept -> std::optional<bool> {
+            if (starts_unambiguous_statement()) {
+                const auto statement = parse_statement();
+                if (!statement || failed) {
+                    return std::nullopt;
+                }
+                statements.push_back(*statement);
+                return false;
+            }
+            const auto expression = parse_expression();
+            if (!expression) {
                 return std::nullopt;
             }
-            statements.push_back(*statement);
+            if (const auto assignment = finish_assignment(*expression)) {
+                const auto semicolon =
+                    expect(TokenKind::Semicolon, "expected ';' after assignment");
+                statements.push_back(builder.append_statement(
+                    ASTStmt {.span = join(assignment->span, semicolon.span), .value = *assignment}
+                ));
+                return false;
+            }
+            if (const auto semicolon = match(TokenKind::Semicolon)) {
+                statements.push_back(builder.append_statement(
+                    ASTStmt {
+                        .span = join(builder.expression(*expression).span, semicolon->span),
+                        .value = ASTExprStatement {.expression = *expression}
+                    }
+                ));
+                return false;
+            }
+            result_expression = *expression;
+            return true;
+        }();
+        if (parsed && !failed) {
+            if (*parsed) {
+                break;
+            }
             continue;
         }
-        const auto expression = parse_expression();
-        if (!expression) {
+        if (speculation_depth != 0) {
             return std::nullopt;
         }
-        if (const auto assignment = finish_assignment(*expression)) {
-            const auto semicolon = expect(TokenKind::Semicolon, "expected ';' after assignment");
-            statements.push_back(builder.append_statement(
-                ASTStmt {
-                    .span = join(assignment->span, semicolon.span),
-                    .value = *assignment,
-                }
-            ));
-            continue;
-        }
-
-        if (const auto semicolon = match(TokenKind::Semicolon)) {
-            statements.push_back(builder.append_statement(
-                ASTStmt {
-                    .span = join(builder.expression(*expression).span, semicolon->span),
-                    .value = ASTExprStatement {.expression = *expression},
-                }
-            ));
-            continue;
-        }
-        result_expression = *expression;
-        break;
+        recover_statement(checkpoint, start);
+        statements.erase(statements.begin() + count, statements.end());
+        result_expression.reset();
     }
-    const auto right = expect(TokenKind::RightBrace, "expected '}' after branch block");
+    auto right = current();
+    if (at_end() && speculation_depth == 0) {
+        fail_here("expected '}' after branch block");
+        failed = false;
+    } else {
+        right = expect(TokenKind::RightBrace, "expected '}' after branch block");
+    }
     if (failed) {
         return std::nullopt;
     }
     return builder.append_branch_block(
         ASTBranchBlock {
             .span = join(left.span, right.span),
+            .arrow_span = std::nullopt,
             .statements = std::move(statements),
             .result = result_expression,
         }
@@ -155,7 +194,7 @@ auto Parser::parse_statement() noexcept -> std::optional<ASTStmtID> {
         return parse_for_statement();
     }
     if (check_optionally_const(TokenKind::If)) {
-        auto form = parse_if_form();
+        auto form = parse_if_form(true);
         if (!form) {
             return std::nullopt;
         }
@@ -319,9 +358,26 @@ auto Parser::parse_variable_declaration_head() noexcept -> std::optional<ASTVari
         type = parse_type();
     }
     expect(TokenKind::Equal, "expected '=' in variable declaration");
+    const auto initializer_checkpoint = builder.checkpoint();
+    const auto initializer_start = cursor;
     const auto initializer = parse_expression();
-    if (!initializer) {
-        return std::nullopt;
+    if (!initializer || failed) {
+        if (speculation_depth != 0
+            || cursor != initializer_start
+            || !(check(TokenKind::Semicolon) || check(TokenKind::RightBrace) || at_end())) {
+            return std::nullopt;
+        }
+        builder.rewind(initializer_checkpoint);
+        failed = false;
+        return ASTVariableDecl {
+            .span = join(async_span.value_or(keyword.span), Span::at(current().span.start())),
+            .kind = kind,
+            .keyword_span = keyword.span,
+            .async_span = async_span,
+            .target = std::move(*target),
+            .type = type,
+            .initializer = std::nullopt
+        };
     }
     return ASTVariableDecl {
         .span = join(async_span.value_or(keyword.span), builder.expression(*initializer).span),

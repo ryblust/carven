@@ -86,6 +86,9 @@ flag list, compiler backend, and define-filtering mode. Consumer configuration
 remains independent. Reused non-header units from content-based providers use
 the object paths in the provider's validated current scan facts.
 
+Module sources marked `install = false` remain available to dependent targets
+but are excluded from module-source and metadata installation.
+
 Reused ordinary module implementation files are compiled by their provider.
 Consumers link the provider's objects without compiling those files again.
 

@@ -1,4 +1,11 @@
 module carven:driver.cli;
 
-// Process entry: normalizes host arguments before dispatching commands.
-auto carven_main(int argc, const char* const* argv) noexcept -> int;
+import :semantic.evaluation.native;
+import std;
+
+// Normalizes process arguments and dispatches commands with the supplied execution providers.
+auto carven_main(
+    int argc,
+    const char* const* argv,
+    std::span<const ExecutionNativeBinding> native_bindings
+) noexcept -> int;

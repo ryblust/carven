@@ -6,6 +6,7 @@ target("carven-format-modules")
 target_end()
 
 target("carven-format")
+    set_group("toolchain")
     set_default(false)
     set_kind("binary")
     add_deps("carven-format-modules")
@@ -14,11 +15,11 @@ target("carven-format")
         set_policy("build.optimization.lto", true)
     end
     add_tests("help", {
-        group = "format", run_timeout = 10000, runargs = {"help"}, pass_outputs = {".*Usage:.*"},
+        group = "format", run_timeout = 10000, runargs = {"--help"}, pass_outputs = {".*Usage:.*"},
     })
     add_tests("help_topic", {
         group = "format", run_timeout = 10000, runargs = {"help", "check"},
-        pass_outputs = {".*Usage: carven%-format check.*"},
+        pass_outputs = {".*Usage: carven format check.*"},
     })
     after_test(function (target, opt)
         assert(not opt.stderr or opt.stderr == "", opt.stderr)
@@ -49,7 +50,7 @@ target_end()
 target("carven-format-test-cli")
     set_default(false)
     set_kind("phony")
-    add_deps("carven-format")
+    add_deps("carven-format", "carven", {inherit = false})
 
     on_load(function (target)
         local cases = import("cases", {

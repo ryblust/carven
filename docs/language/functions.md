@@ -57,6 +57,11 @@ rules as `return expression;`. A void expression is valid and infers `void`.
 Failure propagation requires `?`. Block-bodied functions return values through
 explicit `return` statements.
 
+Returning a complete local owner or Take parameter by name implicitly transfers
+it. Other return operands retain their ordinary access. The transfer is invalid
+while an active borrow prevents Take. Calls still require the declared access
+marker on every argument.
+
 Function declarations may refer to later declarations because function identities
 and heads are collected before bodies. Expression-body results are completed on
 demand before a dependent function reference is used. A cycle that requires an
@@ -73,7 +78,7 @@ is unused. A plain name declares a type parameter; `throw E` declares a
 failure-set parameter. The two kinds are distinct.
 
 ```carven
-fn relay<T>(&&value: T) -> T => &&value;
+fn relay<T>(&&value: T) -> T => value;
 
 let number = 42;
 let result = relay(&&number);

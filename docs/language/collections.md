@@ -73,3 +73,25 @@ position; removal preserves the relative order of the remaining entries.
 hashes its UTF-8 bytes. These operations do not observe the host environment.
 Hash values support in-memory lookup; they do not define persistent artifact
 identities.
+
+## Incremental byte digests
+
+`ByteDigest::new()` starts a deterministic 128-bit byte digest. `update(bytes: [u8])`
+adds bytes in order; updating with several chunks produces the same digest as
+updating with their concatenation. Empty updates have no effect.
+`value() -> (u64, u64)` returns a snapshot and permits further updates.
+Copying a digest copies its current state independently.
+
+```carven
+import std::collections using ByteDigest;
+
+var digest = ByteDigest::new();
+digest.update("hello".bytes);
+digest.update(", world".bytes);
+let fingerprint = digest.value();
+```
+
+These methods are `const fn`; the state and completed value can be retained as
+constants. Digests serve content-change detection, not cryptographic authentication.
+The algorithm is not a persistent format guarantee across toolchain versions.
+Callers frame separate values when their boundaries matter.

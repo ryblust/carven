@@ -44,7 +44,7 @@ references define source rules.
   that distinguish choices. Move misplaced rules to their owning reference; remove
   duplicate explanations.
 - Present teaching examples in dependency order, with commands and expected
-  results where useful. Use `carven` and `carven-format` directly in user
+  results where useful. Use the unified `carven` commands directly in user
   instructions. State prerequisites and working directories where needed;
   keep repository wrappers in development procedures.
 - Keep runnable examples and reference snippets aligned with current language

@@ -6,7 +6,7 @@ import :semantic.analysis.construction;
 import :semantic.analysis.lint.unused_imports;
 import :semantic.analysis.program;
 import :semantic.evaluation.value;
-import :semantic.semir.constant_access;
+import :semantic.semir.values;
 import :test.harness.death;
 import :test.harness.framework;
 import :test.internal.semantic.evaluation.fixture;
@@ -35,7 +35,7 @@ const TestSuite suite([] static noexcept {
         if (!expect(program.has_value())) {
             return;
         }
-        const auto reader = PublishedConstantValues(*program);
+        const auto reader = ProgramValues(*program);
         expect(execution_text(reader, *frozen) == "retained");
     };
 

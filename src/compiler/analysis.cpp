@@ -41,12 +41,29 @@ auto CompilationAnalysis::source_occurrences() const noexcept -> std::span<const
     return occurrences;
 }
 
+auto CompilationAnalysis::source_construction_complete() const noexcept -> bool {
+    return source_construction_completed.value_or(false);
+}
+
+auto CompilationAnalysis::has_source_analysis() const noexcept -> bool {
+    return source_construction_completed.has_value();
+}
+
 auto CompilationAnalysis::take_program() && noexcept -> std::optional<SemIRProgram> {
     return semantic ? std::optional(std::move(semantic->program)) : std::nullopt;
 }
 
 auto CompilationAnalysis::take_checked_unit() && noexcept -> std::optional<CheckedUnit> {
     return std::move(semantic);
+}
+
+auto CompilationAnalysis::completion_context() const noexcept -> SourceCompletionContext {
+    return completion_site;
+}
+
+auto CompilationAnalysis::source_completions() const noexcept
+    -> std::span<const SourceCompletionCandidate> {
+    return completions;
 }
 
 auto CompilationAnalysis::analyze(
@@ -60,8 +77,14 @@ auto CompilationAnalysis::analyze(
     auto result = CompilationAnalysis(std::move(sources));
     auto imported = seed ? std::optional(seed->take_provenance(result.source_manager))
                          : std::optional<CompilationProvenance>();
-    auto syntax =
-        parse_program(result.sources(), batch, options.timings, parsed, std::move(imported));
+    auto syntax = parse_program(
+        result.sources(),
+        batch,
+        options.timings,
+        parsed,
+        std::move(imported),
+        options.source_query
+    );
     if (!syntax) {
         result.findings = std::move(syntax.error());
         return result;
@@ -74,21 +97,35 @@ auto CompilationAnalysis::analyze(
             options.output(stream, bytes);
         }
     };
-    const auto collect = [&](std::span<const SourceOccurrence> facts) noexcept {
-        result.occurrences.assign(facts.begin(), facts.end());
+    const auto collect = [&](SourceAnalysisView facts) noexcept {
+        result.occurrences.assign(facts.occurrences.begin(), facts.occurrences.end());
+        result.source_construction_completed = facts.construction_complete;
+    };
+    const auto complete = [&](std::span<const SourceCompletionCandidate> candidates,
+                              SourceCompletionContext context) noexcept {
+        result.completion_site = context;
+        result.completions.assign(candidates.begin(), candidates.end());
     };
     auto analyzed = analyze_checked(
         std::move(*syntax),
         options.host_effects,
         retain_definitions,
+        options.source_query,
         std::move(seed),
         options.capture_output || options.output ? ExecutionOutput(capture) : ExecutionOutput {},
         options.timings,
         options.collect_source_observations ? SourceAnalysisOutput(collect)
-                                            : SourceAnalysisOutput {}
+                                            : SourceAnalysisOutput {},
+        {.position = options.completion,
+         .output =
+             options.completion ? SourceCompletionOutput(complete) : SourceCompletionOutput {},
+         .excluded = options.excluded},
+        options.native_call
     );
     if (analyzed) {
-        result.semantic.emplace(std::move(analyzed->value));
+        if (!options.source_query) {
+            result.semantic.emplace(std::move(analyzed->value));
+        }
         result.findings = std::move(analyzed->diagnostics);
     } else {
         result.findings = std::move(analyzed.error());

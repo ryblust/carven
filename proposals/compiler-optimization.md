@@ -223,12 +223,14 @@ Generation-only consumers retain the executable program. Artifact directories
 carry these results across processes; generation from a retained program repeats
 neither source analysis nor static execution.
 
-`std::build` retains standard-library analysis and generated text when producer
-inputs and outputs match. Under its uniform native configuration, unchanged
-standard and common application translation units reuse `.o` files and link
-directly into executables. Application analysis and generation still run for
-each target, and linking runs for every build. Build scripts execute on each
-invocation; native object reuse does not memoize their effects.
+`std::build` analyzes the union of product Carven roots and source-library inputs.
+It reuses checked analysis and generated text when compiler, source, output, and
+cacheability checks permit. Craft script analysis is shared across application
+and test builds; each query still executes the script. Native objects are shared
+for matching source and native configurations. Archives and executables can reuse
+validated records; executable reuse requires known file inputs and eligible flags.
+Build scripts execute on each invocation; native object reuse does not memoize
+their effects.
 
 External Xmake integration shares analysis for identical source batches and
 standard-library generation for matching compiler and installed sources. Xmake

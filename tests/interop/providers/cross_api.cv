@@ -12,7 +12,9 @@ export(cpp) fn fail() throw Failure {
 }
 
 export(cpp) async fn complete(fail: bool) -> Payload throw Failure {
-    if fail { throw Failure::Denied("failed"); }
+    if fail {
+        throw Failure::Denied("failed");
+    }
     return { text: "async" };
 }
 

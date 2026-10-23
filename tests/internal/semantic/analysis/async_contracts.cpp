@@ -3,12 +3,13 @@ module carven:test.internal.semantic.analysis.async_contracts;
 import :diagnostics.code;
 import :diagnostics.diagnostic;
 import :frontend.program.parse;
-import :semantic.analyze;
+import :semantic.evaluation.execution;
 import :source.batch;
 import :source.manager;
 import :source.module_path;
 import :test.harness.diagnostics;
 import :test.harness.framework;
+import :test.internal.semantic.analysis.fixture;
 import :test.internal.source.fixture;
 import std;
 
@@ -23,7 +24,8 @@ struct ContractCase final {
 auto check_contract_modules(
     const ContractCase& input,
     std::span<const std::pair<std::string_view, std::string_view>> modules,
-    std::span<const std::string_view> standard_modules = {}
+    std::span<const std::string_view> standard_modules = {},
+    std::string_view rejection_source = {}
 ) noexcept -> void {
     auto sources = SourceManager();
     const auto application = sources.append_virtual("contracts.cv", std::string(input.source));
@@ -44,7 +46,7 @@ auto check_contract_modules(
     if (!expect(syntax.has_value()).note("source = ", input.source)) {
         return;
     }
-    const auto result = analyze(std::move(*syntax), HostEffects::Deny);
+    const auto result = analyze_test_syntax(std::move(*syntax), HostEffects::Deny);
     if (!expect_equal(result.has_value(), !input.rejection)
              .note("source = ", input.source)
              .note([&]() noexcept {
@@ -66,6 +68,13 @@ auto check_contract_modules(
     }
     if (input.rejection) {
         expect_diagnostic(result.error(), *input.rejection).note("source = ", input.source);
+        if (!rejection_source.empty()) {
+            const auto* diagnostic = find_diagnostic(result.error(), *input.rejection);
+            require(diagnostic != nullptr && diagnostic->attachment.primary.has_value());
+            const auto span = diagnostic->attachment.primary->span;
+            expect(span.source_id == *application);
+            expect_equal(sources.slice(span), rejection_source);
+        }
     }
 }
 
@@ -118,12 +127,15 @@ async test { await relay<i32>(); }
 
     "Async contracts: generic definitions and concrete instances share admission"_test =
         [] static noexcept {
+            check_contract_modules(
+                {.name = "unused generic Read slice is rejected at its definition",
+                 .source = "async fn invalid<T>(values: [T]) {}",
+                 .rejection = DiagnosticCode::AsyncOwnership},
+                {},
+                {},
+                "values"
+            );
             constexpr auto cases = std::array {
-                ContractCase {
-                    .name = "unused generic Read slice is rejected at its definition",
-                    .source = "async fn invalid<T>(values: [T]) {}",
-                    .rejection = DiagnosticCode::AsyncOwnership
-                },
                 ContractCase {
                     .name = "unused generic Take slice is rejected at its definition",
                     .source = "async fn invalid<T>(&&values: [T]) {}",
@@ -946,6 +958,14 @@ const {
 
     "Async class operations: associated functions retain ordinary explicit inputs"_test =
         [] static noexcept {
+            check_contract_modules(
+                {.name = "associated async inputs keep existing borrow exclusions",
+                 .source = "class Value { async fn read(value: str) {} }",
+                 .rejection = DiagnosticCode::AsyncOwnership},
+                {},
+                {},
+                "value"
+            );
             constexpr auto cases = std::array {
                 ContractCase {
                     .name = "associated async body accesses its lexical class representation",
@@ -968,11 +988,6 @@ async fn run() -> i32 => await Value::read(Value::new(3));)",
 }
 async fn run() -> i32 { let value = await Value::new(3); return value.read(); })",
                     .rejection = std::nullopt
-                },
-                ContractCase {
-                    .name = "associated async inputs keep existing borrow exclusions",
-                    .source = "class Value { async fn read(value: str) {} }",
-                    .rejection = DiagnosticCode::AsyncOwnership
                 },
                 ContractCase {
                     .name = "associated access does not grant module peers field authority",
@@ -1465,9 +1480,9 @@ async fn run() {
                 .rejection = DiagnosticCode::ConstAdmission
             },
             ContractCase {
-                .name = "native async still rejects const functions",
-                .source = "private import(cpp) async const fn provider();",
-                .rejection = DiagnosticCode::ConstAdmission
+                .name = "native async const declarations defer capability to the execution host",
+                .source = "private import(cpp) const async fn provider();",
+                .rejection = std::nullopt
             },
         };
         each(cases, &ContractCase::name, check_contract);
@@ -1868,11 +1883,11 @@ async fn run() -> i32 {
                     .rejection = DiagnosticCode::AccessBorrowConflict
                 },
                 ContractCase {
-                    .name = "scalar return observation precedes required closure",
+                    .name = "copied return observation precedes required closure",
                     .source = R"(
 async fn leaf(&value: i32) -> i32 => value;
 async fn run() -> i32 {
-    var value = 1; async let child = leaf(&value); cancel child; return value;
+    var value = 1; async let child = leaf(&value); cancel child; return value as i32;
 })",
                     .rejection = std::nullopt
                 },

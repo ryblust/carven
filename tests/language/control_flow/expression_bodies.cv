@@ -9,6 +9,7 @@ fn expression_record(&count: i32) {
 }
 
 fn expression_void(&count: i32) => expression_record(&count);
+
 fn expression_select(value: bool) => if value { 10 } else { 20 };
 
 fn expression_match(value: bool) => match value {
@@ -31,11 +32,8 @@ fn expression_handle() => try {
     ExpressionFailure(_) => 42,
 };
 
-fn expression_recursive(value: i32) -> i32 => if value == 0 {
-    0
-} else {
-    expression_step(value - 1)
-};
+fn expression_recursive(value: i32) -> i32 =>
+    if value == 0 { 0 } else { expression_step(value - 1) };
 
 fn expression_step(value: i32) => expression_recursive(value);
 

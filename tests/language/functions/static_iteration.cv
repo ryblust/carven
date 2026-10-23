@@ -4,8 +4,12 @@ private const fn trace_array(skip: i32, stop: i32) -> i32 {
     var trace = 0;
     const for value in [1, 2, 3, 4, 5] {
         let current = digit(0, value);
-        if current == skip { continue; }
-        if current == stop { break; }
+        if current == skip {
+            continue;
+        }
+        if current == stop {
+            break;
+        }
         trace = trace * 10 + current;
     }
     return trace;
@@ -15,7 +19,9 @@ private const fn return_array(stop: i32) -> i32 {
     var trace = 0;
     const for value in [1, 2, 3, 4] {
         trace = trace * 10 + digit(0, value);
-        if value == stop { return trace; }
+        if value == stop {
+            return trace;
+        }
     }
     return trace;
 }
@@ -23,9 +29,9 @@ private const fn return_array(stop: i32) -> i32 {
 private const fn nested_sequences() -> i32 {
     var trace = 0;
     const for row in [
-            [1, 2],
-            [3, 4]
-        ] {
+        [1, 2],
+        [3, 4]
+    ] {
         const for value in row {
             trace = trace * 10 + digit(0, value);
         }
@@ -46,13 +52,15 @@ private const fn value_types() -> usize {
         result += text.byte_length();
     }
     const for item in [
-            Item { value: 2 },
-            Item { value: 3 }
-        ] {
+        Item { value: 2 },
+        Item { value: 3 }
+    ] {
         result += item_value(item) as usize;
     }
     const for enabled in [true, false, true] {
-        const if enabled { result += 1; }
+        const if enabled {
+            result += 1;
+        }
     }
     const empty: [u8; 0] = [];
     const for _ in empty {
@@ -94,16 +102,22 @@ private const fn character(const value: char) -> char => value;
 private const fn character_prefix(stop: char) -> String {
     var result = String {};
     const for value in String::from_str("a\0é|我😀").chars {
-        const if value == '\0' { continue; }
-        if value == stop { break; }
+        const if value == '\0' {
+            continue;
+        }
+        if value == stop {
+            break;
+        }
         result.push(character(value));
     }
-    return &&result;
+    return result;
 }
 
 private const fn first_matching_character(selected: char) -> char {
     const for value in "é我😀".chars {
-        if value == selected { return character(value); }
+        if value == selected {
+            return character(value);
+        }
     }
     return '\0';
 }
@@ -121,7 +135,7 @@ private const fn nested_vector() -> String {
     const for _ in Vector<i32>::new() {
         result.append("wrong");
     }
-    return &&result;
+    return result;
 }
 
 const test "Static iteration: sequence values and exits agree during static execution" {

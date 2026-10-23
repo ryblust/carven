@@ -4,7 +4,7 @@ A bidirectional C++ interoperation example that merges two memory streams,
 removes duplicate records, and returns a structured report.
 
 1. [`main.cpp`](main.cpp) creates two native input streams and calls Carven's exported `collect`.
-2. [`workflow.cv`](workflow.cv) calls the imported C++ `next_record`, keeps unique records, and counts the input and duplicates.
+2. [`workflow.cv`](workflow.cv) calls the imported C++ `next_record`, deduplicates records with `HashSet<String>`, and counts the input and duplicates.
 3. C++ checks the returned `Outcome<Report>`, reads the successful report's fields, and prints the records and statistics.
 
 The first stream contains `alpha`, `beta`, `alpha`, and `gamma`. The second
@@ -15,7 +15,8 @@ Deduplication compares the full text, including case and whitespace.
 [`stream.hpp`](stream.hpp) declares the native stream holder and provider function.
 [`stream.cpp`](stream.cpp) implements the provider with `std::getline`, skipping
 empty lines. Its borrowed result remains valid until the next read; Carven
-copies each unique record into owning String storage before reading again.
+copies each record into owning String storage before inserting it into the set
+and reading again. The set retains unique records in insertion order.
 `Report.records` owns those Strings, `total` counts all nonempty input records,
 and `duplicates` counts repeated records within or across the streams. The unique
 count is `records.size()` in C++. The report remains valid after the streams

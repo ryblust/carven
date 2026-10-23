@@ -57,7 +57,11 @@ const TestSuite tests([] static noexcept {
             if (!expect(result.value.has_value())) {
                 return;
             }
-            constexpr auto names = std::array {std::string_view("first"), std::string_view("last")};
+            constexpr auto names = std::array {
+                std::string_view("first"),
+                std::string_view("broken"),
+                std::string_view("last")
+            };
             check_function_names(*result.value, text, names);
             const auto strict = parse_source(text);
             if (!expect(!strict.has_value())
@@ -110,8 +114,16 @@ const TestSuite tests([] static noexcept {
                 return;
             }
             expect(has_errors(result));
-            constexpr auto names = std::array {std::string_view("recovered")};
-            check_function_names(*result.value, text, names);
+            const auto ast = result.value->view();
+            auto recovered = false;
+            for (const auto id : ast.ast_module().items) {
+                if (const auto* function = std::get_if<ASTFunctionDecl>(&ast.item(id).value)) {
+                    const auto name = slice(text, function->name_span);
+                    expect(name != "nested");
+                    recovered = recovered || name == "recovered";
+                }
+            }
+            expect(recovered);
         });
     };
 
@@ -133,7 +145,7 @@ const TestSuite tests([] static noexcept {
             check_function_names(*result.value, text, names);
         };
 
-    "Parser recovery: malformed initial imports do not publish a syntax owner"_test =
+    "Parser recovery: malformed imports retain declarations with an incomplete scope"_test =
         [] static noexcept {
             struct Input final {
                 std::string_view name;
@@ -145,26 +157,33 @@ const TestSuite tests([] static noexcept {
             };
             each(inputs, &Input::name, [](const Input& input) static noexcept {
                 const auto result = recover_source(input.text);
-                expect(!result.value.has_value());
+                require(result.value.has_value());
                 expect(!result.diagnostics.empty());
+                expect(!result.value->view().ast_module().scope_complete);
+                constexpr auto names = std::array {std::string_view("intact")};
+                check_function_names(*result.value, input.text, names);
             });
         };
 
-    "Parser recovery: unmatched delimiters prevent a recovered tree"_test = [] static noexcept {
-        struct Input final {
-            std::string_view name;
-            std::string_view text;
+    "Parser recovery: missing braces retain syntax and incompatible delimiters reject it"_test =
+        [] static noexcept {
+            struct Input final {
+                std::string_view name;
+                std::string_view text;
+            };
+            constexpr auto inputs = std::array {
+                Input {.name = "unclosed", .text = "fn intact() {}\nfn broken() {"},
+                Input {
+                    .name = "mismatched",
+                    .text = "fn intact() {}\nfn broken() { let x = [1); }"
+                },
+            };
+            each(inputs, &Input::name, [](const Input& input) static noexcept {
+                const auto result = recover_source(input.text);
+                expect(result.value.has_value() == (input.name == "unclosed"));
+                expect(!result.diagnostics.empty());
+            });
         };
-        constexpr auto inputs = std::array {
-            Input {.name = "unclosed", .text = "fn intact() {}\nfn broken() {"},
-            Input {.name = "mismatched", .text = "fn intact() {}\nfn broken() { let x = [1); }"},
-        };
-        each(inputs, &Input::name, [](const Input& input) static noexcept {
-            const auto result = recover_source(input.text);
-            expect(!result.value.has_value());
-            expect_equal(result.diagnostics.size(), 1uz);
-        });
-    };
 });
 
 } // namespace

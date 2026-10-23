@@ -101,8 +101,7 @@ async fn run_input(&&name: String) throw IOError {
                 false
             } catch {
                 IOError(error) => match error {
-                    .InvalidUTF8(detail) => detail.kind
-                        == .Truncated
+                    .InvalidUTF8(detail) => detail.kind == .Truncated
                         && detail.offset == 2
                         && detail.sequence_start == 1,
                     _ => false

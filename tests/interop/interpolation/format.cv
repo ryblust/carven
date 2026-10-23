@@ -36,11 +36,8 @@ test "Interpolation interop: builtin formatting retains String aliases backing a
 }
 
 test "Interpolation interop: precomputed bytes retain native temporary backing" {
-    check(
-        f"{(::interpolation_probe::make(42).value == 42)
-                && false} {::interpolation_probe::record_live() || true}"
-            == "false true"
-    );
+    check(f"{(::interpolation_probe::make(42).value == 42)
+            && false} {::interpolation_probe::record_live() || true}" == "false true");
     check(::interpolation_probe::observed() == 1);
     check(::interpolation_probe::alive() == 0);
 }
@@ -61,18 +58,14 @@ test "Interpolation interop: precomputed bytes retain propagation and skip later
 
 test "Interpolation interop: mixed contents retain backing across folded and dynamic holes" {
     ::interpolation_probe::record_live();
-    check(
-        f"{(::interpolation_probe::make(42).value == 42)
-                && false} {::interpolation_probe::record_live() as bool}"
-            == "false true"
-    );
+    check(f"{(::interpolation_probe::make(42).value == 42)
+            && false} {::interpolation_probe::record_live() as bool}" == "false true");
     check(::interpolation_probe::observed() == 1);
     check(::interpolation_probe::alive() == 0);
     ::interpolation_probe::record_live();
     check(
         f"{::interpolation_probe::make(42).value as i32} {::interpolation_probe::record_live()
-                || true}"
-            == "42 true"
+                || true}" == "42 true"
     );
     check(::interpolation_probe::observed() == 1);
     check(::interpolation_probe::alive() == 0);

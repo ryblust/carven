@@ -96,7 +96,7 @@ const fn array_copy_rows() -> [[i32; 2]; 3] {
     return [snapshot[0], values[0], row];
 }
 
-const fn array_transfer(&&values: [i32; 2]) -> [i32; 2] => &&values;
+const fn array_transfer(&&values: [i32; 2]) -> [i32; 2] => values;
 
 const fn array_restore_taken() -> [[i32; 2]; 2] {
     var values = [1, 2];
@@ -277,9 +277,13 @@ const fn array_range_nested() {
 const fn array_range_control() {
     var sum = 0;
     for element in [0, 3, 0, 3, 100] {
-        if element == 0 { continue; }
+        if element == 0 {
+            continue;
+        }
         sum += element;
-        if sum == 6 { break; }
+        if sum == 6 {
+            break;
+        }
     }
     let empty: [i32; 0] = [];
     for element in empty {
@@ -322,17 +326,17 @@ const fn array_range_source_once() {
     var evaluations = 0;
     var sum = 0;
     for row in if true {
-            ++evaluations;
-            [
-                [1, 2],
-                [3, 4]
-            ]
-        } else {
-            [
-                [0, 0],
-                [0, 0]
-            ]
-        } {
+        ++evaluations;
+        [
+            [1, 2],
+            [3, 4]
+        ]
+    } else {
+        [
+            [0, 0],
+            [0, 0]
+        ]
+    } {
         for element in row {
             sum += element;
         }
@@ -349,13 +353,11 @@ const test "Const arrays: sequence bindings preserve projection and control sema
     const rows = array_range_read_rows();
     const once = array_range_source_once();
     check(filled == [2, 2, 2, 2]);
-    check(
-        nested
-            == [
-                [12, 11],
-                [14, 13]
-            ]
-    );
+    check(nested
+        == [
+            [12, 11],
+            [14, 13]
+        ]);
     check(control == 6);
     check(early == 7);
     check(snapshot == 7);

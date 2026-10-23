@@ -22,8 +22,8 @@ mechanisms appear only where they explain that remaining scope.
 | [Operator capabilities](operator-capabilities.md) | Mapping existing tokens to checked operations, canonical evidence, and operand/result contracts |
 | [Dynamic values](dynamic-values.md) | Erased holding forms, nominal conformance, and dispatch |
 | [Dynamic ownership](dynamic-ownership.md) | Unique/shared and native resource owners, allocator policy, construction in owned storage, and move-only Vector capabilities |
-| [Semantic execution](semantic-execution.md) | Interpreted closures, additional address observations, and retained reference graphs |
-| [Native project queries](project-builds.md) | Shared target declarations, project queries, declaration refresh, and generated-input publication |
+| [Semantic execution](semantic-execution.md) | Additional address observations and retained reference graphs |
+| [Project declaration freshness](project-builds.md) | File/environment dependencies, declaration refresh, and generated-input publication |
 | [Compiler optimization](compiler-optimization.md) | Compiler and workspace-reuse costs, C++ realization, and formatting/output experiments preserving source contracts |
 | [Frontend analysis](frontend-analysis.md) | Lossless damaged syntax, snapshot-owned partial semantics, query coordination, cancellation, and analysis fault isolation |
 | [Data representation](data-representation.md) | Record, tuple, and enum representations, native-layout boundaries, compact handles, and collection layouts |

@@ -55,11 +55,10 @@ kind; collection operations also check keys and indices. Mutating methods requir
 | `has(key)` | Whether an object contains the key |
 | `set(key, &&value)` / `append_member(key, &&value)` | Replace or append an object member |
 | `erase(key)` | Remove every matching member and return the removed count |
-| `key_at(index)` / `member_value_at(index)` | Borrowed key or independent value at an object's member position |
 
 Objects retain member order and duplicate keys. `get` selects the last matching
 member, `set` replaces that member or appends a new one, and `erase` removes
-all matching members. `get`, `at`, and `member_value_at` return independent values.
+all matching members. `get` and `at` return independent values.
 Copies can be modified independently; modifying a child copy requires assigning
 it back to its parent.
 
@@ -68,7 +67,8 @@ Iteration such as `for (key, value) in object.members()?` preserves member order
 and reads the original children. Assigning an element to `let` or `var` creates
 an independent copy.
 
-`as_str`, `number_text`, and `key_at` return borrowed `str` views. Keep the value
+`as_str` and `number_text` return borrowed `str` views.
+Keys are borrowed through `members()?[index].0.as_str()`. Keep the value
 alive and unchanged while using text or collection views; conflicting mutation
 and escaping borrows are rejected. Copy with `as String` when the text needs an
 independent lifetime.

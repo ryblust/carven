@@ -4,10 +4,10 @@ import :backend.generation.linkage;
 import :backend.generation.plan;
 import :backend.generation.request;
 import :backend.lower;
+import :backend.target;
 import :backend.target.expr;
 import :backend.target.stmt;
 import :backend.target.traversal;
-import :backend.target;
 import :test.harness.framework;
 import :test.internal.semantic.analysis.fixture;
 import std;
@@ -35,7 +35,7 @@ auto count_nodes(std::string source) noexcept -> std::size_t {
         {
             .test_mode = TestGenerationMode::None,
             .linkage_domain = *LinkageDomain::explicit_value("display"),
-            .library = std::nullopt,
+            .libraries = {},
         },
         {}
     );

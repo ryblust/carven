@@ -67,7 +67,7 @@ private const fn read_escape(bytes: [u8], &offset: usize) -> char throw JSONErro
             offset: start
         };
     }
-    if first < 0xd800 || first > 0xdbff { return char::from_u32_unchecked(first); }
+    if first < 0xd800 || first > 0xdbff => return char::from_u32_unchecked(first);
     if bytes.length() - offset < 2 {
         throw JSONError {
             kind: .UnpairedSurrogate,
@@ -125,7 +125,7 @@ const fn next_string_part(bytes: [u8], &offset: usize) -> StringPart throw JSONE
         };
     }
     offset = end + 1;
-    if byte == 0x22 { return .End(end); }
+    if byte == 0x22 => return .End(end);
     return .Escape(end, read_escape(bytes, &offset)?);
 }
 
@@ -137,7 +137,7 @@ const fn read_string_contents(bytes: [u8], &offset: usize) -> String throw JSONE
         match next_string_part(bytes, &offset)? {
             .End(end) => {
                 result.append(str::from_utf8_unchecked(bytes.slice(start, end)));
-                return &&result;
+                return result;
             },
             .Escape(end, character) => {
                 result.append(str::from_utf8_unchecked(bytes.slice(start, end)));

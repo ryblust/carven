@@ -20,12 +20,24 @@ struct DiagnosticFinding final {
     std::string message;
 };
 
+struct DiagnosticEdit final {
+    SourceSpan span;
+    std::string replacement;
+};
+
+// Edits in one fix apply together to the diagnosed source snapshot.
+struct DiagnosticFix final {
+    std::string title;
+    std::vector<DiagnosticEdit> edits;
+};
+
 struct DiagnosticAttachment final {
     std::optional<DiagnosticLabel> primary;
     std::vector<DiagnosticLabel> related;
     std::vector<DiagnosticNote> notes;
     // Each entry suggests a source change for the rejected contract.
     std::vector<std::string> helps;
+    std::vector<DiagnosticFix> fixes;
 };
 
 struct Diagnostic final {

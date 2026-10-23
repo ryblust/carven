@@ -27,13 +27,19 @@ test "Lifetimes: selected lexical regions destroy in reverse construction order"
 
 test "Lifetimes: condition evaluation ends before branch execution" {
     reset();
-    if (Owner { 1 }.probe() as bool) { mark(9); }
+    if (Owner { 1 }.probe() as bool) {
+        mark(9);
+    }
     check(matches("1 11 -1 9 "));
     reset();
-    if (Owner { 2 }.probe() as bool) && false { mark(9); }
+    if (Owner { 2 }.probe() as bool) && false {
+        mark(9);
+    }
     check(matches("2 12 -2 "));
     reset();
-    if (Owner { 3 }.probe() as bool) || true { mark(9); }
+    if (Owner { 3 }.probe() as bool) || true {
+        mark(9);
+    }
     check(matches("3 13 -3 9 "));
 }
 
@@ -71,7 +77,9 @@ test "Lifetimes: loop bodies finish before continue steps and break" {
     reset();
     for var n = 0; n < 2; step(&n) {
         let owner = Owner { 1 };
-        if n == 0 { continue; }
+        if n == 0 {
+            continue;
+        }
         break;
     }
     check(matches("1 -1 9 1 -1 "));
@@ -172,14 +180,12 @@ test "Lifetimes: pattern bound temporaries belong to the match full expression" 
     check(matches("1 11 9 -1 8 "));
 }
 
-private fn selected_nested_pattern_owner(
-    value: NestedPatternOwners,
-    accepted: bool
-) -> i32 => match value {
-    .Wrapped(.Pair(chosen, _, 0 | 1, 0 | 1)) if accept_pattern(accepted) => chosen.id as i32,
-    .Wrapped(.Pair(_, chosen, _, _)) => chosen.id as i32,
-    .Empty => -1,
-};
+private fn selected_nested_pattern_owner(value: NestedPatternOwners, accepted: bool) -> i32 =>
+    match value {
+        .Wrapped(.Pair(chosen, _, 0 | 1, 0 | 1)) if accept_pattern(accepted) => chosen.id as i32,
+        .Wrapped(.Pair(_, chosen, _, _)) => chosen.id as i32,
+        .Empty => -1,
+    };
 
 test "Lifetimes: rejected guards release payload borrows without copying" {
     let accepted = NestedPatternOwners::Wrapped(
@@ -210,8 +216,12 @@ fn expanded_lifetime(const count: i32, skip: i32, stop: i32) {
     let outer = Owner { 9 };
     const for index in 0..count {
         let iteration = Owner { index + 1 };
-        if index == skip { continue; }
-        if index == stop { break; }
+        if index == skip {
+            continue;
+        }
+        if index == stop {
+            break;
+        }
         mark(20 + index);
     }
     mark(30);
@@ -221,7 +231,9 @@ fn expanded_lifetime_return(const count: i32, selected: i32) -> i32 {
     let outer = Owner { 9 };
     const for index in 0..count {
         let iteration = Owner { index + 1 };
-        if index == selected { return index; }
+        if index == selected {
+            return index;
+        }
     }
     return -1;
 }

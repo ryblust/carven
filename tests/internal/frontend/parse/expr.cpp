@@ -433,7 +433,7 @@ const TestSuite suite([] static noexcept {
         each(
             cases,
             [](const char* source) static noexcept -> std::string_view { return source; },
-            [](const char* source) static noexcept { check_rejected(source); }
+            [](const char* source) static noexcept { check_invalid(source); }
         );
     };
 

@@ -1,8 +1,8 @@
 module carven:backend.preparation.format.impl;
 
 import :backend.preparation.format;
-import :semantic.format.builtin;
 import :semantic.format;
+import :semantic.format.builtin;
 import std;
 
 auto writer_field_operand_count(const WriterFormatField& field) noexcept -> std::size_t {

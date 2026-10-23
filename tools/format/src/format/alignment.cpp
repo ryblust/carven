@@ -32,6 +32,23 @@ auto align_formatted_array_rows(
     std::string output,
     std::size_t width
 ) noexcept -> std::string {
+    const auto has_rows =
+        std::ranges::any_of(syntax.expressions(), [&](const auto& expression) noexcept {
+            const auto* array = std::get_if<ASTArrayExpr>(&expression.value);
+            return array != nullptr
+                && std::ranges::count_if(
+                       array->element_ids,
+                       [&](ASTExprID id) noexcept {
+                           return std::holds_alternative<ASTConstructionExpr>(
+                               syntax.expression(id).value
+                           );
+                       }
+                   )
+                >= 2;
+        });
+    if (!has_rows) {
+        return output;
+    }
     const auto scanned =
         lex(SourceView {
             .source_id = source.token_buffer().source_id(),

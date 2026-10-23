@@ -65,7 +65,11 @@ test "Callable views: copies retain their target after intermediate scope exit" 
 
 test "Callable views: mutable storage follows branch and loop replacement" {
     var callback: fn(i32) -> i32 = first;
-    if true { callback = second; } else { callback = first; }
+    if true {
+        callback = second;
+    } else {
+        callback = first;
+    }
     check(callback(1) == 3);
 
     for iteration in 0..2 {
@@ -79,14 +83,12 @@ test "Callable views: mutable storage follows branch and loop replacement" {
 
 test "Calls: callee is selected before argument evaluation" {
     var callback: fn(i32) -> i32 = first;
-    let result = callback(
-        if true {
-            replace_with_second(&callback);
-            1
-        } else {
-            1
-        }
-    );
+    let result = callback(if true {
+        replace_with_second(&callback);
+        1
+    } else {
+        1
+    });
     check(result == 2);
     check(callback(1) == 3);
 }

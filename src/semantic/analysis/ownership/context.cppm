@@ -370,11 +370,6 @@ auto check_ownership_contracts(
     const AnalysisBodyView& body
 ) noexcept -> std::optional<OwnershipRecordedError>;
 
-struct OwnershipDiagnosisRecord final {
-    std::optional<OwnershipRecordedError> error;
-    std::map<ProgramOriginID, bool> returned_copies;
-};
-
 struct OwnershipCallQuery final {
     OwnershipCallInput input;
     bool recursive;
@@ -386,7 +381,7 @@ struct OwnershipCallQuery final {
     bool queued;
     // The candidate covers a transfer with unchanged input, topology, and read answers.
     bool evaluation_is_closed;
-    std::unique_ptr<OwnershipDiagnosisRecord> diagnosis;
+    std::unique_ptr<OwnershipRecordedError> diagnosis;
     OwnershipStorageTopology topology;
 };
 
@@ -494,8 +489,8 @@ struct OwnershipEscape final {
 
 struct OwnershipBodyResult final {
     std::expected<OwnershipCallSummary, OwnershipEscape> answer;
-    // Events are owned by this evaluation and do not affect its transfer answer.
-    std::unique_ptr<OwnershipDiagnosisRecord> diagnosis;
+    // The first error belongs to this evaluation and does not affect its transfer answer.
+    std::unique_ptr<OwnershipRecordedError> diagnosis;
 };
 
 class OwnershipBodyAnalyzer final {
@@ -537,8 +532,6 @@ private:
         const OwnershipRelationships& value,
         FunctionRef<OwnershipPlace(OwnershipPlace) noexcept> map
     ) const noexcept -> OwnershipRelationships;
-
-    auto diagnosis_record() noexcept -> OwnershipDiagnosisRecord&;
 
     auto diagnose(
         DiagnosticCode code,
@@ -583,12 +576,6 @@ private:
         ProgramOriginID origin,
         bool definite,
         bool preserves_backing
-    ) noexcept -> void;
-
-    // Records whether a returned owner could have been transferred instead of copied.
-    auto observe_returned_copy(
-        const SemanticExpression& source,
-        const OwnershipState& state
     ) noexcept -> void;
 
     struct TakeConflict final {
@@ -723,6 +710,8 @@ private:
     auto call_contract(
         const Contract& contract,
         std::span<const OwnershipCallArgument> arguments,
+        // The flow owns this state, moved into its normal continuation below.
+        // NOLINTNEXTLINE(performance-unnecessary-value-param)
         OwnershipState state,
         ProgramOriginID origin
     ) noexcept -> OwnershipFlow {
@@ -795,7 +784,7 @@ private:
     mutable std::map<OwnershipPlace, std::vector<OwnershipPlace>> alias_cache;
     std::vector<OwnershipWriteEffect> effects;
     bool diagnosing = true;
-    std::unique_ptr<OwnershipDiagnosisRecord> diagnosis;
+    std::unique_ptr<OwnershipRecordedError> diagnosis;
     std::flat_map<LocalBindingID, OwnershipPlace> aliases;
     std::flat_map<LocalBindingID, OwnershipPlace> capture_holders;
     // Bindings can select several possible objects after a join.
@@ -864,7 +853,7 @@ private:
     auto enqueue(std::size_t query) noexcept -> void;
 
     auto commit_diagnosis(
-        std::unique_ptr<OwnershipDiagnosisRecord> diagnosis,
+        std::unique_ptr<OwnershipRecordedError> diagnosis,
         const OwnershipEscape* escape = nullptr
     ) noexcept -> void;
 
@@ -892,5 +881,4 @@ private:
     std::multimap<std::uint32_t, std::size_t> pending_queries;
     std::optional<std::size_t> active_query;
     std::optional<AnalysisFailure> failure;
-    std::map<ProgramOriginID, bool> returned_copies;
 };

@@ -21,8 +21,12 @@ import std;
 
 namespace {
 
-auto analyze_observed(std::string text, bool observe, ExecutionOutput output = {}) noexcept
-    -> CompilationAnalysis {
+auto analyze_observed(
+    std::string text,
+    bool observe,
+    bool source_query,
+    ExecutionOutput output = {}
+) noexcept -> CompilationAnalysis {
     auto sources = SourceManager();
     const auto source = sources.append_virtual("observed.cv", std::move(text));
     require(source.has_value());
@@ -37,7 +41,11 @@ auto analyze_observed(std::string text, bool observe, ExecutionOutput output = {
          .timings = {},
          .collect_source_observations = observe,
          .capture_output = false,
-         .host_effects = HostEffects::Allow}
+         .host_effects = HostEffects::Allow,
+         .completion = std::nullopt,
+         .source_query = source_query,
+         .excluded = {},
+         .native_call = {}}
     );
 }
 
@@ -93,11 +101,12 @@ const TestSuite tests([] static noexcept {
                 ordinary_output += bytes;
             };
             const auto observed =
-                analyze_observed(std::string(observed_source), true, write_observed);
+                analyze_observed(std::string(observed_source), true, false, write_observed);
             const auto ordinary =
-                analyze_observed(std::string(observed_source), false, write_ordinary);
+                analyze_observed(std::string(observed_source), false, false, write_ordinary);
             require(observed.program() != nullptr);
             require(ordinary.program() != nullptr);
+            expect(observed.source_construction_complete());
             const auto occurrences = observed.source_occurrences();
             expect_equal(observed_output, std::string_view("4\n"));
             expect_equal(ordinary_output, observed_output);
@@ -155,7 +164,7 @@ const TestSuite tests([] static noexcept {
             const auto request = TargetPlanningRequest {
                 .test_mode = TestGenerationMode::None,
                 .linkage_domain = LinkageDomain::explicit_value("test:source-observation").value(),
-                .library = std::nullopt,
+                .libraries = {},
             };
             const auto observed_artifacts = generate_artifacts(*observed.program(), request);
             const auto ordinary_artifacts = generate_artifacts(*ordinary.program(), request);
@@ -171,23 +180,119 @@ const TestSuite tests([] static noexcept {
             }
         };
 
-    "Source observation: failed parent bodies discard nested transactions"_test =
+    "Source observation: failed bodies retain detached partial evidence"_test = [] static noexcept {
+        constexpr auto source = std::string_view(
+            "fn good() -> i32 { return 7; } "
+            "fn broken() -> i32 { let callback = []() { let nested = 1; return nested; }; "
+            "return missing; }"
+        );
+        const auto result = analyze_observed(std::string(source), true, false);
+        const auto occurrences = result.source_occurrences();
+        require(result.program() == nullptr);
+        expect_diagnostic(result.diagnostics(), DiagnosticCode::NameUnresolved);
+        expect(!result.source_construction_complete());
+        expect(occurrence_at(occurrences, source.find("7;")) != nullptr);
+        expect(result.has_source_analysis());
+        expect(occurrence_at(occurrences, source.find("nested =")) != nullptr);
+        const auto* callback = occurrence_at(occurrences, source.find("callback ="));
+        require(callback != nullptr);
+        require(callback->callable && callback->callable->target);
+        expect_equal(callback->callable->target->span.start(), source.find("[]()"));
+        const auto malformed = analyze_observed("fn broken( {", true, false);
+        expect(malformed.program() == nullptr);
+        expect(!malformed.has_source_analysis());
+        expect(!malformed.source_construction_complete());
+        for (const auto& occurrence : occurrences) {
+            expect(!occurrence.type || !std::holds_alternative<TypeID>(*occurrence.type));
+        }
+    };
+
+    "Source observation: queries retain checked closure contracts without publishing failed bodies"_test =
         [] static noexcept {
-            constexpr auto source = std::string_view(
-                "fn good() -> i32 { return 7; } "
-                "fn broken() -> i32 { let callback = []() { let nested = 1; return nested; }; "
-                "return missing; }"
-            );
-            const auto result = analyze_observed(std::string(source), true);
+            constexpr auto source = std::string_view(R"cv(
+fn target() -> i32 => 7;
+fn sample() {
+    let broken = []() -> i32 { let inside = 1; return missing; };
+    let copy = broken;
+    let view: fn() -> i32 = copy;
+    view();
+    let outer = [copy]() -> i32 => copy();
+    outer();
+    target();
+}
+fn contextual() {
+    let callback: fn() -> i32 = []() { return absent; };
+    callback();
+}
+fn inferred() {
+    let unknown = []() { return absent; };
+    unknown();
+}
+const { println("must not execute"); }
+)cv");
+            auto output = std::string();
+            const auto write = [&](ExecutionOutputStream, std::string_view bytes) noexcept {
+                output += bytes;
+            };
+            const auto result = analyze_observed(std::string(source), true, true, write);
             const auto occurrences = result.source_occurrences();
-            require(result.program() == nullptr);
+            expect(result.program() == nullptr);
+            expect(!result.source_construction_complete());
             expect_diagnostic(result.diagnostics(), DiagnosticCode::NameUnresolved);
-            expect(occurrence_at(occurrences, source.find("7;")) != nullptr);
-            expect(occurrence_at(occurrences, source.find("nested =")) == nullptr);
-            expect(occurrence_at(occurrences, source.find("callback =")) == nullptr);
+            expect(output.empty());
+            expect(occurrence_at(occurrences, source.find("inside =")) != nullptr);
+            const auto closure = source.find("[]() -> i32");
+            for (const auto position : {
+                     source.find("broken ="),
+                     source.find("copy ="),
+                     source.find("view();"),
+                     source.find("=> copy()") + 3uz,
+                 }) {
+                const auto* occurrence = occurrence_at(occurrences, position);
+                if (!expect(occurrence != nullptr)
+                    || !expect(occurrence->callable.has_value())
+                    || !expect(occurrence->callable->target.has_value())) {
+                    return;
+                }
+                expect_equal(occurrence->callable->target->span.start(), closure);
+                expect_equal(occurrence->callable->result, "i32");
+            }
+            const auto* after = occurrence_at(occurrences, source.find("target();"));
+            if (!expect(after != nullptr)
+                || !expect(after->callable.has_value())
+                || !expect(after->callable->target.has_value())) {
+                return;
+            }
+            expect_equal(after->callable->target->span.start(), source.find("target()"));
+            const auto* contextual = occurrence_at(occurrences, source.find("callback();"));
+            if (!expect(contextual != nullptr) || !expect(contextual->callable.has_value())) {
+                return;
+            }
+            expect_equal(contextual->callable->result, "i32");
+            expect(occurrence_at(occurrences, source.find("unknown();")) == nullptr);
             for (const auto& occurrence : occurrences) {
                 expect(!occurrence.type || !std::holds_alternative<TypeID>(*occurrence.type));
             }
+
+            const auto ordinary = analyze_observed(std::string(source), true, false);
+            expect(ordinary.program() == nullptr);
+            expect_diagnostic(ordinary.diagnostics(), DiagnosticCode::NameUnresolved);
+            expect(
+                occurrence_at(ordinary.source_occurrences(), source.find("target();")) == nullptr
+            );
+
+            const auto initializer = analyze_observed(
+                R"cv(
+const fn observe() -> i32 { println("must not execute"); return 1; }
+const answer: i32 = observe() + ([]() -> i32 { return missing; })();
+)cv",
+                true,
+                true,
+                write
+            );
+            expect(initializer.program() == nullptr);
+            expect_diagnostic(initializer.diagnostics(), DiagnosticCode::NameUnresolved);
+            expect(output.empty());
         };
 
     "Source observation: declaration and publication gates bound surviving evidence"_test =
@@ -197,6 +302,7 @@ const TestSuite tests([] static noexcept {
                 std::string_view source;
                 DiagnosticCode code;
                 bool has_occurrences;
+                bool construction_complete;
             };
             constexpr auto cases = std::array {
                 Case {
@@ -204,11 +310,20 @@ const TestSuite tests([] static noexcept {
                     "const fn seed() => 1; const answer: i32 = seed(); struct Broken { value: Missing }",
                     DiagnosticCode::TypeUnresolved,
                     false,
+                    false,
                 },
                 Case {
                     "nominal storage failure",
                     "struct Box<T> { value: Box<T> } fn good() -> i32 => 1;",
                     DiagnosticCode::TypeRecursiveStorage,
+                    false,
+                    false,
+                },
+                Case {
+                    "failure contract solving retains incomplete source construction",
+                    "struct Failure {} fn failing() { throw Failure {}; }",
+                    DiagnosticCode::EffectThrowPublished,
+                    true,
                     false,
                 },
                 Case {
@@ -217,14 +332,16 @@ const TestSuite tests([] static noexcept {
                     "let taken = &&entry; return entry.value; }",
                     DiagnosticCode::AccessUnavailable,
                     true,
+                    true,
                 },
             };
             each(cases, &Case::name, [](const Case& input) static noexcept {
-                const auto result = analyze_observed(std::string(input.source), true);
+                const auto result = analyze_observed(std::string(input.source), true, false);
                 const auto occurrences = result.source_occurrences();
                 require(result.program() == nullptr);
                 expect_diagnostic(result.diagnostics(), input.code);
                 expect_equal(!occurrences.empty(), input.has_occurrences);
+                expect_equal(result.source_construction_complete(), input.construction_complete);
                 for (const auto& occurrence : occurrences) {
                     expect(!occurrence.type || !std::holds_alternative<TypeID>(*occurrence.type));
                 }

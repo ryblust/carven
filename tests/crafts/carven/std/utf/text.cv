@@ -27,7 +27,7 @@ private const fn independent_text() -> String throw UTF8Error {
     var bytes = [0x61u8];
     let result = to_string(bytes)?;
     bytes[0] = 0x62;
-    return &&result;
+    return result;
 }
 
 private const fn changed_backing() -> String {
@@ -35,7 +35,9 @@ private const fn changed_backing() -> String {
     let slot = addressof(&bytes[0]);
     let view = str::from_utf8_unchecked(bytes);
     let selected = view.bytes;
-    if slot != nullptr { *slot = 99; }
+    if slot != nullptr {
+        *slot = 99;
+    }
     assert(view == "cb");
     assert(selected[0] == 99);
     return view as String;
@@ -51,13 +53,17 @@ private const fn fields(text: str, separator: str) -> Vector<String> throw TextE
             .Value(value) => result.push(value as String),
         }
     }
-    return &&result;
+    return result;
 }
 
 private const fn same(left: [String], right: [String]) -> bool {
-    if left.length() != right.length() { return false; }
+    if left.length() != right.length() {
+        return false;
+    }
     for index in 0..left.length() {
-        if left[index] != right[index] { return false; }
+        if left[index] != right[index] {
+            return false;
+        }
     }
     return true;
 }
@@ -123,8 +129,7 @@ test "UTF8: borrowed and owning text construction report invalid bytes" {
         let _ = str::from_utf8(bytes)?;
     } catch {
         UTF8Error(error) => {
-            rejected = error.kind
-                == expected.kind
+            rejected = error.kind == expected.kind
                 && error.offset == expected.offset
                 && error.sequence_start == expected.sequence_start;
         },
@@ -135,8 +140,7 @@ test "UTF8: borrowed and owning text construction report invalid bytes" {
         let _ = to_string(bytes)?;
     } catch {
         UTF8Error(error) => {
-            rejected = error.kind
-                == expected.kind
+            rejected = error.kind == expected.kind
                 && error.offset == expected.offset
                 && error.sequence_start == expected.sequence_start;
         },
@@ -146,10 +150,18 @@ test "UTF8: borrowed and owning text construction report invalid bytes" {
 
 private const fn processed_text() -> bool throw TextError {
     let text = "aé世界😀z";
-    if substring(text, 1, 9)? != "é世界" { return false; }
-    if substring(text, 9, 13)? != "😀" { return false; }
-    if !substring(text, 3, 3)?.is_empty() { return false; }
-    if !starts_with(text, "aé") || starts_with(text, "é") { return false; }
+    if substring(text, 1, 9)? != "é世界" {
+        return false;
+    }
+    if substring(text, 9, 13)? != "😀" {
+        return false;
+    }
+    if !substring(text, 3, 3)?.is_empty() {
+        return false;
+    }
+    if !starts_with(text, "aé") || starts_with(text, "é") {
+        return false;
+    }
     let long = "0123456789abcdef0123456789abcdef世界";
     if !starts_with(long, "0123456789abcdef0123456789abcdef世")
         || starts_with(long, "0123456789abcdef0123456789abcdef界")
@@ -157,7 +169,9 @@ private const fn processed_text() -> bool throw TextError {
         || ends_with(long, "123456789abcdef0123456789abcdef世") {
         return false;
     }
-    if !starts_with(text, "") || !ends_with(text, "") || ends_with("", text) { return false; }
+    if !starts_with(text, "") || !ends_with(text, "") || ends_with("", text) {
+        return false;
+    }
     let long_pair = split_once(long, "世界")?;
     if !long_pair.found || long_pair.before.byte_length() != 32 || !long_pair.after.is_empty() {
         return false;
@@ -167,12 +181,15 @@ private const fn processed_text() -> bool throw TextError {
         return false;
     }
     let pair = split_once("key=世界=value", "=")?;
-    if !pair.found || pair.before != "key" || pair.after != "世界=value" { return false; }
+    if !pair.found || pair.before != "key" || pair.after != "世界=value" {
+        return false;
+    }
     let absent = split_once(text, "missing")?;
-    if absent.found || absent.before != text || !absent.after.is_empty() { return false; }
+    if absent.found || absent.before != text || !absent.after.is_empty() {
+        return false;
+    }
     let fields = split("世界::a::::", "::")?;
-    if fields.length()
-        != 4
+    if fields.length() != 4
         || fields[0] != "世界"
         || fields[1] != "a"
         || !fields[2].is_empty()
@@ -180,12 +197,15 @@ private const fn processed_text() -> bool throw TextError {
         return false;
     }
     let empty = split("", ",")?;
-    if empty.length() != 1 || !empty[0].is_empty() { return false; }
+    if empty.length() != 1 || !empty[0].is_empty() {
+        return false;
+    }
     let separated = split("a世b世界c", "世界")?;
-    if separated.length() != 2 || separated[0] != "a世b" || separated[1] != "c" { return false; }
+    if separated.length() != 2 || separated[0] != "a世b" || separated[1] != "c" {
+        return false;
+    }
     let records = lines("a\r\n\n世界\nlast\r");
-    return records.length()
-        == 4
+    return records.length() == 4
         && records[0] == "a"
         && records[1].is_empty()
         && records[2] == "世界"
@@ -196,23 +216,19 @@ private const fn processed_text() -> bool throw TextError {
 }
 
 const test "Text: byte boundaries and exact splitting execute at compilation" {
-    check(
-        try {
-            processed_text()?
-        } catch {
-            TextError(_) => false
-        }
-    );
+    check(try {
+        processed_text()?
+    } catch {
+        TextError(_) => false
+    });
 }
 
 test "Text: processing preserves UTF8 boundaries and empty fields" {
-    check(
-        try {
-            processed_text()?
-        } catch {
-            TextError(_) => false
-        }
-    );
+    check(try {
+        processed_text()?
+    } catch {
+        TextError(_) => false
+    });
     let rejected = try {
         let _ = substring("é", 1, 2)?;
         false
@@ -220,30 +236,24 @@ test "Text: processing preserves UTF8 boundaries and empty fields" {
         TextError(error) => error == .NotCharBoundary,
     };
     check(rejected);
-    check(
-        try {
-            let _ = substring("é", 3, 3)?;
-            false
-        } catch {
-            TextError(error) => error == .OutOfBounds
-        }
-    );
-    check(
-        try {
-            let _ = substring("é", 2, 0)?;
-            false
-        } catch {
-            TextError(error) => error == .OutOfBounds
-        }
-    );
-    check(
-        try {
-            let _ = split("abc", "")?;
-            false
-        } catch {
-            TextError(error) => error == .EmptySeparator
-        }
-    );
+    check(try {
+        let _ = substring("é", 3, 3)?;
+        false
+    } catch {
+        TextError(error) => error == .OutOfBounds
+    });
+    check(try {
+        let _ = substring("é", 2, 0)?;
+        false
+    } catch {
+        TextError(error) => error == .OutOfBounds
+    });
+    check(try {
+        let _ = split("abc", "")?;
+        false
+    } catch {
+        TextError(error) => error == .EmptySeparator
+    });
 
     var source: String = "first=世界";
     let owned = try {
@@ -271,14 +281,12 @@ test "Split cursor: borrowed traversal preserves exact owning split behavior" {
         for text in ["", " ", "  token=abc  ", "a b", "世界 a", "a世界b世界"] {
             check(same(fields(text, " ")?, split(text, " ")?));
         }
-        check(
-            try {
-                let _ = fields("", "")?;
-                false
-            } catch {
-                TextError(error) => error == .EmptySeparator
-            }
-        );
+        check(try {
+            let _ = fields("", "")?;
+            false
+        } catch {
+            TextError(error) => error == .EmptySeparator
+        });
     } catch {
         _ => fail("unexpected library failure"),
     }

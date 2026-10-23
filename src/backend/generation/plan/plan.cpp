@@ -518,9 +518,16 @@ auto target_definition_placement(const SemIRProgram& semantic, CallableID callab
 auto TargetPlan::build(
     const SemIRProgram& semantic,
     const TargetPlanningRequest& request,
-    const std::flat_set<ModuleID>& library_modules
+    const std::flat_map<ModuleID, std::size_t>& library_modules
 ) noexcept -> TargetPlan {
-    if (library_modules.size() != (request.library ? request.library->modules.size() : 0uz)) {
+    const auto library_module_count = std::ranges::fold_left(
+        request.libraries,
+        0uz,
+        [](std::size_t count, const SourceLibrary& library) static noexcept {
+            return count + library.modules.size();
+        }
+    );
+    if (library_modules.size() != library_module_count) {
         invariant_violation("target planning requires resolved library membership");
     }
     const auto identity = TargetPlanIdentity::fresh();
@@ -598,7 +605,7 @@ PlannedCompilation::PlannedCompilation(const SemIRProgram& semantic, TargetPlan 
 auto PlannedCompilation::build(
     const SemIRProgram& semantic,
     const TargetPlanningRequest& request,
-    const std::flat_set<ModuleID>& library_modules
+    const std::flat_map<ModuleID, std::size_t>& library_modules
 ) noexcept -> PlannedCompilation {
     auto target = TargetPlan::build(semantic, request, library_modules);
     return PlannedCompilation(semantic, std::move(target));

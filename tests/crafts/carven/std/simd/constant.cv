@@ -19,7 +19,7 @@ import .primitives using {
 
 import std::simd.scan using { byte_range, match_set, count_where, find_from, prefix_where }
 
-const digits = byte_range(0x30, 0x39);
+private const digits = byte_range(0x30, 0x39);
 
 const test "SIMD: static execution agrees on vectors, masks and static controls" {
     check(verify_vectors());

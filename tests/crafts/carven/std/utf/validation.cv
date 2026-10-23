@@ -3,7 +3,9 @@ import std::utf using { UTF8Error, UTF8ErrorKind, validate_utf8, UTF8Validator }
 
 private const fn incremental_static_state() -> bool {
     var state = UTF8Validator::new();
-    if state.is_complete() == false || state.processed_bytes() != 0 { return false; }
+    if state.is_complete() == false || state.processed_bytes() != 0 {
+        return false;
+    }
     try {
         state.push(0xe2)?;
         state.feed([0x82])?;
@@ -19,15 +21,21 @@ private const fn incremental_static_state() -> bool {
             truncated = error.kind == .Truncated && error.offset == 2 && error.sequence_start == 0;
         },
     }
-    if truncated == false || state.is_complete() || state.processed_bytes() != 2 { return false; }
+    if truncated == false || state.is_complete() || state.processed_bytes() != 2 {
+        return false;
+    }
     try {
         state.push(0xac)?;
         state.check_complete()?;
     } catch {
         UTF8Error(_) => return false,
     }
-    if state.is_complete() == false || state.processed_bytes() != 3 { return false; }
-    if copy.is_complete() || copy.processed_bytes() != 2 { return false; }
+    if state.is_complete() == false || state.processed_bytes() != 3 {
+        return false;
+    }
+    if copy.is_complete() || copy.processed_bytes() != 2 {
+        return false;
+    }
     try {
         copy.feed([0xad])?;
         copy.check_complete()?;
@@ -63,8 +71,7 @@ test "UTF8: chunk boundaries preserve state and errors identify the sequence" {
         state.push(0x28)?;
     } catch {
         UTF8Error(error) => {
-            rejected = error.kind
-                == UTF8ErrorKind::InvalidContinuation
+            rejected = error.kind == UTF8ErrorKind::InvalidContinuation
                 && error.offset == 2
                 && error.sequence_start == 1;
         },
@@ -76,8 +83,7 @@ test "UTF8: chunk boundaries preserve state and errors identify the sequence" {
         state.check_complete()?;
     } catch {
         UTF8Error(error) => {
-            rejected = error.kind
-                == UTF8ErrorKind::Truncated
+            rejected = error.kind == UTF8ErrorKind::Truncated
                 && error.offset == 2
                 && error.sequence_start == 1;
         },
@@ -97,8 +103,7 @@ test "UTF8: chunk boundaries preserve error positions and accepted progress" {
                 state.check_complete()?;
             } catch {
                 UTF8Error(error) => {
-                    rejected = error.kind
-                        == item.error.kind
+                    rejected = error.kind == item.error.kind
                         && error.offset == item.error.offset
                         && error.sequence_start == item.error.sequence_start;
                 },
@@ -123,8 +128,7 @@ test "UTF8: whole-buffer validation accepts valid text and reports exact errors"
             validate_utf8(item.bytes.slice(0, item.length))?;
         } catch {
             UTF8Error(error) => {
-                rejected = error.kind
-                    == item.error.kind
+                rejected = error.kind == item.error.kind
                     && error.offset == item.error.offset
                     && error.sequence_start == item.error.sequence_start;
             },

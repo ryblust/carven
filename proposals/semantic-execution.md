@@ -1,7 +1,7 @@
 # Semantic execution extensions
 
-- **Status:** Draft
-- **Scope:** Interpreted closures, additional address observations, and retained reference graphs
+- **Status:** Exploration
+- **Scope:** Additional address observations and retained reference graphs
 
 ## Summary
 
@@ -10,7 +10,6 @@ its own admission, lifetime, and validation requirements.
 
 | Slice | Design status | Remaining work |
 | --- | --- | --- |
-| Interpreted closures (`EXEC-01`) | Accepted | Execute concrete closures and their captures through ordinary calls |
 | Additional address observations (`OPEN-03`) | Exploration | Select an observation and its stability domain |
 | Retained reference graphs (`DEFER-01`) | Deferred | Select a static-data consumer requiring shared nodes or cycles |
 
@@ -28,8 +27,7 @@ through compiler-host adapters. `const fn` declares static execution capability;
 observable work belongs to the selected stage. Type dependency queries restrict
 host effects, and retaining a completed constant has separate publication rules.
 Native C++ inputs may be present, but semantic execution does not load their
-code or run their global initialization. Concrete closure construction remains
-unsupported by the executor.
+code or run their global initialization.
 
 Hosted execution binds native capabilities through typed contracts. The same
 Carven declarations supply generated native interfaces and interpreted service
@@ -63,41 +61,8 @@ execution contracts; compiler-host adapters implement admitted host interactions
 Runtime Craft supplies shared native representations and execution support for
 generated programs. Standard Craft and user source compose the admitted APIs.
 
-`EXEC-01` requires concrete callable publication and ordinary capture/call
-semantics. Address observations select their own identity and stability contract;
-retained graphs require a consumer needing shared nodes or cycles. Neither is a
-prerequisite for concrete closure execution. Static closure invocation would
-add stage admission, and retained closure constants would additionally need a
-publication contract; these are separate decisions from interpreted calls.
-
-### EXEC-01 — Interpreted closures
-
-- **Status:** Accepted
-- **Implementation:** Not started
-
-Execute concrete closure construction, copying, and invocation in interpreted
-runtime code. Ordinary closure calls and sequence callbacks use the same
-invocation and capture-binding path.
-
-Represent a closure by its published callable identity and capture storage.
-Construct captures in source order. Apply ordinary owning-copy rules to value
-captures and retain live execution coordinates for Write captures. Preserve
-result backing and cleanup. Select the closure object before evaluating arguments,
-then read that object's current captures after argument evaluation. An explicit
-closure copy establishes a value-capture snapshot. Resolve the callable and bind
-captures through the existing execution context without repeating source analysis.
-
-Keep static admission and retained-result publication at their existing
-boundaries. This delivery enables interpreted runtime closure calls; static
-closure invocation and retained closure constants remain unsupported. Optional
-precomputation must preserve callback effects, capture construction, reads, and
-cleanup.
-
-Validate ordinary calls and sequence callbacks against generated execution.
-Cover value and Write captures, copying, returned closures, aliased callable
-replacement during argument evaluation, returned borrows, typed failures,
-cleanup, and execution budgets. Validate the shared executor with ordinary closure
-programs. Sequence consumers additionally check traversal demand and view lifetimes.
+Address observations select their own identity and stability contract;
+retained graphs require a consumer needing shared nodes or cycles.
 
 ### Address observation
 

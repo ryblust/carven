@@ -8,12 +8,14 @@ import :semantic.analysis.program;
 import :semantic.analysis.program.checked;
 import :semantic.artifact;
 import :semantic.evaluation.execution;
+import :semantic.evaluation.native;
 import :semantic.semir.constant;
 import :semantic.semir.program;
 import :source.batch;
 import :source.manager;
 import :source.module_path;
 import :test.harness.framework;
+import :test.internal.semantic.analysis.fixture;
 import :test.internal.source.fixture;
 import std;
 
@@ -35,6 +37,7 @@ auto checked_analysis(
         .source_id = *source_id,
         .module_path = std::move(*module_path),
     }};
+    auto host = ExecutionNativeHost(standard_test_bindings(), static_execution_limits());
     return analyze_checked_compilation(
         std::move(sources),
         SourceBatch {.modules = inputs},
@@ -44,7 +47,11 @@ auto checked_analysis(
          .timings = {},
          .collect_source_observations = false,
          .capture_output = true,
-         .host_effects = HostEffects::Allow}
+         .host_effects = HostEffects::Allow,
+         .completion = std::nullopt,
+         .source_query = false,
+         .excluded = {},
+         .native_call = host}
     );
 }
 
@@ -160,6 +167,7 @@ const { println(answer); }
             auto inputs = std::vector<SourceModuleInput>();
             constexpr auto modules = std::to_array<std::string_view>({"time"});
             append_standard_sources(sources, inputs, modules);
+            auto host = ExecutionNativeHost(standard_test_bindings(), static_execution_limits());
             const auto standard = take_unit(analyze_checked_compilation(
                 std::move(sources),
                 SourceBatch {.modules = inputs},
@@ -171,6 +179,10 @@ const { println(answer); }
                     .collect_source_observations = false,
                     .capture_output = false,
                     .host_effects = HostEffects::Deny,
+                    .completion = std::nullopt,
+                    .source_query = false,
+                    .excluded = {},
+                    .native_call = host,
                 }
             ));
             const auto consumer = checked_analysis(

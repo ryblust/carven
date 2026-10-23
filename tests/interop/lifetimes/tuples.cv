@@ -13,11 +13,8 @@ private import(cpp) fn accept_void_value(value: void) -> i32 = ::accept_void_val
 
 export(cpp) fn consume_void(value: void) -> void => value;
 
-private fn fixed_pair() -> (FixedOwner, void, FixedOwner) => (
-    FixedOwner { 1 },
-    mark(7),
-    FixedOwner { 2 },
-);
+private fn fixed_pair() -> (FixedOwner, void, FixedOwner) =>
+    (FixedOwner { 1 }, mark(7), FixedOwner { 2 },);
 
 test "Tuples: immovable results initialize final slots and decompose without transfer" {
     reset();
@@ -46,7 +43,9 @@ test "Tuples: discarded slots remain owned until the decomposition scope closes"
 private struct TupleFailure {}
 
 private fn maybe_slot(succeeds: bool) -> i32 throw TupleFailure {
-    if !succeeds { throw TupleFailure {}; }
+    if !succeeds {
+        throw TupleFailure {};
+    }
     return 19;
 }
 
@@ -108,7 +107,9 @@ test "Tuples: borrowed targets retain native storage and live scalar projections
         var pair: (i32, FixedOwner) = (20, FixedOwner { 6 });
         check(borrow_parts(pair, &pair) == 21);
         let pointer = addressof(pair);
-        if pointer != nullptr { check(pointer->0 == 21); }
+        if pointer != nullptr {
+            check(pointer->0 == 21);
+        }
         let values: [(i32, FixedOwner); 1] = [(22, FixedOwner { 7 })];
         check(borrow_loop(values) == 22);
         check(matches("6 9 7 9 "));

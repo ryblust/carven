@@ -1,20 +1,11 @@
 module carven:semantic.evaluation.value;
 
+import :semantic.evaluation.runtime;
 import :semantic.semir.async;
 import :semantic.semir.constant;
-import :semantic.semir.constant_access;
+import :semantic.semir.values;
 import :support.input;
 import std;
-
-// These shared entities keep global-module identity; their definitions must be
-// reachable after import std when this partition is imported indirectly.
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Winclude-angled-in-module-purview"
-extern "C++" {
-#include <carven/runtime/collection/vector.hpp>
-#include <carven/runtime/hosting/object.hpp>
-}
-#pragma clang diagnostic pop
 
 struct ExecutionVoid final {};
 

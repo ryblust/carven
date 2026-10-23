@@ -24,12 +24,16 @@ fn exact_tail(value: i32) -> i32 throw ZFailure => narrow(value)?;
 fn widened_tail(value: i32) -> i32 throw ZFailure + AFailure => narrow(value)?;
 
 fn selected_failure(select_a: bool) -> i32 throw ZFailure + AFailure {
-    if select_a { throw AFailure { code: 41 }; }
+    if select_a {
+        throw AFailure { code: 41 };
+    }
     throw ZFailure { code: 43 };
 }
 
 fn narrow_void(fail: bool) throw ZFailure {
-    if fail { throw ZFailure { code: 47 }; }
+    if fail {
+        throw ZFailure { code: 47 };
+    }
 }
 
 fn widened_void(fail: bool) throw ZFailure + AFailure {
@@ -37,7 +41,9 @@ fn widened_void(fail: bool) throw ZFailure + AFailure {
 }
 
 fn narrow_text(fail: bool) -> String throw TextFailure {
-    if fail { throw TextFailure { message: "owned failure" }; }
+    if fail {
+        throw TextFailure { message: "owned failure" };
+    }
     return "owned success" as String;
 }
 

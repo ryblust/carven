@@ -1,4 +1,4 @@
-import std::io using { IOError, ReadResult }
+import std::io using IOError;
 import std::time using { TimePoint, TimeRangeError, Timeout, sleep, timeout }
 
 const async fn one() -> String throw IOError {
@@ -27,10 +27,8 @@ async fn main() throw IOError + TimeRangeError + Timeout {
     assert(sampled.has_passed());
     let third = await timeout(one(), 100ms)?;
     println("runtime", third);
-    assert(
-        match await stdin().read_line()? {
-            .End => true,
-            .Data(_) => false
-        }
-    );
+    assert(match await stdin().read_line()? {
+        .End => true,
+        .Data(_) => false
+    });
 }

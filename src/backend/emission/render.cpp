@@ -140,7 +140,7 @@ auto TargetRenderer::render_raw_fragment(const TargetRawFragment& value) noexcep
 
 auto TargetRenderer::generated_transition() noexcept -> LayoutNodeID {
     return stable_interface ? builder.empty()
-                            : builder.generated_location(cpp_string_token(generated_origin));
+                            : builder.generated_location(cpp_filename_token(generated_origin));
 }
 
 auto TargetRenderer::with_attribution(
@@ -156,7 +156,7 @@ auto TargetRenderer::with_attribution(
                 return concat({
                     builder.source_location(
                         source.origin.line,
-                        cpp_string_token(source.origin.display_origin)
+                        cpp_filename_token(source.origin.display_origin)
                     ),
                     value,
                 });
@@ -165,7 +165,7 @@ auto TargetRenderer::with_attribution(
                 return concat({
                     builder.source_location(
                         source.origin.line,
-                        cpp_string_token(source.origin.display_origin)
+                        cpp_filename_token(source.origin.display_origin)
                     ),
                     value,
                 });
@@ -174,7 +174,7 @@ auto TargetRenderer::with_attribution(
                 return concat({
                     builder.source_location(
                         source.origin.line,
-                        cpp_string_token(source.origin.display_origin)
+                        cpp_filename_token(source.origin.display_origin)
                     ),
                     value,
                 });

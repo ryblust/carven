@@ -56,7 +56,7 @@ const async fn read_temporary_owners() -> bool {
         await yield_once();
         text.append(value);
     }
-    return text.as_str() == "objectobject";
+    return text == "objectobject";
 }
 
 const replaced = await replacement();

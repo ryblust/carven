@@ -21,6 +21,7 @@ class EventSource {
     friend class Driver;
     EventSource* next = nullptr;
     Driver* driver = nullptr;
+    std::size_t attachments = 0;
 
 public:
     EventSource() noexcept = default;
@@ -166,6 +167,7 @@ class Driver final {
 
     auto enqueue(detail::WorkNode& node) noexcept -> void;
     auto subscribe(detail::CancellationRegistration& registration) noexcept -> void;
+    auto has_ready(const TaskContext& root) const noexcept -> bool;
 
 public:
     Driver() noexcept;
@@ -174,7 +176,7 @@ public:
     auto operator=(const Driver&) -> Driver& = delete;
     auto operator=(Driver&&) -> Driver& = delete;
     ~Driver() noexcept;
-    auto dispatch_one() noexcept -> bool;
+    auto dispatch_one(TaskContext& root) noexcept -> bool;
 
     auto timer_queue() noexcept -> detail::TimerQueue& { return timers; }
 
@@ -216,13 +218,20 @@ inline Driver::~Driver() noexcept {
 }
 
 inline auto Driver::attach(EventSource& source) noexcept -> void {
-    detail::require_protocol(source.driver == nullptr);
-    source.driver = this;
-    source.next = events;
-    events = &source;
+    detail::require_protocol(source.driver == nullptr || source.driver == this);
+    if (source.attachments == 0) {
+        source.driver = this;
+        source.next = events;
+        events = &source;
+    }
+    ++source.attachments;
 }
 
 inline auto Driver::detach(EventSource& source) noexcept -> void {
+    detail::require_protocol(source.driver == this && source.attachments != 0);
+    if (--source.attachments != 0) {
+        return;
+    }
     auto** current = &events;
     while (*current != &source) {
         detail::require_protocol(*current != nullptr);
@@ -310,15 +319,28 @@ inline auto Driver::enqueue(detail::WorkNode& node) noexcept -> void {
     last = &node;
 }
 
-inline auto Driver::dispatch_one() noexcept -> bool {
+inline auto Driver::dispatch_one(TaskContext& root) noexcept -> bool {
     detail::require_protocol(!dispatching);
-    if (first == nullptr) {
+    auto** selected = &first;
+    auto* previous = static_cast<detail::WorkNode*>(nullptr);
+    while (*selected != nullptr) {
+        const auto* owner = (*selected)->task;
+        while (owner->parent != nullptr) {
+            owner = owner->parent;
+        }
+        if (owner == &root) {
+            break;
+        }
+        previous = *selected;
+        selected = &previous->next;
+    }
+    if (*selected == nullptr) {
         return false;
     }
-    const auto* node = first;
-    first = node->next;
-    if (first == nullptr) {
-        last = nullptr;
+    const auto* node = *selected;
+    *selected = node->next;
+    if (last == node) {
+        last = previous;
     }
     // The action may reclaim its node. Copy all dispatch data before invoking it.
     const auto invoke = node->invoke;
@@ -330,6 +352,19 @@ inline auto Driver::dispatch_one() noexcept -> bool {
     dispatching = false;
     task_slot = saved_task;
     return true;
+}
+
+inline auto Driver::has_ready(const TaskContext& root) const noexcept -> bool {
+    for (const auto* node = first; node != nullptr; node = node->next) {
+        const auto* owner = node->task;
+        while (owner->parent != nullptr) {
+            owner = owner->parent;
+        }
+        if (owner == &root) {
+            return true;
+        }
+    }
+    return false;
 }
 
 // A provider retains this continuation until it has committed its terminal
@@ -683,14 +718,22 @@ inline auto yield_once() noexcept -> AsyncOperation<void> {
     co_return co_await await_yield_once();
 }
 
-// A host-driven root owns its driver and coroutine frame. Controls stay on the
-// constructing thread; advance never waits and external providers only enqueue.
+// A host-driven root owns its coroutine frame and owns or borrows its driver.
+// Shared drivers poll common event sources; advance only resumes this root's tasks,
+// preserving the caller's dynamic host scope. Controls stay on the constructing
+// thread; advance never waits and external providers only enqueue.
 // Cancellation is cooperative. Finish or cancel and advance to completion before
 // destruction so children and external registrations have closed normally.
 template<typename Result, typename... Failures>
 class Root final {
 public:
     explicit Root(
+        AsyncOperation<Result, Failures...>&& operation,
+        EventSource* source = nullptr
+    ) noexcept;
+
+    Root(
+        Driver& driver,
         AsyncOperation<Result, Failures...>&& operation,
         EventSource* source = nullptr
     ) noexcept;
@@ -706,11 +749,13 @@ public:
     auto take_completion() noexcept -> Completion<Result, Failures...>;
 
 private:
-    Driver driver;
+    std::optional<Driver> owned_driver;
+    Driver& driver;
     TaskContext task;
     typename AsyncOperation<Result, Failures...>::Handle frame;
     detail::WorkNode startup;
     EventSource* source;
+    auto start() noexcept -> void;
 };
 
 template<typename Result, typename... Failures>
@@ -718,11 +763,32 @@ Root<Result, Failures...>::Root(
     AsyncOperation<Result, Failures...>&& operation,
     EventSource* source
 ) noexcept
-    : driver(),
+    : owned_driver(std::in_place),
+      driver(*owned_driver),
       task {.driver = &driver, .parent = nullptr, .request = TaskContext::Request::None},
       frame(operation.release()),
       startup(detail::resume_node(frame, task)),
       source(source) {
+    start();
+}
+
+template<typename Result, typename... Failures>
+Root<Result, Failures...>::Root(
+    Driver& driver,
+    AsyncOperation<Result, Failures...>&& operation,
+    EventSource* source
+) noexcept
+    : owned_driver(std::nullopt),
+      driver(driver),
+      task {.driver = &driver, .parent = nullptr, .request = TaskContext::Request::None},
+      frame(operation.release()),
+      startup(detail::resume_node(frame, task)),
+      source(source) {
+    start();
+}
+
+template<typename Result, typename... Failures>
+auto Root<Result, Failures...>::start() noexcept -> void {
     detail::require_protocol(detail::current_task == nullptr);
     if (source != nullptr) {
         driver.attach(*source);
@@ -749,7 +815,7 @@ auto Root<Result, Failures...>::advance() noexcept -> Progress {
         return Progress::Complete;
     }
     driver.poll();
-    const auto progressed = driver.dispatch_one();
+    const auto progressed = driver.dispatch_one(task);
     if (frame.done()) {
         return Progress::Complete;
     }
@@ -760,6 +826,9 @@ auto Root<Result, Failures...>::advance() noexcept -> Progress {
 
 template<typename Result, typename... Failures>
 auto Root<Result, Failures...>::wait(std::optional<std::int64_t> deadline) noexcept -> bool {
+    if (driver.has_ready(task)) {
+        return true;
+    }
     const auto timer = driver.timer_queue().next_deadline();
     if (timer && (!deadline || *timer < *deadline)) {
         deadline = timer;

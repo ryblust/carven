@@ -1,0 +1,283 @@
+import std::io using ByteLines;
+import std::json using { JSONValue, JSONValueError }
+import std::utf using UTF8Error;
+
+enum ProtocolError {
+    InvalidFrame,
+    TruncatedFrame,
+    InvalidPosition,
+    Analyzer,
+    InvalidParams
+}
+
+private const message_limit: usize = 16 * 1024 * 1024;
+private const header_limit: usize = 8192;
+
+private fn content_length(header: [u8]) -> usize throw ProtocolError + UTF8Error {
+    var lines = ByteLines::new();
+    var found = false;
+    var length: usize = 0;
+    while {
+        match lines.next(header) {
+            .End => break,
+            .Line(start, end, _) => {
+                let line = header.slice(start, end);
+                var colon: usize = 0;
+                while colon < line.length() && line[colon] != 58 {
+                    ++colon;
+                }
+                if colon == line.length() => throw ProtocolError::InvalidFrame;
+                var name = String {};
+                for byte in line.slice(0, colon) {
+                    let lowered = if byte >= 65 && byte <= 90 { byte + 32 } else { byte };
+                    name.push(char::from_u32_unchecked(lowered as u32));
+                }
+                if name == "content-length" {
+                    if found => throw ProtocolError::InvalidFrame;
+                    found = true;
+                    var digit_count: usize = 0;
+                    var value_start = colon + 1;
+                    var value_end = line.length();
+                    while value_start < value_end
+                        && (line[value_start] == 32 || line[value_start] == 9) {
+                        ++value_start;
+                    }
+                    while value_end > value_start
+                        && (line[value_end - 1] == 13
+                            || line[value_end - 1] == 32
+                            || line[value_end - 1] == 9) {
+                        --value_end;
+                    }
+                    for byte in line.slice(value_start, value_end) {
+                        if byte < 48 || byte > 57 => throw ProtocolError::InvalidFrame;
+                        length = length * 10 + (byte - 48) as usize;
+                        if length > message_limit => throw ProtocolError::InvalidFrame;
+                        ++digit_count;
+                    }
+                    if digit_count == 0 => throw ProtocolError::InvalidFrame;
+                }
+            },
+        }
+    }
+    if !found => throw ProtocolError::InvalidFrame;
+    return length;
+}
+
+class Decoder {
+    pending: Vector<u8>,
+    header_size: usize,
+    body_size: usize,
+
+    fn new() -> Decoder => {
+        pending: [],
+        header_size: 0,
+        body_size: 0
+    };
+
+    fn feed(&self, bytes: [u8]) -> Vector<String> throw ProtocolError + UTF8Error {
+        for byte in bytes {
+            self.pending.push(byte);
+        }
+        var messages: Vector<String> = [];
+        while {
+            if self.header_size == 0 {
+                var end: usize = 0;
+                while end + 3 < self.pending.length() && end < header_limit {
+                    if self.pending[end] == 13
+                        && self.pending[end + 1] == 10
+                        && self.pending[end + 2] == 13
+                        && self.pending[end + 3] == 10 {
+                        break;
+                    }
+                    ++end;
+                }
+                if end >= header_limit => throw ProtocolError::InvalidFrame;
+                if end + 3 >= self.pending.length() => break;
+                self.body_size = content_length(self.pending.slice(0, end + 2))?;
+                self.header_size = end + 4;
+            }
+            let size = self.header_size + self.body_size;
+            if self.pending.length() < size => break;
+            let text = str::from_utf8(self.pending.slice(self.header_size, size))? as String;
+            messages.push(&&text);
+            self.pending = Vector<u8>::from_slice(self.pending.slice(size, self.pending.length()));
+            self.header_size = 0;
+            self.body_size = 0;
+        }
+        return messages;
+    }
+
+    fn finish(self) throw ProtocolError {
+        if !self.pending.is_empty() => throw ProtocolError::TruncatedFrame;
+    }
+}
+
+class Outbox {
+    messages: Vector<Vector<u8>>,
+
+    fn new() -> Outbox => { messages: [] };
+
+    fn take(&self) -> Vector<Vector<u8>> {
+        let messages = self.messages;
+        self.messages.clear();
+        return messages;
+    }
+
+    fn send(&self, message: JSONValue) throw JSONValueError {
+        let body = message.to_json()?;
+        let framed = f"Content-Length: {body.byte_length()}\r\n\r\n{body}";
+        self.messages.push(&&Vector<u8>::from_slice(framed.bytes));
+    }
+
+    fn reply(&self, id: JSONValue, result: JSONValue) throw JSONValueError {
+        var message = JSONValue::object();
+        message.set("jsonrpc", &&JSONValue::string("2.0"))?;
+        let response_id = id;
+        message.set("id", &&response_id)?;
+        let response_result = result;
+        message.set("result", &&response_result)?;
+        self.send(message)?;
+    }
+
+    fn reject(&self, id: JSONValue, code: i64, description: str) throw JSONValueError {
+        var error = JSONValue::object();
+        error.set("code", &&JSONValue::integer(code))?;
+        error.set("message", &&JSONValue::string(description))?;
+        var message = JSONValue::object();
+        message.set("jsonrpc", &&JSONValue::string("2.0"))?;
+        let response_id = id;
+        message.set("id", &&response_id)?;
+        message.set("error", &&error)?;
+        self.send(message)?;
+    }
+}
+
+private fn scalar_bytes(value: u32) -> usize {
+    if value < 0x80 => return 1;
+    if value < 0x800 => return 2;
+    if value < 0x10000 => return 3;
+    return 4;
+}
+
+fn byte_offset(text: str, line: usize, character: usize) -> usize throw ProtocolError {
+    var current_line: usize = 0;
+    var units: usize = 0;
+    var offset: usize = 0;
+    var previous_cr = false;
+    for scalar in text.chars {
+        let value = scalar as u32;
+        if previous_cr && value == 10 {
+            offset += 1;
+            previous_cr = false;
+            continue;
+        }
+        if current_line == line {
+            if units == character || value == 10 || value == 13 => return offset;
+            let width = if value > 0xffff { 2usize } else { 1usize };
+            if units + width > character => throw ProtocolError::InvalidPosition;
+        }
+        if value == 10 || value == 13 {
+            ++current_line;
+            units = 0;
+        } else {
+            units += if value > 0xffff { 2usize } else { 1usize };
+        }
+        previous_cr = value == 13;
+        offset += scalar_bytes(value);
+    }
+    return offset;
+}
+
+fn position(text: str, offset: usize) -> JSONValue throw JSONValueError + ProtocolError {
+    var line: usize = 0;
+    var units: usize = 0;
+    var bytes: usize = 0;
+    var previous_cr = false;
+    for scalar in text.chars {
+        if bytes == offset => break;
+        let value = scalar as u32;
+        bytes += scalar_bytes(value);
+        if value == 13 || (value == 10 && !previous_cr) {
+            ++line;
+            units = 0;
+        } else if value != 10 {
+            units += if value > 0xffff { 2usize } else { 1usize };
+        }
+        previous_cr = value == 13;
+    }
+    if bytes != offset => throw ProtocolError::InvalidPosition;
+    var result = JSONValue::object();
+    result.set("line", &&JSONValue::unsigned_integer(line as u64))?;
+    result.set("character", &&JSONValue::unsigned_integer(units as u64))?;
+    return result;
+}
+
+private fn edit_offset(text: str, point: JSONValue) -> usize throw JSONValueError + ProtocolError {
+    let line = point.get("line")?;
+    let character = point.get("character")?;
+    let row = line.as_i64()?;
+    let column = character.as_i64()?;
+    if row < 0 || column < 0 => throw ProtocolError::InvalidPosition;
+    return byte_offset(text, row as usize, column as usize)?;
+}
+
+// Changes within one notification are applied sequentially to the preceding text.
+fn apply_change(text: str, change: JSONValue) -> String throw JSONValueError + ProtocolError {
+    let replacement = change.get("text")?;
+    let inserted = replacement.as_str()?;
+    if !change.has("range")? => return inserted as String;
+    let span = change.get("range")?;
+    let begin = edit_offset(text, span.get("start")?)?;
+    let end = edit_offset(text, span.get("end")?)?;
+    if end < begin => throw ProtocolError::InvalidPosition;
+    var output = String {};
+    output.append(str::from_utf8_unchecked(text.bytes.slice(0, begin)));
+    output.append(inserted);
+    output.append(str::from_utf8_unchecked(text.bytes.slice(end, text.byte_length())));
+    return output;
+}
+
+fn range(text: str, start: usize, end: usize) -> JSONValue throw JSONValueError + ProtocolError {
+    var result = JSONValue::object();
+    result.set("start", &&position(text, start)?)?;
+    result.set("end", &&position(text, end)?)?;
+    return result;
+}
+
+// Monotonic byte offsets share one UTF-8 traversal for a batch of decorations.
+class PositionCursor {
+    byte: usize,
+    line: usize,
+    units: usize,
+    previous_cr: bool,
+
+    fn new() -> PositionCursor => {
+        byte: 0,
+        line: 0,
+        units: 0,
+        previous_cr: false
+    };
+
+    fn seek(&self, text: str, offset: usize) -> JSONValue throw JSONValueError + ProtocolError {
+        if offset < self.byte
+            || offset > text.byte_length() => throw ProtocolError::InvalidPosition;
+        let tail = str::from_utf8_unchecked(text.bytes.slice(self.byte, text.byte_length()));
+        for scalar in tail.chars {
+            if self.byte == offset => break;
+            let value = scalar as u32;
+            self.byte += scalar_bytes(value);
+            if value == 13 || (value == 10 && !self.previous_cr) {
+                ++self.line;
+                self.units = 0;
+            } else if value != 10 {
+                self.units += if value > 0xffff { 2usize } else { 1usize };
+            }
+            self.previous_cr = value == 13;
+        }
+        if self.byte != offset => throw ProtocolError::InvalidPosition;
+        var result = JSONValue::object();
+        result.set("line", &&JSONValue::unsigned_integer(self.line as u64))?;
+        result.set("character", &&JSONValue::unsigned_integer(self.units as u64))?;
+        return result;
+    }
+}

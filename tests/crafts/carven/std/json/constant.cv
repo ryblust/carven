@@ -24,8 +24,8 @@ private const fn edited_document(text: str) -> String throw JSONError + JSONValu
     document.set("enabled", &&JSONValue::boolean(true))?;
     assert(document.has("enabled")?);
     assert(document.get("enabled")?.as_bool()?);
-    assert(document.key_at(0)? == "items");
-    assert(document.member_value_at(0)?.kind() == .Array);
+    assert(document.members()?[0].0.as_str() == "items");
+    assert(document.members()?[0].1.kind() == .Array);
     assert(document.erase("old")? == 2);
     return document.to_json()?;
 }

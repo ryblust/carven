@@ -2,12 +2,12 @@ module carven:semantic.semir.seal.impl;
 
 import :semantic.semir.children;
 import :semantic.semir.constant;
-import :semantic.semir.constant_access;
 import :semantic.semir.contents;
 import :semantic.semir.program;
 import :semantic.semir.simd;
 import :semantic.semir.text;
 import :semantic.semir.traversal;
+import :semantic.semir.values;
 import :support.invariant;
 import std;
 
@@ -129,11 +129,13 @@ public:
 
 private:
     const SemIRProgram& program;
-    PublishedConstantValues values;
+    ProgramValues values;
     std::vector<const SemanticExpression*> observed;
 };
 
 // Stored definitions, references, and pattern edges share the same remapping.
+// Observation reads IDs; the remapping instantiation overwrites the same fields.
+// NOLINTBEGIN(misc-const-correctness)
 template<typename Value, typename BindingVisitor, typename PatternVisitor>
 auto visit_local_ids(Value& value, BindingVisitor binding, PatternVisitor pattern) noexcept
     -> void {
@@ -207,6 +209,8 @@ auto visit_local_ids(Value& value, BindingVisitor binding, PatternVisitor patter
         }
     }
 }
+
+// NOLINTEND(misc-const-correctness)
 
 } // namespace
 

@@ -16,7 +16,9 @@ struct Failure {
 
 async fn fallible(value: i32) -> i32 throw Failure {
     await yield_once();
-    if value < 0 { throw Failure { value: value }; }
+    if value < 0 {
+        throw Failure { value: value };
+    }
     return value;
 }
 
@@ -90,7 +92,9 @@ async fn stepped() -> i32 {
 
 async fn early_leaf(value: i32) -> i32 {
     var selected: i32 = value + 1;
-    if value < 0 { return selected; }
+    if value < 0 {
+        return selected;
+    }
     selected += 10;
     return selected;
 }
@@ -121,11 +125,8 @@ fn replace_argument(&trace: i32, &backing: i32) -> i32 {
 
 async fn arguments(snapshot: i32, first: i32, second: i32) => snapshot * 100 + first * 10 + second;
 
-fn argument_factory(snapshot: i32, unused: i32, second: i32) => arguments(
-    second,
-    snapshot,
-    snapshot
-);
+fn argument_factory(snapshot: i32, unused: i32, second: i32) =>
+    arguments(second, snapshot, snapshot);
 
 async fn fresh_capture() -> i32 {
     var trace: i32 = 0;
@@ -145,12 +146,18 @@ async fn mark_child(&trace: i32) -> i32 {
 
 async fn yielding_leaf(value: i32) -> i32 {
     await yield_once();
-    if cancel_requested() { return 99; }
+    if cancel_requested() {
+        return 99;
+    }
     return value + 1;
 }
 
 fn selected(value: i32, const deferred: bool) {
-    const if deferred { return yielding_leaf(value); } else { return leaf(value); }
+    const if deferred {
+        return yielding_leaf(value);
+    } else {
+        return leaf(value);
+    }
 }
 
 async fn stored_factory() -> i32 {

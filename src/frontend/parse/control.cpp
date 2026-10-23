@@ -60,7 +60,38 @@ auto Parser::parse_expression_before_block() noexcept -> std::optional<ASTExprID
     return expression;
 }
 
-auto Parser::parse_if_form() noexcept -> std::optional<ASTIfForm> {
+auto Parser::parse_if_body(bool statement) noexcept -> std::optional<ASTBranchBlockID> {
+    if (!statement || !check(TokenKind::FatArrow)) {
+        return parse_branch_block();
+    }
+    const auto nesting = enter_syntax_nesting();
+    if (!nesting) {
+        return std::nullopt;
+    }
+    const auto arrow = consume();
+    if (check_optionally_const(TokenKind::If)
+        || check_optionally_const(TokenKind::For)
+        || check(TokenKind::While)
+        || check(TokenKind::Match)
+        || check(TokenKind::Try)
+        || (check(TokenKind::Const)
+            && (check_next(TokenKind::LeftBrace) || check_next(TokenKind::StringLiteral)))) {
+        fail_here("expected a simple statement after '=>'");
+        return std::nullopt;
+    }
+    const auto body = parse_statement();
+    if (!body || failed) {
+        return std::nullopt;
+    }
+    return builder.append_branch_block({
+        .span = join(arrow.span, builder.statement(*body).span),
+        .arrow_span = arrow.span,
+        .statements = {*body},
+        .result = std::nullopt,
+    });
+}
+
+auto Parser::parse_if_form(bool statement) noexcept -> std::optional<ASTIfForm> {
     const auto const_keyword = match(TokenKind::Const);
     const auto first_keyword = expect(TokenKind::If, "expected 'if'");
     auto branches = std::vector<ASTIfForm::Branch> {};
@@ -73,7 +104,7 @@ auto Parser::parse_if_form() noexcept -> std::optional<ASTIfForm> {
         if (!condition) {
             return std::nullopt;
         }
-        const auto body = parse_branch_block();
+        const auto body = parse_if_body(statement);
         if (!body) {
             return std::nullopt;
         }
@@ -90,7 +121,7 @@ auto Parser::parse_if_form() noexcept -> std::optional<ASTIfForm> {
             keyword = consume();
             continue;
         }
-        final_else = parse_branch_block();
+        final_else = parse_if_body(statement);
         if (!final_else) {
             return std::nullopt;
         }

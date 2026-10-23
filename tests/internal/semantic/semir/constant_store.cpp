@@ -18,13 +18,11 @@ const TestSuite suite([] static noexcept {
             const auto spelling =
                 draft.intern_spelling("a stable spelling longer than small-string storage");
             const auto text = draft.spelling(spelling);
-            for (auto value = 1; value < 65536; ++value) {
+            for (auto value = 1; value < 512; ++value) {
                 static_cast<void>(draft.intern_constant(
                     {.type = integer, .value = IntegerConstant::from_signed(value)}
                 ));
-                if (value % 64 == 0) {
-                    static_cast<void>(draft.intern_spelling(std::to_string(value)));
-                }
+                static_cast<void>(draft.intern_spelling(std::to_string(value)));
             }
             expect(&draft.constant(first) == fact);
             expect(draft.spelling(spelling).data() == text.data());

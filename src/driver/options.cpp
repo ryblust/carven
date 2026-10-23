@@ -34,6 +34,7 @@ auto parse_compilation_options(
         .test_mode = TestGenerationMode::None,
         .input_paths = {},
         .timings = false,
+        .query_crafts = command == CompilationCommand::Compile,
     };
     auto has_test_option = false;
 
@@ -72,6 +73,8 @@ auto parse_compilation_options(
         const auto arg = std::string_view(args[index]);
         if (arg == "--timings") {
             request.timings = true;
+        } else if (command == CompilationCommand::Compile && arg == "--no-query") {
+            request.query_crafts = false;
         } else if (command == CompilationCommand::Compile
                    && (arg == "--tests" || arg == "--tests=runner")) {
             if (has_test_option) {
@@ -106,7 +109,7 @@ auto parse_compilation_options(
         }
     }
 
-    if (request.input_paths.empty()) {
+    if (command == CompilationCommand::Check && request.input_paths.empty()) {
         return std::unexpected(compilation_option_error(CompilationOptionErrorKind::NoSourceInput));
     }
     if (command == CompilationCommand::Compile && !request.destination) {

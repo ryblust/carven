@@ -1,38 +1,41 @@
-# `carven-format`
+# `carven format`
 
-`carven-format` formats Carven source using the compiler lexer and parser. Formatting
+`carven format` formats Carven source using the compiler lexer and parser. Formatting
 requires valid syntax; it does not resolve imports, type-check programs, or
 execute `const fn` calls or tests.
 
 ## Use
 
-With `carven-format` on `PATH`, run these commands from your project directory:
+With `carven` on `PATH`, run these commands from your project directory:
 
 ```sh
-carven-format input.cv
-carven-format check src
-carven-format write src
-carven-format help check
+carven format input.cv
+carven format check src
+carven format write src
+carven format --help
+carven format help check
 ```
 
 Windows Unicode command-line arguments are converted to UTF-8. On POSIX,
 arguments, including the executable name, must be valid UTF-8. Invalid text is
 an input error. Empty arguments are preserved.
 
-The executable accepts:
+`carven format` starts the separate `carven-format` executable beside the running
+compiler. It forwards arguments, the working directory, standard streams, and
+exit status. The formatter accepts:
 
 | Command | Behavior |
 | --- | --- |
-| `carven-format [FILE or -]` | Format one input to stdout; omitted input reads stdin |
-| `carven-format check FILE/DIR ...` | List changed paths on stdout without writing |
-| `carven-format check -` | Check stdin; report a difference as `stdin` |
-| `carven-format write FILE/DIR ...` | Replace changed files silently |
-| `carven-format help [COMMAND]` | Show general or command-specific help |
+| `carven format [FILE or -]` | Format one input to stdout; omitted input reads stdin |
+| `carven format check FILE/DIR ...` | List changed paths on stdout without writing |
+| `carven format check -` | Check stdin; report a difference as `stdin` |
+| `carven format write FILE/DIR ...` | Replace changed files silently |
+| `carven format help [COMMAND]` or `--help` / `-h` | Show general or command-specific help |
 
 `check` and `write` require inputs; use `.` for the current directory. Stdin must
 be used alone and cannot be written. Only the first argument recognizes command
-names. Use `./help`, `./check`, or `./write` as filenames in default mode.
-Dash-prefixed arguments, including `--help` and `--`, are literal paths.
+names and help flags. Prefix conflicting filenames with `./`, such as `./help`
+or `./--help`. Other dash-prefixed arguments are literal paths.
 
 Directory inputs recursively select `.cv` files, skipping nested hidden/build
 directories and symlink entries. Explicit files may have any extension. Paths
@@ -48,7 +51,7 @@ not lock the file. Unchanged files are not rewritten.
 
 ## Style
 
-`carven-format` uses one fixed style: four-space indentation and a target line width of 100.
+`carven format` uses one fixed style: four-space indentation and a target line width of 100.
 
 - Lists prefer one line when they fit and break at separators otherwise. Arrays
   with multiple elements containing constructions or nested arrays place each
@@ -57,6 +60,15 @@ not lock the file. Unchanged files are not rewritten.
   Positional constructions with multiple values expand when they contain a
   nested construction or array. Single-field and single-value constructions
   follow the width rule, including when nested.
+- When wrapping single-argument calls, singleton arrays, and `=>` bodies, prefer
+  a complete expression on the next line when it fits. Otherwise, the wrapper can stay
+  beside the expression and let it own the indentation, as in `build({ ... })`.
+  Attachment must fit the current line and preserve inner groups that fit on
+  their own line. Boundary comments retain ordinary multiline layout.
+- Precedence parentheses follow their expression's layout without adding
+  another indentation level. Operator chains use one continuation level;
+  nested operands retain their own groups, so a long boolean chain does not
+  unnecessarily split its short comparisons.
 - Import selections attach braces to `::` and use one space inside single-line
   braces, as in `std::{ vector, allocator }` and `using { from_utf8, to_string }`. Long
   selections put one name per line. Single-line selections omit the trailing
@@ -68,25 +80,34 @@ not lock the file. Unchanged files are not rewritten.
   braces when their written types and field layouts match. Comments, blank lines,
   multiline rows, and differing layouts separate groups. Padding is omitted for
   a group if it would exceed the line width. Column widths use UTF-8 bytes.
-- Function and closure bodies are expanded by default. Expression-bodied
-  functions keep their `=>` syntax; formatting does not rewrite function bodies.
+- Function and closure block bodies expand by default. Expression-bodied
+  functions keep their `=>` syntax. Formatting does not rewrite function bodies.
+  Empty parameter and argument lists stay `()`.
+  Continuation indentation begins at a line break, without adding indentation
+  to the preceding operand's nested calls.
 - Nonempty struct and enum declarations expand with one member per line.
   Empty declarations keep `{}`. Range operators use `0..7` spacing.
-- Within an if-chain or a match/catch arm list, simple branch blocks may fit on
-  one line. A complex body, comment, authored blank line, or multiline branch
-  expands all nonempty block bodies in that group. Expression-only arms keep
-  their syntax. Loop bodies and match/catch lists stay expanded. Empty test and
-  const blocks use `{}` unless they contain comments;
-  nonempty bodies expand.
+- Statement `if` blocks always expand, including empty branches. Simple `if`
+  expressions stay inline when they fit; a complex, commented, or multiline
+  branch expands the whole chain. Arrow statement branches retain
+  `if condition => statement;`; formatting never changes a block into an arrow
+  branch. Loop bodies stay expanded.
+- Within a match/catch arm list, simple branch blocks may fit on one line.
+  A complex body, comment, authored blank line, or multiline branch expands
+  all nonempty block bodies in that group. Expression-only arms keep their
+  syntax. Match/catch lists stay expanded. Empty test and const blocks use
+  `{}` unless they contain comments; nonempty bodies expand.
 - Adjacent single-line top-level items of the same category may remain compact.
   Different categories or a multiline item require one separating blank line.
   The same single-line and multiline rule applies between class member functions.
   Constant and runtime tests form separate categories; visibility modifiers do
   not change the category.
-- Author-written blank lines between entries and around comments are preserved
+- Author-written blank lines between statements, entries, and around comments are preserved
   up to one consecutive blank line. Unannotated blank lines immediately inside
   delimiters are removed. Spaces on blank lines are removed.
   Item-leading comments stay with the item, after any added separator.
+  Use these blank lines to group a function's setup, processing, and result;
+  formatting preserves the groups without inferring them from statement kinds.
 
 Ordinary line endings become LF. Nonempty output ends in a newline. Token and
 literal spelling, punctuation other than import-list trailing commas, comment text
@@ -100,43 +121,29 @@ comments, C++ fragments, and type-argument lists may exceed the target.
 
 ## Tests
 
-For a source build, run from the Carven checkout root:
+Run from the Carven checkout root:
 
 ```sh
+./xmakew build
 ./xmakew build carven-format
 ./xmakew test -g format
 ```
 
 Use `.\xmakew.ps1` on Windows.
 
-The `format` group covers:
+`tools/format/tests/format/` contains input/expected fixtures. Internal tests check
+their exact output, source preservation, idempotence, and stability under changes
+to horizontal whitespace. Repository programs exercise valid, stable formatting.
+File and batch tests check replacement, permissions, and failure behavior.
 
-- `tests/internal/`: C++ boundary, formatting, and repository corpus tests.
-- `tests/cli/`: the process harness and CLI scenarios.
-- `tests/format/`: source-formatting inputs and expected outputs.
-
-Examples contain `input.cv` and `expected.cv`; C++ tests discover them and call
-the formatter directly in one process to check exact output and idempotence.
-Repository `.cv` inputs exercise parsing, idempotence, and horizontal-whitespace
-normalization. Invalid-input tests check lexical and syntax errors.
-The ordinary C++ cases and two disjoint repository corpus batches are registered
-as Xmake tests on one executable. They use the C++ framework under
-`tests/harness/`. The shared runner selects ordinary cases with
-`--exclude "Format corpus:*"`; corpus batches use `--filter "Format corpus:*"`
-and `--shard INDEX/2`. Use `--test "Area: behavior"` to select one exact C++ case
-when running the binary directly.
-
-Each CLI scenario is registered separately with Xmake. The harness checks exit
-status, both streams, and file changes in an isolated temporary directory.
-Scenarios are declared in `tests/cli/cases.lua` and run by `tests/cli/cli.lua`.
-Failed scenarios retain their files and captured streams. Run one scenario with
-`./xmakew test carven-format-test-cli/mixed_write_failure`.
+`tools/format/tests/cli/` exercises `carven format` in isolated directories,
+checking exit status, both streams, and file changes. Failed scenarios retain
+their files and captured streams.
 
 ## Implementation
 
-`carven-format` uses the `carven:format` partition and its subpartitions.
-Shared declarations have domain names such as `FormattingSource` and `FormattingDocument`; file-private helpers live
-in anonymous namespaces. Components under `src/` have these responsibilities:
+`carven-format` uses the compiler lexer and parser through `carven-format-modules`.
+Components under `tools/format/src/` have these responsibilities:
 
 | Component | Responsibility |
 | --- | --- |
@@ -147,62 +154,22 @@ in anonymous namespaces. Components under `src/` have these responsibilities:
 | `files/` | Path collection, deduplication, file replacement |
 | `batch/` | Ordered formatting, accumulated diagnostics, check reports, batch writing |
 
-`xmake.lua` collects all components except the CLI entry in `carven-format-modules`,
-which depends on `carven-modules`. The `carven-format` executable and
-`carven-format-test-internal` consume these modules; `carven-format-test-cli` exercises the
-executable. Both test targets belong to the `format` group.
+`FormattingSource` owns bytes, tokens, and trivia. Layout borrows these together
+with the AST. Import-comma normalization uses a separate snapshot with preserved
+offsets; validation compares the result with the original source.
 
-```text
-CLI arguments -> input paths -> SourceManager
-    -> format_batch -> format each source -> FormattedBatch
-    -> stdout / check report / file replacement
+The AST supplies operator roles, blocks, and expression groups. Layout groups
+choose line breaks and continuation indentation; wrapper expressions can share
+their element's layout. Compact branch decisions move only toward expansion.
+Declaration spacing and array-row alignment follow those decisions. Alignment
+preserves line breaks and stays within the target width.
 
-format: source bytes -> lexer + trivia -> parser -> import comma normalization
-    -> layout document -> rendered bytes -> multiline import commas
-    -> token/comment comparison + parse validation
-```
+`FormattingDocument` owns its nodes and renders with an explicit stack. Fit checks
+include closing punctuation. Generated indentation is emitted only before text,
+so blank lines remain empty and verbatim fragments keep their original bytes.
 
-### Ownership and output
-
-The CLI loads all sources before formatting. `FormattingSource::scan` returns
-an owner of source bytes, compiler tokens, and trivia. Its views end when the owner
-moves or is destroyed. Parsing uses its token buffer with the `SourceManager`
-that retains the matching source. For layout, the formatter replaces uncommented
-import-list trailing commas with spaces in a separate snapshot, preserving the
-original AST offsets. Document construction borrows that snapshot and the
-original AST. After alignment, it adds trailing commas to multiline imports.
-Validation compares against the original source, allowing only import-list
-trailing commas to differ.
-
-`format_batch` runs serially in input order, collects diagnostics from failed
-inputs, and returns a `FormattedBatch` only if every input succeeds. The batch
-owns formatted strings and paths and borrows original bytes from `SourceManager`.
-Keep the manager alive, unmoved, and unchanged through reporting and writing.
-Batch file views end when the batch moves or is destroyed.
-`write_formatted_batch` checks every destination before the first replacement;
-replacements remain per-file, with the failure behavior described above.
-
-### Layout construction
-
-For N tokens, N+1 gaps hold whitespace and comments. The AST identifies operator
-roles, type syntax, blocks, and groups; original tokens determine spelling and
-order. A parser span can end inside a `>>` token, so range lookup maps that offset
-to the containing token. The parser's synthetic entry function and block add no
-layout: their statements participate directly in top-level spacing.
-
-Token-indexed annotations describe blocks and grouping ranges. Compact
-candidates are rendered, then lexer offsets reveal whether headers and bodies
-span lines. Decisions move only from compact to expanded, and branches in the
-same if-chain or match/catch arm list share the expansion decision. Branch spans
-include their conditions or patterns. Once layouts settle, declaration spacing
-and array-row alignment are applied. Alignment adds spaces without changing line
-breaks and skips groups that would exceed the line width. The final output must
-pass token/comment comparison and parse validation.
-
-`FormattingDocument` owns text and nodes in an arena. `FormattingNodeID` identifies
-a node within that document. The document caches flat widths and renders with an
-explicit stack. Fit checks include following material such as closing
-punctuation. Layout-generated line breaks defer indentation until text is emitted,
-keeping blank lines free of generated spaces. Line breaks within source text do
-not request indentation; splitting a source fragment into document nodes preserves
-its bytes.
+`format_batch` processes inputs in order and publishes results only when all
+inputs succeed. A `FormattedBatch` owns outputs and borrows original bytes from
+`SourceManager`; keep the manager alive and unchanged through reporting and writing.
+File views end when the batch moves or is destroyed. Writing checks all destinations
+before beginning per-file replacement.

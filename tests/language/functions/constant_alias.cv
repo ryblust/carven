@@ -86,7 +86,7 @@ const fn constant_view_scope() -> String {
 const fn constant_extend_owned(&&text: String) -> String {
     var result = &&text;
     result.append("b");
-    return &&result;
+    return result;
 }
 
 const fn constant_restore_taken() -> String {

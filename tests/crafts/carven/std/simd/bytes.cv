@@ -18,12 +18,12 @@ private const fn reversed_lanes() -> [u8; 32] {
     return result;
 }
 
-const fn qualified_factory(u8x32: u8) -> u8x32 => (Bytes)::splat(u8x32);
+private const fn qualified_factory(u8x32: u8) -> u8x32 => (Bytes)::splat(u8x32);
 
-const frozen_vector = qualified_factory(7).with_lane(15, 99);
-const frozen_mask = mask32::from_bits(0x8001);
+private const frozen_vector = qualified_factory(7).with_lane(15, 99);
+private const frozen_mask = mask32::from_bits(0x8001);
 
-const fn stamped(&trace: i32, digit: i32) -> u8x32 {
+private const fn stamped(&trace: i32, digit: i32) -> u8x32 {
     trace = trace * 10 + digit;
     return u8x32::splat(digit as u8);
 }
@@ -101,7 +101,9 @@ const fn verify_classification() -> bool {
         let v = u8x32::splat(scalar);
         assert(ascii_digit(v).all() == (scalar >= 0x30 && scalar <= 0x39));
         var expected = scalar;
-        if scalar >= 0x41 && scalar <= 0x5a { expected += 0x20; }
+        if scalar >= 0x41 && scalar <= 0x5a {
+            expected += 0x20;
+        }
         assert((ascii_lower(v) == expected).all());
     }
     return true;
@@ -124,7 +126,9 @@ const fn verify_blocks() -> bool {
         for index in 0..size {
             if bytes[index] == 7 {
                 expected += 1;
-                if first == size { first = index; }
+                if first == size {
+                    first = index;
+                }
             }
         }
         assert(count_byte(bytes, 7) == expected);
@@ -172,7 +176,7 @@ test "SIMD: native ASCII prefix positions and tails" {
     check(verify_ascii_prefix());
 }
 
-const fn shift_count() -> usize => 4;
+private const fn shift_count() -> usize => 4;
 
 // Boundary bytes expose sign, carry, and cross-lane leaks in word-based shifts.
 const fn verify_shift(const amount: usize) -> bool {

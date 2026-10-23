@@ -1,7 +1,7 @@
 module carven:test.internal.artifacts.materialize;
 
-import :artifacts.materialize;
 import :artifacts;
+import :artifacts.materialize;
 import :support.path;
 import :test.harness.death;
 import :test.harness.directory;

@@ -203,9 +203,10 @@ context, host resources, and result retention explicit.
 Collect each Craft, including native adapters, as one source package. Check
 execution capability at the operation that needs it, independently of native source
 presence. Native initialization, cleanup, and validity belong to the interoperation
-contract; arbitrary C++ effects remain outside semantic execution. Keep compiler
-builds independent of Crafts headers and native libraries, and compiled programs'
-standard-source dependencies in ordinary source discovery.
+contract; arbitrary C++ effects remain outside semantic execution. Keep the
+semantic core independent of Craft-specific APIs. Execution frontends bind and
+link the native providers they support; compiled programs discover standard-source
+dependencies through the same rules as other Crafts.
 
 ## Semantic authority and native boundaries
 

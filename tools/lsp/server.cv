@@ -1,0 +1,1458 @@
+import .calls using call_hierarchy;
+import .decorations using { decorations, semantic_provider, document_highlights }
+import .edits using { workspace_edit, edit_response }
+import .folding using folding_ranges;
+import .protocol using { ProtocolError, byte_offset, range, Outbox, apply_change }
+import .symbols using symbols;
+import std::json using { JSONValue, JSONValueKind, JSONValueError }
+import std::utf using { starts_with, ends_with }
+
+struct Document {
+    uri: String,
+    text: String,
+    version: i64,
+    module_path: String,
+}
+
+private fn text_field(value: JSONValue, key: str) -> String throw JSONValueError {
+    let child = value.get(key)?;
+    return child.as_str()? as String;
+}
+
+private fn markdown_text(text: str) -> String {
+    var result = String {};
+    for scalar in text.chars {
+        if scalar == '&' {
+            result.append("&amp;");
+        } else if scalar == '<' {
+            result.append("&lt;");
+        } else if scalar == '>' {
+            result.append("&gt;");
+        } else {
+            if scalar == '\\'
+                || scalar == '`'
+                || scalar == '*'
+                || scalar == '_'
+                || scalar == '['
+                || scalar == ']' {
+                result.push('\\');
+            }
+            result.push(scalar);
+        }
+    }
+    return result;
+}
+
+private fn integer_field(value: JSONValue, key: str) -> i64 throw JSONValueError {
+    let child = value.get(key)?;
+    return child.as_i64()?;
+}
+
+private fn number(value: JSONValue, key: str) -> usize throw JSONValueError {
+    let child = value.get(key)?;
+    return child.as_u64()? as usize;
+}
+
+private fn capability(value: JSONValue, path: [str]) -> bool throw JSONValueError {
+    var current = value;
+    for key in path {
+        if current.kind() != JSONValueKind::Object || !current.has(key)? => return false;
+        current = current.get(key)?;
+    }
+    return current.kind() == JSONValueKind::Boolean && current.as_bool()?;
+}
+
+private fn object_capability(value: JSONValue, path: [str]) -> bool throw JSONValueError {
+    var current = value;
+    for key in path {
+        if current.kind() != JSONValueKind::Object || !current.has(key)? => return false;
+        current = current.get(key)?;
+    }
+    return current.kind() == JSONValueKind::Object;
+}
+
+private fn module_path(uri: str, root: str, identity: usize) -> String {
+    let bytes = uri.bytes;
+    if !starts_with(uri, "file://") => return f"editor.buffer_{identity}";
+    var start: usize = 0;
+    if !root.is_empty()
+        && bytes.length() > root.byte_length()
+        && starts_with(uri, root)
+        && bytes[root.byte_length()] == 47 {
+        start = root.byte_length() + 1;
+    } else {
+        for index in 0..bytes.length() {
+            if bytes[index] == 47 => start = index + 1;
+        }
+    }
+    var end = bytes.length();
+    if end >= start + 3 && ends_with(uri, ".cv") => end -= 3;
+    var path = String {};
+    for byte in bytes.slice(start, end) {
+        if byte == 47 {
+            path.push('.');
+        } else if byte == 45 {
+            path.push('_');
+        } else {
+            path.push(char::from_u32_unchecked(byte as u32));
+        }
+    }
+    return path;
+}
+
+struct Job {
+    request: JSONValue,
+    id: JSONValue,
+    uri: String,
+    text: String,
+    generation: i64,
+    query: bool,
+    cancelled: bool,
+}
+
+struct WatchRegistration {
+    request_id: String,
+    id: String,
+    signature: String,
+    wanted: bool,
+    confirmed: bool,
+}
+
+struct Server {
+    documents: Vector<Document>,
+    outbox: Outbox,
+    pending: Vector<Job>,
+    active: Vector<Job>,
+    generation: i64,
+    root: String,
+    roots: JSONValue,
+    xmake: String,
+    target: String,
+    published: Vector<String>,
+    revision: i64,
+    next_document_id: usize,
+    document_changes: bool,
+    quick_fixes: bool,
+    related_diagnostics: bool,
+    dynamic_watches: bool,
+    token_refresh: bool,
+    hint_refresh: bool,
+    folding_options: JSONValue,
+    hover_markdown: bool,
+    refresh_sequence: usize,
+    watch_registrations: Vector<WatchRegistration>,
+    status_notifications: bool,
+    watch_sequence: usize,
+    context_generation: i64,
+    initialized: bool,
+    shutdown: bool,
+}
+
+fn new_server() -> Server => {
+    documents: [],
+    outbox: Outbox::new(),
+    pending: [],
+    active: [],
+    generation: 0,
+    root: "",
+    roots: JSONValue::array(),
+    xmake: "xmake",
+    target: "",
+    published: [],
+    revision: 0,
+    next_document_id: 0,
+    document_changes: false,
+    quick_fixes: false,
+    related_diagnostics: false,
+    dynamic_watches: false,
+    token_refresh: false,
+    hint_refresh: false,
+    folding_options: JSONValue::object(),
+    hover_markdown: false,
+    refresh_sequence: 0,
+    watch_registrations: [],
+    status_notifications: false,
+    watch_sequence: 0,
+    context_generation: 0,
+    initialized: false,
+    shutdown: false
+};
+
+// Only live queries and state transitions preserve an observation boundary.
+// Requeueing after cancellation joins adjacent update runs by the same rule.
+private fn queue_job(&self: Server, job: Job) throw JSONValueError {
+    if !job.query && text_field(job.request, "method")? == "update" {
+        var scan = self.pending.length();
+        while scan > 0 {
+            --scan;
+            if self.pending[scan].query
+                || text_field(self.pending[scan].request, "method")? != "update" {
+                break;
+            }
+            if self.pending[scan].uri == job.uri {
+                self.pending.remove(scan);
+                break;
+            }
+        }
+    }
+    self.pending.push(job);
+}
+
+private fn find(self: Server, uri: str) -> usize {
+    for index in 0..self.documents.length() {
+        if self.documents[index].uri == uri => return index;
+    }
+    return self.documents.length();
+}
+
+private fn publish(&self: Server, result: JSONValue) throw JSONValueError + ProtocolError {
+    let diagnostics = result.get("diagnostics")?;
+    var sources = self.documents;
+    if result.has("documents")? {
+        let documents = result.get("documents")?;
+        for index in 0..documents.length()? {
+            let source = documents.at(index)?;
+            let uri = text_field(source, "uri")?;
+            if find(self, uri.as_str()) != self.documents.length() => continue;
+            sources.push(&&Document {
+                uri: uri,
+                text: text_field(source, "text")?,
+                version: 0,
+                module_path: ""
+            });
+        }
+    }
+    // Clear obsolete URI spellings before publishing the current document state.
+    for uri in self.published {
+        var retained = false;
+        for current in sources {
+            if uri == current.uri {
+                retained = true;
+                break;
+            }
+        }
+        if retained => continue;
+        var params = JSONValue::object();
+        params.set("uri", &&JSONValue::string(uri.as_str()))?;
+        params.set("diagnostics", &&JSONValue::array())?;
+        var message = JSONValue::object();
+        message.set("jsonrpc", &&JSONValue::string("2.0"))?;
+        message.set("method", &&JSONValue::string("textDocument/publishDiagnostics"))?;
+        message.set("params", &&params)?;
+        self.outbox.send(message)?;
+    }
+    var published: Vector<String> = [];
+    for document in sources {
+        var items = JSONValue::array();
+        for index in 0..diagnostics.length()? {
+            let diagnostic = diagnostics.at(index)?;
+            if text_field(diagnostic, "uri")? != document.uri
+                || integer_field(diagnostic, "version")? != document.version {
+                continue;
+            }
+            var item = JSONValue::object();
+            item.set(
+                "range",
+                &&range(
+                    document.text.as_str(),
+                    integer_field(diagnostic, "start")? as usize,
+                    integer_field(diagnostic, "end")? as usize
+                )?
+            )?;
+            var description = text_field(diagnostic, "message")?;
+            let notes = diagnostic.get("notes")?;
+            for note in 0..notes.length()? {
+                let value = notes.at(note)?;
+                description = f"{description}\n{value.as_str()?}";
+            }
+            item.set("message", &&JSONValue::string(description.as_str()))?;
+            if self.related_diagnostics {
+                let related = diagnostic.get("related")?;
+                var information = JSONValue::array();
+                for index in 0..related.length()? {
+                    let value = related.at(index)?;
+                    let uri = value.get("uri")?;
+                    let text = result.get("texts")?.get(uri.as_str()?)?;
+                    var location = JSONValue::object();
+                    location.set("uri", &&value.get("uri")?)?;
+                    location.set(
+                        "range",
+                        &&range(text.as_str()?, number(value, "start")?, number(value, "end")?)?
+                    )?;
+                    var detail = JSONValue::object();
+                    detail.set("location", &&location)?;
+                    detail.set("message", &&value.get("message")?)?;
+                    information.push(&&detail)?;
+                }
+                item.set("relatedInformation", &&information)?;
+            }
+            item.set("severity", &&diagnostic.get("severity")?)?;
+            item.set("code", &&diagnostic.get("code")?)?;
+            item.set("source", &&JSONValue::string("carven"))?;
+            items.push(&&item)?;
+        }
+        var params = JSONValue::object();
+        params.set("uri", &&JSONValue::string(document.uri.as_str()))?;
+        if find(self, document.uri.as_str()) != self.documents.length() {
+            params.set("version", &&JSONValue::integer(document.version))?;
+        }
+        params.set("diagnostics", &&items)?;
+        var notification = JSONValue::object();
+        notification.set("jsonrpc", &&JSONValue::string("2.0"))?;
+        notification.set("method", &&JSONValue::string("textDocument/publishDiagnostics"))?;
+        notification.set("params", &&params)?;
+        self.outbox.send(notification)?;
+        published.push(document.uri);
+    }
+    self.published = published;
+}
+
+fn handle(&self: Server, &&message: JSONValue) -> bool throw JSONValueError + ProtocolError {
+    if message.kind() != JSONValueKind::Object {
+        self.outbox.reject(JSONValue::null(), -32600, "Invalid request")?;
+        return false;
+    }
+    var id = JSONValue::null();
+    let requested = message.has("id")?;
+    if requested => id = message.get("id")?;
+    if requested
+        && id.kind() != JSONValueKind::Null
+        && id.kind() != JSONValueKind::Number
+        && id.kind() != JSONValueKind::String {
+        self.outbox.reject(JSONValue::null(), -32600, "Invalid request id")?;
+        return false;
+    }
+    if !message.has("method")?
+        && requested
+        && id.kind() == JSONValueKind::String
+        && (starts_with(id.as_str()?, "carven/watch/")
+            || starts_with(id.as_str()?, "carven/refresh/"))
+        && (message.has("result")? || message.has("error")?) {
+        if starts_with(id.as_str()?, "carven/watch/") {
+            watch_completed(&self, id.as_str()?, message.has("error")?)?;
+        }
+        if message.has("error")? {
+            var params = JSONValue::object();
+            params.set("type", &&JSONValue::integer(2))?;
+            params.set(
+                "message",
+                &&JSONValue::string("Client could not apply Carven workspace update")
+            )?;
+            var notification = JSONValue::object();
+            notification.set("jsonrpc", &&JSONValue::string("2.0"))?;
+            notification.set("method", &&JSONValue::string("window/logMessage"))?;
+            notification.set("params", &&params)?;
+            self.outbox.send(notification)?;
+        }
+        return false;
+    }
+    if !message.has("method")? || !message.has("jsonrpc")? {
+        self.outbox.reject(id, -32600, "Invalid request")?;
+        return false;
+    }
+    try {
+        if text_field(message, "jsonrpc")? != "2.0" {
+            self.outbox.reject(id, -32600, "Invalid JSON-RPC version")?;
+            return false;
+        }
+        let method = text_field(message, "method")?;
+        if method == "exit" => return true;
+        if method == "initialize" && !self.initialized {
+            if message.has("params")? {
+                let params = message.get("params")?;
+                if params.kind() == JSONValueKind::Object && params.has("rootUri")? {
+                    let root = params.get("rootUri")?;
+                    if root.kind() == JSONValueKind::String => self.root = root.as_str()? as String;
+                }
+            }
+            let params = message.get("params")?;
+            if params.has("workspaceFolders")? {
+                let folders = params.get("workspaceFolders")?;
+                if folders.kind() == JSONValueKind::Array {
+                    for index in 0..folders.length()? {
+                        let folder = folders.at(index)?;
+                        self.roots.push(&&folder.get("uri")?)?;
+                    }
+                }
+            }
+            if self.roots.length()? == 0 && !self.root.is_empty() {
+                self.roots.push(&&JSONValue::string(self.root.as_str()))?;
+            }
+            if self.root.is_empty() && self.roots.length()? != 0 {
+                let first = self.roots.at(0)?;
+                self.root = first.as_str()? as String;
+            }
+            if params.has("initializationOptions")? {
+                let options = params.get("initializationOptions")?;
+                if options.kind() == JSONValueKind::Object {
+                    if options.has("projectStatus")? {
+                        self.status_notifications = options.get("projectStatus")?.as_bool()?;
+                    }
+                    if options.has("xmakePath")? => self.xmake = text_field(options, "xmakePath")?;
+                    if options.has("target")? => self.target = text_field(options, "target")?;
+                }
+            }
+            self.dynamic_watches = capability(
+                params,
+                ["capabilities", "workspace", "didChangeWatchedFiles", "dynamicRegistration"]
+            )?
+                && capability(
+                    params,
+                    ["capabilities", "workspace", "didChangeWatchedFiles", "relativePatternSupport"]
+                )?;
+            self.token_refresh = capability(
+                params,
+                ["capabilities", "workspace", "semanticTokens", "refreshSupport"]
+            )?;
+            self.hint_refresh = capability(
+                params,
+                ["capabilities", "workspace", "inlayHint", "refreshSupport"]
+            )?;
+            if object_capability(params, ["capabilities", "textDocument", "foldingRange"])? {
+                let client = params.get("capabilities")?.get("textDocument")?;
+                self.folding_options = client.get("foldingRange")?;
+            }
+            if object_capability(params, ["capabilities", "textDocument", "hover"])? {
+                let hover = params.get("capabilities")?.get("textDocument")?.get("hover")?;
+                if hover.has("contentFormat")? {
+                    let formats = hover.get("contentFormat")?;
+                    for index in 0..formats.length()? {
+                        let format = formats.at(index)?;
+                        if format.as_str()? == "markdown" {
+                            self.hover_markdown = true;
+                            break;
+                        }
+                        if format.as_str()? == "plaintext" => break;
+                    }
+                }
+            }
+            var capabilities = JSONValue::object();
+            var synchronization = JSONValue::object();
+            synchronization.set("openClose", &&JSONValue::boolean(true))?;
+            synchronization.set("change", &&JSONValue::integer(2))?;
+            var save = JSONValue::object();
+            save.set("includeText", &&JSONValue::boolean(false))?;
+            synchronization.set("save", &&save)?;
+            capabilities.set("textDocumentSync", &&synchronization)?;
+            var folders = JSONValue::object();
+            folders.set("supported", &&JSONValue::boolean(true))?;
+            folders.set("changeNotifications", &&JSONValue::boolean(true))?;
+            var workspace = JSONValue::object();
+            workspace.set("workspaceFolders", &&folders)?;
+            capabilities.set("workspace", &&workspace)?;
+            var commands = JSONValue::object();
+            var names = JSONValue::array();
+            names.push(&&JSONValue::string("carven.reload"))?;
+            commands.set("commands", &&names)?;
+            capabilities.set("executeCommandProvider", &&commands)?;
+            self.related_diagnostics = capability(
+                params,
+                ["capabilities", "textDocument", "publishDiagnostics", "relatedInformation"]
+            )?;
+            self.document_changes = capability(
+                params,
+                ["capabilities", "workspace", "workspaceEdit", "documentChanges"]
+            )?;
+            if capability(params, ["capabilities", "textDocument", "rename", "prepareSupport"])? {
+                var rename = JSONValue::object();
+                rename.set("prepareProvider", &&JSONValue::boolean(true))?;
+                capabilities.set("renameProvider", &&rename)?;
+            } else {
+                capabilities.set("renameProvider", &&JSONValue::boolean(true))?;
+            }
+            var signatures = JSONValue::object();
+            var signature_triggers = JSONValue::array();
+            signature_triggers.push(&&JSONValue::string("("))?;
+            signature_triggers.push(&&JSONValue::string(","))?;
+            signatures.set("triggerCharacters", &&signature_triggers)?;
+            capabilities.set("signatureHelpProvider", &&signatures)?;
+            capabilities.set(
+                "documentSymbolProvider",
+                &&JSONValue::boolean(capability(
+                    params,
+                    [
+                        "capabilities",
+                        "textDocument",
+                        "documentSymbol",
+                        "hierarchicalDocumentSymbolSupport"
+                    ]
+                )?)
+            )?;
+            capabilities.set("workspaceSymbolProvider", &&JSONValue::boolean(true))?;
+            capabilities.set("semanticTokensProvider", &&semantic_provider()?)?;
+            capabilities.set("inlayHintProvider", &&JSONValue::boolean(true))?;
+            capabilities.set("documentHighlightProvider", &&JSONValue::boolean(true))?;
+            capabilities.set("foldingRangeProvider", &&JSONValue::boolean(true))?;
+            capabilities.set("callHierarchyProvider", &&JSONValue::boolean(true))?;
+            capabilities.set("documentFormattingProvider", &&JSONValue::boolean(true))?;
+            self.quick_fixes = object_capability(
+                params,
+                ["capabilities", "textDocument", "codeAction", "codeActionLiteralSupport"]
+            )?;
+            if self.quick_fixes {
+                var action_kinds = JSONValue::array();
+                action_kinds.push(&&JSONValue::string("quickfix"))?;
+                action_kinds.push(&&JSONValue::string("source.organizeImports"))?;
+                var actions = JSONValue::object();
+                actions.set("codeActionKinds", &&action_kinds)?;
+                actions.set("resolveProvider", &&JSONValue::boolean(false))?;
+                capabilities.set("codeActionProvider", &&actions)?;
+            }
+            capabilities.set("hoverProvider", &&JSONValue::boolean(true))?;
+            capabilities.set("definitionProvider", &&JSONValue::boolean(true))?;
+            capabilities.set("referencesProvider", &&JSONValue::boolean(true))?;
+            var completion = JSONValue::object();
+            var triggers = JSONValue::array();
+            triggers.push(&&JSONValue::string("."))?;
+            triggers.push(&&JSONValue::string(":"))?;
+            completion.set("triggerCharacters", &&triggers)?;
+            capabilities.set("completionProvider", &&completion)?;
+            capabilities.set("positionEncoding", &&JSONValue::string("utf-16"))?;
+            var result = JSONValue::object();
+            result.set("capabilities", &&capabilities)?;
+            self.outbox.reply(id, result)?;
+            self.initialized = true;
+            return false;
+        }
+        if method == "initialize" || self.shutdown {
+            if requested => self.outbox.reject(id, -32600, "Invalid lifecycle request")?;
+            return false;
+        }
+        if !self.initialized {
+            if requested => self.outbox.reject(id, -32002, "Server is not initialized")?;
+            return false;
+        }
+        if method == "shutdown" {
+            self.shutdown = true;
+            for job in self.pending {
+                if job.query && !job.cancelled {
+                    self.outbox.reject(job.id, -32803, "Server shutting down")?;
+                }
+            }
+            for index in 0..self.active.length() {
+                if self.active[index].query && !self.active[index].cancelled {
+                    self.outbox.reject(self.active[index].id, -32803, "Server shutting down")?;
+                    self.active[index].cancelled = true;
+                }
+            }
+            self.pending.clear();
+            self.outbox.reply(id, JSONValue::null())?;
+            return false;
+        }
+        if method == "initialized" {
+            queue_workspace(&self, true)?;
+            return false;
+        }
+        if method == "workspace/didChangeWatchedFiles" || method == "textDocument/didSave" {
+            // BuildPlan source membership can depend on any project declaration.
+            queue_workspace(&self, true)?;
+            return false;
+        }
+        if method == "workspace/didChangeWorkspaceFolders" {
+            let params = message.get("params")?;
+            let event = params.get("event")?;
+            let removed = event.get("removed")?;
+            let added = event.get("added")?;
+            var roots = JSONValue::array();
+            for index in 0..self.roots.length()? {
+                let root = self.roots.at(index)?;
+                var keep = true;
+                for other in 0..removed.length()? {
+                    let folder = removed.at(other)?;
+                    if root.as_str()? == text_field(folder, "uri")? => keep = false;
+                }
+                if keep => roots.push(&&root)?;
+            }
+            for index in 0..added.length()? {
+                let folder = added.at(index)?;
+                roots.push(&&folder.get("uri")?)?;
+            }
+            self.roots = roots;
+            queue_workspace(&self, true)?;
+            return false;
+        }
+        if method == "workspace/executeCommand" {
+            let params = message.get("params")?;
+            if text_field(params, "command")? == "carven.reload" {
+                queue_workspace(&self, true)?;
+                self.outbox.reply(id, JSONValue::null())?;
+            } else {
+                self.outbox.reject(id, -32602, "Unknown command")?;
+            }
+            return false;
+        }
+        if method == "$/cancelRequest" {
+            let params = message.get("params")?;
+            let cancelled = params.get("id")?;
+            let key = cancelled.to_json()?;
+            let queued = self.pending;
+            self.pending.clear();
+            for job in queued {
+                if job.query && job.id.to_json()? == key {
+                    self.outbox.reject(cancelled, -32800, "Request cancelled")?;
+                } else {
+                    queue_job(&self, job)?;
+                }
+            }
+            for index in 0..self.active.length() {
+                if self.active[index].query
+                    && self.active[index].id.to_json()? == key
+                    && !self.active[index].cancelled {
+                    self.outbox.reject(cancelled, -32800, "Request cancelled")?;
+                    self.active[index].cancelled = true;
+                }
+            }
+            return false;
+        }
+        if method == "textDocument/didOpen" || method == "textDocument/didChange" {
+            let params = message.get("params")?;
+            let document = params.get("textDocument")?;
+            let uri = text_field(document, "uri")?;
+            let version = integer_field(document, "version")?;
+            let index = find(self, uri.as_str());
+            var text = String {};
+            if method == "textDocument/didOpen" {
+                if index != self.documents.length() => return false;
+                text = text_field(document, "text")?;
+            } else {
+                if index == self.documents.length()
+                    || version <= self.documents[index].version => return false;
+                text = self.documents[index].text;
+                let changes = params.get("contentChanges")?;
+                if changes.length()? == 0 => return false;
+                for change_index in 0..changes.length()? {
+                    let change = changes.at(change_index)?;
+                    text = apply_change(text.as_str(), change)?;
+                }
+            }
+            let module = if index == self.documents.length() {
+                module_path(uri.as_str(), self.root.as_str(), self.next_document_id)
+            } else {
+                self.documents[index].module_path
+            };
+            var request = JSONValue::object();
+            request.set("method", &&JSONValue::string("update"))?;
+            request.set("uri", &&JSONValue::string(uri.as_str()))?;
+            request.set("module", &&JSONValue::string(module.as_str()))?;
+            request.set("version", &&JSONValue::integer(version))?;
+            request.set("text", &&JSONValue::string(text.as_str()))?;
+
+            if index == self.documents.length() {
+                self.documents.push(&&Document {
+                    uri: uri,
+                    text: text,
+                    version: version,
+                    module_path: module
+                });
+                ++self.next_document_id;
+            } else {
+                self.documents[index].text = text;
+                self.documents[index].version = version;
+            }
+            ++self.generation;
+            let job = Job {
+                request: request,
+                id: JSONValue::null(),
+                uri: uri,
+                text: "",
+                generation: self.generation,
+                query: false,
+                cancelled: false
+            };
+            queue_job(&self, job)?;
+            return false;
+        }
+        if method == "textDocument/didClose" {
+            let params = message.get("params")?;
+            let document = params.get("textDocument")?;
+            let uri = text_field(document, "uri")?;
+            let index = find(self, uri.as_str());
+            if index == self.documents.length() => return false;
+            var request = JSONValue::object();
+            request.set("method", &&JSONValue::string("close"))?;
+            request.set("uri", &&JSONValue::string(uri.as_str()))?;
+            ++self.generation;
+            self.pending.push(&&Job {
+                request: request,
+                id: JSONValue::null(),
+                uri: uri,
+                text: "",
+                generation: self.generation,
+                query: false,
+                cancelled: false
+            });
+            self.documents.remove(index);
+            for published in 0..self.published.length() {
+                if self.published[published] == uri {
+                    self.published.remove(published);
+                    break;
+                }
+            }
+            var notification = JSONValue::object();
+            var cleared = JSONValue::object();
+            cleared.set("uri", &&JSONValue::string(uri.as_str()))?;
+            cleared.set("diagnostics", &&JSONValue::array())?;
+            notification.set("jsonrpc", &&JSONValue::string("2.0"))?;
+            notification.set("method", &&JSONValue::string("textDocument/publishDiagnostics"))?;
+            notification.set("params", &&cleared)?;
+            self.outbox.send(notification)?;
+            return false;
+        }
+        if method == "textDocument/formatting" || method == "textDocument/codeAction" {
+            if method == "textDocument/codeAction" && !self.quick_fixes {
+                self.outbox.reject(id, -32601, "Code action literals are required")?;
+                return false;
+            }
+            let params = message.get("params")?;
+            let uri = text_field(params.get("textDocument")?, "uri")?;
+            let index = find(self, uri.as_str());
+            if index == self.documents.length() {
+                self.outbox.reply(id, JSONValue::array())?;
+                return false;
+            }
+            var request = JSONValue::object();
+            request.set(
+                "method",
+                &&JSONValue::string(
+                    if method == "textDocument/formatting" { "formatting" } else { "codeActions" }
+                )
+            )?;
+            request.set("uri", &&JSONValue::string(uri.as_str()))?;
+            if method == "textDocument/codeAction" {
+                let context = params.get("context")?;
+                var quick_fix = true;
+                var organize = false;
+                if context.has("only")? {
+                    quick_fix = false;
+                    let only = context.get("only")?;
+                    for item in 0..only.length()? {
+                        let kind = only.at(item)?;
+                        if kind.as_str()? == "" || kind.as_str()? == "quickfix" {
+                            quick_fix = true;
+                        }
+                        if kind.as_str()? == ""
+                            || kind.as_str()? == "source"
+                            || kind.as_str()? == "source.organizeImports" {
+                            organize = true;
+                        }
+                    }
+                }
+                if !quick_fix && !organize {
+                    self.outbox.reply(id, JSONValue::array())?;
+                    return false;
+                }
+                request.set("quickFix", &&JSONValue::boolean(quick_fix))?;
+                request.set("organizeImports", &&JSONValue::boolean(organize))?;
+                let visible = params.get("range")?;
+                let start = visible.get("start")?;
+                let end = visible.get("end")?;
+                let begin = byte_offset(
+                    self.documents[index].text.as_str(),
+                    number(start, "line")?,
+                    number(start, "character")?
+                )?;
+                let finish = byte_offset(
+                    self.documents[index].text.as_str(),
+                    number(end, "line")?,
+                    number(end, "character")?
+                )?;
+                if begin > finish => throw ProtocolError::InvalidParams;
+                request.set("start", &&JSONValue::unsigned_integer(begin as u64))?;
+                request.set("end", &&JSONValue::unsigned_integer(finish as u64))?;
+                request.set("documentChanges", &&JSONValue::boolean(self.document_changes))?;
+                var versions = JSONValue::object();
+                for document in self.documents {
+                    versions.set(document.uri.as_str(), &&JSONValue::integer(document.version))?;
+                }
+                request.set("documentVersions", &&versions)?;
+            }
+            self.pending.push(&&Job {
+                request: request,
+                id: id,
+                uri: uri,
+                text: self.documents[index].text,
+                generation: self.generation,
+                query: true,
+                cancelled: false
+            });
+            return false;
+        }
+        if method == "textDocument/semanticTokens/full"
+            || method == "textDocument/semanticTokens/range"
+            || method == "textDocument/inlayHint" {
+            let params = message.get("params")?;
+            let document = params.get("textDocument")?;
+            let uri = text_field(document, "uri")?;
+            let index = find(self, uri.as_str());
+            if index == self.documents.length() {
+                self.outbox.reply(id, JSONValue::null())?;
+                return false;
+            }
+            var request = JSONValue::object();
+            request.set(
+                "method",
+                &&JSONValue::string(
+                    if method == "textDocument/inlayHint" { "inlayHints" } else { "semanticTokens" }
+                )
+            )?;
+            request.set("uri", &&JSONValue::string(uri.as_str()))?;
+            if method != "textDocument/semanticTokens/full" {
+                let visible = params.get("range")?;
+                let start = visible.get("start")?;
+                let end = visible.get("end")?;
+                let begin = byte_offset(
+                    self.documents[index].text.as_str(),
+                    number(start, "line")?,
+                    number(start, "character")?
+                )?;
+                let finish = byte_offset(
+                    self.documents[index].text.as_str(),
+                    number(end, "line")?,
+                    number(end, "character")?
+                )?;
+                if begin > finish => throw ProtocolError::InvalidParams;
+                request.set("start", &&JSONValue::unsigned_integer(begin as u64))?;
+                request.set("end", &&JSONValue::unsigned_integer(finish as u64))?;
+            }
+            self.pending.push(&&Job {
+                request: request,
+                id: id,
+                uri: uri,
+                text: self.documents[index].text,
+                generation: self.generation,
+                query: true,
+                cancelled: false
+            });
+            return false;
+        }
+        if method == "textDocument/documentSymbol"
+            || method == "workspace/symbol"
+            || method == "textDocument/foldingRange" {
+            let params = message.get("params")?;
+            var request = JSONValue::object();
+            var uri: String = "";
+            if method != "workspace/symbol" {
+                let document = params.get("textDocument")?;
+                uri = text_field(document, "uri")?;
+                request.set(
+                    "method",
+                    &&JSONValue::string(if method == "textDocument/foldingRange" {
+                        "foldingRanges"
+                    } else {
+                        "documentSymbols"
+                    })
+                )?;
+                if method == "textDocument/foldingRange" {
+                    let options = self.folding_options;
+                    request.set("foldingOptions", &&options)?;
+                }
+                request.set("uri", &&JSONValue::string(uri.as_str()))?;
+            } else {
+                request.set("method", &&JSONValue::string("workspaceSymbols"))?;
+                request.set("query", &&JSONValue::string(text_field(params, "query")?.as_str()))?;
+            }
+            self.pending.push(&&Job {
+                request: request,
+                id: id,
+                uri: uri,
+                text: "",
+                generation: self.generation,
+                query: true,
+                cancelled: false
+            });
+            return false;
+        }
+        if method == "callHierarchy/incomingCalls" || method == "callHierarchy/outgoingCalls" {
+            let params = message.get("params")?;
+            let item = params.get("item")?;
+            let data = item.get("data")?;
+            let generation = integer_field(data, "generation")?;
+            if generation != self.generation {
+                self.outbox.reject(
+                    id,
+                    -32801,
+                    "Workspace changed since call hierarchy preparation"
+                )?;
+                return false;
+            }
+            let uri = text_field(item, "uri")?;
+            let offset = integer_field(data, "offset")?;
+            if offset < 0 => throw ProtocolError::InvalidParams;
+            var request = JSONValue::object();
+            request.set(
+                "method",
+                &&JSONValue::string(if method == "callHierarchy/incomingCalls" {
+                    "incomingCalls"
+                } else {
+                    "outgoingCalls"
+                })
+            )?;
+            request.set("uri", &&JSONValue::string(uri.as_str()))?;
+            request.set("context", &&JSONValue::string(text_field(data, "context")?.as_str()))?;
+            request.set("offset", &&JSONValue::integer(offset))?;
+            self.pending.push(&&Job {
+                request: request,
+                id: id,
+                uri: uri,
+                text: "",
+                generation: self.generation,
+                query: true,
+                cancelled: false
+            });
+            return false;
+        }
+        if method == "textDocument/hover"
+            || method == "textDocument/definition"
+            || method == "textDocument/references"
+            || method == "textDocument/completion"
+            || method == "textDocument/prepareRename"
+            || method == "textDocument/rename"
+            || method == "textDocument/signatureHelp"
+            || method == "textDocument/documentHighlight"
+            || method == "textDocument/prepareCallHierarchy" {
+            let params = message.get("params")?;
+            let document = params.get("textDocument")?;
+            let uri = text_field(document, "uri")?;
+            let index = find(self, uri.as_str());
+            if index == self.documents.length() {
+                self.outbox.reply(id, JSONValue::null())?;
+                return false;
+            }
+            let point = params.get("position")?;
+            let line = integer_field(point, "line")?;
+            let character = integer_field(point, "character")?;
+            if line < 0 || character < 0 {
+                self.outbox.reject(id, -32602, "Invalid position")?;
+                return false;
+            }
+            let offset = byte_offset(
+                self.documents[index].text.as_str(),
+                line as usize,
+                character as usize
+            )?;
+            var request = JSONValue::object();
+            let query_method = if method == "textDocument/definition" {
+                "definition"
+            } else if method == "textDocument/references" {
+                "references"
+            } else if method == "textDocument/completion" {
+                "completion"
+            } else if method == "textDocument/prepareRename" {
+                "prepareRename"
+            } else if method == "textDocument/rename" {
+                "rename"
+            } else if method == "textDocument/documentHighlight" {
+                "documentHighlights"
+            } else if method == "textDocument/prepareCallHierarchy" {
+                "prepareCallHierarchy"
+            } else if method == "textDocument/signatureHelp" {
+                "signatureHelp"
+            } else {
+                "hover"
+            };
+            request.set("method", &&JSONValue::string(query_method))?;
+            if method == "textDocument/references" {
+                let context = params.get("context")?;
+                let include = context.get("includeDeclaration")?;
+                if include.kind() != JSONValueKind::Boolean => throw ProtocolError::InvalidParams;
+                request.set("includeDeclaration", &&include)?;
+            }
+            if method == "textDocument/rename" {
+                request.set(
+                    "newName",
+                    &&JSONValue::string(text_field(params, "newName")?.as_str())
+                )?;
+                request.set("documentChanges", &&JSONValue::boolean(self.document_changes))?;
+                var versions = JSONValue::object();
+                for document in self.documents {
+                    versions.set(document.uri.as_str(), &&JSONValue::integer(document.version))?;
+                }
+                request.set("documentVersions", &&versions)?;
+            }
+            request.set("uri", &&JSONValue::string(uri.as_str()))?;
+            request.set("offset", &&JSONValue::unsigned_integer(offset as u64))?;
+            request.set("revision", &&JSONValue::integer(self.revision))?;
+            self.pending.push(&&Job {
+                request: request,
+                id: id,
+                uri: uri,
+                text: self.documents[index].text,
+                generation: self.generation,
+                query: true,
+                cancelled: false
+            });
+            return false;
+        }
+        if requested => self.outbox.reject(id, -32601, "Method not found")?;
+    } catch {
+        JSONValueError(_) => {
+            if requested => self.outbox.reject(id, -32602, "Invalid params")?;
+        },
+        ProtocolError(error) => {
+            match error {
+                .InvalidPosition => {
+                    if requested => self.outbox.reject(id, -32602, "Invalid position")?;
+                },
+                .InvalidParams => {
+                    if requested => self.outbox.reject(id, -32602, "Invalid params")?;
+                },
+                _ => throw error,
+            }
+        },
+    }
+    return false;
+}
+
+// At most one analyzer transaction is in flight. Every query after the same update
+// waits behind that single analysis; later updates cannot cross its request barrier.
+fn next_job(&self: Server) -> JSONValue throw JSONValueError {
+    if !self.active.is_empty() || self.shutdown => return JSONValue::null();
+    while !self.pending.is_empty() {
+        var job = self.pending[0];
+        self.pending.remove(0);
+        if job.cancelled => continue;
+        job.request.set("revision", &&JSONValue::integer(self.revision))?;
+        let request = job.request;
+        self.active.push(&&job);
+        return request;
+    }
+    return JSONValue::null();
+}
+
+fn complete(&self: Server, result: JSONValue) throw JSONValueError + ProtocolError {
+    if self.active.is_empty() => throw ProtocolError::Analyzer;
+    let job = self.active[0];
+    self.active.clear();
+    if integer_field(result, "revision")? < 0 => throw ProtocolError::Analyzer;
+    self.revision = integer_field(result, "revision")?;
+    if self.shutdown => return;
+    if !job.query {
+        if text_field(job.request, "method")? == "workspace" && result.has("warnings")? {
+            let warnings = result.get("warnings")?;
+            if integer_field(job.request, "contextGeneration")? == self.context_generation {
+                var detail = if self.target.is_empty() {
+                    "Default targets" as String
+                } else {
+                    self.target
+                };
+                if warnings.length()? != 0 => detail = warnings.at(0)?.as_str()? as String;
+                project_status(
+                    &self,
+                    if warnings.length()? == 0 { "ready" } else { "error" },
+                    detail.as_str()
+                )?;
+            }
+            for index in 0..warnings.length()? {
+                var params = JSONValue::object();
+                params.set("type", &&JSONValue::integer(2))?;
+                params.set("message", &&warnings.at(index)?)?;
+                var message = JSONValue::object();
+                message.set("jsonrpc", &&JSONValue::string("2.0"))?;
+                message.set("method", &&JSONValue::string("window/logMessage"))?;
+                message.set("params", &&params)?;
+                self.outbox.send(message)?;
+            }
+        }
+        if text_field(job.request, "method")? == "workspace"
+            && integer_field(job.request, "contextGeneration")? == self.context_generation
+            && self.dynamic_watches
+            && result.has("watchers")? {
+            update_watches(&self, &&result.get("watchers")?)?;
+        }
+        // Any project edit invalidates old diagnostics, including dependent files.
+        if job.generation == self.generation {
+            publish(&self, result)?;
+            if self.token_refresh => refresh(&self, "workspace/semanticTokens/refresh")?;
+            if self.hint_refresh => refresh(&self, "workspace/inlayHint/refresh")?;
+        }
+        return;
+    }
+    if job.cancelled => return;
+    let method = text_field(job.request, "method")?;
+    if (method == "formatting" || method == "codeActions" || method == "completion")
+        && job.generation != self.generation {
+        self.outbox.reject(job.id, -32801, "Workspace changed during edit query")?;
+        return;
+    }
+    if result.has("queryError")? {
+        self.outbox.reject(
+            job.id,
+            integer_field(result, "queryErrorCode")?,
+            text_field(result, "queryError")?.as_str()
+        )?;
+        return;
+    }
+    // Syntax queries remain valid when another project source changes.
+    if method == "documentSymbols" || method == "foldingRanges" {
+        if job.generation != self.generation {
+            let index = find(self, job.uri.as_str());
+            var current = false;
+            if index != self.documents.length() {
+                let text = self.documents[index].text.as_str();
+                current = result.has("text")? && result.get("text")?.as_str()? == text;
+            }
+            if !current {
+                self.outbox.reject(job.id, -32801, "Document changed during syntax query")?;
+                return;
+            }
+        }
+        if method == "documentSymbols" {
+            self.outbox.reply(job.id, symbols(result, true)?)?;
+        } else {
+            self.outbox.reply(job.id, folding_ranges(result, job.request.get("foldingOptions")?)?)?;
+        }
+        return;
+    }
+    if method == "formatting" || method == "codeActions" {
+        self.outbox.reply(job.id, edit_response(result, job.request, method == "codeActions")?)?;
+        return;
+    }
+    if method == "semanticTokens" || method == "inlayHints" {
+        if job.generation != self.generation {
+            self.outbox.reject(job.id, -32801, "Workspace changed during decoration query")?;
+        } else {
+            self.outbox.reply(job.id, decorations(result, method == "semanticTokens")?)?;
+        }
+        return;
+    }
+    if method == "prepareCallHierarchy" || method == "incomingCalls" || method == "outgoingCalls" {
+        if job.generation != self.generation {
+            self.outbox.reject(job.id, -32801, "Workspace changed during call hierarchy query")?;
+        } else {
+            self.outbox.reply(job.id, call_hierarchy(result, job.request, job.generation)?)?;
+        }
+        return;
+    }
+    if method == "documentHighlights" {
+        if job.generation != self.generation {
+            self.outbox.reject(job.id, -32801, "Workspace changed during document query")?;
+        } else {
+            self.outbox.reply(job.id, document_highlights(result)?)?;
+        }
+        return;
+    }
+    if method == "workspaceSymbols" {
+        if job.generation != self.generation {
+            self.outbox.reject(job.id, -32801, "Workspace changed during symbol query")?;
+        } else {
+            self.outbox.reply(job.id, symbols(result, false)?)?;
+        }
+        return;
+    }
+    if method == "signatureHelp" {
+        let signature = result.get("signature")?;
+        if signature.kind() == JSONValueKind::Null {
+            self.outbox.reply(job.id, JSONValue::null())?;
+            return;
+        }
+        var response = JSONValue::object();
+        if signature.has("activeParameter")? {
+            response.set("activeParameter", &&signature.get("activeParameter")?)?;
+        }
+        var signatures = JSONValue::array();
+        signatures.push(&&signature)?;
+        response.set("signatures", &&signatures)?;
+        response.set("activeSignature", &&JSONValue::integer(0))?;
+        self.outbox.reply(job.id, response)?;
+        return;
+    }
+    if method == "prepareRename" || method == "rename" {
+        let renamed = result.get("rename")?;
+        if renamed.kind() == JSONValueKind::Null {
+            if method == "rename" {
+                self.outbox.reject(job.id, -32803, "No editable symbol at this position")?;
+            } else {
+                self.outbox.reply(job.id, JSONValue::null())?;
+            }
+            return;
+        }
+        if method == "prepareRename" {
+            var response = JSONValue::object();
+            response.set(
+                "range",
+                &&range(
+                    job.text.as_str(),
+                    integer_field(renamed, "start")? as usize,
+                    integer_field(renamed, "end")? as usize
+                )?
+            )?;
+            response.set("placeholder", &&renamed.get("placeholder")?)?;
+            self.outbox.reply(job.id, response)?;
+            return;
+        }
+        if job.generation != self.generation {
+            self.outbox.reject(job.id, -32801, "Project changed during rename")?;
+            return;
+        }
+        let documents = renamed.get("documents")?;
+        self.outbox.reply(job.id, workspace_edit(documents, job.request)?)?;
+        return;
+    }
+    if method == "definition" || method == "references" {
+        let locations = result.get("locations")?;
+        let texts = result.get("texts")?;
+        var response = JSONValue::array();
+        for index in 0..locations.length()? {
+            let location = locations.at(index)?;
+            let uri = location.get("uri")?;
+            let text = texts.get(uri.as_str()?)?;
+            var item = JSONValue::object();
+            item.set("uri", &&location.get("uri")?)?;
+            item.set(
+                "range",
+                &&range(
+                    text.as_str()?,
+                    integer_field(location, "start")? as usize,
+                    integer_field(location, "end")? as usize
+                )?
+            )?;
+            response.push(&&item)?;
+        }
+        self.outbox.reply(job.id, response)?;
+        return;
+    }
+    if method == "completion" {
+        let completion = result.get("completion")?;
+        let candidates = completion.get("items")?;
+        var items = JSONValue::array();
+        for index in 0..candidates.length()? {
+            var item = candidates.at(index)?;
+            var edit = JSONValue::object();
+            edit.set(
+                "range",
+                &&range(
+                    job.text.as_str(),
+                    integer_field(completion, "start")? as usize,
+                    integer_field(completion, "end")? as usize
+                )?
+            )?;
+            edit.set(
+                "newText",
+                &&(if item.has("insertText")? {
+                    item.get("insertText")?
+                } else {
+                    item.get("label")?
+                })
+            )?;
+            item.set("textEdit", &&edit)?;
+            if item.has("importEdits")? {
+                let imports = item.get("importEdits")?;
+                var additional = JSONValue::array();
+                for index in 0..imports.length()? {
+                    let imported = imports.at(index)?;
+                    let start = imported.get("start")?;
+                    let end = imported.get("end")?;
+                    var change = JSONValue::object();
+                    change.set(
+                        "range",
+                        &&range(
+                            job.text.as_str(),
+                            start.as_u64()? as usize,
+                            end.as_u64()? as usize
+                        )?
+                    )?;
+                    change.set("newText", &&imported.get("replacement")?)?;
+                    additional.push(&&change)?;
+                }
+                item.erase("importEdits")?;
+                item.set("additionalTextEdits", &&additional)?;
+            }
+            items.push(&&item)?;
+        }
+        var response = JSONValue::object();
+        response.set("isIncomplete", &&JSONValue::boolean(false))?;
+        response.set("items", &&items)?;
+        self.outbox.reply(job.id, response)?;
+        return;
+    }
+    let hover = result.get("hover")?;
+    if hover.kind() == JSONValueKind::Null {
+        self.outbox.reply(job.id, JSONValue::null())?;
+        return;
+    }
+    var contents = JSONValue::object();
+    contents.set(
+        "kind",
+        &&JSONValue::string(if self.hover_markdown { "markdown" } else { "plaintext" })
+    )?;
+    let description = hover.get("text")?;
+    let documentation = hover.get("documentation")?;
+    let notes = documentation.as_str()?;
+    let text = description.as_str()?;
+    if self.hover_markdown {
+        let suffix = if notes.is_empty() { "" as String } else { f"\n\n{markdown_text(notes)}" };
+        contents.set("value", &&JSONValue::string(f"```carven\n{text}\n```{suffix}"))?;
+    } else if notes.is_empty() {
+        contents.set("value", &&JSONValue::string(text))?;
+    } else {
+        contents.set("value", &&JSONValue::string(f"{text}\n\n{notes}"))?;
+    }
+    var response = JSONValue::object();
+    response.set("contents", &&contents)?;
+    response.set(
+        "range",
+        &&range(
+            job.text.as_str(),
+            integer_field(hover, "start")? as usize,
+            integer_field(hover, "end")? as usize
+        )?
+    )?;
+    self.outbox.reply(job.id, response)?;
+}
+
+private fn project_status(&self: Server, state: str, detail: str) throw JSONValueError {
+    if !self.status_notifications => return;
+    var params = JSONValue::object();
+    params.set("state", &&JSONValue::string(state))?;
+    params.set("detail", &&JSONValue::string(detail))?;
+    var message = JSONValue::object();
+    message.set("jsonrpc", &&JSONValue::string("2.0"))?;
+    message.set("method", &&JSONValue::string("carven/projectStatus"))?;
+    message.set("params", &&params)?;
+    self.outbox.send(message)?;
+}
+
+private fn queue_workspace(&self: Server, configure: bool) throw JSONValueError {
+    project_status(
+        &self,
+        "loading",
+        if configure { "Loading projects" } else { "Refreshing project sources" }
+    )?;
+    var request = JSONValue::object();
+    request.set("method", &&JSONValue::string("workspace"))?;
+    let roots = self.roots;
+    request.set("roots", &&roots)?;
+    request.set("xmake", &&JSONValue::string(self.xmake.as_str()))?;
+    request.set("target", &&JSONValue::string(self.target.as_str()))?;
+    var refresh = configure;
+    if !self.pending.is_empty() {
+        let last = self.pending.length() - 1;
+        if text_field(self.pending[last].request, "method")? == "workspace" {
+            let previous = self.pending[last].request.get("configure")?;
+            refresh = refresh || previous.as_bool()?;
+            self.pending.remove(last);
+        }
+    }
+    request.set("configure", &&JSONValue::boolean(refresh))?;
+    ++self.generation;
+    ++self.context_generation;
+    request.set("contextGeneration", &&JSONValue::integer(self.context_generation))?;
+    self.pending.push(&&Job {
+        request: request,
+        id: JSONValue::null(),
+        uri: "",
+        text: "",
+        generation: self.generation,
+        query: false,
+        cancelled: false
+    });
+}
+
+private fn watch_request(&self: Server, method: str, &&params: JSONValue) throw JSONValueError {
+    ++self.watch_sequence;
+    var request = JSONValue::object();
+    request.set("jsonrpc", &&JSONValue::string("2.0"))?;
+    request.set("id", &&JSONValue::string(f"carven/watch/{self.watch_sequence}"))?;
+    request.set("method", &&JSONValue::string(method))?;
+    request.set("params", &&params)?;
+    self.outbox.send(request)?;
+}
+
+private fn update_watches(&self: Server, &&watchers: JSONValue) throw JSONValueError {
+    for index in 0..self.watch_registrations.length() {
+        self.watch_registrations[index].wanted = false;
+    }
+
+    var registrations = JSONValue::array();
+    for index in 0..watchers.length()? {
+        var watcher = watchers.at(index)?;
+        let signature = watcher.to_json()?;
+        var found = false;
+        for existing in 0..self.watch_registrations.length() {
+            if self.watch_registrations[existing].signature == signature {
+                self.watch_registrations[existing].wanted = true;
+                found = true;
+                break;
+            }
+        }
+        if found => continue;
+
+        let registration_id = f"carven/project/{self.watch_sequence + 1}/{index}";
+        var selected = JSONValue::array();
+        selected.push(&&watcher)?;
+        var options = JSONValue::object();
+        options.set("watchers", &&selected)?;
+        var registration = JSONValue::object();
+        registration.set("id", &&JSONValue::string(registration_id.as_str()))?;
+        registration.set("method", &&JSONValue::string("workspace/didChangeWatchedFiles"))?;
+        registration.set("registerOptions", &&options)?;
+        registrations.push(&&registration)?;
+        self.watch_registrations.push(&&WatchRegistration {
+            request_id: f"carven/watch/{self.watch_sequence + 1}",
+            id: registration_id,
+            signature: signature,
+            wanted: true,
+            confirmed: false
+        });
+    }
+
+    if registrations.length()? > 0 {
+        var params = JSONValue::object();
+        params.set("registrations", &&registrations)?;
+        watch_request(&self, "client/registerCapability", &&params)?;
+    }
+    retire_watches(&self)?;
+}
+
+private fn watch_completed(&self: Server, request_id: str, failed: bool) throw JSONValueError {
+    var found = false;
+    var index = self.watch_registrations.length();
+    while index > 0 {
+        --index;
+        if self.watch_registrations[index].request_id == request_id {
+            found = true;
+            if failed {
+                self.watch_registrations.remove(index);
+            } else {
+                self.watch_registrations[index].confirmed = true;
+            }
+        }
+    }
+    if !found || failed => return;
+    retire_watches(&self)?;
+}
+
+private fn retire_watches(&self: Server) throw JSONValueError {
+    // Preserve coverage until replacement watches are accepted. Unchanged watches
+    // keep their registrations throughout project reconfiguration.
+    for registration in self.watch_registrations {
+        if registration.wanted && !registration.confirmed => return;
+    }
+
+    var registrations = JSONValue::array();
+    var index = self.watch_registrations.length();
+    while index > 0 {
+        --index;
+        if self.watch_registrations[index].wanted
+            || !self.watch_registrations[index].confirmed => continue;
+        var registration = JSONValue::object();
+        registration.set("id", &&JSONValue::string(self.watch_registrations[index].id.as_str()))?;
+        registration.set("method", &&JSONValue::string("workspace/didChangeWatchedFiles"))?;
+        registrations.push(&&registration)?;
+        self.watch_registrations.remove(index);
+    }
+    if registrations.length()? > 0 {
+        var params = JSONValue::object();
+        params.set("unregisterations", &&registrations)?;
+        watch_request(&self, "client/unregisterCapability", &&params)?;
+    }
+}
+
+private fn refresh(&self: Server, method: str) throw JSONValueError {
+    ++self.refresh_sequence;
+    var request = JSONValue::object();
+    request.set("jsonrpc", &&JSONValue::string("2.0"))?;
+    request.set("id", &&JSONValue::string(f"carven/refresh/{self.refresh_sequence}"))?;
+    request.set("method", &&JSONValue::string(method))?;
+    self.outbox.send(request)?;
+}

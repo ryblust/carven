@@ -1,0 +1,59 @@
+import .plan using ResolvedPlan;
+import std::build using BuildError;
+import std::json using { JSONValue, JSONValueError }
+
+private const fn strings(values: [String]) -> JSONValue throw JSONValueError {
+    var result = JSONValue::array();
+    for value in values {
+        result.push(&&JSONValue::string(value))?;
+    }
+    return result;
+}
+
+private const fn describe(plan: ResolvedPlan) -> JSONValue throw JSONValueError {
+    var targets = JSONValue::array();
+
+    for target in plan.targets {
+        var dependencies: Vector<String> = [];
+        for dependency in target.dependencies {
+            dependencies.push(plan.targets[dependency].name);
+        }
+        var syslinks = JSONValue::array();
+        for links in target.native.syslinks {
+            var group = JSONValue::object();
+            group.set("platform", &&JSONValue::string(links.platform))?;
+            group.set("libraries", &&strings(links.libraries)?)?;
+            syslinks.push(&&group)?;
+        }
+
+        var item = JSONValue::object();
+        item.set("name", &&JSONValue::string(target.name))?;
+        let kind: str = match target.kind {
+            .SourceLibrary => "source-library",
+            .StaticLibrary => "static-library",
+            .Executable => "executable",
+        };
+        item.set("kind", &&JSONValue::string(kind))?;
+        item.set("default", &&JSONValue::boolean(true))?;
+        item.set("sources", &&strings(target.sources)?)?;
+        item.set("headers", &&strings(target.headers)?)?;
+        item.set("syslinks", &&syslinks)?;
+        item.set("dependencies", &&strings(dependencies)?)?;
+        targets.push(&&item)?;
+    }
+
+    var result = JSONValue::object();
+    result.set("root", &&JSONValue::string(plan.root))?;
+    result.set("targets", &&targets)?;
+    result.set("roots", &&strings([plan.root])?)?;
+    return result;
+}
+
+const fn write_query(plan: ResolvedPlan) throw BuildError {
+    let text = try {
+        describe(plan)?.to_json()?
+    } catch {
+        JSONValueError(_) => throw BuildError { message: "cannot encode project declarations" },
+    };
+    println(text);
+}

@@ -1,6 +1,5 @@
 module;
 
-
 #if !defined(_WIN32)
 #include <cerrno>
 #include <csignal>
@@ -13,14 +12,15 @@ module carven:test.internal.interpreter.host;
 import :diagnostics.code;
 import :frontend.program.parse;
 import :interpreter.execute;
-import :semantic.analyze;
 import :semantic.evaluation.execution;
+import :semantic.evaluation.native;
 import :semantic.semir.decl;
 import :semantic.semir.program;
 import :source.batch;
 import :source.manager;
 import :source.module_path;
 import :test.harness.framework;
+import :test.internal.semantic.analysis.fixture;
 import :test.internal.source.fixture;
 import std;
 
@@ -50,7 +50,7 @@ auto run_program(std::string_view text, ExecutionOutput output, InterpreterOptio
     if (!parsed) {
         return false;
     }
-    auto analyzed = analyze(std::move(*parsed), HostEffects::Allow, output);
+    auto analyzed = analyze_test_syntax(std::move(*parsed), HostEffects::Allow, output);
     if (!analyzed) {
         for (const auto& diagnostic : analyzed.error()) {
             std::println(
@@ -62,6 +62,8 @@ auto run_program(std::string_view text, ExecutionOutput output, InterpreterOptio
         }
         return false;
     }
+    auto host = ExecutionNativeHost(standard_test_bindings(), static_execution_limits());
+    options.host_call = host;
     for (const auto row : analyzed->value.declarations().functions()) {
         if (row.value.entry_point) {
             return interpret(analyzed->value, row.id, output, options).has_value();

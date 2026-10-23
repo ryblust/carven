@@ -12,14 +12,12 @@ fn first(value: i32) -> i32 throw Rejected {
 fn second(value: i32) -> i32 throw Rejected => value + 20;
 
 fn rebind_in_tail(&callback: fn(i32) -> i32 throw Rejected, value: i32) -> i32 throw Rejected {
-    return callback(
-        if true {
-            callback = second;
-            value
-        } else {
-            value
-        }
-    )?;
+    return callback(if true {
+        callback = second;
+        value
+    } else {
+        value
+    })?;
 }
 
 fn argument(&trace: i32, digit: i32, value: i32) -> i32 throw Rejected {
@@ -41,7 +39,9 @@ fn ordered_tail(&trace: i32, left: i32, right: i32) -> i32 throw Rejected {
 
 fn action(&trace: i32, rejected: bool) throw Rejected {
     trace += 1;
-    if rejected { throw Rejected { code: 7 }; }
+    if rejected {
+        throw Rejected { code: 7 };
+    }
 }
 
 fn void_tail(&trace: i32, rejected: bool) throw Rejected {

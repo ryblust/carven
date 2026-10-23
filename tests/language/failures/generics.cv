@@ -11,9 +11,15 @@ enum Failure<T> {
 }
 
 fn select(which: i32) throw Error<i32> + Error<u32> + Failure<Box<i32>> + Failure<Box<u32>> {
-    if which == 0 { throw Error<i32> { value: -7 }; }
-    if which == 1 { throw Error<u32> { value: 11u32 }; }
-    if which == 2 { throw Failure<Box<i32>>::Item(Box<i32> { value: -13 }); }
+    if which == 0 {
+        throw Error<i32> { value: -7 };
+    }
+    if which == 1 {
+        throw Error<u32> { value: 11u32 };
+    }
+    if which == 2 {
+        throw Failure<Box<i32>>::Item(Box<i32> { value: -13 });
+    }
     throw Failure<Box<u32>>::Item(Box<u32> { value: 17u32 });
 }
 

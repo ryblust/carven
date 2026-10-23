@@ -40,7 +40,7 @@ auto compile_modules(
         TargetPlanningRequest {
             .test_mode = test_mode,
             .linkage_domain = LinkageDomain::explicit_value(std::string(linkage_domain)).value(),
-            .library = std::nullopt,
+            .libraries = {},
         }
     );
     require(result.has_value()).note([&] noexcept {

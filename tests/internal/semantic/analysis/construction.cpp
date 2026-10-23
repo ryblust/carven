@@ -8,7 +8,7 @@ import :semantic.analysis.catalog;
 import :semantic.analysis.construction;
 import :semantic.analysis.diagnostics;
 import :semantic.analysis.program;
-import :semantic.analyze;
+import :semantic.evaluation.execution;
 import :semantic.semir.body;
 import :semantic.semir.constant;
 import :semantic.semir.decl;
@@ -195,7 +195,7 @@ const TestSuite suite([] static noexcept {
                 };
                 auto parsed = parse_program(sources, SourceBatch {.modules = std::span(&input, 1)});
                 require(parsed.has_value());
-                const auto analyzed = analyze(std::move(*parsed), HostEffects::Deny);
+                const auto analyzed = analyze_test_syntax(std::move(*parsed), HostEffects::Deny);
                 if (!expect(!analyzed.has_value())) {
                     return;
                 }

@@ -1,0 +1,664 @@
+import .protocol using ProtocolError;
+import std::json using { JSONValue, JSONValueError }
+import std::utf using UTF8Error;
+
+// Private analyzer records: big-endian integers, length-prefixed UTF-8 bytes,
+// counted lists and one-byte presence flags. JSON stays in this application.
+fn method_code(name: str) -> u8 throw ProtocolError {
+    let names = [
+        "hello",
+        "shutdown",
+        "discover",
+        "workspace",
+        "update",
+        "close",
+        "hover",
+        "definition",
+        "references",
+        "completion",
+        "prepareRename",
+        "rename",
+        "signatureHelp",
+        "documentSymbols",
+        "workspaceSymbols",
+        "semanticTokens",
+        "inlayHints",
+        "formatting",
+        "codeActions",
+        "documentHighlights",
+        "foldingRanges",
+        "prepareCallHierarchy",
+        "incomingCalls",
+        "outgoingCalls"
+    ];
+    for index in 0..names.length() {
+        if name == names[index] => return index as u8;
+    }
+    throw ProtocolError::Analyzer;
+}
+
+private class Writer {
+    bytes: Vector<u8>,
+
+    fn new() -> Writer => { bytes: [] };
+
+    fn number(&self, value: u64, width: usize) {
+        var index = width;
+        while index != 0 {
+            --index;
+            self.bytes.push((value >> ((index * 8) as u64)) as u8);
+        }
+    }
+
+    fn frame(self) -> Vector<u8> throw ProtocolError {
+        if self.bytes.length() > 16 * 1024 * 1024 => throw ProtocolError::InvalidFrame;
+        var output = Writer::new();
+        output.number(self.bytes.length() as u64, 4);
+        for byte in self.bytes {
+            output.bytes.push(byte);
+        }
+        return output.bytes;
+    }
+
+    fn flag(&self, value: bool) {
+        self.bytes.push(if value { 1u8 } else { 0u8 });
+    }
+
+    fn text(&self, value: str) {
+        self.number(value.byte_length() as u64, 4);
+        for byte in value.bytes {
+            self.bytes.push(byte);
+        }
+    }
+
+    fn strings(&self, value: JSONValue) throw JSONValueError {
+        self.number(value.length()? as u64, 4);
+        for index in 0..value.length()? {
+            let text = value.at(index)?;
+            self.text(text.as_str()?);
+        }
+    }
+
+    fn field(&self, value: JSONValue, key: str) throw JSONValueError {
+        let text = value.get(key)?;
+        self.text(text.as_str()?);
+    }
+
+    fn optional_number(&self, value: JSONValue, key: str) throw JSONValueError {
+        let present = value.has(key)?;
+        self.flag(present);
+        if present {
+            let number = value.get(key)?;
+            self.number(number.as_u64()?, 4);
+        }
+    }
+}
+
+private fn target_sources(
+    targets: JSONValue,
+    root: usize
+) -> JSONValue throw JSONValueError + ProtocolError {
+    var result = JSONValue::array();
+    var pending: Vector<usize> = [root];
+    var visited: Vector<usize> = [];
+    var index: usize = 0;
+    while index < pending.length() {
+        let current = pending[index];
+        ++index;
+        var seen = false;
+        for previous in visited {
+            if previous == current => seen = true;
+        }
+        if seen => continue;
+        visited.push(current);
+        let target = targets.at(current)?;
+        let sources = target.get("sources")?;
+        for source_index in 0..sources.length()? {
+            let source = sources.at(source_index)?;
+            result.push(&&source)?;
+        }
+        if !target.has("dependencies")? => continue;
+        let dependencies = target.get("dependencies")?;
+        for dependency in dependencies.elements()? {
+            var found = false;
+            for candidate in 0..targets.length()? {
+                let entry = targets.at(candidate)?;
+                let name = entry.get("name")?;
+                if name.as_str()? == dependency.as_str()? {
+                    pending.push(candidate);
+                    found = true;
+                    break;
+                }
+            }
+            if !found => throw ProtocolError::Analyzer;
+        }
+    }
+    return result;
+}
+
+fn encode_request(value: JSONValue) -> Vector<u8> throw JSONValueError + ProtocolError {
+    let name = value.get("method")?;
+    let method = method_code(name.as_str()?)?;
+    var writer = Writer::new();
+    writer.number(method as u64, 1);
+    if method == 0 || method == 1 {
+    } else if method == 2 {
+        writer.strings(value.get("roots")?)?;
+    } else if method == 3 {
+        writer.strings(value.get("roots")?)?;
+        writer.field(value, "target")?;
+        let changed = value.has("projects")?;
+        writer.flag(changed);
+        if changed {
+            let projects = value.get("projects")?;
+            writer.number(projects.length()? as u64, 4);
+            for index in 0..projects.length()? {
+                let project = projects.at(index)?;
+                writer.field(project, "root")?;
+                writer.field(project, "directory")?;
+                writer.flag(project.get("available")?.as_bool()?);
+                writer.strings(project.get("roots")?)?;
+                writer.strings(project.get("scripts")?)?;
+                let targets = project.get("targets")?;
+                writer.number(targets.length()? as u64, 4);
+                for index in 0..targets.length()? {
+                    let target = targets.at(index)?;
+                    writer.field(target, "name")?;
+                    let default_target = target.get("default")?;
+                    writer.flag(default_target.as_bool()?);
+                    writer.strings(target_sources(targets, index)?)?;
+                }
+            }
+        }
+    } else if method == 4 {
+        writer.field(value, "uri")?;
+        writer.field(value, "module")?;
+        let version = value.get("version")?;
+        writer.number(version.as_i64()? as u64, 8);
+        writer.field(value, "text")?;
+    } else if method == 5 {
+        writer.field(value, "uri")?;
+    } else {
+        let revision = value.get("revision")?;
+        writer.number(revision.as_u64()?, 8);
+        if method == 14 {
+            writer.field(value, "query")?;
+        } else {
+            writer.field(value, "uri")?;
+            if method == 15 || method == 16 || method == 18 {
+                writer.optional_number(value, "start")?;
+                writer.optional_number(value, "end")?;
+                if method == 18 {
+                    let quick = value.get("quickFix")?;
+                    let organize = value.get("organizeImports")?;
+                    writer.flag(quick.as_bool()?);
+                    writer.flag(organize.as_bool()?);
+                }
+            } else if method != 13 && method != 17 && method != 20 {
+                let offset = value.get("offset")?;
+                writer.number(offset.as_u64()?, 4);
+                if method == 22 || method == 23 => writer.field(value, "context")?;
+                if method == 8 {
+                    let include = value.get("includeDeclaration")?;
+                    writer.flag(include.as_bool()?);
+                }
+                if method == 11 => writer.field(value, "newName")?;
+            }
+        }
+    }
+    return writer.frame()?;
+}
+
+private class Reader {
+    bytes: Vector<u8>,
+    cursor: usize,
+
+    fn new(bytes: [u8]) -> Reader => {
+        bytes: Vector<u8>::from_slice(bytes),
+        cursor: 0
+    };
+
+    fn number(&self, width: usize) -> u64 throw ProtocolError {
+        if width > self.bytes.length() - self.cursor => throw ProtocolError::InvalidFrame;
+        var value: u64 = 0;
+        for _ in 0..width {
+            value = (value << 8) | (self.bytes[self.cursor] as u64);
+            ++self.cursor;
+        }
+        return value;
+    }
+
+    fn finished(self) -> bool => self.cursor == self.bytes.length();
+    fn flag(&self) -> bool throw ProtocolError => self.number(1)? != 0;
+
+    fn count(&self) -> usize throw ProtocolError {
+        let value = self.number(4)? as usize;
+        if value > self.bytes.length() - self.cursor => throw ProtocolError::InvalidFrame;
+        return value;
+    }
+
+    fn text(&self) -> JSONValue throw ProtocolError + UTF8Error {
+        let size = self.count()?;
+        let text = str::from_utf8(self.bytes.slice(self.cursor, self.cursor + size))?;
+        let value = JSONValue::string(text);
+        self.cursor += size;
+        return value;
+    }
+
+    fn integer(&self, width: usize) -> JSONValue throw ProtocolError =>
+        JSONValue::unsigned_integer(self.number(width)?);
+
+    fn signed(&self) -> JSONValue throw ProtocolError => JSONValue::integer(self.number(8)? as i64);
+
+    fn strings(&self) -> JSONValue throw JSONValueError + ProtocolError + UTF8Error {
+        let count = self.count()?;
+        var values = JSONValue::array();
+        for _ in 0..count {
+            values.push(&&self.text()?)?;
+        }
+        return values;
+    }
+}
+
+// Domain enum order follows the native query contracts, independently of LSP enums.
+private fn completion_kind(kind: u64) -> i64 throw ProtocolError {
+    // JSONValue, Function, Variable, Constant, Structure, Enumeration, EnumCase, Field, Method.
+    let kinds = [1i64, 3i64, 6i64, 21i64, 22i64, 13i64, 20i64, 5i64, 2i64, 9i64, 14i64];
+    if kind >= kinds.length() as u64 => throw ProtocolError::Analyzer;
+    return kinds[kind as usize];
+}
+
+private fn symbol_kind(kind: u64, member: bool) -> i64 throw ProtocolError {
+    // Function, Structure, Class, Enumeration, Constant, Field, EnumCase.
+    let kinds = [12i64, 23i64, 5i64, 10i64, 14i64, 8i64, 22i64];
+    if kind >= kinds.length() as u64 => throw ProtocolError::Analyzer;
+    return if kind == 0 && member { 6i64 } else { kinds[kind as usize] };
+}
+
+private fn read_range(&reader: Reader) -> JSONValue throw JSONValueError + ProtocolError {
+    var value = JSONValue::object();
+    value.set("start", &&reader.integer(4)?)?;
+    value.set("end", &&reader.integer(4)?)?;
+    return value;
+}
+
+private fn read_edit(
+    &reader: Reader
+) -> JSONValue throw JSONValueError + ProtocolError + UTF8Error {
+    var value = read_range(&reader)?;
+    value.set("replacement", &&reader.text()?)?;
+    return value;
+}
+
+private fn read_edits(
+    &reader: Reader
+) -> JSONValue throw JSONValueError + ProtocolError + UTF8Error {
+    let count = reader.count()?;
+    var values = JSONValue::array();
+    for _ in 0..count {
+        values.push(&&read_edit(&reader)?)?;
+    }
+    return values;
+}
+
+private fn read_document(
+    &reader: Reader
+) -> JSONValue throw JSONValueError + ProtocolError + UTF8Error {
+    var value = JSONValue::object();
+    value.set("uri", &&reader.text()?)?;
+    value.set("text", &&reader.text()?)?;
+    value.set("version", &&reader.signed()?)?;
+    value.set("open", &&JSONValue::boolean(reader.flag()?))?;
+    return value;
+}
+
+private fn read_documents(
+    &reader: Reader
+) -> JSONValue throw JSONValueError + ProtocolError + UTF8Error {
+    let count = reader.count()?;
+    var values = JSONValue::array();
+    for _ in 0..count {
+        values.push(&&read_document(&reader)?)?;
+    }
+    return values;
+}
+
+private fn read_texts(
+    &reader: Reader
+) -> JSONValue throw JSONValueError + ProtocolError + UTF8Error =>
+    document_texts(read_documents(&reader)?)?;
+
+private fn document_texts(documents: JSONValue) -> JSONValue throw JSONValueError {
+    var texts = JSONValue::object();
+    for index in 0..documents.length()? {
+        let document = documents.at(index)?;
+        let uri = document.get("uri")?;
+        texts.set(uri.as_str()?, &&document.get("text")?)?;
+    }
+    return texts;
+}
+
+private fn read_diagnostic(
+    &reader: Reader
+) -> JSONValue throw JSONValueError + ProtocolError + UTF8Error {
+    var value = JSONValue::object();
+    value.set("uri", &&reader.text()?)?;
+    value.set("version", &&reader.signed()?)?;
+    value.set("start", &&reader.integer(4)?)?;
+    value.set("end", &&reader.integer(4)?)?;
+    value.set("message", &&reader.text()?)?;
+    value.set("code", &&reader.text()?)?;
+    value.set("severity", &&JSONValue::unsigned_integer(reader.number(1)? + 1))?;
+    var related = JSONValue::array();
+    let count = reader.count()?;
+    for _ in 0..count {
+        var item = JSONValue::object();
+        item.set("uri", &&reader.text()?)?;
+        item.set("start", &&reader.integer(4)?)?;
+        item.set("end", &&reader.integer(4)?)?;
+        item.set("message", &&reader.text()?)?;
+        related.push(&&item)?;
+    }
+    value.set("related", &&related)?;
+    value.set("notes", &&reader.strings()?)?;
+    return value;
+}
+
+private fn read_document_edits(
+    &reader: Reader
+) -> JSONValue throw JSONValueError + ProtocolError + UTF8Error {
+    var value = JSONValue::object();
+    value.set("uri", &&reader.text()?)?;
+    value.set("text", &&reader.text()?)?;
+    value.set("edits", &&read_edits(&reader)?)?;
+    return value;
+}
+
+private fn read_changed_documents(
+    &reader: Reader
+) -> JSONValue throw JSONValueError + ProtocolError + UTF8Error {
+    let count = reader.count()?;
+    var values = JSONValue::array();
+    for _ in 0..count {
+        values.push(&&read_document_edits(&reader)?)?;
+    }
+    return values;
+}
+
+private fn read_symbol(
+    &reader: Reader,
+    member: bool
+) -> JSONValue throw JSONValueError + ProtocolError + UTF8Error {
+    var value = JSONValue::object();
+    value.set("name", &&reader.text()?)?;
+    let kind = reader.number(1)?;
+    value.set("kind", &&JSONValue::integer(symbol_kind(kind, member)?))?;
+    value.set("uri", &&reader.text()?)?;
+    value.set("start", &&reader.integer(4)?)?;
+    value.set("end", &&reader.integer(4)?)?;
+    value.set("selectionStart", &&reader.integer(4)?)?;
+    value.set("selectionEnd", &&reader.integer(4)?)?;
+    let count = reader.count()?;
+    var children = JSONValue::array();
+    for _ in 0..count {
+        children.push(&&read_symbol(&reader, kind == 1 || kind == 2)?)?;
+    }
+    value.set("children", &&children)?;
+    return value;
+}
+
+private fn read_callable(
+    &reader: Reader
+) -> JSONValue throw JSONValueError + ProtocolError + UTF8Error {
+    var value = JSONValue::object();
+    value.set("name", &&reader.text()?)?;
+    value.set("detail", &&reader.text()?)?;
+    value.set("kind", &&JSONValue::integer(if reader.flag()? { 6 } else { 12 }))?;
+    value.set("uri", &&reader.text()?)?;
+    value.set("start", &&reader.integer(4)?)?;
+    value.set("end", &&reader.integer(4)?)?;
+    value.set("selectionStart", &&reader.integer(4)?)?;
+    value.set("selectionEnd", &&reader.integer(4)?)?;
+    return value;
+}
+
+fn decode_reply(
+    method: u8,
+    bytes: [u8]
+) -> JSONValue throw JSONValueError + ProtocolError + UTF8Error {
+    var reader = Reader::new(bytes);
+    var value = JSONValue::object();
+    let ok = reader.flag()?;
+    value.set("ok", &&JSONValue::boolean(ok))?;
+    if !ok {
+        value.set("error", &&reader.text()?)?;
+        return value;
+    }
+    value.set("revision", &&reader.integer(8)?)?;
+    if reader.flag()? {
+        let reason = reader.number(1)?;
+        if reason > 2 => throw ProtocolError::Analyzer;
+        value.set(
+            "queryErrorCode",
+            &&JSONValue::integer(if reason == 0 { -32602 } else { -32803 })
+        )?;
+        value.set("queryError", &&reader.text()?)?;
+        return value;
+    }
+    if method == 0 {
+        value.set("protocol", &&reader.integer(4)?)?;
+    } else if method == 1 {
+    } else if method == 2 {
+        value.set("projects", &&reader.strings()?)?;
+    } else if method == 3 || method == 4 || method == 5 {
+        let documents = read_documents(&reader)?;
+        var texts = document_texts(documents)?;
+        value.set("documents", &&documents)?;
+        let extra = reader.count()?;
+        for _ in 0..extra {
+            let uri = reader.text()?;
+            texts.set(uri.as_str()?, &&reader.text()?)?;
+        }
+        value.set("texts", &&texts)?;
+        let count = reader.count()?;
+        var diagnostics = JSONValue::array();
+        for _ in 0..count {
+            diagnostics.push(&&read_diagnostic(&reader)?)?;
+        }
+        value.set("diagnostics", &&diagnostics)?;
+        value.set("warnings", &&reader.strings()?)?;
+        let watch_count = reader.count()?;
+        var watchers = JSONValue::array();
+        for _ in 0..watch_count {
+            var pattern = JSONValue::object();
+            pattern.set("baseUri", &&reader.text()?)?;
+            pattern.set("pattern", &&reader.text()?)?;
+            var watch = JSONValue::object();
+            watch.set("globPattern", &&pattern)?;
+            watch.set("kind", &&JSONValue::integer(7))?;
+            watchers.push(&&watch)?;
+        }
+        value.set("watchers", &&watchers)?;
+    } else if method == 19 || method == 20 {
+        value.set("text", &&reader.text()?)?;
+        let count = reader.count()?;
+        var items = JSONValue::array();
+        for _ in 0..count {
+            var item = read_range(&reader)?;
+            if method == 20 => item.set("kind", &&reader.integer(1)?)?;
+            items.push(&&item)?;
+        }
+        value.set("items", &&items)?;
+    } else if method == 17 {
+        value.set("text", &&reader.text()?)?;
+        value.set("items", &&read_edits(&reader)?)?;
+    } else if method == 18 {
+        value.set("text", &&reader.text()?)?;
+        let count = reader.count()?;
+        var items = JSONValue::array();
+        for _ in 0..count {
+            var action = JSONValue::object();
+            action.set("title", &&reader.text()?)?;
+            let kind = reader.number(1)?;
+            if kind > 1 => throw ProtocolError::Analyzer;
+            action.set(
+                "kind",
+                &&JSONValue::string(if kind == 0 { "quickfix" } else { "source.organizeImports" })
+            )?;
+            if reader.flag()? {
+                let diagnostic = read_diagnostic(&reader)?;
+                for key in ["start", "end", "message", "code", "severity"] {
+                    action.set(key, &&diagnostic.get(key)?)?;
+                }
+            }
+            action.set("documents", &&read_changed_documents(&reader)?)?;
+            items.push(&&action)?;
+        }
+        value.set("items", &&items)?;
+    } else if method == 15 || method == 16 {
+        value.set("text", &&reader.text()?)?;
+        let count = reader.count()?;
+        var items = JSONValue::array();
+        for _ in 0..count {
+            var item = JSONValue::object();
+            if method == 15 {
+                item = read_range(&reader)?;
+                item.set("kind", &&reader.integer(4)?)?;
+                item.set("modifiers", &&reader.integer(4)?)?;
+            } else {
+                item.set("position", &&reader.integer(4)?)?;
+                item.set("label", &&reader.text()?)?;
+                item.set("kind", &&JSONValue::unsigned_integer(reader.number(1)? + 1))?;
+            }
+            items.push(&&item)?;
+        }
+        value.set("items", &&items)?;
+    } else if method == 21 || method == 22 || method == 23 {
+        var item = JSONValue::null();
+        if reader.flag()? => item = read_callable(&reader)?;
+        value.set("item", &&item)?;
+        let count = reader.count()?;
+        var calls = JSONValue::array();
+        for _ in 0..count {
+            var call = JSONValue::object();
+            call.set("item", &&read_callable(&reader)?)?;
+            let count = reader.count()?;
+            var ranges = JSONValue::array();
+            for _ in 0..count {
+                ranges.push(&&read_range(&reader)?)?;
+            }
+            call.set("ranges", &&ranges)?;
+            calls.push(&&call)?;
+        }
+        value.set("calls", &&calls)?;
+        value.set("texts", &&read_texts(&reader)?)?;
+    } else if method == 13 || method == 14 {
+        let count = reader.count()?;
+        var symbols = JSONValue::array();
+        for _ in 0..count {
+            symbols.push(&&read_symbol(&reader, false)?)?;
+        }
+        value.set("symbols", &&symbols)?;
+        let documents = read_documents(&reader)?;
+        if method == 13 {
+            if documents.length()? != 0 {
+                value.set("text", &&documents.at(0)?.get("text")?)?;
+            }
+        } else {
+            value.set("texts", &&document_texts(documents)?)?;
+        }
+    } else if method == 12 {
+        var signature = JSONValue::null();
+        if reader.flag()? {
+            signature = JSONValue::object();
+            signature.set("label", &&reader.text()?)?;
+            let labels = reader.strings()?;
+            var parameters = JSONValue::array();
+            for index in 0..labels.length()? {
+                var parameter = JSONValue::object();
+                parameter.set("label", &&labels.at(index)?)?;
+                parameters.push(&&parameter)?;
+            }
+            signature.set("parameters", &&parameters)?;
+            if reader.flag()? => signature.set("activeParameter", &&reader.integer(4)?)?;
+        }
+        value.set("signature", &&signature)?;
+    } else if method == 10 || method == 11 {
+        var rename = JSONValue::null();
+        if reader.flag()? {
+            rename = read_range(&reader)?;
+            rename.set("placeholder", &&reader.text()?)?;
+            rename.set("documents", &&read_changed_documents(&reader)?)?;
+        }
+        value.set("rename", &&rename)?;
+    } else if method == 9 {
+        var completion = read_range(&reader)?;
+        let count = reader.count()?;
+        var items = JSONValue::array();
+        for _ in 0..count {
+            var item = JSONValue::object();
+            let label = reader.text()?;
+            item.set("label", &&JSONValue::string(label.as_str()?))?;
+            item.set("kind", &&JSONValue::integer(completion_kind(reader.number(1)?)?))?;
+            item.set("detail", &&reader.text()?)?;
+            let module = reader.text()?;
+            let imported = reader.flag()?;
+            let order = if imported { "1" } else { "0" };
+            item.set(
+                "sortText",
+                &&JSONValue::string(f"{order}{label.as_str()?}{module.as_str()?}")
+            )?;
+            if imported {
+                let edit = read_edit(&reader)?;
+                let start = edit.get("start")?.as_u64()?;
+                let end = edit.get("end")?.as_u64()?;
+                let replacement_start = completion.get("start")?.as_u64()?;
+                let replacement_end = completion.get("end")?.as_u64()?;
+                if start == end && start == replacement_start {
+                    let prefix = edit.get("replacement")?;
+                    item.set(
+                        "insertText",
+                        &&JSONValue::string(f"{prefix.as_str()?}{label.as_str()?}")
+                    )?;
+                    item.set("filterText", &&label)?;
+                } else if end <= replacement_start || replacement_end <= start {
+                    var edits = JSONValue::array();
+                    edits.push(&&edit)?;
+                    item.set("importEdits", &&edits)?;
+                } else {
+                    continue;
+                }
+            }
+            items.push(&&item)?;
+        }
+        completion.set("items", &&items)?;
+        value.set("completion", &&completion)?;
+    } else if method == 7 || method == 8 {
+        let count = reader.count()?;
+        var locations = JSONValue::array();
+        for _ in 0..count {
+            var location = JSONValue::object();
+            location.set("uri", &&reader.text()?)?;
+            location.set("start", &&reader.integer(4)?)?;
+            location.set("end", &&reader.integer(4)?)?;
+            locations.push(&&location)?;
+        }
+        value.set("locations", &&locations)?;
+        value.set("texts", &&read_texts(&reader)?)?;
+    } else if method == 6 {
+        var hover = JSONValue::null();
+        if reader.flag()? {
+            hover = JSONValue::object();
+            hover.set("text", &&reader.text()?)?;
+            hover.set("uri", &&reader.text()?)?;
+            hover.set("start", &&reader.integer(4)?)?;
+            hover.set("end", &&reader.integer(4)?)?;
+            hover.set("documentation", &&reader.text()?)?;
+        }
+        value.set("hover", &&hover)?;
+    } else {
+        throw ProtocolError::Analyzer;
+    }
+    if !reader.finished() => throw ProtocolError::InvalidFrame;
+    return value;
+}

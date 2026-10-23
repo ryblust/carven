@@ -2,8 +2,8 @@ module carven:backend.emission.stmt.impl;
 
 import :backend.emission.render;
 import :backend.target.symbol;
-import :support.visit;
 import :support.invariant;
+import :support.visit;
 import std;
 
 namespace {

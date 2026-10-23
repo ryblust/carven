@@ -3,11 +3,11 @@ module carven:semantic.evaluation.operation;
 import :diagnostics.code;
 import :semantic.semir.body;
 import :semantic.semir.constant;
-import :semantic.semir.constant_access;
 import :semantic.semir.ids;
 import :semantic.semir.operation;
 import :semantic.semir.simd;
 import :semantic.semir.type;
+import :semantic.semir.values;
 import std;
 
 // Advances a checked integer range without stepping beyond an inclusive end.

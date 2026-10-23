@@ -1,7 +1,7 @@
 module carven:test.internal.frontend.lex.tokens;
 
-import :frontend.lex.token;
 import :frontend.lex;
+import :frontend.lex.token;
 import :source.text;
 import :test.harness.framework;
 import :test.internal.frontend.lex.fixture;

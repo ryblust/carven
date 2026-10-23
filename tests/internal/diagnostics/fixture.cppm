@@ -35,6 +35,7 @@ auto make_diagnostic(
             .related = std::move(related),
             .notes = {},
             .helps = {},
+            .fixes = {},
         },
     };
 }

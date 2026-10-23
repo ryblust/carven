@@ -119,12 +119,5 @@ auto ProgramDraft::preview_failures() noexcept -> AnalysisResult<FailureSolution
 
 auto ProgramDraft::construction_failure_known_members(ConstructionFailureRef source) noexcept
     -> std::vector<TypeID> {
-    if (const auto* closed = std::get_if<FailureSetID>(&source)) {
-        return failure_set_copy(*closed).members;
-    }
-    const auto preview = preview_failures();
-    if (!preview) {
-        invariant_violation("failure preview unexpectedly rejected an unchecked requirement");
-    }
-    return preview->known_members(source);
+    return storage.failure_constraints.known_members(source, storage.failure_sets);
 }

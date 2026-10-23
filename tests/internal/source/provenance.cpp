@@ -2,8 +2,8 @@ module carven:test.internal.source.provenance;
 
 import :source.manager;
 import :source.module_path;
-import :source.provenance.verify;
 import :source.provenance;
+import :source.provenance.verify;
 import :test.harness.framework;
 import std;
 

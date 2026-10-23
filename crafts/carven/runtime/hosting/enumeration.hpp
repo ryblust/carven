@@ -43,7 +43,7 @@ auto visit_native_enum(T&& value, Consumer&& consume) noexcept -> bool {
                 if (value != descriptor.second) {
                     return false;
                 }
-                consume(descriptor.first, std::tuple<>());
+                std::forward<Consumer>(consume)(descriptor.first, std::tuple<>());
             } else {
                 auto&& storage =
                     std::forward<T>(value).*carven_enum_storage(static_cast<Enum*>(nullptr));
@@ -54,9 +54,11 @@ auto visit_native_enum(T&& value, Consumer&& consume) noexcept -> bool {
                 using Payload = std::remove_cvref_t<decltype(payload)>;
                 std::apply(
                     [&](const auto&... field) noexcept {
-                        consume(
+                        std::forward<Consumer>(consume)(
                             descriptor.first,
                             std::forward_as_tuple(
+                                // This only forms field references; it does not move the payload.
+                                // NOLINTNEXTLINE(bugprone-use-after-move)
                                 std::forward<decltype(payload)>(payload).*field.second...
                             )
                         );

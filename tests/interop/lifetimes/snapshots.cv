@@ -30,7 +30,9 @@ test "Read traversal: native fields retain observable copies and cleanup on earl
     };
     reset();
     for value in [original, original] {
-        if value.text.is_empty() { continue; }
+        if value.text.is_empty() {
+            continue;
+        }
         break;
     }
     check(matches("111 111 -11 -11 "));
@@ -38,12 +40,12 @@ test "Read traversal: native fields retain observable copies and cleanup on earl
     var visits = 0;
     try {
         for value in [
-                original,
-                NativeSnapshot {
-                    text: "next",
-                    native: CopyOwner { initialization_argument(false)? }
-                }
-            ] {
+            original,
+            NativeSnapshot {
+                text: "next",
+                native: CopyOwner { initialization_argument(false)? }
+            }
+        ] {
             visits += 1;
         }
     } catch {
@@ -53,26 +55,13 @@ test "Read traversal: native fields retain observable copies and cleanup on earl
     check(matches("111 2 -11 "));
 }
 
-private fn selected_snapshot(
-    flag: bool,
-    &first: i32,
-    &second: i32
-) -> i32 => ::lifetime_probe::snapshot_after_write(
-        if flag { first } else { second },
-        &first,
-        &second
-    )
-    as i32;
+private fn selected_snapshot(flag: bool, &first: i32, &second: i32) -> i32 =>
+    ::lifetime_probe::snapshot_after_write(if flag { first } else { second }, &first, &second)
+        as i32;
 
-private fn known_snapshot(
-    &first: i32,
-    &second: i32
-) -> i32 => ::lifetime_probe::snapshot_after_write(
-        if true { first } else { second },
-        &first,
-        &second
-    )
-    as i32;
+private fn known_snapshot(&first: i32, &second: i32) -> i32 =>
+    ::lifetime_probe::snapshot_after_write(if true { first } else { second }, &first, &second)
+        as i32;
 
 test "Lifetimes: scalar value regions complete snapshots before native calls" {
     var first = 3;
@@ -127,7 +116,9 @@ test "Lifetimes: known scalar queries retain temporary owners through later oper
 
 fn array_source_step(succeeds: bool) -> i32 throw Failure {
     ::lifetime_probe::mutate_array_source();
-    if !succeeds { throw Failure::Stop; }
+    if !succeeds {
+        throw Failure::Stop;
+    }
     return 2;
 }
 

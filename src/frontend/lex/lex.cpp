@@ -3,10 +3,10 @@ module carven:frontend.lex.impl;
 import :diagnostics.builder;
 import :diagnostics.diagnosed;
 import :diagnostics.diagnostic;
+import :frontend.lex;
 import :frontend.lex.layout;
 import :frontend.lex.literal;
 import :frontend.lex.token;
-import :frontend.lex;
 import :frontend.literal;
 import :source.identifier;
 import :source.text;
@@ -73,6 +73,101 @@ constexpr auto token_kind(SourceKeyword keyword) noexcept -> TokenKind {
     std::unreachable();
 }
 
+// Only an invalid opaque construct uses these anchors. Valid literals always
+// use their real closing fence, including code-looking lines in their payload.
+auto recovery_line(std::string_view source, std::uint32_t start) noexcept -> std::uint32_t {
+    auto line = source.find_first_of("\r\n", start);
+    while (line != std::string_view::npos) {
+        const auto ending = line;
+        ++line;
+        if (line < source.size() && source[line - 1] == '\r' && source[line] == '\n') {
+            ++line;
+        }
+        auto first = line;
+        while (first < source.size() && (source[first] == ' ' || source[first] == '\t')) {
+            ++first;
+        }
+        if (first < source.size() && source[first] == '}') {
+            return static_cast<std::uint32_t>(ending);
+        }
+        auto end = first;
+        while (end < source.size() && is_identifier_continue(source[end])) {
+            ++end;
+        }
+        const auto identifier = classify_identifier(source.substr(first, end - first));
+        if (const auto* keyword = std::get_if<KeywordIdentifier>(&identifier)) {
+            switch (keyword->keyword) {
+                case SourceKeyword::Import:
+                case SourceKeyword::Export:
+                case SourceKeyword::Private:
+                case SourceKeyword::Fn:
+                case SourceKeyword::Async:
+                case SourceKeyword::Struct:
+                case SourceKeyword::Class:
+                case SourceKeyword::Enum:
+                case SourceKeyword::Test:
+                case SourceKeyword::Const:
+                case SourceKeyword::Let:
+                case SourceKeyword::Var:
+                case SourceKeyword::Return:
+                case SourceKeyword::If:
+                case SourceKeyword::For:
+                case SourceKeyword::While:
+                case SourceKeyword::Try:
+                case SourceKeyword::Match:
+                case SourceKeyword::Throw:   return static_cast<std::uint32_t>(ending);
+                default:                     break;
+            }
+        }
+        line = source.find_first_of("\r\n", first);
+    }
+    return static_cast<std::uint32_t>(source.size());
+}
+
+auto recover_string_end(std::string_view source, std::uint32_t start) noexcept -> std::uint32_t {
+    auto position = start;
+    const auto raw = source[position] == 'r';
+    if (raw) {
+        ++position;
+    }
+    const auto hashes_start = position;
+    while (position < source.size() && source[position] == '#') {
+        ++position;
+    }
+    const auto hashes = position - hashes_start;
+    if (position == source.size() || source[position] != '"') {
+        return recovery_line(source, start);
+    }
+    const auto multiline = source.substr(position).starts_with("\"\"\"");
+    const auto closing = std::string(multiline ? 3uz : 1uz, '"') + std::string(hashes, '#');
+    position += multiline ? 3u : 1u;
+    while (position < source.size()) {
+        if (source.substr(position).starts_with(closing)) {
+            if (multiline) {
+                const auto preceding = source.find_last_of("\r\n", position - 1);
+                const auto line = preceding == std::string_view::npos ? 0uz : preceding + 1;
+                if (source.substr(line, position - line).find_first_not_of(" \t")
+                    != std::string_view::npos) {
+                    return recovery_line(source, start);
+                }
+            }
+            return position + static_cast<std::uint32_t>(closing.size());
+        }
+        if (!multiline && (source[position] == '\n' || source[position] == '\r')) {
+            return position;
+        }
+        if (!raw
+            && source[position] == '\\'
+            && position + 1 < source.size()
+            && source[position + 1] != '\n'
+            && source[position + 1] != '\r') {
+            ++position;
+        }
+        ++position;
+    }
+    return multiline ? recovery_line(source, start) : position;
+}
+
 class Lexer final {
 public:
     explicit Lexer(SourceView source_view) noexcept;
@@ -98,7 +193,7 @@ private:
     auto diagnose_invalid(std::string_view message) noexcept -> void;
     auto consume_utf8() noexcept -> bool;
     auto skip_whitespace_and_comments() noexcept -> void;
-    auto scan_interpolation(bool specification, bool multiline) noexcept -> void;
+    auto scan_interpolation(bool specification, bool multiline) noexcept -> bool;
     auto scan_interpolation_expression() noexcept -> void;
     auto scan_token() noexcept -> void;
     auto scan_identifier() noexcept -> void;
@@ -212,16 +307,29 @@ auto Lexer::skip_whitespace_and_comments() noexcept -> void {
             continue;
         }
 
+        if (current() == '/' && current(1) == '*') {
+            token_start = position;
+            const auto closing = source.find("*/", position + 2);
+            position = closing == std::string_view::npos ? recovery_line(source, token_start)
+                                                         : static_cast<std::uint32_t>(closing + 2);
+            diagnose_invalid(
+                closing == std::string_view::npos
+                    ? "unterminated block comment; use '//' for Carven comments"
+                    : "block comments are not supported; use '//' for Carven comments"
+            );
+            continue;
+        }
+
         break;
     }
 }
 
-auto Lexer::scan_interpolation(bool specification, bool multiline) noexcept -> void {
+auto Lexer::scan_interpolation(bool specification, bool multiline) noexcept -> bool {
     if (++interpolation_depth > 512) {
         diagnose("interpolation nesting limit exceeded", span());
         position = static_cast<std::uint32_t>(source.size());
         --interpolation_depth;
-        return;
+        return false;
     }
     auto bytes = std::string();
     auto layout = std::optional<StringBlockLayout>();
@@ -241,6 +349,9 @@ auto Lexer::scan_interpolation(bool specification, bool multiline) noexcept -> v
     };
     while (!at_end()) {
         const auto value = current();
+        if (!multiline && (value == '\n' || value == '\r')) {
+            break;
+        }
         if ((!specification
              && (multiline ? source.substr(position).starts_with("\"\"\"") : value == '"'))
             || (specification && value == '}')) {
@@ -272,7 +383,7 @@ auto Lexer::scan_interpolation(bool specification, bool multiline) noexcept -> v
                 specification ? TokenKind::InterpolationClose : TokenKind::InterpolationEnd
             );
             --interpolation_depth;
-            return;
+            return true;
         }
         if (value == '{' || value == '}') {
             if (!specification && current(1) == value) {
@@ -327,6 +438,7 @@ auto Lexer::scan_interpolation(bool specification, bool multiline) noexcept -> v
     flush();
     diagnose("unterminated interpolated string", span());
     --interpolation_depth;
+    return false;
 }
 
 auto Lexer::scan_interpolation_expression() noexcept -> void {
@@ -369,6 +481,9 @@ auto Lexer::scan_token() noexcept -> void {
     const auto value = advance();
 
     if (value == 'f' && current() == '"') {
+        const auto opening = token_start;
+        const auto retained_tokens = result.value.tokens().size();
+        const auto retained_diagnostics = result.diagnostics.size();
         const auto multiline = source.substr(position).starts_with("\"\"\"");
         position += multiline ? 3u : 1u;
         if (multiline) {
@@ -384,7 +499,22 @@ auto Lexer::scan_token() noexcept -> void {
             }
         }
         append_token(TokenKind::InterpolationStart);
-        scan_interpolation(false, multiline);
+        const auto complete = scan_interpolation(false, multiline);
+        if (result.diagnostics.size() != retained_diagnostics) {
+            const auto end = complete ? position : recover_string_end(source, opening + 1);
+            result.value.truncate(retained_tokens);
+            token_start = opening;
+            position = end;
+            append_token(TokenKind::Invalid);
+            result.diagnostics.erase(
+                result.diagnostics.begin() + retained_diagnostics + 1,
+                result.diagnostics.end()
+            );
+            auto& primary = result.diagnostics.back().attachment.primary->span.span;
+            if (primary.start() < opening || primary.end() > end) {
+                primary = Span::from_bounds(opening, std::min(end, opening + 2));
+            }
+        }
         return;
     }
 
@@ -533,6 +663,11 @@ auto Lexer::scan_string(bool c_string) noexcept -> void {
     );
     const auto consumed = scanned.has_value() ? scanned->consumed : scanned.error().consumed;
     position = token_start + prefix + static_cast<std::uint32_t>(consumed);
+    if (!scanned
+        && !c_string
+        && (source[token_start] == 'r' || source.substr(token_start).starts_with("\"\"\""))) {
+        position = recover_string_end(source, token_start);
+    }
     if (scanned.has_value()) {
         if (c_string) {
             append_literal_token(CStringLiteralValue {.bytes = std::move(scanned->value.bytes)});
@@ -551,16 +686,13 @@ auto Lexer::scan_string(bool c_string) noexcept -> void {
         );
     } else {
         append_token(TokenKind::Invalid);
-        const auto start = token_start + static_cast<std::uint32_t>(scanned.error().error_offset);
+        const auto error = token_start + static_cast<std::uint32_t>(scanned.error().error_offset);
+        const auto start = error > position ? token_start : error;
+        const auto length =
+            error > position ? 1u : static_cast<std::uint32_t>(scanned.error().error_length);
         diagnose(
             "malformed string literal",
-            Span::from_bounds(
-                start,
-                std::min(
-                    static_cast<std::uint32_t>(source.size()),
-                    start + static_cast<std::uint32_t>(scanned.error().error_length)
-                )
-            )
+            Span::from_bounds(start, std::min(position, start + length))
         );
     }
 }

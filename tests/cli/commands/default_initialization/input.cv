@@ -10,27 +10,7 @@ struct Values {
 
 const {
     println(Foo {});
-    println(
-        Values {
-            items: [
-                Foo {
-                    a: 0,
-                    ...
-                },
-                Foo {
-                    b: String {},
-                    ...
-                }
-            ],
-            enabled: true
-        }
-    );
-}
-
-println(Foo {});
-
-println(
-    Values {
+    println(Values {
         items: [
             Foo {
                 a: 0,
@@ -42,5 +22,21 @@ println(
             }
         ],
         enabled: true
-    }
-);
+    });
+}
+
+println(Foo {});
+
+println(Values {
+    items: [
+        Foo {
+            a: 0,
+            ...
+        },
+        Foo {
+            b: String {},
+            ...
+        }
+    ],
+    enabled: true
+});

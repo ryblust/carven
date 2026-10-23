@@ -83,7 +83,7 @@ const TestSuite suite([] static noexcept {
                         TargetPlanningRequest {
                             .test_mode = TestGenerationMode::None,
                             .linkage_domain = *LinkageDomain::explicit_value("test:cpp-visibility"),
-                            .library = std::nullopt,
+                            .libraries = {},
                         }
                     );
                     const auto allowed = std::string_view(modifier) == "export"
@@ -124,7 +124,7 @@ const TestSuite suite([] static noexcept {
                 TargetPlanningRequest {
                     .test_mode = TestGenerationMode::None,
                     .linkage_domain = LinkageDomain::explicit_value("test:cpp-collision").value(),
-                    .library = std::nullopt,
+                    .libraries = {},
                 }
             );
 
@@ -253,7 +253,7 @@ const TestSuite suite([] static noexcept {
                 TargetPlanningRequest {
                     .test_mode = TestGenerationMode::None,
                     .linkage_domain = LinkageDomain::explicit_value("test:cpp-isolation").value(),
-                    .library = std::nullopt,
+                    .libraries = {},
                 }
             );
             if (!(expect(!result.has_value()))) {
@@ -310,7 +310,7 @@ const TestSuite suite([] static noexcept {
                 TargetPlanningRequest {
                     .test_mode = TestGenerationMode::None,
                     .linkage_domain = LinkageDomain::explicit_value("test:cpp-delegation").value(),
-                    .library = std::nullopt,
+                    .libraries = {},
                 }
             );
             expect(result.has_value());

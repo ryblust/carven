@@ -28,7 +28,7 @@ Value methods use their receiver, such as `samples.sqrt()`.
 | SIMD | `std::simd`, `std::simd.bytes`, `std::simd.floats`, `std::simd.scan` | [Vector and mask primitives, block traversal, and byte-set queries](simd.md) |
 | JSON | `std::json` | [Validation, owned values, parsing, and writing](json.md) |
 | Build | `std::build` | [Executable targets and object reuse](build.md) |
-| Compilation | `std::compiler` | [Hosted C++ generation and implementation dependencies](build.md#compilation-api) |
+| Compilation | `std::compiler` | [C++ generation and implementation dependencies](build.md#compilation-api) |
 | TOML | `std::toml` | [Configuration parsing, owned values, and borrowed traversal](toml.md) |
 | Networking | `std::net` | [TCP reads and writes over host-owned connections](net.md) |
 | Testing | `std::testing`; `assert` from `std::core` | [Assertions and test reports](execution.md#tests) |

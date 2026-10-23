@@ -2,6 +2,7 @@ module carven:test.workspace;
 
 import :diagnostics.code;
 import :frontend.document;
+import :semantic.analysis.source;
 import :semantic.semir.program;
 import :semantic.semir.type;
 import :source.module_path;
@@ -48,6 +49,367 @@ auto expect_type(const WorkspaceHoverQuery& query, BuiltinType type) noexcept ->
 }
 
 const TestSuite tests([] static noexcept {
+    "Workspace: editing errors preserve following queries"_test = [] static noexcept {
+        auto host = WorkspaceAnalysisHost(16uz);
+        const auto project =
+            std::array {project_module("app.cv", "pkg.app"), project_module("lib.cv", "pkg.lib")};
+        update(host, "lib.cv", 1, "struct Point { width: i32 } fn provide() -> i64 => 42;");
+        struct EditingState final {
+            std::string_view before_good;
+            std::string_view query;
+            bool implicit_entry;
+        };
+        const auto states = std::array {
+            EditingState {"let broken = provide(\n", "p.width;", true},
+            EditingState {"let broken = provide(; ", "p.width; }", false},
+            EditingState {"let values = [1]; let broken = values[; ", "p.width; }", false},
+            EditingState {"let note = \"unfinished😀\n", "p.width; }", false},
+            EditingState {"let note = f\"hole {provide()\n", "p.width; }", false},
+            EditingState {"", "p.width; // unfinished comment😀", false},
+            EditingState {"", "println(p.wid", false},
+        };
+        auto version = 0;
+        for (const auto& state : states) {
+            const auto text = std::string("import .lib using { Point, provide }\n")
+                + (state.implicit_entry ? "" : "fn sample() {\n") + std::string(state.before_good)
+                + "let good = provide(); println(good); let p = Point { width: 7 }; "
+                + std::string(state.query);
+            update(host, "app.cv", ++version, text);
+            const auto snapshot = host.snapshot();
+            expect(snapshot.semantic(project).result->program() == nullptr).note(text);
+            const auto definition =
+                snapshot.definition(project, "app.cv", offset(text, "provide();"));
+            if (!expect(definition.result.has_value()).note(text)) {
+                continue;
+            }
+            expect_equal(definition.result->document, "lib.cv");
+            const auto hover = snapshot.hover(project, "app.cv", offset(text, "good);"));
+            if (!expect(hover.result.has_value()).note(text)) {
+                continue;
+            }
+            expect_equal(hover.result->type_description, "i64");
+            const auto completion =
+                snapshot.completion(project, "app.cv", offset(text, "p.wid") + 5);
+            if (!expect_equal(completion.candidates.size(), 1uz).note(text)) {
+                continue;
+            }
+            expect_equal(completion.candidates.front().name, "width");
+            expect_equal(completion.candidates.front().detail, "i32");
+        }
+    };
+
+    "Workspace: incomplete imports do not fabricate a unique binding"_test = [] static noexcept {
+        auto host = WorkspaceAnalysisHost(16uz);
+        const auto project =
+            std::array {project_module("app.cv", "pkg.app"), project_module("lib.cv", "pkg.lib")};
+        update(host, "lib.cv", 1, "fn provide() -> i32 => 1;");
+        auto version = 0ll;
+        for (const auto import_text :
+             {"import .\n",
+              "import .using.\n",
+              "import .lib using ;\n",
+              "import .missing using provide;\n",
+              "import .lib using { provide, missing }\n"}) {
+            const auto text =
+                std::string(import_text) + "import .lib using provide;\nfn sample() { provide(); }";
+            update(host, "app.cv", ++version, text);
+            const auto snapshot = host.snapshot();
+            const auto strict = snapshot.semantic(project);
+            expect(strict.result->program() == nullptr);
+            expect(!strict.result->diagnostics().empty());
+            const auto definition =
+                snapshot.definition(project, "app.cv", offset(text, "provide();"));
+            // An unfinished reference without `using` introduces no names;
+            // an unknown or failed selection cannot establish a unique binding.
+            expect_equal(
+                definition.result.has_value(),
+                import_text == std::string_view("import .\n")
+                    || import_text == std::string_view("import .using.\n")
+            );
+            const auto symbols = snapshot.document_symbols("app.cv");
+            require(symbols && symbols->result);
+            expect(!symbols->result->empty());
+        }
+    };
+
+    "Workspace: damaged named declarations preserve independent module bindings"_test =
+        [] static noexcept {
+            auto host = WorkspaceAnalysisHost(16uz);
+            const auto project = std::array {
+                project_module("app.cv", "pkg.app"),
+                project_module("lib.cv", "pkg.lib")
+            };
+            const auto text = std::string(
+                "import .lib using { provide, broken } fn sample() { provide(); broken(); }"
+            );
+            update(host, "app.cv", 1, text);
+            auto version = 0ll;
+            for (const auto damaged :
+                 {"const broken = ;",
+                  "fn broken(value: ) {}",
+                  "struct broken { value: }",
+                  "class broken { value: }",
+                  "enum broken { Case(,) }"}) {
+                const auto library = std::string("fn provide() -> i32 => 1; ") + damaged
+                    + " fn broken() -> i32 => 2;";
+                update(host, "lib.cv", ++version, library);
+                const auto snapshot = host.snapshot();
+                expect(snapshot.semantic(project).result->program() == nullptr);
+                const auto intact =
+                    snapshot.definition(project, "app.cv", offset(text, "provide();"));
+                require(intact.result.has_value());
+                expect_equal(intact.result->document, "lib.cv");
+                expect(!snapshot.definition(project, "app.cv", offset(text, "broken();")).result);
+            }
+        };
+
+    "Workspace: explicit annotations survive an unavailable initializer"_test = [] static noexcept {
+        auto host = WorkspaceAnalysisHost(16uz);
+        const auto project = std::array {project_module("app.cv", "pkg.app")};
+        auto version = 0ll;
+        for (const auto initializer : {"missing", ""}) {
+            const auto text = std::string("fn sample() { let value: i64 = ") + initializer
+                + "; let independent = 7; println(independent); }";
+            update(host, "app.cv", ++version, text);
+            const auto snapshot = host.snapshot();
+            expect(snapshot.semantic(project).result->program() == nullptr);
+            const auto declared = snapshot.hover(project, "app.cv", offset(text, "value:"));
+            require(declared.result.has_value());
+            expect_equal(declared.result->type_description, "i64");
+            const auto independent =
+                snapshot.hover(project, "app.cv", offset(text, "independent);"));
+            require(independent.result.has_value());
+            expect_equal(independent.result->type_description, "i32");
+        }
+    };
+
+    "Workspace: validation failures reuse complete source facts without publication"_test =
+        [] static noexcept {
+            auto host = WorkspaceAnalysisHost(16uz);
+            const auto project = std::array {
+                project_module("app.cv", "pkg.app"),
+                project_module("lib.cv", "pkg.lib"),
+            };
+            const auto text = std::string(
+                "import .lib using { Item, answer } fn read() -> i32 { "
+                "var item = Item { 1 }; let taken = &&item; let bad = item.value; "
+                "let result = answer(); return result; }"
+            );
+            update(host, "lib.cv", 1, "struct Item { value: i32 } fn answer() -> i32 => 7;");
+            update(host, "app.cv", 1, text);
+            const auto before = host.snapshot();
+            const auto strict = before.semantic(project);
+            require(strict.result->program() == nullptr);
+            expect(strict.result->source_construction_complete());
+            expect_diagnostic(strict.result->diagnostics(), DiagnosticCode::AccessUnavailable);
+            const auto definition = before.definition(project, "app.cv", offset(text, "answer();"));
+            require(definition.result.has_value());
+            expect_equal(definition.result->document, "lib.cv");
+
+            const auto hover = before.hover(project, "app.cv", offset(text, "result;"));
+            require(hover.result.has_value());
+            expect_equal(hover.result->type_description, "i32");
+
+            expect(!hover.result->type || !std::holds_alternative<TypeID>(*hover.result->type));
+            const auto references = before.references(project, "app.cv", offset(text, "answer();"));
+            require(references.result.has_value());
+
+            expect(
+                std::ranges::any_of(*references.result, [](const auto& location) static noexcept {
+                    return location.document == "lib.cv";
+                })
+            );
+            auto repaired = text;
+            repaired.replace(
+                repaired.find("bad = item.value"),
+                std::string_view("bad = item.value").size(),
+                "bad = taken.value"
+            );
+            update(host, "app.cv", 2, repaired);
+            const auto after = host.snapshot().semantic(project);
+            expect(after.result->program() != nullptr);
+
+            expect_no_diagnostic(after.result->diagnostics(), DiagnosticCode::AccessUnavailable);
+            expect(strict.result->program() == nullptr);
+            expect_diagnostic(strict.result->diagnostics(), DiagnosticCode::AccessUnavailable);
+        };
+
+    "Workspace: partial source facts survive recovery of following statements"_test =
+        [] static noexcept {
+            auto host = WorkspaceAnalysisHost(16uz);
+            const auto project = std::array {
+                project_module("app.cv", "pkg.app"),
+                project_module("lib.cv", "pkg.lib"),
+                project_module("consumer.cv", "pkg.consumer")
+            };
+            update(host, "lib.cv", 1, "fn provide() -> i64 => 42;");
+            update(
+                host,
+                "consumer.cv",
+                1,
+                "import .lib using provide; fn consume() -> i64 => provide();"
+            );
+            const auto text = std::string(
+                "import .lib using provide; fn sample() { let wrong: bool = provide(); "
+                "let broken = missing(); let good = provide(); println(good); }"
+            );
+            update(host, "app.cv", 1, text);
+            const auto snapshot = host.snapshot();
+            const auto strict = snapshot.semantic(project);
+            require(strict.result->program() == nullptr);
+            expect(strict.result->has_source_analysis());
+            expect(!strict.result->source_construction_complete());
+            expect_diagnostic(strict.result->diagnostics(), DiagnosticCode::TypeMismatch);
+            // The callee is known even though conversion of its result failed.
+            const auto original = strict.result->definition("app.cv", offset(text, "provide();"));
+            require(original.has_value());
+            expect_equal(original->document, "lib.cv");
+            const auto hover = snapshot.hover(project, "app.cv", offset(text, "good);"));
+            require(hover.result.has_value());
+            expect_equal(hover.result->type_description, "i64");
+            const auto definition =
+                snapshot.definition(project, "app.cv", offset(text, "provide();"));
+            require(definition.result.has_value());
+            expect_equal(definition.result->document, "lib.cv");
+
+
+            expect(hover.analysis.result->program() == nullptr);
+            const auto references =
+                snapshot.references(project, "app.cv", offset(text, "provide();"), false);
+            require(references.result.has_value());
+            expect_equal(references.result->size(), 5uz);
+
+            for (const auto& occurrence : hover.analysis.result->occurrences("app.cv")) {
+                expect(!occurrence.type || !std::holds_alternative<TypeID>(*occurrence.type));
+            }
+            // Recovery does not rewrite the original diagnostics or publish its body.
+            expect_diagnostic(strict.result->diagnostics(), DiagnosticCode::TypeMismatch);
+            expect(strict.result->program() == nullptr);
+            auto unfinished = text;
+            unfinished
+                .replace(unfinished.find("missing()"), std::string_view("missing()").size(), "");
+            update(host, "app.cv", 2, unfinished);
+            const auto editing = host.snapshot();
+            const auto syntax_failure = editing.semantic(project);
+            expect(!syntax_failure.result->has_source_analysis());
+            const auto editing_refs =
+                editing.references(project, "app.cv", offset(unfinished, "provide();"), false);
+            require(editing_refs.result.has_value());
+            expect_equal(editing_refs.result->size(), 5uz);
+            const auto editing_hover =
+                editing.hover(project, "app.cv", offset(unfinished, "good);"));
+            require(editing_hover.result.has_value());
+            expect_equal(editing_hover.result->type_description, "i64");
+        };
+
+    "Workspace: queries cross errors and reuse completion analysis through prefix edits"_test =
+        [] static noexcept {
+            auto host = WorkspaceAnalysisHost(16uz);
+            const auto project = std::array {
+                project_module("app.cv", "pkg.app"),
+                project_module("lib.cv", "pkg.lib")
+            };
+            const auto library =
+                std::string("struct Point { width: i32 } fn provide() -> i64 => 42;");
+            update(host, "lib.cv", 1, library);
+            auto text = std::string(
+                "import .lib using { Point, provide } fn earlier() -> i32 => true; fn sample() { let broken = missing(); let syntax = ; let separator = 1\nlet good = provide(); println(good); let p = Point { width: 1 }; p.wid"
+            );
+            update(host, "app.cv", 1, text);
+            const auto before = host.snapshot();
+            expect(before.semantic(project).result->program() == nullptr);
+            const auto definition =
+                before.definition(project, "app.cv", offset(text, "provide();"));
+            require(definition.result.has_value());
+            expect_equal(definition.result->document, "lib.cv");
+            const auto hover = before.hover(project, "app.cv", offset(text, "good);"));
+            require(hover.result.has_value());
+            expect_equal(hover.result->type_description, "i64");
+            const auto first =
+                before.completion(project, "app.cv", static_cast<std::uint32_t>(text.size()));
+            require(first.candidates.size() == 1);
+            expect_equal(first.candidates.front().name, "width");
+            expect(first.analysis && first.analysis->program() == nullptr);
+            const auto again =
+                before.completion(project, "app.cv", static_cast<std::uint32_t>(text.size()));
+
+            text += "th";
+            update(host, "app.cv", 2, text);
+            const auto typed = host.snapshot().completion(
+                project,
+                "app.cv",
+                static_cast<std::uint32_t>(text.size())
+            );
+
+            expect_equal(typed.replacement.end(), static_cast<std::uint32_t>(text.size()));
+            update(host, "lib.cv", 2, "struct Point { width: i64 } fn provide() -> i64 => 42;");
+            const auto changed = host.snapshot().completion(
+                project,
+                "app.cv",
+                static_cast<std::uint32_t>(text.size())
+            );
+            require(changed.candidates.size() == 1);
+
+            expect_equal(changed.candidates.front().detail, "i64");
+            const auto shadow = std::string(
+                "import .lib using provide; fn sample() { let provide = missing(); let good = 7; println(provide); good"
+            );
+            update(host, "app.cv", 3, shadow);
+            const auto local =
+                host.snapshot().definition(project, "app.cv", offset(shadow, "provide);"));
+            require(local.result.has_value());
+            expect_equal(local.result->document, "app.cv");
+            expect_equal(local.result->range.start(), offset(shadow, "provide ="));
+            const auto names = host.snapshot().completion(
+                project,
+                "app.cv",
+                static_cast<std::uint32_t>(shadow.size())
+            );
+            const auto failed =
+                std::ranges::find(names.candidates, "provide", &SourceCompletionCandidate::name);
+            require(failed != names.candidates.end());
+            expect(failed->kind == SourceCompletionKind::Variable && failed->detail.empty());
+        };
+
+    "Workspace: completion observes lexical scope and imported fields without changing sources"_test =
+        [] static noexcept {
+            auto host = WorkspaceAnalysisHost(16uz);
+            const auto project =
+                std::array {project_module("app.cv", "app"), project_module("lib.cv", "lib")};
+            update(host, "lib.cv", 1, "struct Point { width: i32 } fn provide() -> i32 => 1;");
+            const auto text = std::string(
+                "import .lib using { provide as compute, Point } fn sample(input: i32) { let earlier = 1; comp"
+            );
+            update(host, "app.cv", 1, text);
+            const auto snapshot = host.snapshot();
+            const auto names =
+                snapshot.completion(project, "app.cv", static_cast<std::uint32_t>(text.size()));
+            auto labels = std::set<std::string>();
+            for (const auto& candidate : names.candidates) {
+                labels.insert(candidate.name);
+            }
+            expect(
+                labels.contains("compute") && labels.contains("input") && labels.contains("earlier")
+            );
+            expect(!labels.contains("provide"));
+            expect_equal(names.replacement.start(), static_cast<std::uint32_t>(text.rfind("comp")));
+            const auto syntax = snapshot.syntax("app.cv");
+            require(syntax.has_value());
+            expect_equal(syntax->result->source().text, std::string_view(text));
+            const auto member = std::string(
+                "import .lib using Point; fn sample() { let p = Point { width: 1 }; p.wid"
+            );
+            update(host, "app.cv", 2, member);
+            const auto fields = host.snapshot().completion(
+                project,
+                "app.cv",
+                static_cast<std::uint32_t>(member.size())
+            );
+            require(fields.candidates.size() == 1);
+            expect_equal(fields.candidates.front().name, "width");
+            expect_equal(fields.candidates.front().detail, "i32");
+        };
+
     "Workspace: analysis captures pure static output without executing ordinary host calls"_test =
         [] static noexcept {
             auto host = WorkspaceAnalysisHost(2uz);
@@ -287,6 +649,7 @@ const TestSuite tests([] static noexcept {
             // Navigation excludes an unrelated unfinished document; a project check includes it.
             const auto failed = before.semantic(project);
             expect(failed.result->program() == nullptr);
+            expect(!failed.result->source_construction_complete());
             expect(!failed.result->diagnostics().empty());
 
             const auto rejected = host.update({

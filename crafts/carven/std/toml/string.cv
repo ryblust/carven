@@ -12,7 +12,7 @@ private const fn unicode_escape(
 ) -> char throw TOMLError {
     var value: u32 = 0;
     for _ in 0..count {
-        if offset == bytes.length() { throw error(.UnexpectedEnd, offset); }
+        if offset == bytes.length() => throw error(.UnexpectedEnd, offset);
         let digit: u32 = match bytes[offset] {
             0x30..=0x39 => (bytes[offset] - 0x30) as u32,
             0x41..=0x46 => (bytes[offset] - 0x41 + 10) as u32,
@@ -22,14 +22,15 @@ private const fn unicode_escape(
         value = (value << 4) | digit;
         offset += 1;
     }
-    if value > 0x10ffff || (value >= 0xd800 && value <= 0xdfff) {
-        throw error(.InvalidUnicode, offset - count);
-    }
+    if value > 0x10ffff || (value >= 0xd800 && value <= 0xdfff) => throw error(
+        .InvalidUnicode,
+        offset - count
+    );
     return char::from_u32_unchecked(value);
 }
 
 private const fn escape(bytes: [u8], &offset: usize) -> char throw TOMLError {
-    if offset == bytes.length() { throw error(.UnexpectedEnd, offset); }
+    if offset == bytes.length() => throw error(.UnexpectedEnd, offset);
     let byte = bytes[offset];
     offset += 1;
     return match byte {
@@ -47,19 +48,19 @@ private const fn escape(bytes: [u8], &offset: usize) -> char throw TOMLError {
 }
 
 private const fn line_continuation(bytes: [u8], &offset: usize) -> bool throw TOMLError {
-    if offset == bytes.length() { return false; }
+    if offset == bytes.length() => return false;
     match bytes[offset] {
         0x20 | 0x09 | 0x0a | 0x0d => {},
         _ => return false,
     }
     spaces(bytes, &offset);
-    if offset == bytes.length() { throw error(.UnexpectedEnd, offset); }
-    if bytes[offset] != 0x0a && bytes[offset] != 0x0d { throw error(.InvalidEscape, offset); }
+    if offset == bytes.length() => throw error(.UnexpectedEnd, offset);
+    if bytes[offset] != 0x0a && bytes[offset] != 0x0d => throw error(.InvalidEscape, offset);
     newline(bytes, &offset)?;
     while offset < bytes.length() {
         spaces(bytes, &offset);
-        if offset == bytes.length() { break; }
-        if bytes[offset] != 0x0a && bytes[offset] != 0x0d { break; }
+        if offset == bytes.length() => break;
+        if bytes[offset] != 0x0a && bytes[offset] != 0x0d => break;
         newline(bytes, &offset)?;
     }
     return true;
@@ -81,24 +82,24 @@ private const fn read_contents(
         };
         result.append(str::from_utf8_unchecked(bytes.slice(start, end)));
         offset = end;
-        if offset == bytes.length() { throw error(.UnexpectedEnd, offset); }
+        if offset == bytes.length() => throw error(.UnexpectedEnd, offset);
         let byte = bytes[offset];
         if byte == quote {
             const if !multiline {
                 offset += 1;
-                return &&result;
+                return result;
             } else {
                 var count: usize = 0;
                 while offset < bytes.length() && bytes[offset] == quote {
                     offset += 1;
                     count += 1;
                 }
-                if count > 5 { throw error(.UnexpectedByte, offset - count + 5); }
+                if count > 5 => throw error(.UnexpectedByte, offset - count + 5);
                 let retained = if count >= 3 { count - 3 } else { count };
                 for _ in 0..retained {
                     result.push(char::from_u32_unchecked(quote as u32));
                 }
-                if count >= 3 { return &&result; }
+                if count >= 3 => return result;
                 continue;
             }
         }
@@ -106,7 +107,7 @@ private const fn read_contents(
             if byte == 0x5c {
                 offset += 1;
                 const if multiline {
-                    if line_continuation(bytes, &offset)? { continue; }
+                    if line_continuation(bytes, &offset)? => continue;
                 }
                 result.push(escape(bytes, &offset)?);
                 continue;
@@ -152,6 +153,6 @@ const fn read_string(
     &offset: usize,
     const multiline_allowed: bool
 ) -> String throw TOMLError {
-    if bytes[offset] == 0x22 { return read_quoted(bytes, &offset, 0x22, multiline_allowed)?; }
+    if bytes[offset] == 0x22 => return read_quoted(bytes, &offset, 0x22, multiline_allowed)?;
     return read_quoted(bytes, &offset, 0x27, multiline_allowed)?;
 }

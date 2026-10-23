@@ -1,0 +1,82 @@
+import tools.lsp.protocol using { Decoder, ProtocolError, byte_offset, position }
+import std::json using JSONValueError;
+import std::utf using UTF8Error;
+
+test "LSP: Unicode messages survive every frame split and consecutive records" {
+    let body = r#"{"message":"中文😀"}"#;
+    let length = body.byte_length();
+    let header = f"Content-Length: {length}\r\nContent-Type: application/json\r\n\r\n";
+    let frame = f"{header}{body}";
+    let wire = f"{frame}{frame}";
+    try {
+        for split in 0..wire.byte_length() + 1 {
+            var decoder = Decoder::new();
+            let first = decoder.feed(wire.bytes.slice(0, split))?;
+            let second = decoder.feed(wire.bytes.slice(split, wire.byte_length()))?;
+            check(first.length() + second.length() == 2);
+            for message in first {
+                check(message == body);
+            }
+            for message in second {
+                check(message == body);
+            }
+            decoder.finish()?;
+        }
+    } catch {
+        ProtocolError(_) => fail("valid split frame was rejected"),
+        UTF8Error(_) => fail("frame split must not split UTF-8 validation"),
+    }
+}
+
+test "LSP: invalid lengths and truncated frames are rejected" {
+    for wire in [
+        "Content-Length: 16777217\r\n\r\n",
+        "Content-Length: -1\r\n\r\n",
+        "Content-Length: 0\r\nContent-Length: 0\r\n\r\n",
+        "Other: 2\r\n\r\n{}"
+    ] {
+        var decoder = Decoder::new();
+        var rejected = false;
+        try {
+            let _ = decoder.feed(wire.bytes)?;
+        } catch {
+            ProtocolError(error) => { rejected = error == .InvalidFrame; },
+            UTF8Error(_) => fail("ASCII headers must not produce UTF errors"),
+        }
+        check(rejected);
+    }
+    var decoder = Decoder::new();
+    var truncated = false;
+    try {
+        let _ = decoder.feed("Content-Length: 2\r\n\r\n{".bytes)?;
+        decoder.finish()?;
+    } catch {
+        ProtocolError(error) => { truncated = error == .TruncatedFrame; },
+        UTF8Error(_) => fail("incomplete message must not be decoded"),
+    }
+    check(truncated);
+}
+
+test "LSP: UTF-16 positions preserve scalar boundaries and line endings" {
+    let text = "中😀x\r\ny";
+    try {
+        check(byte_offset(text, 0, 0)? == 0);
+        check(byte_offset(text, 0, 1)? == 3);
+        check(byte_offset(text, 0, 3)? == 7);
+        check(byte_offset(text, 1, 0)? == 10);
+        let next = position(text, 10)?;
+        let line = next.get("line")?;
+        let column = next.get("character")?;
+        check(line.as_i64()? == 1 && column.as_i64()? == 0);
+    } catch {
+        ProtocolError(_) => fail("valid position was rejected"),
+        JSONValueError(_) => fail("position must be an object with integer coordinates"),
+    }
+    var rejected = false;
+    try {
+        let _ = byte_offset(text, 0, 2)?;
+    } catch {
+        ProtocolError(error) => { rejected = error == .InvalidPosition; },
+    }
+    check(rejected);
+}

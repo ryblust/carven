@@ -8,6 +8,8 @@ private fn twice(value: i32) -> i32 => value * 2;
 
 fn calculate(value: i32, reject: bool) -> i32 throw Rejected {
     print("call;");
-    if reject { throw Rejected {}; }
+    if reject {
+        throw Rejected {};
+    }
     return twice(value) + 1;
 }

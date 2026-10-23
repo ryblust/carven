@@ -1,3 +1,4 @@
+import std::io using ReadResult;
 import std::utf using UTF8Error;
 import <carven/std/fs/native.hpp> using carven::standard::fs;
 
@@ -20,7 +21,7 @@ export struct DirectoryScan {
 }
 
 private const fn checked(code: i32) throw FileError {
-    if code != 0 { throw FileError::System(code); }
+    if code != 0 => throw FileError::System(code);
 }
 
 export const fn canonical(path: str) -> String throw FileError {
@@ -50,10 +51,40 @@ export const fn files(scan: DirectoryScan) -> Vector<String> throw FileError {
     return (&result).take_paths() as Vector<String>;
 }
 
+export class FileReader {
+    native: fs::Reader,
+
+    const fn open(path: str) -> FileReader throw FileError {
+        var result = fs::open(path);
+        checked(result.code as i32)?;
+        return { native: (&result).take_reader() };
+    }
+
+    const fn read(self, limit: usize) -> ReadResult<Vector<u8>> throw FileError {
+        assert(limit > 0);
+        var result = fs::read(self.native, limit);
+        checked(result.code as i32)?;
+        let bytes = (&result).take_bytes() as Vector<u8>;
+        if bytes.is_empty() => return .End;
+        return .Data(&&bytes);
+    }
+
+    const fn close(self) throw FileError {
+        checked(fs::close(self.native) as i32)?;
+    }
+}
+
 export const fn read_bytes(path: str) -> Vector<u8> throw FileError {
-    var result = fs::read_bytes(path);
-    checked(result.code as i32)?;
-    return (&result).take_bytes() as Vector<u8>;
+    let reader = FileReader::open(path)?;
+    var result = Vector<u8> {};
+    while {
+        match reader.read(65536)? {
+            .Data(bytes) => { result.append(bytes); },
+            .End => break,
+        }
+    }
+    reader.close()?;
+    return result;
 }
 
 export const fn read_text(path: str) -> String throw FileError {

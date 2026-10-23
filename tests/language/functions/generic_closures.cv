@@ -1,5 +1,5 @@
 private const fn transfer<T>(&&value: T) -> T {
-    let forward = [](&&item: T) -> T => &&item;
+    let forward = [](&&item: T) -> T => item;
     return forward(&&value);
 }
 
@@ -21,25 +21,13 @@ private const fn replace<T>(&target: T, &&value: T) {
     nested(&&value);
 }
 
-private const fn tagged<T>(tag: i32) {
-    return [tag](&&value: T) -> (i32, T) => (tag, &&value);
-}
+private const fn tagged<T>(tag: i32) => [tag](&&value: T) -> (i32, T) => (tag, &&value);
 
-private const fn pair<A, B>() {
-    return [](&&first: A, &&second: B) -> (A, B) => (&&first, &&second);
-}
+private const fn pair<A, B>() => [](&&first: A, &&second: B) -> (A, B) => (&&first, &&second);
 
-private const fn swapped<U, V>() {
-    return pair<V, U>();
-}
+private const fn swapped<U, V>() => pair<V, U>();
 
-private const fn nested<T>() {
-    return []() {
-        return []() {
-            return [](&&value: T) -> T => &&value;
-        };
-    };
-}
+private const fn nested<T>() => []() => []() => [](&&value: T) -> T => value;
 
 private const fn generic_hash<T: Hash>(value: T) -> u64 {
     let hash: fn(T) -> u64 = Hash::hash;
@@ -60,7 +48,7 @@ private const fn exercise_generic_closures() {
     let text = transfer(&&original);
     var target: String = "replaced";
     replace(&target, &&text);
-    check(target.as_str() == "owned");
+    check(target == "owned");
 
     let annotate = tagged<String>(11);
     if true {
@@ -68,7 +56,7 @@ private const fn exercise_generic_closures() {
         let payload: String = "payload";
         let (tag, result) = view(&&payload);
         check(tag == 11);
-        check(result.as_str() == "payload");
+        check(result == "payload");
     }
     let holder = boxed(&&annotate);
     let released = release(&&holder);
@@ -76,7 +64,7 @@ private const fn exercise_generic_closures() {
     let payload: String = "moved";
     let (tag, result) = moved(&&payload);
     check(tag == 11);
-    check(result.as_str() == "moved");
+    check(result == "moved");
 
     let numeric = tagged<i64>(13);
     let (numeric_tag, numeric_result) = numeric(&&17i64);
@@ -85,7 +73,7 @@ private const fn exercise_generic_closures() {
     let combine = swapped<i32, String>();
     let first: String = "first";
     let (left, right) = combine(&&first, &&19);
-    check(left.as_str() == "first");
+    check(left == "first");
     check(right == 19);
 
     let outer = nested<String>();
@@ -93,7 +81,7 @@ private const fn exercise_generic_closures() {
     let inner = middle();
     let nested_value: String = "nested";
     let nested_result = inner(&&nested_value);
-    check(nested_result.as_str() == "nested");
+    check(nested_result == "nested");
 
     check(generic_hash(42) == Hash::hash(42));
     let key: String = "key";
@@ -121,7 +109,9 @@ struct SecondFailure {}
 private const fn alternative(value: i32) -> i32 throw FirstFailure => value + 10;
 
 private const fn fallible(value: i32) -> i32 throw FirstFailure {
-    if value < 0 { throw FirstFailure { value: value }; }
+    if value < 0 {
+        throw FirstFailure { value: value };
+    }
     return value;
 }
 

@@ -30,9 +30,8 @@ import(cpp) async fn bridge_native_character(
 
 import(cpp) fn bridge_note(context: Context, stage: i32) = ::async_bridge::bridge_note;
 
-export(cpp) async fn source_read(context: Context) -> i32 throw IOError => await bridge_read_byte(
-    context
-)?;
+export(cpp) async fn source_read(context: Context) -> i32 throw IOError =>
+    await bridge_read_byte(context)?;
 
 export(cpp) async fn source_exchange(
     reader: Context,
@@ -93,17 +92,11 @@ private async fn later_marker() -> i32 {
     return 23;
 }
 
-private fn trivial_factory(
-    const offset: i32,
-    context: TrivialContext,
-    marker: i32
-) => bridge_trivial_byte(context, marker + offset);
+private fn trivial_factory(const offset: i32, context: TrivialContext, marker: i32) =>
+    bridge_trivial_byte(context, marker + offset);
 
-private fn trivial_outer_factory(
-    context: TrivialContext,
-    const offset: i32,
-    marker: i32
-) => trivial_factory(offset, context, marker);
+private fn trivial_outer_factory(context: TrivialContext, const offset: i32, marker: i32) =>
+    trivial_factory(offset, context, marker);
 
 export(cpp) async fn source_trivial(context: TrivialContext) -> i32 throw IOError {
     let operation = trivial_outer_factory(context, 0, await later_marker());

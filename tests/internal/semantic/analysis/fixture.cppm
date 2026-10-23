@@ -1,10 +1,13 @@
 module carven:test.internal.semantic.analysis.fixture;
 
 import :diagnostics.code;
+import :diagnostics.diagnosed;
 import :diagnostics.diagnostic;
+import :frontend.program;
 import :frontend.program.parse;
-import :semantic.analyze;
 import :semantic.evaluation.execution;
+import :semantic.evaluation.native;
+import :semantic.evaluation.output;
 import :semantic.semir.body;
 import :semantic.semir.constant;
 import :semantic.semir.decl;
@@ -16,6 +19,8 @@ import :source.module_path;
 import :test.harness.framework;
 import :test.internal.source.fixture;
 import std;
+
+auto standard_test_bindings() noexcept -> std::span<const ExecutionNativeBinding>;
 
 auto semantic_test_module_path() noexcept -> CanonicalModulePath {
     auto result = CanonicalModulePath::from_value("analysis");
@@ -38,6 +43,12 @@ auto semantic_test_diagnostic_text(std::span<const Diagnostic> diagnostics) noex
     return text;
 }
 
+auto analyze_test_syntax(
+    SyntaxProgram syntax,
+    HostEffects host_effects,
+    ExecutionOutput output = {}
+) noexcept -> std::expected<Diagnosed<SemIRProgram>, Diagnostics>;
+
 auto analyze_test_errors(
     std::string source_text,
     std::span<const std::string_view> standard_modules = {}
@@ -55,7 +66,7 @@ auto analyze_test_errors(
     require(parsed.has_value()).note("source = ", source_view.text).note([&]() noexcept {
         return parsed ? std::string() : semantic_test_diagnostic_text(parsed.error());
     });
-    auto analyzed = analyze(std::move(*parsed), HostEffects::Allow, {}, {}, {});
+    auto analyzed = analyze_test_syntax(std::move(*parsed), HostEffects::Allow);
     if (analyzed.has_value()) {
         return std::move(analyzed->diagnostics);
     }
@@ -80,7 +91,7 @@ auto analyze_test_program(
     require(parsed.has_value(), location).note("source = ", source_view.text).note([&]() noexcept {
         return parsed ? std::string() : semantic_test_diagnostic_text(parsed.error());
     });
-    auto analyzed = analyze(std::move(*parsed), HostEffects::Allow, {}, {}, {});
+    auto analyzed = analyze_test_syntax(std::move(*parsed), HostEffects::Allow);
     require(analyzed.has_value(), location)
         .note("source = ", source_view.text)
         .note([&]() noexcept {

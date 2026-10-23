@@ -17,7 +17,9 @@ private struct PayloadFailure {
 
 private fn scalar_result(guard: Guard, reject: bool) -> i32 throw Failure {
     mark(3);
-    if reject { throw Failure {}; }
+    if reject {
+        throw Failure {};
+    }
     return 7;
 }
 
@@ -47,7 +49,9 @@ test "Failure receivers: protected and operand owners end before catch execution
 }
 
 private fn native_result(reject: bool) -> Tracked throw Failure {
-    if reject { throw Failure {}; }
+    if reject {
+        throw Failure {};
+    }
     return Tracked { 5 };
 }
 

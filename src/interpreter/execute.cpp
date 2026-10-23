@@ -4,10 +4,9 @@ import :diagnostics.code;
 import :interpreter.execute;
 import :semantic.evaluation.execution;
 import :semantic.evaluation.executor;
-import :semantic.evaluation.standard;
 import :semantic.evaluation.value;
-import :semantic.semir.constant_access;
 import :semantic.semir.decl;
+import :semantic.semir.values;
 import :support.invariant;
 import std;
 
@@ -61,7 +60,7 @@ private:
     const SemIRProgram& program;
     ExecutionOutput output;
     const InterpreterOptions& options;
-    PublishedConstantValues values;
+    ProgramValues values;
     HostEffects host_effects;
     std::vector<InterpreterTestResult> test_results;
 };
@@ -147,7 +146,7 @@ auto InterpreterContext::prepare_target(ExecutionCallSite target, ProgramOriginI
         && std::holds_alternative<CppImportImplementation>(declaration.implementation)) {
         return ExecutionHostCall {
             .target = callable,
-            .invoke = options.host_call,
+            .invoke = *this,
             .asynchronous = program.callable_signatures().signature(declaration.signature).execution
                 == CallableExecutionKind::Async
         };
@@ -182,13 +181,8 @@ auto InterpreterContext::operator()(
     std::span<ExecutionValue> arguments,
     ProgramOriginID origin
 ) noexcept -> std::expected<ExecutionHostResult, ExecutionCallFailure> {
-    if (const auto* expression = std::get_if<const SemanticExpression*>(&target)) {
-        if (auto result = standard_execution_call(values, *this, **expression, arguments, origin)) {
-            return std::move(*result);
-        }
-    }
     if (options.host_call) {
-        return options.host_call(target, arguments, origin);
+        return options.host_call(values, *this, target, arguments, origin);
     }
     return std::unexpected(
         ExecutionEvent {
@@ -324,7 +318,7 @@ auto interpret_tests(
 
 struct InterpreterInvocationState final {
     InterpreterOptions options;
-    PublishedConstantValues values;
+    ProgramValues values;
     InterpreterContext context;
     SemanticExecutor executor;
     const SemIRProgram& program;

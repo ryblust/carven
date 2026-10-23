@@ -121,6 +121,9 @@ auto DeclResolver::prepare_callable(
     ProgramModuleID requester,
     Span span
 ) noexcept -> AnalysisTask<void> {
+    if (heads_finished) {
+        co_return {};
+    }
     const auto pending = draft.pending_function_contract_copy(callable);
     const auto failures =
         pending ? pending->failures : draft.construction_callable_contract_copy(callable).failures;

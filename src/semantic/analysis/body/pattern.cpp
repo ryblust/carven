@@ -21,10 +21,10 @@ import :semantic.analysis.operations;
 import :semantic.analysis.types;
 import :semantic.analysis.types.display;
 import :semantic.analysis.validation;
-import :semantic.semir.completion;
-import :semantic.semir.generic;
 import :semantic.semir.body;
+import :semantic.semir.completion;
 import :semantic.semir.decl;
+import :semantic.semir.generic;
 import :semantic.semir.structured;
 import :semantic.semir.traversal;
 import :semantic.semir.type;
@@ -416,6 +416,7 @@ auto BodyElaborator::build_pattern(
                         )
                     ));
                 }
+                observe_enum_case(case_pattern.name_span, selected->reference);
                 const auto payload_ids = case_pattern.payload.has_value()
                     ? std::span<const ASTPatternID>(case_pattern.payload->patterns)
                     : std::span<const ASTPatternID>();

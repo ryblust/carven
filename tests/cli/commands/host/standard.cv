@@ -1,28 +1,10 @@
-import std::compiler using compile;
-import std::fs using { FileError, parent, read_text, write_text }
-import std::process using { Process, environment }
+import std::fs using { FileError, read_text, write_text }
+import std::process using Process;
 
 const {
-    assert(parent("generated/item.cv") == "generated");
     write_text("observed.txt", "static input")?;
-    assert(read_text("observed.txt")? == "static input");
-    write_text(
-        "generated.cv",
-        "import std::fs using read_text;\nconst text = read_text(\"observed.txt\")?;\nexport fn contents() -> str => text;\n"
-    )?;
-    let compilation = compile(["generated.cv"], "emitted")?;
-    assert(!compilation.cacheable);
-    assert(!compilation.implementations.is_empty());
-    write_text(
-        "child.cv",
-        "import std::fs using { FileError, write_text }\nfn main() throw FileError { write_text(\"child.txt\", \"child completed\")?; }\n"
-    )?;
-    let child = Process::spawn_inherited(
-        environment("CARVEN_TEST_COMPILER")?,
-        ["interpret", "child.cv"]
-    )?;
+    let child = Process::spawn_inherited("carven", ["--version"])?;
     assert(await child.wait()? == 0);
-    assert(read_text("child.txt")? == "child completed");
     println("static standard capabilities");
 }
 

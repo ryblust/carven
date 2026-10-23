@@ -91,14 +91,12 @@ test "Callable adaptation: equal copies snapshot targets while widening borrows 
     // The saved widened target still refers to source, whose contents change
     // during argument evaluation before the inner invocation selects a target.
     let replaced = try {
-        widened(
-            if true {
-                source = first;
-                5
-            } else {
-                5
-            }
-        )?
+        widened(if true {
+            source = first;
+            5
+        } else {
+            5
+        })?
     } catch {
         Rejected(_) => 0,
         OtherFailure(_) => 0,

@@ -1,8 +1,3 @@
-module;
-
-
-#include <carven/std/compiler/native.hpp>
-
 module carven:driver.compile.impl;
 
 import :artifacts;
@@ -24,6 +19,7 @@ import :source.module_path;
 import :support.file;
 import :support.invariant;
 import :support.path;
+import :support.process;
 import :support.timing;
 import :support.visit;
 import std;
@@ -70,13 +66,157 @@ auto print_artifacts(const GeneratedArtifactSet& artifacts) noexcept -> void {
     }
 }
 
+// Query the same ordinary build entry that a user can run in the Craft.
+// The child owns its working directory and arguments; no process-global state changes.
+auto query_craft(const std::filesystem::path& root) noexcept
+    -> std::expected<std::string, std::string> {
+    const auto executable = process::executable();
+    if (!executable) {
+        return std::unexpected("cannot locate the running compiler for a Craft query");
+    }
+    const auto arguments = std::array {std::string("query")};
+    auto result = process::run(*executable, arguments, root, process::Stdio::CaptureOutput);
+    if (!result) {
+        return std::unexpected(
+            std::format("cannot query Craft '{}': {}", root.string(), result.error().message())
+        );
+    }
+    if (result->status != 0) {
+        return std::unexpected(std::format("Craft query failed for '{}'", root.string()));
+    }
+    return std::move(result->output);
+}
+
+auto collect_manifest_resources(
+    const std::filesystem::path& crafts,
+    const CommandSources& sources,
+    bool query,
+    std::span<const std::string> native_inputs
+) noexcept -> std::expected<CompilationManifestResources, std::string> {
+    auto error = std::error_code();
+    const auto root = std::filesystem::canonical(crafts, error);
+    if (error) {
+        return std::unexpected(std::format("cannot resolve Carven Crafts: {}", error.message()));
+    }
+    auto craft_roots = std::set<std::filesystem::path> {root / "carven"};
+    for (const auto& source : sources.carven) {
+        if (!source.module_path.module_domain_prefix().craft_name()
+            || std::ranges::contains(sources.standard_modules, source.module_path)) {
+            continue;
+        }
+        auto physical = std::filesystem::weakly_canonical(path_from_utf8(source.path), error);
+        if (error) {
+            return std::unexpected(
+                std::format("cannot resolve Craft source '{}': {}", source.path, error.message())
+            );
+        }
+        for (auto remaining = source.module_path.domain_relative_components().size();
+             remaining != 0;
+             --remaining) {
+            physical = physical.parent_path();
+        }
+        craft_roots.insert(std::move(physical));
+    }
+    const auto project_root =
+        sources.project_root.empty() ? std::filesystem::current_path(error) : sources.project_root;
+    if (error) {
+        return std::unexpected(
+            std::format("cannot resolve project directory: {}", error.message())
+        );
+    }
+    const auto project_crafts = std::filesystem::weakly_canonical(project_root / "crafts", error);
+    if (error) {
+        return std::unexpected(std::format("cannot resolve project Crafts: {}", error.message()));
+    }
+    for (const auto& source : native_inputs) {
+        const auto relative = path_from_utf8(source).lexically_relative(project_crafts);
+        if (!relative.empty()
+            && *relative.begin() != ".."
+            && *relative.begin() != "."
+            && std::next(relative.begin()) != relative.end()) {
+            craft_roots.insert(project_crafts / *relative.begin());
+        }
+    }
+    auto include_dirs = std::set<std::string>();
+    auto resources = CompilationManifestResources {
+        .include_dirs = {},
+        .library_roots = {},
+        .craft_roots = {},
+        .crafts = {}
+    };
+    // These are discovery inputs, not compilation roots. The consumer watches
+    // file names here and contents only for the actual manifest inputs.
+    if (!sources.library_roots.empty()) {
+        for (const auto& directory : sources.library_roots) {
+            resources.library_roots.push_back(path_to_generic_utf8(directory));
+        }
+    } else {
+        resources.library_roots.push_back(path_to_generic_utf8(root / "carven"));
+        resources.library_roots.push_back(
+            path_to_generic_utf8(std::filesystem::absolute("crafts", error).lexically_normal())
+        );
+        if (error) {
+            return std::unexpected(
+                std::format("cannot resolve project Crafts: {}", error.message())
+            );
+        }
+    }
+    for (const auto& craft_root : craft_roots) {
+        include_dirs.insert(path_to_generic_utf8(craft_root.parent_path()));
+        resources.craft_roots.push_back(path_to_generic_utf8(craft_root));
+        if (!query) {
+            continue;
+        }
+        const auto declaration = craft_root / "build.cv";
+        const auto status = std::filesystem::status(declaration, error);
+        if (error == std::errc::no_such_file_or_directory) {
+            error.clear();
+            continue;
+        }
+        if (error) {
+            return std::unexpected(
+                std::format(
+                    "cannot inspect Craft build '{}': {}",
+                    path_to_generic_utf8(declaration),
+                    error.message()
+                )
+            );
+        }
+        if (!std::filesystem::exists(status)) {
+            continue;
+        }
+        if (!std::filesystem::is_regular_file(status)) {
+            return std::unexpected(
+                std::format(
+                    "Craft build '{}' is not a regular file",
+                    path_to_generic_utf8(declaration)
+                )
+            );
+        }
+        auto description = query_craft(craft_root);
+        if (!description) {
+            return std::unexpected(std::move(description.error()));
+        }
+        resources.crafts.push_back(std::move(*description));
+    }
+    resources.include_dirs.assign(include_dirs.begin(), include_dirs.end());
+    return resources;
+}
+
 auto write_manifest(
     const std::filesystem::path& path,
+    const std::filesystem::path& crafts,
     const CommandSources& sources,
     const GeneratedArtifactSet& artifacts,
     std::size_t runtime_test_count,
-    bool cacheable
+    bool cacheable,
+    bool query,
+    std::span<const std::string> native_inputs
 ) noexcept -> std::expected<void, std::string> {
+    const auto resources = collect_manifest_resources(crafts, sources, query, native_inputs);
+    if (!resources) {
+        return std::unexpected(resources.error());
+    }
     auto error = std::error_code();
     const auto current = std::filesystem::current_path(error);
     if (error) {
@@ -91,9 +231,9 @@ auto write_manifest(
         );
     }
     auto paths = std::vector<std::string>();
-    paths.reserve(sources.carven.size());
+    paths.reserve(sources.carven.size() + native_inputs.size());
     auto inputs = std::vector<CompilationManifestInput>();
-    inputs.reserve(sources.carven.size());
+    inputs.reserve(sources.carven.size() + native_inputs.size());
     for (const auto& source : sources.carven) {
         const auto absolute =
             std::filesystem::absolute(path_from_utf8(source.path), error).lexically_normal();
@@ -106,6 +246,13 @@ auto write_manifest(
         const auto inside = !relative.empty() && *relative.begin() != "..";
         paths.push_back(path_to_generic_utf8(inside ? relative : absolute));
         inputs.push_back({.path = paths.back(), .module_path = source.module_path.value()});
+    }
+    for (const auto& path : native_inputs) {
+        const auto absolute = path_from_utf8(path);
+        const auto relative = absolute.lexically_relative(workspace_root);
+        const auto inside = !relative.empty() && *relative.begin() != "..";
+        paths.push_back(path_to_generic_utf8(inside ? relative : absolute));
+        inputs.push_back({.path = paths.back(), .module_path = {}});
     }
     auto owned_modules = std::vector<std::string_view>();
     for (const auto& module_path : sources.owned_modules) {
@@ -135,6 +282,7 @@ auto write_manifest(
             path,
             format_compilation_manifest(
                 path_to_generic_utf8(workspace_root),
+                *resources,
                 inputs,
                 artifacts,
                 runtime_test_count,
@@ -167,9 +315,27 @@ auto compile_artifacts(
     const std::filesystem::path& crafts,
     const CompilationOptions& request,
     ExecutionOutput output,
-    TimingOutput timings
+    TimingOutput timings,
+    std::span<const ExecutionNativeBinding> native_bindings
 ) noexcept -> std::expected<CompiledArtifacts, std::string> {
-    auto input = load_compilation_input(crafts, request, output, timings);
+    if (request.input_paths.empty()) {
+        return CompiledArtifacts {
+            .sources =
+                {
+                    .project_root = {},
+                    .crafts = crafts,
+                    .library_roots = {},
+                    .carven = {},
+                    .standard_modules = {},
+                    .owned_modules = {},
+                    .external_modules = {},
+                },
+            .artifacts = GeneratedArtifactSet({}),
+            .runtime_test_count = 0,
+            .cacheable = true,
+        };
+    }
+    auto input = load_compilation_input(crafts, request, output, timings, native_bindings);
     if (!input) {
         return std::unexpected(std::move(input.error()));
     }
@@ -209,7 +375,7 @@ auto compile_artifacts(
             const auto generation = TargetPlanningRequest {
                 .test_mode = request.test_mode,
                 .linkage_domain = std::move(*linkage_domain),
-                .library = standard_source_library(*sources),
+                .libraries = source_libraries(*sources),
                 .test_modules = sources->owned_modules,
             };
             return generate_artifacts(*semantic, generation, selection, timings);
@@ -259,8 +425,11 @@ auto compile_artifacts(
 
 } // namespace
 
-auto run_compilation_command(std::span<const std::string> args, CompilationCommand command) noexcept
-    -> int {
+auto run_compilation_command(
+    std::span<const std::string> args,
+    CompilationCommand command,
+    std::span<const ExecutionNativeBinding> native_bindings
+) noexcept -> int {
     if (args.size() == 1
         && (std::string_view(args[0]) == "--help" || std::string_view(args[0]) == "-h")) {
         if (command == CompilationCommand::Check) {
@@ -294,15 +463,17 @@ auto run_compilation_command(std::span<const std::string> args, CompilationComma
                 "                                  (default: no runtime test artifacts)\n"
                 "\n"
                 "Options:\n"
+                "      --no-query                  Leave Craft queries to the build consumer\n"
                 "      --timings                   Show total and stage timings on stderr\n"
                 "  -h, --help                      Show this help\n"
+                "\n"
+                "With no inputs, directory output contains only toolchain resources.\n"
             );
         }
         std::print(
             "\n"
-            "Installed Crafts supply dependencies; positional sources select the complete\n"
-            "owned source set, including any project Crafts used by the program.\n"
-            "A standard-library artifact directory can accompany new sources.\n"
+            "Positional sources select roots; imports discover project and Craft dependencies.\n"
+            "A checked Craft artifact directory can accompany new sources.\n"
             "Use 'check -o <dir>' to retain semantics and 'compile' to generate C++.\n"
             "The consuming build system compiles and links the generated C++.\n"
         );
@@ -322,10 +493,6 @@ auto run_compilation_command(std::span<const std::string> args, CompilationComma
     );
     const auto finish = [&]() noexcept {
         timings.set_outcome(command == CompilationCommand::Check ? "passed" : "finished");
-        if (command == CompilationCommand::Check && !request->timings) {
-            std::cout.flush();
-            std::println(std::cerr, "carven: check passed");
-        }
         return 0;
     };
     const auto printing_artifacts = request->destination
@@ -334,8 +501,34 @@ auto run_compilation_command(std::span<const std::string> args, CompilationComma
         const auto to_error = stream == ExecutionOutputStream::Error || printing_artifacts;
         std::print(to_error ? std::cerr : std::cout, "{}", bytes);
     };
+    auto native_inputs = std::vector<std::string>();
+    if (command == CompilationCommand::Compile) {
+        std::erase_if(request->input_paths, [&](std::string_view input) noexcept {
+            const auto path = path_from_utf8(input);
+            const auto extension = path.extension();
+            if (extension != ".cpp"
+                && extension != ".cc"
+                && extension != ".cxx"
+                && extension != ".c") {
+                return false;
+            }
+            native_inputs.emplace_back(input);
+            return true;
+        });
+        for (auto& input : native_inputs) {
+            auto error = std::error_code();
+            const auto path = std::filesystem::canonical(path_from_utf8(input), error);
+            if (error || !std::filesystem::is_regular_file(path, error)) {
+                return emit_driver_error(std::format("cannot read source '{}'", input));
+            }
+            input = path_to_generic_utf8(path);
+        }
+        std::ranges::sort(native_inputs);
+        native_inputs.erase(std::ranges::unique(native_inputs).begin(), native_inputs.end());
+    }
+    const auto crafts = locate_standard_crafts();
     auto result =
-        compile_artifacts(locate_standard_crafts(), *request, write_output, timings.output());
+        compile_artifacts(crafts, *request, write_output, timings.output(), native_bindings);
     if (!result) {
         return emit_driver_error(result.error());
     }
@@ -345,10 +538,13 @@ auto run_compilation_command(std::span<const std::string> args, CompilationComma
             const auto writing = TimingScope(timings.output(), TimingStage::ArtifactWriting);
             if (const auto manifest = write_manifest(
                     destination->root / "carven/manifest.json",
+                    crafts,
                     result->sources,
                     result->artifacts,
                     result->runtime_test_count,
-                    result->cacheable
+                    result->cacheable,
+                    request->query_crafts,
+                    native_inputs
                 );
                 !manifest) {
                 return emit_driver_error(manifest.error());
@@ -357,141 +553,4 @@ auto run_compilation_command(std::span<const std::string> args, CompilationComma
     }
 
     return finish();
-}
-
-// Match the ordinary header declarations' global-module ownership.
-extern "C++" {
-
-namespace carven::standard::compiler {
-
-auto CompilationResult::take_error() noexcept -> runtime::String {
-    return std::move(error);
-}
-
-auto CompilationResult::take_implementations() noexcept -> runtime::Vector<Implementation> {
-    return std::move(implementations);
-}
-
-auto CompilationResult::take_include_dirs() noexcept -> runtime::Vector<runtime::String> {
-    return std::move(include_dirs);
-}
-
-auto CompilationResult::take_native_providers() noexcept -> runtime::Vector<runtime::String> {
-    return std::move(native_providers);
-}
-
-auto compile(runtime::Slice<runtime::String> sources, std::string_view destination) noexcept
-    -> CompilationResult {
-    const auto failed = [](std::string message) static noexcept -> CompilationResult {
-        return {
-            .success = false,
-            .cacheable = false,
-            .error = runtime::String::from_utf8(std::move(message)),
-            .implementations = {},
-            .include_dirs = {},
-            .native_providers = {},
-        };
-    };
-    if (destination.empty()) {
-        return failed("output path is empty");
-    }
-    const auto crafts = locate_standard_crafts();
-    if (crafts.empty()) {
-        return failed("cannot locate Carven Crafts");
-    }
-    auto native_providers = runtime::Vector<runtime::String>();
-    auto error = std::error_code();
-    auto candidates = std::vector<std::filesystem::path>();
-    for (auto iterator = std::filesystem::recursive_directory_iterator(crafts / "carven", error);
-         !error && iterator != std::filesystem::recursive_directory_iterator();
-         iterator.increment(error)) {
-        if (iterator->is_regular_file(error) && iterator->path().extension() == ".cpp") {
-            candidates.push_back(iterator->path());
-        }
-    }
-    if (error) {
-        return failed(std::format("cannot inspect Carven Crafts: {}", error.message()));
-    }
-    std::ranges::sort(candidates);
-    for (const auto& path : candidates) {
-        native_providers.push(runtime::String::from_utf8(path_to_generic_utf8(path)));
-    }
-    auto include_dirs = runtime::Vector<runtime::String>();
-    include_dirs.push(runtime::String::from_utf8(path_to_generic_utf8(crafts)));
-    if (sources.empty()) {
-        return {
-            .success = true,
-            .cacheable = true,
-            .error = {},
-            .implementations = {},
-            .include_dirs = std::move(include_dirs),
-            .native_providers = std::move(native_providers),
-        };
-    }
-    auto paths = std::vector<std::string_view>();
-    paths.reserve(sources.size());
-    for (const auto& source : sources) {
-        paths.push_back(source.as_str());
-    }
-    const auto root = path_from_utf8(destination);
-    const auto request = CompilationOptions {
-        .command = CompilationCommand::Compile,
-        .destination = DirectoryArtifactDestination {.root = root},
-        .test_mode = TestGenerationMode::None,
-        .input_paths = std::move(paths),
-        .timings = false,
-    };
-    const auto output = [](ExecutionOutputStream stream, std::string_view bytes) static noexcept {
-        std::print(stream == ExecutionOutputStream::Error ? std::cerr : std::cout, "{}", bytes);
-    };
-    const auto compiled = compile_artifacts(crafts, request, output, {});
-    if (!compiled) {
-        return failed(compiled.error());
-    }
-    auto implementations = runtime::Vector<Implementation>();
-    for (const auto& artifact : compiled->artifacts.entries()) {
-        if (artifact.role != GeneratedArtifactRole::ModuleImplementation) {
-            continue;
-        }
-        if (!artifact.source_path) {
-            invariant_violation("module implementation has no source owner");
-        }
-        auto error = std::error_code();
-        const auto source =
-            std::filesystem::weakly_canonical(path_from_utf8(*artifact.source_path), error);
-        if (error) {
-            return failed(
-                std::format(
-                    "cannot resolve source '{}': {}",
-                    *artifact.source_path,
-                    error.message()
-                )
-            );
-        }
-        auto dependencies = runtime::Vector<runtime::String>();
-        dependencies.reserve(artifact.link_dependencies.size());
-        for (const auto& dependency : artifact.link_dependencies) {
-            dependencies.push(
-                runtime::String::from_utf8(path_to_generic_utf8(root / path_from_utf8(dependency)))
-            );
-        }
-        implementations.push({
-            .file = runtime::String::from_utf8(
-                path_to_generic_utf8(root / path_from_utf8(artifact.logical_path))
-            ),
-            .source = runtime::String::from_utf8(path_to_generic_utf8(source)),
-            .dependencies = std::move(dependencies),
-        });
-    }
-    return {
-        .success = true,
-        .cacheable = compiled->cacheable,
-        .error = {},
-        .implementations = std::move(implementations),
-        .include_dirs = std::move(include_dirs),
-        .native_providers = std::move(native_providers),
-    };
-}
-
-} // namespace carven::standard::compiler
 }

@@ -86,6 +86,8 @@ function main(target, opt, case_spec, case_dir)
     local streams = {stdout = {}, stderr = {}}
     local program = path.absolute(target:targetfile(), os.projectdir())
     local additions, overrides = runenvs.make(target)
+    -- Child commands use tools from this build, independently of installed versions.
+    additions.PATH = table.join({path.directory(program)}, additions.PATH or {})
     local envs = runenvs.join(additions, overrides)
     for index, step in ipairs(steps) do
         for filename, content in pairs(step.write_files or {}) do

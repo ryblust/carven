@@ -1,9 +1,8 @@
 # Processes
 
 `std::process` provides host-process queries and child-process execution. The
-provider is shared by generated programs and semantic execution. Piped
-communication currently supports POSIX. Inherited-stdio processes also have a
-Windows provider; piped spawning there reports `ProcessError::System(ENOTSUP)`.
+provider is shared by generated programs and semantic execution. Piped and
+inherited-stdio processes support Windows, macOS, and Linux.
 
 ## Host process
 
@@ -35,6 +34,21 @@ its contents. An empty output path inherits stdout. Arguments are passed
 separately, without a shell. Process startup and wait failures throw
 `ProcessError::System(code)`; a nonzero program exit remains an ordinary result.
 
+`run_with(program, arguments, options: RunOptions)` additionally selects the
+child's working directory. `RunOptions` has `directory: str` and `output: str`
+fields; empty values inherit the current directory and stdout. The output file
+is relative to the caller's directory. The caller's working directory remains
+unchanged. All three entries support static and interpreted execution.
+
+```carven
+import std::process using run_with;
+
+let status = run_with("git", ["status", "--short"], {
+    directory: "checkout",
+    output: "status.txt"
+})?;
+```
+
 ## Piped processes
 
 Import `Process` and `ProcessError` from `std::process`.
@@ -44,7 +58,7 @@ working directory, environment, and stderr. Embedded NULs are rejected.
 The returned handle owns the child and its stdin/stdout communication endpoint.
 Copies share that child; they do not spawn another process.
 `Process::spawn_in(program, arguments, directory)` selects the child's working
-directory through spawn actions. It leaves the calling process's directory unchanged;
+directory when creating the child. It leaves the calling process's directory unchanged;
 an empty directory inherits the current directory. Arguments and executable lookup
 otherwise follow `spawn`.
 
@@ -66,7 +80,9 @@ regardless of a larger limit. Byte chunks preserve arbitrary bytes and need
 caller-owned framing. Stderr remains independent of the protocol stream.
 
 Operations integrate with the ordinary same-thread driver, timers, cancellation,
-and lexical child closure. Cancelling a read does not consume pending input.
+and lexical child closure. Windows uses byte pipes and cancellable native writes;
+pending pipe writes do not block the execution driver. Cancelling a read does not
+consume pending input.
 Cancelling a write cannot undo bytes already sent. Cancelling a wait does not
 terminate the child. Exit waits observe termination within bounded polling
 intervals; already observed exit status is retained for subsequent waits.

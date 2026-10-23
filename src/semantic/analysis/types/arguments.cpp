@@ -1,8 +1,8 @@
 module carven:semantic.analysis.types.arguments.impl;
 
 import :diagnostics.builder;
-import :semantic.analysis.types;
 import :semantic.analysis.names;
+import :semantic.analysis.types;
 import std;
 
 namespace {
@@ -23,7 +23,7 @@ auto argument_error(
 } // namespace
 
 auto resolve_source_capability(
-    ProgramDraft& draft,
+    const ProgramDraft& draft,
     AnalysisCatalogView catalog,
     ImportUsage& usage,
     ProgramModuleID module_id,

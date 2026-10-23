@@ -82,42 +82,41 @@ const TestSuite suite([] static noexcept {
         expect_equal(result.error()[0].attachment.primary->span.span.end(), 9u);
     };
 
-    "Parser: delimiter preflight reports mismatched and unclosed delimiters"_test =
-        [] static noexcept {
-            const auto mismatched = parse_source("fn main() { let value = [1); }");
-            if (!expect(!mismatched.has_value())) {
-                return;
-            }
-            if (!expect_equal(mismatched.error().size(), 1uz)) {
-                return;
-            }
-            expect_equal(
-                mismatched.error().front().finding.message,
-                std::string_view("mismatched closing delimiter ')'; expected ']'")
-            );
-            if (!expect(mismatched.error().front().attachment.primary.has_value())) {
-                return;
-            }
-            expect_equal(mismatched.error().front().attachment.primary->span.span.start(), 26u);
-            expect_equal(mismatched.error().front().attachment.primary->span.span.end(), 27u);
+    "Parser: mismatched delimiters and unfinished blocks remain errors"_test = [] static noexcept {
+        const auto mismatched = parse_source("fn main() { let value = [1); }");
+        if (!expect(!mismatched.has_value())) {
+            return;
+        }
+        if (!expect_equal(mismatched.error().size(), 1uz)) {
+            return;
+        }
+        expect_equal(
+            mismatched.error().front().finding.message,
+            std::string_view("mismatched closing delimiter ')'; expected ']'")
+        );
+        if (!expect(mismatched.error().front().attachment.primary.has_value())) {
+            return;
+        }
+        expect_equal(mismatched.error().front().attachment.primary->span.span.start(), 26u);
+        expect_equal(mismatched.error().front().attachment.primary->span.span.end(), 27u);
 
-            const auto unclosed = parse_source("fn main() {");
-            if (!expect(!unclosed.has_value())) {
-                return;
-            }
-            if (!expect_equal(unclosed.error().size(), 1uz)) {
-                return;
-            }
-            expect_equal(
-                unclosed.error().front().finding.message,
-                std::string_view("unclosed delimiter '{'; expected '}'")
-            );
-            if (!expect(unclosed.error().front().attachment.primary.has_value())) {
-                return;
-            }
-            expect_equal(unclosed.error().front().attachment.primary->span.span.start(), 10u);
-            expect_equal(unclosed.error().front().attachment.primary->span.span.end(), 11u);
-        };
+        const auto unclosed = parse_source("fn main() {");
+        if (!expect(!unclosed.has_value())) {
+            return;
+        }
+        if (!expect_equal(unclosed.error().size(), 1uz)) {
+            return;
+        }
+        expect_equal(
+            unclosed.error().front().finding.message,
+            std::string_view("expected '}' after block")
+        );
+        if (!expect(unclosed.error().front().attachment.primary.has_value())) {
+            return;
+        }
+        expect_equal(unclosed.error().front().attachment.primary->span.span.start(), 11u);
+        expect_equal(unclosed.error().front().attachment.primary->span.span.end(), 11u);
+    };
 
     "Parser: committed item recovery reports independent declarations"_test = [] static noexcept {
         const auto result = parse_source(
@@ -279,7 +278,7 @@ const TestSuite suite([] static noexcept {
             if (!expect(!(result.has_value()))) {
                 return;
             }
-            if (!expect_equal(result.error().size(), 3uz)) {
+            if (!expect_equal(result.error().size(), 4uz)) {
                 return;
             }
             expect_equal(
@@ -288,6 +287,10 @@ const TestSuite suite([] static noexcept {
             );
             expect_equal(
                 result.error()[1].finding.message,
+                std::string_view("expected '(' after 'fn' in function type")
+            );
+            expect_equal(
+                result.error()[3].finding.message,
                 std::string_view("expected parameter name")
             );
             expect_equal(

@@ -15,9 +15,9 @@ auto parse(
     TimingOutput timings = {}
 ) noexcept -> std::expected<SyntaxTree, Diagnostics>;
 
-// Retains complete top-level items around recoverable syntax errors. A null
-// tree means delimiter preflight or the initial import section failed. This
-// result is for source queries; diagnostics must still gate compilation.
+// Retains complete imports/items/statements around errors and missing closing
+// delimiters. Unrecoverable delimiter pairing or nesting can leave no tree.
+// Diagnostics still gate compilation; retained syntax supports source queries.
 auto parse_recovering(
     const SourceManager& sources,
     const TokenBuffer& tokens,

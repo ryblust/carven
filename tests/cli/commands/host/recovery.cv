@@ -1,4 +1,4 @@
-import std::io using { IOError, ReadResult }
+import std::io using IOError;
 import std::utf using UTF8ErrorKind;
 
 const async fn recover() -> String throw IOError {
@@ -8,8 +8,7 @@ const async fn recover() -> String throw IOError {
     } catch {
         IOError(error) => {
             rejected = match error {
-                .InvalidUTF8(details) => details.kind
-                    == UTF8ErrorKind::InvalidLead
+                .InvalidUTF8(details) => details.kind == UTF8ErrorKind::InvalidLead
                     && details.offset == 0,
                 .System(_) => false,
                 .InputTooLarge(_) => false

@@ -30,7 +30,7 @@ const TestSuite suite([] static noexcept {
             std::string(json_imports)
                 + "fn invalid() throw JSONValueError { "
                   "var value = JSONValue::object(); value.set(\"key\", &&JSONValue::null())?; "
-                  "let key = value.key_at(0)?; value.erase(\"key\")?; }",
+                  "let key = value.members()?[0].0.as_str(); value.erase(\"key\")?; }",
             [](const auto&, const auto& result) static noexcept {
                 if (!expect(!result.has_value())) {
                     return;

@@ -1,49 +1,49 @@
 import std::core using NumberParseError;
 
-private const fn contracts1() {
+test "Number parsing: complete representable decimal inputs produce scalars" {
     try {
         check(i64::parse("-9223372036854775808")? == -9223372036854775807i64 - 1);
         check(u64::parse("18446744073709551615")? == 18446744073709551615u64);
         check(f64::parse("1.25e2")? == 125.0);
-        check(f64::parse("inf")?.is_finite() == false);
-        check(f64::parse("nan")?.is_finite() == false);
+        check(!f64::parse("inf")?.is_finite());
+        check(!f64::parse("nan")?.is_finite());
         check(1.0 / f64::parse("-0.0")? < 0.0);
     } catch {
         NumberParseError(_) => fail("representable inputs must parse"),
     }
 }
 
-private const fn contracts2() {
+test "Number parsing: incomplete malformed and unrepresentable inputs fail" {
     for input in ["", " 1", "+1", "1x", "1.5", "1\0", "9223372036854775808"] {
-        var rejected = false;
-        try {
-            let _ = i64::parse(input)?;
+        let rejected = try {
+            i64::parse(input)?;
+            false
         } catch {
-            NumberParseError(_) => { rejected = true; },
-        }
-        check(rejected);
+            NumberParseError(error) => error == .Invalid,
+        };
+        check(rejected, input);
     }
     for input in ["-0", "-1", "18446744073709551616"] {
-        var rejected = false;
-        try {
-            let _ = u64::parse(input)?;
+        let rejected = try {
+            u64::parse(input)?;
+            false
         } catch {
-            NumberParseError(_) => { rejected = true; },
-        }
-        check(rejected);
+            NumberParseError(error) => error == .Invalid,
+        };
+        check(rejected, input);
     }
     for input in ["", " 1", "+1", "1e", "1x", "1e400"] {
-        var rejected = false;
-        try {
-            let _ = f64::parse(input)?;
+        let rejected = try {
+            f64::parse(input)?;
+            false
         } catch {
-            NumberParseError(_) => { rejected = true; },
-        }
-        check(rejected);
+            NumberParseError(error) => error == .Invalid,
+        };
+        check(rejected, input);
     }
 }
 
-private const fn contracts3() {
+test "Number parsing: target types establish integer and floating range checks" {
     try {
         check(i8::parse("-128")? == -128i8);
         check(i8::parse("127")? == 127i8);
@@ -58,69 +58,57 @@ private const fn contracts3() {
         check(usize::parse("123")? == 123usize);
         check(f32::parse("1.25e2")? == 125.0f32);
         check(f32::parse("3.4028235e38")?.is_finite());
-        check(f32::parse("inf")?.is_finite() == false);
-        check(f32::parse("nan")?.is_finite() == false);
+        check(!f32::parse("inf")?.is_finite());
+        check(!f32::parse("nan")?.is_finite());
     } catch {
         NumberParseError(_) => fail("values within the requested type must parse"),
     }
 
     for input in ["-129", "128"] {
-        var rejected = false;
-        try {
-            let _ = i8::parse(input)?;
+        let rejected = try {
+            i8::parse(input)?;
+            false
         } catch {
-            NumberParseError(_) => { rejected = true; },
-        }
-        check(rejected);
+            NumberParseError(error) => error == .Invalid,
+        };
+        check(rejected, input);
     }
     for input in ["-0", "256", "1.0"] {
-        var rejected = false;
-        try {
-            let _ = u8::parse(input)?;
+        let rejected = try {
+            u8::parse(input)?;
+            false
         } catch {
-            NumberParseError(_) => { rejected = true; },
-        }
-        check(rejected);
+            NumberParseError(error) => error == .Invalid,
+        };
+        check(rejected, input);
     }
     for input in ["-1", "65536"] {
-        var rejected = false;
-        try {
-            let _ = u16::parse(input)?;
+        let rejected = try {
+            u16::parse(input)?;
+            false
         } catch {
-            NumberParseError(_) => { rejected = true; },
-        }
-        check(rejected);
+            NumberParseError(error) => error == .Invalid,
+        };
+        check(rejected, input);
     }
     for input in ["-1", "18446744073709551616"] {
-        var rejected = false;
-        try {
-            let _ = usize::parse(input)?;
+        let rejected = try {
+            usize::parse(input)?;
+            false
         } catch {
-            NumberParseError(_) => { rejected = true; },
-        }
-        check(rejected);
+            NumberParseError(error) => error == .Invalid,
+        };
+        check(rejected, input);
     }
     for input in ["3.5e38", "1e-50", "1e", "1x"] {
-        var rejected = false;
-        try {
-            let _ = f32::parse(input)?;
+        let rejected = try {
+            f32::parse(input)?;
+            false
         } catch {
-            NumberParseError(_) => { rejected = true; },
-        }
-        check(rejected);
+            NumberParseError(error) => error == .Invalid,
+        };
+        check(rejected, input);
     }
-}
-
-test "Number parsing: complete representable decimal inputs produce scalars: native" {
-    contracts1();
-}
-
-test "Number parsing: incomplete malformed and unrepresentable inputs fail: native" {
-    contracts2();
-}
-
-test "Number parsing: target types establish integer and floating range checks: native" {
-    contracts3();
 }
 
 const test "Number parsing: static conversion and typed failure" {

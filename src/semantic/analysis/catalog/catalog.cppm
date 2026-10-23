@@ -233,12 +233,15 @@ auto build_analysis_catalog(ProgramDraft& draft, CheckedDefinitions* seed = null
 class ImportUsage final {
 public:
     explicit ImportUsage(std::size_t import_count) noexcept;
-    auto record(ImportBindingID import_id) noexcept -> void;
+    auto record(ImportBindingID import_id, std::string_view name) noexcept -> void;
     auto record_cpp(ProgramModuleID module_id, Span origin) noexcept -> void;
     auto cpp_was_used(ProgramModuleID module_id, Span origin) const noexcept -> bool;
     auto was_used(ImportBindingID import_id) const noexcept -> bool;
+    auto selection_was_used(ImportBindingID import_id, std::string_view name) const noexcept
+        -> bool;
 
 private:
     std::vector<std::uint8_t> used_imports;
+    std::set<std::pair<ImportBindingID, std::string>> used_selections;
     std::flat_set<std::pair<ProgramModuleID, std::uint32_t>> used_cpp_imports;
 };

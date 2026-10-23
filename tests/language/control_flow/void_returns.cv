@@ -19,7 +19,9 @@ fn invoke(callback: fn() -> void) => callback();
 
 fn fallible(&count: i32, stop: bool) throw Stop {
     count += 1;
-    if stop { throw Stop {}; }
+    if stop {
+        throw Stop {};
+    }
     return record(&count, 10);
 }
 
@@ -74,9 +76,13 @@ test "Functions: test bodies accept a void return operand" {
 }
 
 fn empty_paths(&count: i32, flag: bool) {
-    if flag {} else {}
+    if flag {
+    } else {
+    }
     count += 1;
-    if flag { record(&count, 2); }
+    if flag {
+        record(&count, 2);
+    }
     count += 4;
     match flag {
         true => {},

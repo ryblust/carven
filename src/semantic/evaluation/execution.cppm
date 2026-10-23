@@ -7,6 +7,7 @@ import :semantic.evaluation.value;
 import :semantic.semir.body;
 import :semantic.semir.decl;
 import :semantic.semir.structured;
+import :semantic.semir.values;
 import :support.function_ref;
 import :support.task;
 import std;
@@ -207,6 +208,16 @@ using ExecutionHostResult =
     std::variant<ExecutionValue, std::unique_ptr<ExecutionExternalOperation>>;
 
 using ExecutionCallSite = std::variant<CallableID, const SemanticExpression*>;
+
+class SemanticExecutionContext;
+
+using ExecutionNativeCall = FunctionRef<std::expected<ExecutionHostResult, ExecutionCallFailure>(
+    const ExecutionValueAccess&,
+    SemanticExecutionContext&,
+    ExecutionCallSite,
+    std::span<ExecutionValue>,
+    ProgramOriginID
+) noexcept>;
 
 using ExecutionHostFunction = FunctionRef<std::expected<
     ExecutionHostResult,

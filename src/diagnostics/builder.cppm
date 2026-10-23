@@ -15,6 +15,7 @@ public:
         -> DiagnosticBuilder&;
 
     auto help(std::string message) noexcept -> DiagnosticBuilder&;
+    auto fix(std::string title, std::vector<DiagnosticEdit> edits) noexcept -> DiagnosticBuilder&;
     auto build() noexcept -> Diagnostic;
 
 private:

@@ -31,7 +31,9 @@ test "Testing: inline-test conditions execute once and successful messages are s
 }
 
 test "Testing: test calls compose with control blocks and lambdas" {
-    if true { check(true); }
+    if true {
+        check(true);
+    }
     for value in [1, 2] {
         require(value > 0);
     }

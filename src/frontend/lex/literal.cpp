@@ -144,6 +144,9 @@ auto quoted_extent(std::string_view text, char quote) noexcept -> std::size_t {
             return offset + 1;
         }
         if (text[offset] == '\\' && offset + 1 < text.size()) {
+            if (text[offset + 1] == '\n' || text[offset + 1] == '\r') {
+                return offset + 1;
+            }
             offset += 2;
         } else {
             ++offset;

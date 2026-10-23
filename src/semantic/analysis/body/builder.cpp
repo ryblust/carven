@@ -256,6 +256,25 @@ auto BodyBuilder::known_callable(const SemanticExpression& expression) const noe
     return std::nullopt;
 }
 
+auto BodyBuilder::source_callable(const SemanticExpression& expression) const noexcept
+    -> std::optional<CallableID> {
+    // The executable callable model already tracks immutable values and closures.
+    // Editor observations can retain its concrete source identity without a second map.
+    if (const auto known = known_callable(expression)) {
+        if (const auto* concrete = std::get_if<CallableID>(&*known)) {
+            return *concrete;
+        }
+    }
+    const auto type = unwrap_type_alias(draft, expression.type.construction());
+    if (const auto* concrete = std::get_if<TypeID>(&type)) {
+        const auto canonical = draft.type_copy(*concrete);
+        if (const auto* function = std::get_if<FunctionTypeValue>(&canonical.value)) {
+            return function->callable;
+        }
+    }
+    return std::nullopt;
+}
+
 auto BodyBuilder::known_sequence_extent(const SemanticExpression& expression) const noexcept
     -> std::optional<std::uint64_t> {
     if (const auto extent = sequence_extent(draft, expression)) {

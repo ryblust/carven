@@ -85,22 +85,18 @@ test "Generics: owned concrete fields copy and transfer using ordinary value sem
 }
 
 test "Generics: nested enum payloads preserve argument order and container values" {
-    let pair = NestedChoice<i32, u8>::Pair(
-        {
-            first: 7u8,
-            second: 35
-        }
-    );
+    let pair = NestedChoice<i32, u8>::Pair({
+        first: 7u8,
+        second: 35
+    });
     match pair {
         .Pair(values) => check((values.first as i32) + values.second == 42),
         _ => check(false),
     }
-    let repeated = NestedChoice<i32, u8>::Repeated(
-        {
-            first: 20,
-            second: 22
-        }
-    );
+    let repeated = NestedChoice<i32, u8>::Repeated({
+        first: 20,
+        second: 22
+    });
     match repeated {
         .Repeated(values) => check(values.first + values.second == 42),
         _ => check(false),
@@ -133,7 +129,9 @@ test "Generics: concrete fields and pointer targets retain their ordinary contra
     let number = 42;
     let pointer = PointerBox<i32> { value: addressof(number) };
     check(pointer.value != nullptr);
-    if pointer.value != nullptr { check(*pointer.value == 42); }
+    if pointer.value != nullptr {
+        check(*pointer.value == 42);
+    }
 }
 
 private struct CallableFailure {
@@ -143,7 +141,9 @@ private struct CallableFailure {
 private struct OtherCallableFailure {}
 
 private fn checked_increment(value: i32) -> i32 throw CallableFailure {
-    if value < 0 { throw CallableFailure { value: value }; }
+    if value < 0 {
+        throw CallableFailure { value: value };
+    }
     return value + 1;
 }
 

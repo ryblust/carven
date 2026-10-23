@@ -36,7 +36,8 @@ auto Parser::parse_module_reference() noexcept -> ASTModuleReference {
     const auto finish_module_path =
         [&](std::vector<Span> components) noexcept -> std::optional<std::vector<Span>> {
         while (match(TokenKind::Dot)) {
-            if (!is_identifier_spelling(slice(source, current().span))) {
+            if ((check(TokenKind::Import) && on_new_line())
+                || !is_identifier_spelling(slice(source, current().span))) {
                 fail_here("expected a module name after '.'");
                 return std::nullopt;
             }
@@ -59,7 +60,8 @@ auto Parser::parse_module_reference() noexcept -> ASTModuleReference {
     }
 
     if (const auto dot = match(TokenKind::Dot)) {
-        if (!is_identifier_spelling(slice(source, current().span))) {
+        if ((check(TokenKind::Import) && on_new_line())
+            || !is_identifier_spelling(slice(source, current().span))) {
             fail_here("expected a module name after '.'");
             return failed_reference();
         }
@@ -76,14 +78,16 @@ auto Parser::parse_module_reference() noexcept -> ASTModuleReference {
         };
     }
 
-    if (!is_identifier_spelling(slice(source, current().span))) {
+    if ((check(TokenKind::Import) && on_new_line())
+        || !is_identifier_spelling(slice(source, current().span))) {
         fail_here("expected a module reference after 'import'");
         return failed_reference();
     }
 
     const auto first = consume();
     if (const auto separator = match(TokenKind::ColonColon)) {
-        if (!is_identifier_spelling(slice(source, current().span))) {
+        if ((check(TokenKind::Import) && on_new_line())
+            || !is_identifier_spelling(slice(source, current().span))) {
             fail_here("expected a module name after '::'");
             return failed_reference();
         }
@@ -113,12 +117,14 @@ auto Parser::parse_module_reference() noexcept -> ASTModuleReference {
     };
 }
 
-auto Parser::parse_cpp_header_import() noexcept -> ASTCppHeaderImport {
+auto Parser::parse_cpp_header_import() noexcept -> ParsedImport<ASTCppHeaderImport> {
     const auto start = expect(TokenKind::Import, "expected 'import'").span;
     const auto header = consume();
     auto end = header.span;
     auto using_clause = std::optional<ASTCppUsing>();
+    auto scope_uncertain = false;
     if (const auto using_token = match(TokenKind::Using)) {
+        scope_uncertain = true;
         auto prefix = std::vector<Span>();
         const auto list = [&]() noexcept -> ASTImportList {
             expect(TokenKind::LeftBrace, "expected '{' in C++ selection");
@@ -165,18 +171,26 @@ auto Parser::parse_cpp_header_import() noexcept -> ASTCppHeaderImport {
         end = expect(TokenKind::Semicolon, "expected ';' after C++ header import").span;
     }
     return {
-        .span = join(start, end),
-        .delimiter = header.kind == TokenKind::CppAngleHeaderName
-            ? ASTCppHeaderDelimiter::AngleBrackets
-            : ASTCppHeaderDelimiter::Quotes,
-        .name_span = Span::from_bounds(header.span.start() + 1, header.span.end() - 1),
-        .using_clause = std::move(using_clause),
+        .value =
+            ASTCppHeaderImport {
+                .span = join(start, end),
+                .delimiter = header.kind == TokenKind::CppAngleHeaderName
+                    ? ASTCppHeaderDelimiter::AngleBrackets
+                    : ASTCppHeaderDelimiter::Quotes,
+                .name_span = Span::from_bounds(header.span.start() + 1, header.span.end() - 1),
+                .using_clause = std::move(using_clause),
+            },
+        .scope_uncertain = scope_uncertain,
     };
 }
 
-auto Parser::parse_module_import() noexcept -> ASTModuleImportID {
+auto Parser::parse_module_import() noexcept -> ParsedImport<ASTModuleImportID> {
     const auto start = expect(TokenKind::Import, "expected 'import'").span;
     auto module_reference = parse_module_reference();
+    // An interrupted reference at a statement boundary has not introduced local
+    // names. An unparsed tail or an actual `using` clause may still hide them.
+    const auto scope_uncertain = check(TokenKind::Using)
+        || (failed && !at_end() && !check(TokenKind::Semicolon) && !on_statement_line());
     expect(TokenKind::Using, "expected 'using' in import declaration");
 
     const auto parse_item = [&]() noexcept -> ASTImportItem {
@@ -203,16 +217,36 @@ auto Parser::parse_module_import() noexcept -> ASTModuleImportID {
                 fail_here("an explicit import list must contain at least one name");
             } else {
                 while (!failed) {
-                    names.push_back(parse_item());
-                    if (!match(TokenKind::Comma)) {
+                    if (!names.empty()
+                        && (at_end() || check(TokenKind::Semicolon) || on_statement_line())) {
                         break;
                     }
-                    if (check(TokenKind::RightBrace)) {
+                    const auto item = parse_item();
+                    if (!failed) {
+                        names.push_back(item);
+                    }
+                    if (!match(TokenKind::Comma) || check(TokenKind::RightBrace)) {
                         break;
                     }
                 }
             }
-            const auto right = expect(TokenKind::RightBrace, "expected '}' after import list");
+            auto right = current();
+            if (!names.empty()
+                && !check(TokenKind::RightBrace)
+                && (at_end() || check(TokenKind::Semicolon) || on_statement_line())
+                && speculation_depth == 0) {
+                // A partial final entry cannot erase earlier complete selections.
+                scope_complete = false;
+                failed = false;
+                fail_here("expected '}' after import list");
+                failed = false;
+                right = {.kind = TokenKind::RightBrace, .span = Span::at(current().span.start())};
+            } else {
+                right = expect(TokenKind::RightBrace, "expected '}' after import list");
+            }
+            if (names.empty() && !failed) {
+                fail_here("an explicit import list must contain at least one name");
+            }
             return {
                 .span = join(left->span, right.span),
                 .value = ASTImportList {.names = std::move(names)},
@@ -233,11 +267,14 @@ auto Parser::parse_module_import() noexcept -> ASTModuleImportID {
     } else {
         end = expect(TokenKind::Semicolon, "expected ';' after import declaration").span;
     }
-    return builder.append_module_import({
-        .span = join(start, end),
-        .module_reference = std::move(module_reference),
-        .selection = std::move(selection),
-    });
+    return {
+        .value = builder.append_module_import({
+            .span = join(start, end),
+            .module_reference = std::move(module_reference),
+            .selection = std::move(selection),
+        }),
+        .scope_uncertain = scope_uncertain,
+    };
 }
 
 auto Parser::parse_cpp_declaration_form(Token keyword) noexcept -> Span {
@@ -250,7 +287,8 @@ auto Parser::parse_cpp_declaration_form(Token keyword) noexcept -> Span {
     return join(keyword.span, right.span);
 }
 
-auto Parser::parse_top_level_item() noexcept -> std::optional<ASTItemID> {
+auto Parser::parse_top_level_item() noexcept -> ParsedItem {
+    auto result = ParsedItem {.value = std::nullopt, .name = std::nullopt};
     const auto start = current().span;
     const auto discard_through_semicolon = [&]() noexcept {
         while (!at_end()) {
@@ -280,7 +318,7 @@ auto Parser::parse_top_level_item() noexcept -> std::optional<ASTItemID> {
                 DiagnosticCode::Syntax
             );
             discard_through_semicolon();
-            return std::nullopt;
+            return result;
         }
         cpp_import = parse_cpp_declaration_form(*keyword);
     }
@@ -308,7 +346,7 @@ auto Parser::parse_top_level_item() noexcept -> std::optional<ASTItemID> {
         if (cpp_import.has_value() && check(TokenKind::Export)) {
             discard_through_semicolon();
         }
-        return std::nullopt;
+        return result;
     }
 
     if (async_span && !check(TokenKind::Fn) && !(is_bare && check(TokenKind::Test))) {
@@ -317,41 +355,53 @@ auto Parser::parse_top_level_item() noexcept -> std::optional<ASTItemID> {
             *async_span,
             DiagnosticCode::Syntax
         );
-        return std::nullopt;
+        return result;
+    }
+
+    if ((check(TokenKind::Enum)
+         || check(TokenKind::Struct)
+         || check(TokenKind::Class)
+         || check(TokenKind::Fn)
+         || check(TokenKind::Const))
+        && check_next(TokenKind::Identifier)) {
+        result.name = tokens[cursor + 1].span;
     }
 
     if (check(TokenKind::Enum)) {
         auto parsed = parse_enum(visibility);
         if (!parsed) {
-            return std::nullopt;
+            return result;
         }
         auto [end, declaration] = std::move(*parsed);
-        return builder.append_item({
+        result.value = builder.append_item({
             .span = join(start, end),
             .value = std::move(declaration),
         });
+        return result;
     }
     if (check(TokenKind::Struct) || check(TokenKind::Class)) {
         auto parsed = parse_record(visibility);
         if (!parsed) {
-            return std::nullopt;
+            return result;
         }
         auto [end, declaration] = std::move(*parsed);
-        return builder.append_item({
+        result.value = builder.append_item({
             .span = join(start, end),
             .value = std::move(declaration),
         });
+        return result;
     }
     if (check(TokenKind::Fn)) {
         auto parsed = parse_function(visibility, cpp_export, cpp_import, const_span, async_span);
         if (!parsed) {
-            return std::nullopt;
+            return result;
         }
         auto [end, definition] = std::move(*parsed);
-        return builder.append_item({
+        result.value = builder.append_item({
             .span = join(start, end),
             .value = std::move(definition),
         });
+        return result;
     }
     if (is_bare
         && !cpp_export
@@ -362,9 +412,9 @@ auto Parser::parse_top_level_item() noexcept -> std::optional<ASTItemID> {
         auto label = parse_block_label();
         const auto body = parse_ordinary_block();
         if (!body) {
-            return std::nullopt;
+            return result;
         }
-        return builder.append_item({
+        result.value = builder.append_item({
             .span = join(start, builder.block(*body).span),
             .value = ASTConstBlock {
                 .keyword_span = keyword.span,
@@ -372,34 +422,37 @@ auto Parser::parse_top_level_item() noexcept -> std::optional<ASTItemID> {
                 .body = *body,
             },
         });
+        return result;
     }
     if (check(TokenKind::Const)) {
         auto parsed = parse_constant(visibility);
         if (!parsed) {
-            return std::nullopt;
+            return result;
         }
         auto [end, declaration] = std::move(*parsed);
-        return builder.append_item({
+        result.value = builder.append_item({
             .span = join(start, end),
             .value = declaration,
         });
+        return result;
     }
     if (is_bare && check(TokenKind::Test)) {
         auto parsed = parse_test(const_span.has_value(), async_span);
         if (!parsed) {
-            return std::nullopt;
+            return result;
         }
         auto [end, declaration] = std::move(*parsed);
-        return builder.append_item({
+        result.value = builder.append_item({
             .span = join(start, end),
             .value = std::move(declaration),
         });
+        return result;
     }
     fail_here(
         is_bare ? "expected top-level declaration or test"
                 : "expected enum, struct, function, or const after visibility modifier"
     );
-    return std::nullopt;
+    return result;
 }
 
 auto Parser::parse_test(bool is_const, std::optional<Span> async_span) noexcept

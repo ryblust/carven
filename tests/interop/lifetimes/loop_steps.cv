@@ -24,8 +24,12 @@ test "Lifetimes: closed loop steps finish each temporary before the next step" {
         (Owner { 3 }.probe()),
         advance_step(&index) {
         let body = Owner { 1 };
-        if index == 0 { continue; }
-        if index == 2 { break; }
+        if index == 0 {
+            continue;
+        }
+        if index == 2 {
+            break;
+        }
         mark(8);
     }
     mark(6);
@@ -34,7 +38,9 @@ test "Lifetimes: closed loop steps finish each temporary before the next step" {
 
 fn fallible_step(&index: i32) throw StepFailure {
     mark(7);
-    if index == 1 { throw StepFailure::Stop; }
+    if index == 1 {
+        throw StepFailure::Stop;
+    }
     index += 1;
 }
 

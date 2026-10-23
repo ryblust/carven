@@ -1,7 +1,9 @@
 import std::async using { cancel_point, yield_once, wait_ready, close }
 
 const async fn value(number: i32, delayed: bool) -> i32 {
-    if delayed { await yield_once(); }
+    if delayed {
+        await yield_once();
+    }
     return number;
 }
 
@@ -97,7 +99,9 @@ const async fn release() -> bool {
 
 const async fn conditional(observe: bool) -> bool {
     async let child = value(7, false);
-    if observe { await child; }
+    if observe {
+        await child;
+    }
     // Unconditional close also admits a child consumed on only some paths.
     let unit = (await close(child),);
     return unit == ((),);

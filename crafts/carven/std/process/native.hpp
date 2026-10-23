@@ -88,6 +88,7 @@ auto wait_any(std::span<const Handle> processes) noexcept -> Exit;
 auto run(
     std::string_view program,
     runtime::Slice<runtime::String> arguments,
+    std::string_view directory,
     std::string_view output
 ) noexcept -> RunResult;
 

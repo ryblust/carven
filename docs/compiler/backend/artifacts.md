@@ -102,8 +102,10 @@ implementation closure without inferring it from type dependencies or scanning
 generated C++.
 Generation starts with owned artifacts and follows the completed units' includes
 to select dependency interfaces. Unused library headers are not materialized or
-listed in the manifest. Explicit standard-library batches own all their modules
-and publish the complete library inventory.
+listed in the manifest. Each Craft has a separate stable linkage domain; retained
+dependencies supply external implementations, while newly loaded modules emit
+their own implementations. Explicit roots select runtime tests and inspection
+output independently of implementation ownership.
 
 ### Staged bodies
 
@@ -243,6 +245,11 @@ Directive planning orders associated headers, source imports, project headers,
 and standard-library headers. Independent project headers share one group sorted
 by path. The completed unit owns
 structured include and pragma-once directives; emission serializes them.
+
+Source and generated filenames in `#line` directives preserve UTF-8 text. Their
+quotes, backslashes, and control characters use character escapes permitted in
+unevaluated strings; numeric byte escapes do not belong in these directives.
+Runtime string literals retain their separate byte-preserving encoding.
 
 The renderer builds completed layout tables in postorder for expressions,
 statements, items and the type dependency DAG, including decltype expressions.

@@ -34,7 +34,7 @@ local reports = {
 
 target("carven-test-language-traps")
     set_kind("binary")
-    add_rules("@carven/carven", {tests = {entry = false}})
+    add_rules("carven", {tests = {entry = false}})
     add_defines("NDEBUG")
     add_files("operations.cv", "fatal.cv", "runner.cpp")
     add_includedirs(".")

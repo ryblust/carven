@@ -1,8 +1,8 @@
 module carven:test.internal.frontend.lex.literals;
 
+import :frontend.lex;
 import :frontend.lex.literal;
 import :frontend.lex.token;
-import :frontend.lex;
 import :frontend.literal;
 import :source.identifier;
 import :source.text;
@@ -13,6 +13,53 @@ import std;
 namespace {
 
 const TestSuite suite([] static noexcept {
+    "Lexer: malformed opaque text retains following tokens and literal values"_test =
+        [] static noexcept {
+            const auto prefixes = std::to_array<std::string_view>(
+                {"\"unfinished😀",
+                 "\"unfinished\\\r\n",
+                 "c\"unfinished",
+                 "'unfinished",
+                 "r#\"unfinished",
+                 "\"\"\"\nprose { [",
+                 "r#\"\"\"\nprose { [",
+                 "f\"unfinished {1}",
+                 "f\"hole {call()",
+                 "f\"\"\"\nprose {1}",
+                 "f\"\"\"\n{f\"inner\"",
+                 "/* unfinished { [",
+                 "/* opaque { [ */",
+                 "\"\\q\""}
+            );
+            each(prefixes, std::identity {}, [](std::string_view prefix) static noexcept {
+                const auto text = std::string(prefix) + "\nlet following = \"尾😀\";";
+                const auto result =
+                    lex(SourceView {
+                        .source_id = SourceID::from_index(0),
+                        .text = text,
+                        .origin = "recovery.cv"
+                    });
+                expect(!result.diagnostics.empty()).note(text);
+                const auto tokens = result.value.tokens();
+                if (!expect(tokens.size() >= 5).note(text)) {
+                    return;
+                }
+                expect(std::ranges::any_of(tokens, [&](const auto& token) {
+                    return token.kind == TokenKind::Identifier
+                        && slice(text, token.span) == "following";
+                })).note(text);
+                const auto index = tokens.size() - 2;
+                if (!expect(tokens[index].kind == TokenKind::StringLiteral).note(text)) {
+                    return;
+                }
+                const auto* value =
+                    std::get_if<StringLiteralValue>(&result.value.literal_value(index));
+                if (expect(value != nullptr).note(text)) {
+                    expect_equal(value->bytes, "尾😀");
+                }
+            });
+        };
+
     "Lexer: numeric spellings follow the grammar exactly"_test = [] static noexcept {
         static constexpr auto valid = std::to_array<std::string_view>({
             "0ns",           "1us",    "20ms",      "3s",         "0xffns",     "0b10us",

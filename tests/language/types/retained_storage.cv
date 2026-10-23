@@ -13,14 +13,12 @@ const fn build() -> Vector<Entry> {
     for number in 1..4 {
         var values: Vector<i32> = [number, number * 10];
         values.reserve(5);
-        rows.push(
-            {
-                title: f"row {number}",
-                values: &&values
-            }
-        );
+        rows.push({
+            title: f"row {number}",
+            values: &&values
+        });
     }
-    return &&rows;
+    return rows;
 }
 
 const rows = build();

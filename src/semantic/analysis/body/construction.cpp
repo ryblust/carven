@@ -14,8 +14,8 @@ import :frontend.ast.tree;
 import :semantic.analysis.async;
 import :semantic.analysis.body.builder;
 import :semantic.analysis.body.context;
-import :semantic.analysis.body.expr_site;
 import :semantic.analysis.body.resolve;
+import :semantic.analysis.body.site;
 import :semantic.analysis.constant.extent;
 import :semantic.analysis.constant.freeze;
 import :semantic.analysis.coverage;
@@ -25,8 +25,8 @@ import :semantic.analysis.operations;
 import :semantic.analysis.program;
 import :semantic.analysis.source.builder;
 import :semantic.analysis.stage.session;
-import :semantic.analysis.types.display;
 import :semantic.analysis.types;
+import :semantic.analysis.types.display;
 import :semantic.analysis.validation;
 import :semantic.evaluation.operation;
 import :semantic.semir.decl;
@@ -74,6 +74,7 @@ BodyElaborator::BodyElaborator(
         BodyLocalFrame {
             .lifetime = root_lifetime,
             .names = {},
+            .unavailable = {},
         }
     );
     body_builder.set_lifetime(root_lifetime);
@@ -83,6 +84,11 @@ BodyElaborator::BodyElaborator(
 }
 
 BodyElaborator::~BodyElaborator() noexcept {
+    // Observing a proven source binding does not publish its enclosing body.
+    // Retain partial evidence for editor recovery; finish() detaches unpublished types.
+    if (observe_sources) {
+        draft().source_analysis()->add_body(std::move(source_occurrences));
+    }
     batch->active_builders.erase(body_builder.identity());
 }
 
@@ -388,6 +394,23 @@ auto BodyElaborator::resolve_type_qualifier(ASTExprID expression) noexcept
             "static type qualifier requires a concrete type"
         ));
     }
+    if (observe_sources
+        && catalog().lookup(source_module_id, text).empty()
+        && !catalog().cpp_selection(source_module_id, text).empty()) {
+        // An explicit native root still has a known binding when the qualifier
+        // cannot be classified as a Carven type. Do not resolve its members.
+        const auto native = lookup_cpp_name(
+            draft(),
+            catalog(),
+            import_usage(),
+            source_module_id,
+            {.global_root = std::nullopt, .components = {name->name_span}},
+            &source_occurrences
+        );
+        if (!native) {
+            co_return std::unexpected(native.error());
+        }
+    }
     auto selected = (co_await find_global(text, name->name_span));
     if (!selected.has_value()) {
         co_return std::unexpected(selected.error());
@@ -441,6 +464,7 @@ auto BodyElaborator::resolve_constant_enum_case(
         const auto case_name = draft().spelling(item.name);
         if (case_name == name) {
             const auto reference_type = enum_case_reference_type(draft(), type, item.payload_types);
+            observe_enum_case(span, item.reference);
             observe_source(span, std::nullopt, reference_type);
             co_return ResolvedEnumCase {
                 .id = item.reference,

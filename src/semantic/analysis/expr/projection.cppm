@@ -8,8 +8,8 @@ import :semantic.analysis.diagnostics;
 import :semantic.analysis.expr.scope;
 import :semantic.analysis.operations;
 import :semantic.analysis.program;
-import :semantic.analysis.types.display;
 import :semantic.analysis.types;
+import :semantic.analysis.types.display;
 import :semantic.semir.structured;
 import std;
 

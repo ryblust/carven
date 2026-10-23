@@ -44,10 +44,8 @@ test "Interpolation: precomputed contents preserve local values ownership and in
 
 test "Interpolation: known results retain effects before construction and when discarded" {
     var trace = 0;
-    check(
-        f"{record_format_flag(&trace, 1) && false} {record_format_flag(&trace, 2) || true}"
-            == "false true"
-    );
+    check(f"{record_format_flag(&trace, 1) && false} {record_format_flag(&trace, 2) || true}"
+        == "false true");
     check(trace == 12);
     f"{record_format_flag(&trace, 3) && false}";
     check(trace == 123);
@@ -67,10 +65,8 @@ test "Interpolation: mixed contents preserve literals and dynamic specification 
     var precision = 2;
     check(f"{version:04}/{price:{width}.{precision}f}/{7}" == "0042/   1.25/7");
     var counter = 0;
-    check(
-        f"{version:04}/{1.0:{next_format_value(&counter) + 3}.{next_format_value(&counter)}f}/{7}"
-            == "0042/1.00/7"
-    );
+    check(f"{version:04}/{1.0:{next_format_value(&counter) + 3}.{next_format_value(&counter)}f}/{7}"
+        == "0042/1.00/7");
     check(counter == 2);
 }
 
@@ -152,8 +148,6 @@ test "Interpolation: multiline holes and branch values retain ordinary expressio
     var text: String = "text that exceeds a small string buffer";
     text = f"{text.as_str()}!";
     check(text == "text that exceeds a small string buffer!");
-    check(
-        f"{String::from_str("temporary backing that exceeds a small string buffer").as_str()}"
-            == "temporary backing that exceeds a small string buffer"
-    );
+    check(f"{String::from_str("temporary backing that exceeds a small string buffer").as_str()}"
+        == "temporary backing that exceeds a small string buffer");
 }

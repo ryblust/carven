@@ -29,7 +29,6 @@ auto observe_relation_demand(
     const SemanticExpression& expression,
     OwnershipRelationDemand& demand
 ) noexcept -> void {
-    const auto& program = model.program;
     expression.value.visit([&](const auto& operation) noexcept {
         using Operation = std::remove_cvref_t<decltype(operation)>;
         if constexpr (std::same_as<Operation, SemTake>) {

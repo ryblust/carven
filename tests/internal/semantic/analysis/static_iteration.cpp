@@ -33,7 +33,11 @@ auto with_iteration(std::string_view text, Check check) noexcept -> void {
          .timings = {},
          .collect_source_observations = false,
          .capture_output = false,
-         .host_effects = HostEffects::Allow}
+         .host_effects = HostEffects::Allow,
+         .completion = std::nullopt,
+         .source_query = false,
+         .excluded = {},
+         .native_call = {}}
     );
     require(result.program() != nullptr).note("source = ", text);
     check(output);

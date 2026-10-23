@@ -40,13 +40,8 @@ test "String interpolation: parsed integer writes follow ordered scalar snapshot
     check(value == 4);
 }
 
-fn mixed_writer_record(
-    text: str,
-    owned: String,
-    value: u64,
-    flag: bool,
-    scalar: char
-) -> String => f"{{{text}}}\0{owned}|{value:016X}|{flag}|{scalar}";
+fn mixed_writer_record(text: str, owned: String, value: u64, flag: bool, scalar: char) -> String =>
+    f"{{{text}}}\0{owned}|{value:016X}|{flag}|{scalar}";
 
 fn mixed_writer_append(&output: String, text: String, value: i32, flag: bool, scalar: char) {
     output.append_format(f"[{text}:{value:04}:{flag}:{scalar}]");
@@ -72,10 +67,8 @@ fn writer_change(&source: String, &trace: i32) -> i32 {
     return trace;
 }
 
-fn writer_direct_return(
-    &source: String,
-    &trace: i32
-) -> String => f"{source}/{trace}/{writer_change(&source, &trace)}/{source}";
+fn writer_direct_return(&source: String, &trace: i32) -> String =>
+    f"{source}/{trace}/{writer_change(&source, &trace)}/{source}";
 
 struct WriterFailure {
     code: i32
@@ -86,9 +79,8 @@ fn writer_fail(&trace: i32) -> i32 throw WriterFailure {
     throw WriterFailure { code: trace };
 }
 
-fn writer_fallible_return(&trace: i32) -> String throw WriterFailure => f"text/{writer_fail(
-        &trace
-    )?}/{advance_integer(&trace)}";
+fn writer_fallible_return(&trace: i32) -> String throw WriterFailure =>
+    f"text/{writer_fail(&trace)?}/{advance_integer(&trace)}";
 
 test "Writer delivery: direct returns observe String after effects and keep scalar snapshots" {
     var source: String = "before storage long enough to allocate";
@@ -131,17 +123,11 @@ test "Writer delivery: direct return retains temporary text through later effect
     check(trace == 8);
 }
 
-fn dynamic_integer_record(
-    value: i64,
-    width: i32,
-    text: str
-) -> String => f"{42:04}/{value:0{width}x}/{text}/{value:{width}d}";
+fn dynamic_integer_record(value: i64, width: i32, text: str) -> String =>
+    f"{42:04}/{value:0{width}x}/{text}/{value:{width}d}";
 
-fn dynamic_integer_failure(
-    value: i32,
-    width: i32,
-    &trace: i32
-) -> String throw WriterFailure => f"{value:0{width}x}/{writer_fail(&trace)?}";
+fn dynamic_integer_failure(value: i32, width: i32, &trace: i32) -> String throw WriterFailure =>
+    f"{value:0{width}x}/{writer_fail(&trace)?}";
 
 fn dynamic_integer_append(&output: String, &text: String, &width: i32, &trace: i32) {
     output.append_format(
@@ -184,7 +170,7 @@ test "Dynamic integer width: later source failure precedes invalid width formatt
 const fn label(value: f64, width: i32, precision: i32) -> String {
     var text: String = "value=";
     text.append_format(f"{value:{width}.{precision}f}");
-    return &&text;
+    return text;
 }
 
 const padded = label(1.25, 8, 2);

@@ -4,7 +4,7 @@ local output = [[
 
 target("carven-example-log-analyzer")
     set_kind("binary")
-    add_rules("@carven/carven")
+    add_rules("carven")
     add_files("*.cv")
     add_tests("output", {
         run_timeout = 30000, plain = true,
@@ -18,6 +18,13 @@ target("carven-example-log-analyzer")
             assert(not opt.stderr or opt.stderr == "", opt.stderr)
         end
     end)
+target_end()
+
+target("carven-example-log-analyzer-tests")
+    set_kind("binary")
+    add_rules("carven", {tests = true})
+    add_files("*.cv")
+    add_tests("inline", {run_timeout = 30000})
 target_end()
 
 target("carven-example-log-analyzer-checks")

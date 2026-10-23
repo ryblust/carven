@@ -9,7 +9,9 @@ test "initializer stops its test" {
 }
 
 test "condition stops its test" {
-    if stopped_value() > 0 { println("unreachable branch"); }
+    if stopped_value() > 0 {
+        println("unreachable branch");
+    }
     println("unreachable condition");
 }
 

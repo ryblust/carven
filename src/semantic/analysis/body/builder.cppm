@@ -82,6 +82,9 @@ public:
     auto remember_initializer(LocalBindingID, const SemanticExpression&) noexcept -> void;
     auto known_callable(const SemanticExpression&) const noexcept
         -> std::optional<ConstructionCallableRef>;
+    // Detached source evidence may retain closure code identity without changing
+    // executable call specialization or capture/ownership behavior.
+    auto source_callable(const SemanticExpression&) const noexcept -> std::optional<CallableID>;
 
     auto known_sequence_extent(const SemanticExpression&) const noexcept
         -> std::optional<std::uint64_t>;

@@ -1,3 +1,4 @@
+import std::collections using HashSet;
 import "stream.hpp" using collector::Stream;
 
 private import(cpp) fn next_record(&stream: Stream) -> str = ::next_record;
@@ -8,29 +9,24 @@ struct Report {
     duplicates: usize
 }
 
-private fn contains(records: Vector<String>, candidate: str) -> bool {
-    for record in records {
-        if record == candidate { return true; }
-    }
-    return false;
-}
-
-private fn collect_stream(&stream: Stream, &report: Report) {
+private fn collect_stream(&stream: Stream, &records: HashSet<String>) -> usize {
+    var total = 0usize;
     while {
         let record = next_record(&stream);
-        if record.is_empty() { break; }
-        ++report.total;
-        if contains(report.records, record) {
-            ++report.duplicates;
-        } else {
-            report.records.push(record as String);
-        }
+        if record.is_empty() => break;
+        ++total;
+        records.insert(&&(record as String));
     }
+    return total;
 }
 
 export(cpp) fn collect(&first: Stream, &second: Stream) -> Report {
-    var report: Report = {};
-    collect_stream(&first, &report);
-    collect_stream(&second, &report);
-    return &&report;
+    var records = HashSet<String>::new();
+    let first_count = collect_stream(&first, &records);
+    let total = first_count + collect_stream(&second, &records);
+    return {
+        records: Vector<String>::from_slice(records.values()),
+        total: total,
+        duplicates: total - records.length()
+    };
 }

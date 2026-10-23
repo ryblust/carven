@@ -65,7 +65,7 @@ auto verify_target_artifact_logical_paths(std::span<const std::string> logical_p
 auto plan_artifacts(
     const SemIRProgram& semantic,
     const TargetPlanningRequest& request,
-    const std::flat_set<ModuleID>& library_modules,
+    const std::flat_map<ModuleID, std::size_t>& library_modules,
     const TargetClosureCatalog& closures,
     std::span<const TargetTypeDefinitionRef> type_order,
     const TargetNamePlan& names,
@@ -97,11 +97,12 @@ auto plan_artifacts(
     auto schedules = std::vector<std::optional<TargetModuleSchedule>>(module_count);
     auto surface_declarations = std::vector<std::vector<DeclarationRef>>(module_count);
     for (const auto module_record : declarations.modules()) {
-        const auto library_module = library_modules.contains(module_record.id);
+        const auto library = library_modules.find(module_record.id);
+        const auto library_module = library != library_modules.end();
         const auto& module_path =
             provenance.module_record(module_record.value.provenance_module).path;
-        const auto owned =
-            !library_module || std::ranges::contains(request.library->owned_modules, module_path);
+        const auto owned = !library_module
+            || std::ranges::contains(request.libraries[library->second].owned_modules, module_path);
         const auto emit_tests = owned
             && (!request.test_modules || std::ranges::contains(*request.test_modules, module_path));
         const auto test_mode = emit_tests ? request.test_mode : TestGenerationMode::None;

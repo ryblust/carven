@@ -37,11 +37,11 @@ fn evaluation_fail(&n: i32) -> bool throw EvaluationFailure {
     throw EvaluationFailure {};
 }
 
-fn runtime_and(&n: i32) -> bool throw EvaluationFailure => (evaluation_touch(&n) && false)
-    && evaluation_fail(&n)?;
+fn runtime_and(&n: i32) -> bool throw EvaluationFailure =>
+    (evaluation_touch(&n) && false) && evaluation_fail(&n)?;
 
-fn runtime_or(&n: i32) -> bool throw EvaluationFailure => (evaluation_touch(&n) || true)
-    || evaluation_fail(&n)?;
+fn runtime_or(&n: i32) -> bool throw EvaluationFailure =>
+    (evaluation_touch(&n) || true) || evaluation_fail(&n)?;
 
 test "Evaluation: runtime short circuits preserve effects and skip failing calls" {
     var n = 0;
@@ -69,12 +69,20 @@ test "Evaluation: runtime short circuits preserve effects and skip failing calls
 
 test "Evaluation: Boolean expressions preserve executed operands" {
     var n = 0;
-    if false && evaluation_touch(&n) { check(false); }
+    if false && evaluation_touch(&n) {
+        check(false);
+    }
     check(n == 0);
-    if evaluation_touch(&n) && false { check(false); }
+    if evaluation_touch(&n) && false {
+        check(false);
+    }
     check(n == 1);
-    if evaluation_touch(&n) || true { check(n == 2); }
-    if (1 < 2) && evaluation_touch(&n) { check(n == 3); }
+    if evaluation_touch(&n) || true {
+        check(n == 2);
+    }
+    if (1 < 2) && evaluation_touch(&n) {
+        check(n == 3);
+    }
     for ; evaluation_touch(&n) && false;
     {
         check(false);
@@ -117,9 +125,15 @@ test "Numeric types: runtime operations preserve width and wrapping" {
 
 fn immutable_selection(&trace: i32) -> i32 throw EvaluationFailure {
     let disabled = evaluation_touch(&trace) && false;
-    if disabled { throw EvaluationFailure {}; }
-    if disabled && evaluation_fail(&trace)? { return 0; }
-    if !disabled { return trace; }
+    if disabled {
+        throw EvaluationFailure {};
+    }
+    if disabled && evaluation_fail(&trace)? {
+        return 0;
+    }
+    if !disabled {
+        return trace;
+    }
     return 0;
 }
 

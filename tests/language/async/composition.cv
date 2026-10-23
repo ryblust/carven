@@ -48,12 +48,10 @@ const async fn update(&values: f32x4, &active: mask4, &unit: void) -> (LaneFailu
     active = values >= 6.0;
     unit = ();
     return (
-        LaneFailure::Rejected(
-            LaneValues {
-                values: values,
-                active: active
-            }
-        ),
+        LaneFailure::Rejected(LaneValues {
+            values: values,
+            active: active
+        }),
         active
     );
 }
@@ -80,8 +78,7 @@ const async fn vector_values() -> bool {
             .Rejected(value) => (value.values == 6.0).all() && value.active.all(),
         },
     };
-    return captured.to_array()
-        == [1.0, 2.0, 0.0, 0.0]
+    return captured.to_array() == [1.0, 2.0, 0.0, 0.0]
         && (values == 6.0).all()
         && active.all()
         && returned_active.all()
@@ -131,8 +128,7 @@ const async fn products() -> bool {
     var backing = 0;
     let _ = await when_all(when_all(touch(&backing)), idle());
     let moved = &&backing;
-    return empty
-        == ()
+    return empty == ()
         && singleton == (7,)
         && inferred_result == (42,)
         && mixed == (7, true, ())
@@ -145,7 +141,9 @@ const async fn cold_drop(consume: bool) -> bool {
     var backing = 0;
     if true {
         let operation = when_all(touch(&backing));
-        if consume { await operation; }
+        if consume {
+            await operation;
+        }
     }
     let moved = &&backing;
     return moved == 0;
@@ -185,8 +183,7 @@ const async fn races() -> bool {
     let (_, cancellation) = await wait_ready(all_cancelled);
     await close(all_cancelled);
     let units = await when_any(idle(), idle());
-    return winner
-        == (1usize, 9)
+    return winner == (1usize, 9)
         && successful == (1usize, 42)
         && fallback == 17
         && cancellation

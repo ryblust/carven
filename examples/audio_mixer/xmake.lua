@@ -18,7 +18,7 @@ local silent = "WARN 37 mixer clipped=0 samples=10\nINFO 12 mixer peak=0.00 rms=
 
 target("carven-example-audio-mixer")
     set_kind("binary")
-    add_rules("@carven/carven")
+    add_rules("carven")
     add_files("*.cv")
     add_tests("output", {
         run_timeout = 30000, plain = true,
@@ -37,6 +37,13 @@ target("carven-example-audio-mixer")
             assert(not opt.stderr or opt.stderr == "", opt.stderr)
         end
     end)
+target_end()
+
+target("carven-example-audio-mixer-tests")
+    set_kind("binary")
+    add_rules("carven", {tests = true})
+    add_files("*.cv")
+    add_tests("inline", {run_timeout = 30000})
 target_end()
 
 local arguments = {

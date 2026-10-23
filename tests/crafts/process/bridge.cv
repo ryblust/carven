@@ -15,6 +15,76 @@ import std::process using {
 
 fn host_platform() -> OperatingSystem => operating_system();
 
+private async fn read_payload(child: Process) -> Vector<u8> throw ProcessError {
+    var bytes: Vector<u8> = [];
+    while bytes.length() < 262144 {
+        match await child.read(65536)? {
+            .End => assert(false),
+            .Data(chunk) => { bytes.append(chunk); },
+        }
+    }
+    assert(bytes.length() == 262144 && bytes[0] == 0 && bytes[262143] == 255);
+    return bytes;
+}
+
+private async fn check_transport(&&program: String) throw ProcessError {
+    let quoted = Process::spawn_in(
+        program,
+        [
+            "-c",
+            r#"import os,sys; assert os.path.isfile('bridge.cv'); assert sys.argv[1:] == ['', 'a b', 'a\"b', 'tail\\', '我😀']; sys.stdout.buffer.write(b'K')"#,
+            "",
+            "a b",
+            "a\"b",
+            "tail\\",
+            "我😀"
+        ],
+        "tests/crafts/process"
+    )?;
+    match await quoted.read(1)? {
+        .Data(bytes) => assert(bytes.length() == 1 && bytes[0] == 75),
+        .End => assert(false),
+    }
+    assert(await quoted.wait()? == 0);
+    quoted.close_input()?;
+
+    // Transfer more than a pipe buffer in both directions. The child checks all
+    // bytes, including NUL, CR/LF, and values that are not UTF-8.
+    let echo = Process::spawn(
+        program,
+        [
+            "-c",
+            "import sys; data=bytes(range(256))*1024; sys.stdout.buffer.write(data); sys.stdout.buffer.flush(); assert sys.stdin.buffer.read() == data"
+        ]
+    )?;
+    let payload = await read_payload(echo)?;
+    await echo.write_all(&&payload)?;
+    echo.close_input()?;
+    assert(await echo.wait()? == 0);
+
+    // A blocked write must leave the driver free to cancel it. Cancelling a wait
+    // leaves the child alive; terminating it still yields a reusable exit status.
+    let stalled = Process::spawn(
+        program,
+        [
+            "-c",
+            "import sys,time; sys.stdout.buffer.write(bytes(range(256))*1024); sys.stdout.buffer.flush(); time.sleep(30)"
+        ]
+    )?;
+    let blocked_bytes = await read_payload(stalled)?;
+    async let writing = stalled.write_all(&&blocked_bytes);
+    async let waiting = stalled.wait();
+    await yield_once();
+    await close(writing);
+    await close(waiting);
+    stalled.close_input()?;
+    stalled.terminate()?;
+    let status = await stalled.wait()?;
+    assert(status != 0);
+    assert(await stalled.wait()? == status);
+    stalled.terminate()?;
+}
+
 async fn probe(&&program: String) -> i32 {
     return try {
         let arguments = host_arguments()?;
@@ -23,17 +93,14 @@ async fn probe(&&program: String) -> i32 {
         let current = executable()?;
         assert(!current.is_empty() && find_executable(current)? == current);
         let path = environment("PATH")?;
-        assert(
-            run(
-                    program,
-                    [
-                        "-c",
-                        "import os,sys; assert os.environ.get('PATH','') == sys.argv[1]; sys.exit(9)",
-                        path
-                    ]
-                )?
-                == 9
-        );
+        assert(run(
+            program,
+            [
+                "-c",
+                "import os,sys; assert os.environ.get('PATH','') == sys.argv[1]; sys.exit(9)",
+                path
+            ]
+        )? == 9);
         let missing = try {
             run("carven-test-missing-program", [])?;
             false
@@ -87,6 +154,7 @@ async fn probe(&&program: String) -> i32 {
         assert(await exited.wait()? == 0);
         exited.close_input()?;
         exited.close_input()?;
+        await check_transport(&&program)?;
         status
     } catch {
         ProcessError(_) => -1,

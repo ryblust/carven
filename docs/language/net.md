@@ -56,5 +56,15 @@ Network owns WSAStartup/WSACleanup. Windows native producers and final consumers
 link `ws2_32`.
 
 The source API borrows host connections; it does not create connections or
-listeners, resolve names, or provide TLS. Its native calls require native
-execution. The native host owns network initialization and cleanup.
+listeners, resolve names, or provide TLS. The native host owns network
+initialization and cleanup. Interpreted hosts explicitly register the required
+native operations, result accessors, and conversions through the hosting API.
+The source operations are `const async fn`: a static root can use them when its
+host explicitly enables these bindings for static execution and permits effects.
+The compiler does not own a Network or link its socket implementation. Pass the
+host's `Network` as the event source when binding asynchronous native operations.
+Concurrent operations in one session borrow its shared native driver; the host
+keeps connections and their Network alive through completion and cancellation.
+`borrow` is a `const fn` that only
+wraps an existing host-owned view; it neither performs network operations nor
+makes that view a retainable constant.

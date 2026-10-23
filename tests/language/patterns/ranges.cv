@@ -42,26 +42,20 @@ test "Range patterns: boundaries and dynamic empty intervals" {
     check(!dynamic_interval(21, 10, 20));
     check(!dynamic_interval(15, 20, 10));
     let all: u8 = 255;
-    check(
-        match all {
-            0..128 => false,
-            128..=255 => true
-        }
-    );
+    check(match all {
+        0..128 => false,
+        128..=255 => true
+    });
     let maximum = 18446744073709551615u64;
-    check(
-        match maximum {
-            0..18446744073709551615 => false,
-            18446744073709551615.. => true
-        }
-    );
+    check(match maximum {
+        0..18446744073709551615 => false,
+        18446744073709551615.. => true
+    });
     let signed: i8 = -128;
-    check(
-        match signed {
-            -128..0 => true,
-            0..=127 => false
-        }
-    );
+    check(match signed {
+        -128..0 => true,
+        0..=127 => false
+    });
 }
 
 test "Range patterns: attempts evaluate bounds once in pattern order" {
@@ -76,21 +70,17 @@ test "Range patterns: attempts evaluate bounds once in pattern order" {
     check(trace == 1234);
     trace = 0;
     let empty: IntervalPayload = .Empty;
-    check(
-        match empty {
-            .Number((range_bound(&trace, 1, 0))..10) => false,
-            .Empty => true,
-            _ => false,
-        }
-    );
+    check(match empty {
+        .Number((range_bound(&trace, 1, 0))..10) => false,
+        .Empty => true,
+        _ => false,
+    });
     check(trace == 0);
     let number: IntervalPayload = .Number(4);
-    check(
-        match number {
-            .Number(0..=4) => true,
-            _ => false
-        }
-    );
+    check(match number {
+        .Number(0..=4) => true,
+        _ => false
+    });
 }
 
 struct IntervalFailure {}
@@ -101,12 +91,10 @@ fn failed_bound() -> i32 throw IntervalFailure {
 
 test "Range patterns: bound failures leave the match and catch payloads classify" {
     let recovered = try {
-        (
-            match 4 {
-                (failed_bound()?)..10 => 0,
-                _ => 1
-            }
-        )
+        (match 4 {
+            (failed_bound()?)..10 => 0,
+            _ => 1
+        })
     } catch {
         IntervalFailure(_) => 2
     };

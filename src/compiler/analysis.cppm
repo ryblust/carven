@@ -24,6 +24,11 @@ struct CompilationAnalysisOptions final {
     bool collect_source_observations;
     bool capture_output;
     HostEffects host_effects;
+    std::optional<SourceSpan> completion;
+    // Source queries collect detached observations but never publish a program.
+    bool source_query;
+    std::span<const SourceSpan> excluded;
+    AnalysisNativeCall native_call;
 };
 
 // Owns a complete analysis transaction, including failed-source diagnostics.
@@ -44,6 +49,13 @@ public:
     auto diagnostics() const noexcept -> std::span<const Diagnostic>;
     auto output() const noexcept -> std::span<const CompilationOutput>;
     auto source_occurrences() const noexcept -> std::span<const SourceOccurrence>;
+    // Requested source facts cover completed construction and solving. Validation
+    // may still have failed; only program()/take_checked_unit() expose publication.
+    auto source_construction_complete() const noexcept -> bool;
+    // Whether requested source observation ran, even if no facts survived.
+    auto has_source_analysis() const noexcept -> bool;
+    auto completion_context() const noexcept -> SourceCompletionContext;
+    auto source_completions() const noexcept -> std::span<const SourceCompletionCandidate>;
     // The extracted published program independently retains its provenance.
     auto take_program() && noexcept -> std::optional<SemIRProgram>;
     auto take_checked_unit() && noexcept -> std::optional<CheckedUnit>;
@@ -74,6 +86,10 @@ private:
     Diagnostics findings;
     std::vector<CompilationOutput> execution_output;
     std::vector<SourceOccurrence> occurrences;
+    // Absent before semantic observation; false for partial construction.
+    std::optional<bool> source_construction_completed;
+    std::vector<SourceCompletionCandidate> completions;
+    SourceCompletionContext completion_site = SourceCompletionContext::None;
 
     friend auto analyze_compilation(
         SourceManager sources,

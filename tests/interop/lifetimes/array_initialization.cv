@@ -12,7 +12,9 @@ private fn create(&attempts: i32) -> Resource {
 
 private fn checked_create(&attempts: i32) -> Resource throw InitializationFailure {
     attempts += 1;
-    if attempts == 2 { throw InitializationFailure {}; }
+    if attempts == 2 {
+        throw InitializationFailure {};
+    }
     return Resource { 1 };
 }
 

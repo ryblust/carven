@@ -80,28 +80,18 @@ auto OwnershipBatchAnalyzer::diagnose(
 }
 
 auto OwnershipBatchAnalyzer::commit_diagnosis(
-    std::unique_ptr<OwnershipDiagnosisRecord> diagnosis,
+    std::unique_ptr<OwnershipRecordedError> diagnosis,
     const OwnershipEscape* escape
 ) noexcept -> void {
     if (diagnosis) {
-        // A return copy is reported only when every diagnosed context admits Take.
-        for (const auto [origin, transferable] : diagnosis->returned_copies) {
-            const auto [found, inserted] = returned_copies.emplace(origin, transferable);
-            if (!inserted) {
-                found->second = found->second && transferable;
-            }
-        }
-        if (diagnosis->error.has_value()) {
-            auto& error = *diagnosis->error;
-            diagnose(
-                error.code,
-                std::move(error.message),
-                error.origin,
-                error.related,
-                std::move(error.related_label),
-                std::move(error.help)
-            );
-        }
+        diagnose(
+            diagnosis->code,
+            std::move(diagnosis->message),
+            diagnosis->origin,
+            diagnosis->related,
+            std::move(diagnosis->related_label),
+            std::move(diagnosis->help)
+        );
     }
     if (escape != nullptr && !failure.has_value()) {
         diagnose(
@@ -710,18 +700,6 @@ auto OwnershipBatchAnalyzer::run() noexcept -> AnalysisResult<OwnershipAnalysisS
         commit_diagnosis(std::move(query->diagnosis));
         if (failure.has_value()) {
             return std::unexpected(*failure);
-        }
-    }
-    for (const auto [origin, transferable] : returned_copies) {
-        if (transferable) {
-            diagnostics.warning(
-                DiagnosticBuilder(
-                    DiagnosticCode::LintReturnCopy,
-                    "returned owner is copied; transfer it with '&&' to avoid the copy"
-                )
-                    .primary(program.provenance().source_span(origin))
-                    .build()
-            );
         }
     }
     auto nodes = 0uz;

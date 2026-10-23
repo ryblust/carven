@@ -1,0 +1,199 @@
+import .fingerprint using fingerprint;
+
+import .platform using {
+    files,
+    cached_text,
+    write_text,
+    canonical,
+    resolve,
+    directory,
+    process_error,
+}
+
+import std::build using BuildError;
+
+import std::compiler using {
+    Compilation,
+    CompilerError,
+    run_compiler,
+    compilation_record,
+    read_manifest,
+    query_compilation,
+    compilation,
+}
+
+import std::fs using { FileError, PathKind, status, join, parent }
+import std::json using { JSONValue, JSONValueError }
+import std::process using { find_executable, ProcessError }
+import std::utf using ends_with;
+
+// Only loaded semantic inputs are content dependencies. Available module names
+// affect lookup, so additions and removals invalidate without hashing every Craft.
+private const fn checked_identity(
+    sources: [String],
+    checked: str,
+    compiler_identity: str,
+    working_directory: str
+) -> String throw BuildError {
+    if compiler_identity.is_empty() => return "";
+    try {
+        let record = compilation_record(checked)?;
+        if !record.cacheable => return "";
+        var paths = record.inputs;
+        paths.append(record.artifacts);
+        paths.push(join(checked, "carven/manifest.json"));
+        var values = Vector<String>::from_slice(sources);
+        values.append(["checked-v2", working_directory as String, compiler_identity as String]);
+        for root in record.library_roots {
+            values.push(root);
+            for path in files({
+                root: root,
+                recursive: true,
+                excluded_root: ""
+            })? {
+                if ends_with(path, ".cv") => values.push(path);
+            }
+        }
+        return fingerprint(paths, values);
+    } catch {
+        CompilerError(_) => return "",
+    }
+}
+
+private const fn ensure_checked(
+    sources: [String],
+    checked: str,
+    compiler_identity: str,
+    working_directory: str
+) throw BuildError + CompilerError {
+    let state = f"{checked}.state";
+    let identity = checked_identity(sources, checked, compiler_identity, working_directory)?;
+    if !identity.is_empty() && identity == cached_text(state) => return;
+
+    directory(parent(checked))?;
+    write_text(state, "")?;
+    run_compiler("check", sources, checked, [], working_directory)?;
+    write_text(state, checked_identity(sources, checked, compiler_identity, working_directory)?)?;
+}
+
+private const fn generated_identity(
+    sources: [String],
+    checked: str,
+    generated: str,
+    compiler_identity: str,
+    working_directory: str,
+    tests: bool
+) -> String {
+    if compiler_identity.is_empty() => return "";
+    try {
+        let output = compilation_record(generated)?;
+        var paths = output.artifacts;
+        if !sources.is_empty() {
+            let input = compilation_record(checked)?;
+            paths.append(input.artifacts);
+            paths.push(join(checked, "carven/manifest.json"));
+        }
+        // Craft queries mutate the generated manifest, independently of codegen.
+        var values = Vector<String>::from_slice(sources);
+        values.append([
+            "generated-v1",
+            working_directory as String,
+            generated as String,
+            compiler_identity as String,
+            if tests { "tests" } else { "application" }
+        ]);
+        return fingerprint(paths, values);
+    } catch {
+        CompilerError(_) => return "",
+    }
+}
+
+private const fn query_crafts(
+    generated: str,
+    query_directory: str,
+    compiler: String,
+    compiler_identity: str
+) -> Compilation throw BuildError + CompilerError + FileError + JSONValueError {
+    var manifest = read_manifest(generated)?;
+    let roots = manifest.get("craft_roots")?;
+    var queries = JSONValue::array();
+    for root in roots.elements()? {
+        let working_directory = root.as_str()?;
+        let source = join(working_directory, "build.cv");
+        if status(source)? != PathKind::File => continue;
+        let key = fingerprint([], [compiler, working_directory as String]);
+        let query_root = join(query_directory, key);
+        let query_checked = join(query_root, "checked");
+        ensure_checked([source], query_checked, compiler_identity, working_directory)?;
+        queries.push(
+            &&query_compilation(query_checked, working_directory, join(query_root, "query.json"))?
+        )?;
+    }
+    manifest.set("crafts", &&queries)?;
+    let text = manifest.to_json()?;
+    let path = join(generated, "carven/manifest.json");
+    if text != cached_text(path) => write_text(path, text)?;
+    return compilation(manifest, generated)?;
+}
+
+const fn compile_plan(
+    sources: [String],
+    generated: str,
+    checked: str,
+    query_directory: str,
+    tests: bool
+) -> Compilation throw BuildError {
+    try {
+        let compiler = find_executable("carven")?;
+        let compiler_identity = fingerprint([compiler], []);
+        let working_directory = canonical(".")?;
+        let generated_root = resolve(generated)?;
+        let checked_root = resolve(checked)?;
+        if !sources.is_empty() {
+            ensure_checked(sources, checked_root, compiler_identity, working_directory)?;
+        }
+        let state = f"{generated_root}.state";
+        let identity = generated_identity(
+            sources,
+            checked_root,
+            generated_root,
+            compiler_identity,
+            working_directory,
+            tests
+        );
+        if identity.is_empty() || identity != cached_text(state) {
+            directory(parent(generated_root))?;
+            write_text(state, "")?;
+            var options: Vector<String> = ["--no-query"];
+            if tests => options.push("--tests");
+            let inputs: Vector<String> = if sources.is_empty() { [] } else { [checked_root] };
+            run_compiler("compile", inputs, generated_root, options, working_directory)?;
+            write_text(
+                state,
+                generated_identity(
+                    sources,
+                    checked_root,
+                    generated_root,
+                    compiler_identity,
+                    working_directory,
+                    tests
+                )
+            )?;
+        }
+        return query_crafts(generated_root, query_directory, compiler, compiler_identity)?;
+    } catch {
+        CompilerError(error) => throw BuildError { message: error.message },
+        ProcessError(error) => throw process_error("cannot find carven", error),
+        FileError(error) => match error {
+            .System(code) => throw BuildError {
+                message: f"cannot inspect Craft build declarations: system error {code}"
+            },
+            .InvalidUTF8(error) => throw BuildError {
+                message: f"invalid UTF-8 in Craft paths at byte {error.offset}"
+            },
+        },
+        JSONValueError(_) => throw BuildError {
+            message: f"invalid compilation manifest in '{generated}'"
+        },
+    }
+}

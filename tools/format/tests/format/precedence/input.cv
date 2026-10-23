@@ -1,1 +1,1 @@
-fn f(){let x=(a+b)*c;let y=values[0].member;}
+fn f(){let x=(a+b)*c;let y=values[0].member;if offset-start==10&&values[offset+2]!=delimiter&&values[offset+5]!=delimiter&&values[offset+8]!=delimiter{call();}}

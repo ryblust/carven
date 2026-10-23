@@ -13,12 +13,16 @@ enum DecodeError {
 }
 
 const fn read(ok: bool) -> i32 throw ReadError {
-    if ok { return 42; }
+    if ok {
+        return 42;
+    }
     throw ReadError { 7 };
 }
 
 private const fn inferred(ok: bool) -> i32 {
-    if ok { return 3; }
+    if ok {
+        return 3;
+    }
     throw DecodeError::Invalid(9);
 }
 
@@ -31,8 +35,12 @@ const fn recover(ok: bool) -> i32 {
 }
 
 const fn decode(kind: i32) -> i32 throw DecodeError {
-    if kind == 0 { throw DecodeError::Empty; }
-    if kind == 1 { throw DecodeError::Invalid(73); }
+    if kind == 0 {
+        throw DecodeError::Empty;
+    }
+    if kind == 1 {
+        throw DecodeError::Invalid(73);
+    }
     throw DecodeError::Pair(1, 2);
 }
 
@@ -61,7 +69,9 @@ const fn relay() -> i32 throw ReadError {
             } catch {
                 DecodeError(_) => 1,
             };
-            if copy.code + nested == 8 { rethrow; }
+            if copy.code + nested == 8 {
+                rethrow;
+            }
             0
         },
     };
@@ -107,7 +117,9 @@ const fn text_relay() -> i32 throw TextError {
         TextError(error) => {
             let owned = error;
             let moved = &&owned;
-            if moved.text.byte_length() == 16usize { rethrow; }
+            if moved.text.byte_length() == 16usize {
+                rethrow;
+            }
             0
         },
     };
@@ -147,8 +159,12 @@ const fn control() -> i32 {
     var total = 0;
     for index in 0..4 {
         try {
-            if index == 0 { continue; }
-            if index == 3 { break; }
+            if index == 0 {
+                continue;
+            }
+            if index == 3 {
+                break;
+            }
             total += read(false)?;
         } catch {
             ReadError(error) => { total += error.code; },
@@ -163,7 +179,9 @@ const fn control() -> i32 {
 }
 
 const fn generic_read<T>(&&value: T, ok: bool) -> T throw ReadError {
-    if ok { return &&value; }
+    if ok {
+        return value;
+    }
     throw ReadError { 13 };
 }
 

@@ -56,10 +56,32 @@ auto source_reference(std::string_view source, std::string_view workspace_root) 
     return json_string(source);
 }
 
+auto json_strings(std::span<const std::string> values) noexcept -> std::string {
+    auto result = std::string("[");
+    auto separator = std::string_view();
+    for (const auto& value : values) {
+        result += separator;
+        result += json_string(value);
+        separator = ", ";
+    }
+    result += ']';
+    return result;
+}
+
 } // namespace
+
+auto format_project_query(std::string_view project, std::span<const std::string> scripts) noexcept
+    -> std::string {
+    return std::format(
+        "{{\n  \"scripts\": {},\n  \"project\": {}\n}}\n",
+        json_strings(scripts),
+        project
+    );
+}
 
 auto format_compilation_manifest(
     std::string_view workspace_root,
+    const CompilationManifestResources& resources,
     std::span<const CompilationManifestInput> inputs,
     const GeneratedArtifactSet& artifacts,
     std::size_t runtime_test_count,
@@ -72,10 +94,28 @@ auto format_compilation_manifest(
         "{{\n  \"workspace\": {{\"root\": {}}},\n"
         "  \"cacheable\": {},\n"
         "  \"runtime_test_count\": {},\n"
+        "  \"include_dirs\": {},\n"
+        "  \"library_roots\": {},\n"
+        "  \"craft_roots\": {},\n"
+        "  \"crafts\": [{}],\n"
         "  \"inputs\": [",
         json_string(workspace_root),
         cacheable,
-        runtime_test_count
+        runtime_test_count,
+        json_strings(resources.include_dirs),
+        json_strings(resources.library_roots),
+        json_strings(resources.craft_roots),
+        std::ranges::fold_left(
+            resources.crafts,
+            std::string(),
+            [](std::string result, const auto& craft) noexcept {
+                if (!result.empty()) {
+                    result += ",\n";
+                }
+                result += craft;
+                return result;
+            }
+        )
     );
     auto separator = std::string_view();
     for (const auto& input : inputs) {
@@ -84,8 +124,8 @@ auto format_compilation_manifest(
             "\"external\": {}}}",
             separator,
             json_string(input.path),
-            json_string(input.module_path),
-            std::ranges::contains(owned_modules, input.module_path),
+            input.module_path.empty() ? std::string("null") : json_string(input.module_path),
+            input.module_path.empty() || std::ranges::contains(owned_modules, input.module_path),
             std::ranges::contains(standard_modules, input.module_path),
             std::ranges::contains(external_modules, input.module_path)
         );
@@ -96,20 +136,15 @@ auto format_compilation_manifest(
     for (const auto& artifact : artifacts.entries()) {
         result += std::format(
             "{}\n    {{\"path\": {}, \"role\": \"{}\", \"source_mapping\": \"{}\", "
-            "\"source\": {}, \"link_dependencies\": [",
+            "\"source\": {}, \"link_dependencies\": {}}}",
             separator,
             json_string(artifact.logical_path),
             role_name(artifact.role),
             mapping_name(artifact.source_mapping),
             artifact.source_path ? source_reference(*artifact.source_path, workspace_root)
-                                 : std::string("null")
+                                 : std::string("null"),
+            json_strings(artifact.link_dependencies)
         );
-        auto dependency_separator = std::string_view();
-        for (const auto& dependency : artifact.link_dependencies) {
-            result += std::format("{}{}", dependency_separator, json_string(dependency));
-            dependency_separator = ", ";
-        }
-        result += "]}";
         separator = ",";
     }
     result += "\n  ]\n}\n";

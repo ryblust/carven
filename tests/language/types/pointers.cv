@@ -19,7 +19,9 @@ const writable_empty: ptr<&i32> = nullptr;
 const narrowed_empty: ptr<i32> = writable_empty;
 
 fn read(p: ptr<i32>) -> i32 {
-    if p == nullptr { return -1; }
+    if p == nullptr {
+        return -1;
+    }
     return *p;
 }
 
@@ -40,7 +42,9 @@ test "Pointers: binding slots and target modes are independent" {
     let fixed_read: ptr<i32> = fixed_write;
     var movable_write: ptr<&i32> = fixed_write;
     var movable_read: ptr<i32> = fixed_write;
-    if fixed_write == nullptr { fail("missing provider address"); }
+    if fixed_write == nullptr {
+        fail("missing provider address");
+    }
     *fixed_write = 11;
     set(&*fixed_write);
     check(read(fixed_read) == 44);
@@ -69,12 +73,16 @@ test "Pointers: recursive Carven targets and shallow aggregate copies preserve m
         p->value = 9;
         p->next = p;
         let next = p->next;
-        if next != nullptr { next->value = 12; }
+        if next != nullptr {
+            next->value = 12;
+        }
     }
     check(node.value == 12);
     let scene = Scene { mesh: ::pointer_values::get() };
     let copy = scene;
-    if copy.mesh != nullptr { *copy.mesh = 55; }
+    if copy.mesh != nullptr {
+        *copy.mesh = 55;
+    }
     check(read(scene.mesh) == 55);
     let read_only: ptr<Node> = p;
     if read_only != nullptr {
@@ -88,7 +96,9 @@ test "Pointers: nested addresses retain the next layer's target permissions" {
     let outer: ptr<ptr<&i32>> = ::pointer_values::address(&inner);
     if outer != nullptr {
         let saved = *outer;
-        if saved != nullptr { *saved = 66; }
+        if saved != nullptr {
+            *saved = 66;
+        }
     }
     check(read(inner) == 66);
 }
@@ -96,24 +106,34 @@ test "Pointers: nested addresses retain the next layer's target permissions" {
 test "Pointers: fields arrays enums captures and local control preserve values" {
     let p: ptr<&i32> = ::pointer_values::get();
     let values: [ptr<i32>; 2] = [p, nullptr];
-    if values[0] != nullptr { check(*values[0] == read(p)); }
+    if values[0] != nullptr {
+        check(*values[0] == read(p));
+    }
     let selected: ptr<i32> = if true { p } else { nullptr };
-    if selected != nullptr && *selected > 0 { check(true); }
+    if selected != nullptr && *selected > 0 {
+        check(true);
+    }
     check(selected == nullptr || *selected > 0);
     let callback = [p]() -> i32 {
-        if p == nullptr { return -1; }
+        if p == nullptr {
+            return -1;
+        }
         return *p;
     };
     check(callback() == read(p));
     let choice = Choice::Some(p);
     match choice {
         .Some(saved) => {
-            if saved != nullptr { check(*saved > 0); }
+            if saved != nullptr {
+                check(*saved > 0);
+            }
         },
         .Empty => fail("wrong case"),
     }
     for value in values {
-        if value != nullptr { check(*value > 0); }
+        if value != nullptr {
+            check(*value > 0);
+        }
     }
     var slot = p;
     while slot != nullptr {
@@ -124,15 +144,23 @@ test "Pointers: fields arrays enums captures and local control preserve values" 
 }
 
 fn joined(p: ptr<i32>, flag: bool) -> i32 {
-    if !(p != nullptr) { return 0; }
+    if !(p != nullptr) {
+        return 0;
+    }
     var slot: ptr<i32> = nullptr;
-    if flag { slot = p; } else { slot = p; }
+    if flag {
+        slot = p;
+    } else {
+        slot = p;
+    }
     return *slot;
 }
 
 fn break_proof(p: ptr<i32>) -> i32 {
     while {
-        if p == nullptr { return 0; }
+        if p == nullptr {
+            return 0;
+        }
         break;
     }
     return *p;
@@ -155,14 +183,18 @@ test "Pointers: normal branch and loop exits retain only their valid proofs" {
     check(joined(p, false) == read(p));
     check(break_proof(p) == read(p));
     var slot = p;
-    if slot == nullptr { fail("missing provider address"); }
+    if slot == nullptr {
+        fail("missing provider address");
+    }
     let saved: ptr<i32> = slot;
     *slot = clear_value(&slot);
     check(slot == nullptr);
     check(*saved == 37);
     var array: [i32; 2] = [1, 2];
     let sequence: ptr<&[i32; 2]> = ::pointer_values::address(&array);
-    if sequence != nullptr { add_two(&*sequence); }
+    if sequence != nullptr {
+        add_two(&*sequence);
+    }
     check(array[0] == 3);
     check(array[1] == 4);
 }
@@ -172,36 +204,50 @@ test "Pointers: capture rebinding leaves independent saved addresses intact" {
     let clear = [&slot]() {
         slot = nullptr;
     };
-    if slot == nullptr { fail("missing provider address"); }
+    if slot == nullptr {
+        fail("missing provider address");
+    }
     let saved = slot;
     clear();
     *saved = 39;
     check(slot == nullptr);
     let mutate = [saved]() {
-        if saved != nullptr { *saved = 40; }
+        if saved != nullptr {
+            *saved = 40;
+        }
     };
     mutate();
     check(*saved == 40);
     let handles: [ptr<&i32>; 2] = [saved, nullptr];
     let index = 0usize;
     let selected = handles[index];
-    if selected != nullptr { check(*selected == 40); }
+    if selected != nullptr {
+        check(*selected == 40);
+    }
 }
 
 struct PointerFailure {}
 
 fn null_is_failure(p: ptr<i32>) -> i32 throw PointerFailure {
-    if p == nullptr { throw PointerFailure {}; }
+    if p == nullptr {
+        throw PointerFailure {};
+    }
     return *p;
 }
 
 fn caught_proof(p: ptr<i32>, fail_first: bool) -> i32 {
     try {
-        if fail_first { throw PointerFailure {}; }
-        if p == nullptr { return 0; }
+        if fail_first {
+            throw PointerFailure {};
+        }
+        if p == nullptr {
+            return 0;
+        }
     } catch {
         PointerFailure(_) => {
-            if p == nullptr { return 0; }
+            if p == nullptr {
+                return 0;
+            }
         },
     }
     return *p;
@@ -230,7 +276,9 @@ test "Pointers: failure exits and iteration retain their contracts" {
     check(slots[0] == nullptr && slots[1] == nullptr);
     let saved: ptr<&i32> = p;
     for var i = 0; i < 2; i += 1 {
-        if saved == nullptr { continue; }
+        if saved == nullptr {
+            continue;
+        }
         *saved = 42;
     }
     check(read(p) == 42);
@@ -245,7 +293,9 @@ test "Pointers: local Write iteration does not expose storage after the loop" {
     for &slot in slots {
         slot = p;
     }
-    if slots[0] == nullptr { fail("missing address"); }
+    if slots[0] == nullptr {
+        fail("missing address");
+    }
     no_effect();
     check(*slots[0] == read(p));
     let copied = p;

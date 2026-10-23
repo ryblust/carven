@@ -1,0 +1,192 @@
+import .analyzer using { request, stop_analyzer }
+import .project using workspace;
+import .protocol using { Decoder, ProtocolError }
+import .server using { new_server, handle, next_job, complete }
+import std::async using { wait_ready, close }
+import std::channel using ByteChannel;
+import std::fs using { parent, join }
+import std::io using { IOError, write_stdout_async }
+import std::json using { JSONValue, JSONValueKind, JSONError, JSONValueError }
+import std::process using { Process, ProcessError, OperatingSystem, executable, operating_system }
+import std::utf using UTF8Error;
+
+private fn packet(kind: u8, bytes: [u8]) -> Vector<u8> {
+    var result: Vector<u8> = [kind];
+    for byte in bytes {
+        result.push(byte);
+    }
+    return result;
+}
+
+private async fn read_input(events: ByteChannel) throw IOError {
+    while {
+        match await stdin().read(65536)? {
+            .End => {
+                let _ = await events.send(&&packet(2, []));
+                return;
+            },
+            .Data(bytes) => {
+                if !await events.send(&&packet(0, bytes)) => return;
+            },
+        }
+    }
+}
+
+private async fn analyze(
+    analyzer: Process,
+    &&compiler: String,
+    jobs: ByteChannel,
+    events: ByteChannel
+) throw ProcessError + JSONValueError + JSONError + UTF8Error + ProtocolError {
+    while {
+        match await jobs.receive() {
+            .End => return,
+            .Data(bytes) => {
+                let message = JSONValue::parse_bytes(bytes)?;
+                let method = message.get("method")?;
+                let result = if method.as_str()? == "workspace" {
+                    await workspace(analyzer, &&(compiler as String), &&message)?
+                } else {
+                    await request(analyzer, &&message)?
+                };
+                let body = result.to_json()?;
+                if !await events.send(&&packet(1, body.bytes)) => return;
+            },
+        }
+    }
+}
+
+private async fn write_output(output: ByteChannel) throw IOError {
+    while {
+        match await output.receive() {
+            .End => return,
+            .Data(bytes) => {
+                let owned = bytes;
+                await write_stdout_async(&&owned)?;
+            },
+        }
+    }
+}
+
+private async fn session(
+    events: ByteChannel,
+    jobs: ByteChannel,
+    output: ByteChannel
+) throw IOError + JSONError + JSONValueError + UTF8Error + ProtocolError {
+    var server = new_server();
+    var decoder = Decoder::new();
+    while {
+        let first = match await events.receive() {
+            .End => throw ProtocolError::Analyzer,
+            .Data(bytes) => bytes,
+        };
+        var event = first;
+        // Drain the bounded input mailbox before choosing the next analysis job.
+        // Updates merge only inside a run of document notifications.
+        var drained: usize = 0;
+        while {
+            ++drained;
+            if event[0] == 2 {
+                decoder.finish()?;
+                if !server.shutdown => throw ProtocolError::InvalidFrame;
+                return;
+            }
+            if event[0] == 1 {
+                let result = JSONValue::parse_bytes(event.slice(1, event.length()))?;
+                complete(&server, result)?;
+            } else {
+                let messages = decoder.feed(event.slice(1, event.length()))?;
+                for text in messages {
+                    var message = JSONValue::null();
+                    try {
+                        message = JSONValue::parse(text.as_str())?;
+                    } catch {
+                        JSONError(_) => {
+                            server.outbox.reject(JSONValue::null(), -32700, "Parse error")?;
+                            continue;
+                        }
+                    }
+                    if handle(&server, &&message)? {
+                        if !server.shutdown => throw ProtocolError::InvalidFrame;
+                        for frame in server.outbox.take() {
+                            let owned = frame;
+                            if !await output.send(&&owned) => throw ProtocolError::Analyzer;
+                        }
+                        return;
+                    }
+                }
+            }
+            for frame in server.outbox.take() {
+                let owned = frame;
+                if !await output.send(&&owned) => throw ProtocolError::Analyzer;
+            }
+            if drained == 16 => break;
+            match events.try_receive() {
+                .Pending => break,
+                .End => throw ProtocolError::Analyzer,
+                .Data(bytes) => { event = bytes; },
+            }
+        }
+        let job = next_job(&server)?;
+        if job.kind() != JSONValueKind::Null {
+            let body = job.to_json()?;
+            if !jobs.try_send(
+                &&Vector<u8>::from_slice(body.bytes)
+            ) => throw ProtocolError::Analyzer;
+        }
+    }
+}
+
+async fn main(
+    args
+) throw IOError + JSONError + JSONValueError + ProcessError + UTF8Error + ProtocolError {
+    let directory = parent(executable()?.as_str());
+    let suffix = if operating_system() == OperatingSystem::Windows { ".exe" } else { "" };
+    var program = join(directory.as_str(), f"carven-analyzer{suffix}");
+    var arguments: Vector<String> = [];
+    if args.length() != 0 {
+        if args.length() < 2 || args[0] != "--analyzer" => throw ProtocolError::InvalidParams;
+        program = args[1];
+        arguments.append(args.slice(2, args.length()));
+    }
+    let analyzer = Process::spawn(program.as_str(), arguments)?;
+    var hello = JSONValue::object();
+    hello.set("method", &&JSONValue::string("hello"))?;
+    let greeting = await request(analyzer, &&hello)?;
+    let protocol = greeting.get("protocol")?;
+    if protocol.as_i64()? != 8 => throw ProtocolError::Analyzer;
+    let events = ByteChannel::new(16);
+    let jobs = ByteChannel::new(1);
+    let output = ByteChannel::new(16);
+    async let writer = write_output(output);
+    async let reader = read_input(events);
+    async let worker = analyze(
+        analyzer,
+        &&join(directory.as_str(), f"carven{suffix}"),
+        jobs,
+        events
+    );
+    async let dispatch = session(events, jobs, output);
+    let (index, _) = await wait_ready(reader, worker, dispatch, writer);
+    if index == 0 {
+        await reader?;
+        await dispatch?;
+    } else if index == 1 {
+        await worker?;
+        throw ProtocolError::Analyzer;
+    } else if index == 2 {
+        await dispatch?;
+        cancel reader;
+    } else {
+        await writer?;
+        throw ProtocolError::Analyzer;
+    }
+    await close(reader);
+    events.close();
+    jobs.close();
+    output.close();
+    await writer?;
+    // Drain the active analyzer transaction before its shutdown handshake.
+    await worker?;
+    await stop_analyzer(analyzer)?;
+}

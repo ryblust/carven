@@ -1,3 +1,4 @@
+import <memory> using std::shared_ptr;
 import <vector> using std::vector;
 import <utility> using std::pair;
 import "interpolation/append.hpp";
@@ -42,6 +43,11 @@ test "C++ construction: deduced results compose with indexing calls and copies" 
     check(specified[0] == 8);
 }
 
+fn shared_resource() -> shared_ptr<i32> {
+    let owned = resource();
+    return owned;
+}
+
 test "C++ construction: deduction and construction agree on access categories" {
     var source = 4;
     check(Selected { 1 }.mode() == 1);
@@ -51,6 +57,7 @@ test "C++ construction: deduction and construction agree on access categories" {
     let owned = resource();
     let box = Box { &&owned };
     check(read_resource(box.read()) == 42);
+    check(shared_resource().use_count() == 1);
 }
 
 test "C++ construction: braced operands execute once in source order" {

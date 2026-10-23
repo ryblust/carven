@@ -14,7 +14,9 @@ const fn connect_cycle(&first: CycleLink, &second: CycleLink) {
 }
 
 const fn increase_through_address(address: ptr<&CycleLink>) {
-    if address == nullptr { return; }
+    if address == nullptr {
+        return;
+    }
     address->value += 1;
 }
 
@@ -33,18 +35,26 @@ const fn run_local_cycle() -> i32 {
 
     let first_address = addressof(&first);
     let second_address = addressof(&second);
-    if first.next != second_address || first.previous != second_address { return -1; }
-    if second.next != first_address || second.previous != first_address { return -2; }
+    if first.next != second_address || first.previous != second_address {
+        return -1;
+    }
+    if second.next != first_address || second.previous != first_address {
+        return -2;
+    }
 
     increase_through_address(first.next);
     var current = first_address;
     var total = 0;
     for _ in 0..4 {
-        if current == nullptr { return -3; }
+        if current == nullptr {
+            return -3;
+        }
         total += current->value;
         current = current->next;
     }
-    if current != first_address { return -4; }
+    if current != first_address {
+        return -4;
+    }
     return total;
 }
 
@@ -77,7 +87,9 @@ const fn relink_local_nodes() -> i32 {
     last_address->previous = first_address;
     let forward = first.next;
     let backward = last.previous;
-    if forward == nullptr || backward == nullptr { return -1; }
+    if forward == nullptr || backward == nullptr {
+        return -1;
+    }
     return forward->value * 10 + backward->value;
 }
 
@@ -91,20 +103,26 @@ const fn assignment_keeps_address() -> i32 {
 const fn first_array_address(values: [i32; 2]) -> ptr<i32> => addressof(values[0]);
 
 const fn read_address_now(address: ptr<i32>) -> i32 {
-    if address == nullptr { return -1; }
+    if address == nullptr {
+        return -1;
+    }
     return *address;
 }
 
 const fn read_temporary_array_address() -> i32 => read_address_now(first_array_address([1, 2]));
 
 const fn observe_array_alias(values: [i32; 2], address: ptr<&i32>) -> i32 {
-    if address == nullptr { return -1; }
+    if address == nullptr {
+        return -1;
+    }
     *address = 7;
     return values[0];
 }
 
 const fn observe_scalar_snapshot(value: i32, address: ptr<&i32>) -> i32 {
-    if address == nullptr { return -1; }
+    if address == nullptr {
+        return -1;
+    }
     *address = 7;
     return value;
 }
@@ -190,29 +208,32 @@ const fn restored_access() -> bool {
     let erased = addressof(&pair) as ptr<&void>;
     let restored = erased as ptr<&AccessPair>;
     let first = erased as ptr<&i32>;
-    if restored == nullptr || first == nullptr { return false; }
+    if restored == nullptr || first == nullptr {
+        return false;
+    }
     *first = 11;
     restored->second = 13;
     let whole = (addressof(pair.first) as ptr<void>) as ptr<AccessPair>;
-    if whole == nullptr { return false; }
-    return whole->first
-        == 11
+    if whole == nullptr {
+        return false;
+    }
+    return whole->first == 11
         && whole->second == 13
         && (restored as ptr<void>) == (first as ptr<void>);
 }
 
 const fn restored_array_element() -> bool {
-    var pairs = [
-        AccessPair {
-            first: 2,
-            second: 5
-        }
-    ];
+    var pairs = [AccessPair {
+        first: 2,
+        second: 5
+    }];
     let view = pairs.slice();
     let erased = addressof(view[0]) as ptr<void>;
     let first = erased as ptr<i32>;
     let restored = (addressof(view[0].first) as ptr<void>) as ptr<AccessPair>;
-    if first == nullptr || restored == nullptr { return false; }
+    if first == nullptr || restored == nullptr {
+        return false;
+    }
     return *first == 2 && restored->second == 5;
 }
 
@@ -225,7 +246,9 @@ const fn restored_cstring_pointer_object() -> bool {
     let text = c"123";
     let address = addressof(text) as ptr<void>;
     let restored = restore_pointer_object(address, addressof(text));
-    if restored == nullptr { return false; }
+    if restored == nullptr {
+        return false;
+    }
     return (*restored as ptr<void>) == (text as ptr<void>);
 }
 

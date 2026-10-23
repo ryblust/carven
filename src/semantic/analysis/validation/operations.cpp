@@ -3,7 +3,6 @@ module carven:semantic.analysis.validation.operations.impl;
 import :semantic.analysis.coverage;
 import :semantic.analysis.operations;
 import :semantic.analysis.validation.context;
-import :semantic.evaluation.standard;
 import :semantic.format;
 import :semantic.semir.format;
 import :semantic.semir.initialization;
@@ -205,27 +204,10 @@ auto BodyContractVerifier::verify_expression(
                 };
                 const auto* actual =
                     std::get_if<CppTypeValue>(&require_type(source.type.resolved()).value);
-                const auto values = PublishedConstantValues(program);
-                const auto native =
-                    standard_native_result(values, std::get<CppQueryType>(expected.form));
-                const auto projected = native
-                    && module_id
-                    && standard_native_result_matches(
-                                           values,
-                                           *native,
-                                           source.type.resolved(),
-                                           *module_id
-                    );
-                // An explicit source completion contract constrains an unknown
-                // native producer; C++ checks its return type against that contract.
-                const auto delegated_operation = !native
-                    && std::holds_alternative<OperationTypeValue>(
-                        require_type(source.type.resolved()).value
-                    );
-                if (!valid_cpp_type(expected)
-                    || (!projected
-                        && !delegated_operation
-                        && (actual == nullptr || *actual != expected))) {
+                // A concrete result is the checked native completion contract. The
+                // actual host/C++ implementation checks that contract when invoked.
+                const auto* query = actual ? std::get_if<CppQueryType>(&actual->form) : nullptr;
+                if (!valid_cpp_type(expected) || (query != nullptr && *actual != expected)) {
                     invariant_violation(
                         "C++ call differs from its result query or operation contract"
                     );

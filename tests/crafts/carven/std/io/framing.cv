@@ -19,13 +19,10 @@ test "Line framing: every split preserves CRLF and UTF8 records" {
                 .End => fail("partial record remains"),
             }
             check(output.length() == 4);
-            check(
-                output[0]
-                    == "a"
-                    && output[1] == "世界"
-                    && output[2] == ""
-                    && output[3] == "last\r"
-            );
+            check(output[0] == "a"
+                && output[1] == "世界"
+                && output[2] == ""
+                && output[3] == "last\r");
         }
     } catch {
         _ => fail("unexpected library failure"),
@@ -37,14 +34,12 @@ const test "Line framing: exact limit and final record policy" {
         var framer = LineFramer::new(2, .Preserve);
         check(framer.feed("ab\n".bytes)?.length() == 1);
         check(framer.feed("x".bytes)?.is_empty());
-        check(
-            try {
-                let _ = framer.finish(.Reject)?;
-                false
-            } catch {
-                LineFrameError(error) => error == .Truncated
-            }
-        );
+        check(try {
+            let _ = framer.finish(.Reject)?;
+            false
+        } catch {
+            LineFrameError(error) => error == .Truncated
+        });
     } catch {
         _ => fail("unexpected library failure"),
     }
@@ -53,25 +48,21 @@ const test "Line framing: exact limit and final record policy" {
 test "Line framing: overflow seals the attempt and scanner exposes boundaries" {
     try {
         var framer = LineFramer::new(2, .Preserve);
-        check(
-            try {
-                let _ = framer.feed("abc".bytes)?;
-                false
-            } catch {
-                LineFrameError(error) => match error {
-                    .TooLong(limit) => limit == 2,
-                    _ => false
-                }
+        check(try {
+            let _ = framer.feed("abc".bytes)?;
+            false
+        } catch {
+            LineFrameError(error) => match error {
+                .TooLong(limit) => limit == 2,
+                _ => false
             }
-        );
-        check(
-            try {
-                let _ = framer.feed("\n".bytes)?;
-                false
-            } catch {
-                LineFrameError(error) => error == .Finished
-            }
-        );
+        });
+        check(try {
+            let _ = framer.feed("\n".bytes)?;
+            false
+        } catch {
+            LineFrameError(error) => error == .Finished
+        });
         var lines = ByteLines::new();
         let input = "\nx\r\ny".bytes;
         check(lines.next(input) == .Line(0, 0, true));

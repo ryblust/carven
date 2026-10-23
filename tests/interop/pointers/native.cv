@@ -3,7 +3,9 @@ import <vector>;
 import <utility>;
 
 fn read(p: ptr<i32>) -> i32 {
-    if p == nullptr { return -1; }
+    if p == nullptr {
+        return -1;
+    }
     return *p;
 }
 
@@ -26,7 +28,9 @@ test "Pointers: Read calls snapshot addresses and dereference selects its target
     check(read(p) == 20);
     p = ::pointer_probe::get();
     let next: ptr<&i32> = ::pointer_probe::other();
-    if p == nullptr { fail("missing address"); }
+    if p == nullptr {
+        fail("missing address");
+    }
     let old = *p;
     ::pointer_probe::increment(&*p, next, &p);
     check(read(p) == 20);
@@ -36,7 +40,9 @@ test "Pointers: Read calls snapshot addresses and dereference selects its target
 
 test "Pointers: noncopyable native targets can be observed through an address" {
     let p: ptr<::pointer_probe::Fixed> = ::pointer_probe::fixed_object();
-    if p != nullptr { check(p->read() == 91); }
+    if p != nullptr {
+        check(p->read() == 91);
+    }
 }
 
 test "Pointers: native qualifiers aliases and incomplete targets retain their types" {
@@ -78,10 +84,14 @@ test "Pointer access: native void pointer protocols retain typed object access" 
     let erased = addressof(&value) as ptr<&void>;
     let returned = write_roundtrip(erased);
     let restored = returned as ptr<&i32>;
-    if restored == nullptr { fail("native protocol lost its address"); }
+    if restored == nullptr {
+        fail("native protocol lost its address");
+    }
     *restored = 19;
     let read = read_roundtrip(returned as ptr<void>) as ptr<i32>;
-    if read == nullptr { fail("native protocol lost its Read address"); }
+    if read == nullptr {
+        fail("native protocol lost its Read address");
+    }
     check(*read == 19 && value == 19);
     check(read == addressof(value));
 }

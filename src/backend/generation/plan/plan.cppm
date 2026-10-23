@@ -265,7 +265,7 @@ private:
     static auto build(
         const SemIRProgram& semantic,
         const TargetPlanningRequest& request,
-        const std::flat_set<ModuleID>& library_modules
+        const std::flat_map<ModuleID, std::size_t>& library_modules
     ) noexcept -> TargetPlan;
 
     TargetPlan(
@@ -295,13 +295,13 @@ public:
     static auto build(
         const SemIRProgram& semantic,
         const TargetPlanningRequest& request,
-        const std::flat_set<ModuleID>& library_modules
+        const std::flat_map<ModuleID, std::size_t>& library_modules
     ) noexcept -> PlannedCompilation;
 
     static auto build(
         const SemIRProgram&&,
         const TargetPlanningRequest&,
-        const std::flat_set<ModuleID>&
+        const std::flat_map<ModuleID, std::size_t>&
     ) noexcept -> PlannedCompilation = delete;
 
     PlannedCompilation(const PlannedCompilation&) = delete;
@@ -324,7 +324,7 @@ auto plan_closures(const SemIRProgram& semantic) noexcept -> TargetClosureCatalo
 auto plan_names(
     const SemIRProgram& semantic,
     const TargetPlanningRequest& request,
-    const std::flat_set<ModuleID>& library_modules,
+    const std::flat_map<ModuleID, std::size_t>& library_modules,
     const TargetClosureCatalog& closures
 ) noexcept -> TargetNamePlan;
 
@@ -336,7 +336,7 @@ auto target_source_origin(CompilationProvenanceView provenance, ProgramOriginID 
 auto plan_artifacts(
     const SemIRProgram& semantic,
     const TargetPlanningRequest& request,
-    const std::flat_set<ModuleID>& library_modules,
+    const std::flat_map<ModuleID, std::size_t>& library_modules,
     const TargetClosureCatalog& closures,
     std::span<const TargetTypeDefinitionRef> type_order,
     const TargetNamePlan& names,

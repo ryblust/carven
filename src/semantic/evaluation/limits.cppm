@@ -2,7 +2,7 @@ module carven:semantic.evaluation.limits;
 
 import std;
 
-inline constexpr auto maximum_constant_steps = 100'000uz;
+inline constexpr auto maximum_constant_steps = 1'000'000uz;
 inline constexpr auto maximum_constant_depth = 128uz;
 inline constexpr auto maximum_constant_bytes = 1024uz * 1024uz;
 inline constexpr auto maximum_constant_aggregate_elements = 65'536uz;

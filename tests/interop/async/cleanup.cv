@@ -186,8 +186,12 @@ export(cpp) async fn layered_exit(kind: i32) -> i32 throw Failure {
         let lease = Lease {};
         async let inner = inner_child();
         cancel inner;
-        if kind == 0 { return 7; }
-        if kind == 1 { throw Failure::Rejected; }
+        if kind == 0 {
+            return 7;
+        }
+        if kind == 1 {
+            throw Failure::Rejected;
+        }
         await cleanup_cancelled();
     }
     return 0;
@@ -212,7 +216,9 @@ export(cpp) async fn assignment_regions(kind: i32) -> i32 {
             Failure(_) => 0,
         };
     }
-    if !resource_released() { return 0; }
+    if !resource_released() {
+        return 0;
+    }
     return selected;
 }
 
@@ -234,7 +240,9 @@ private async fn tail_failure(&source: i32) -> i32 throw PayloadFailure {
     cancel pending;
     if source == 7 {
         let guard = Guard { 1 };
-        if source > 0 { return await reject_payload(source)?; }
+        if source > 0 {
+            return await reject_payload(source)?;
+        }
     }
     return 0;
 }
@@ -307,7 +315,9 @@ private async fn source_checked_leaf() -> i32 {
 
 private async fn checked_stopped_producer(internal_wait: bool) -> i32 {
     let lease = Lease {};
-    if !internal_wait { return cleanup_stopped_value(7); }
+    if !internal_wait {
+        return cleanup_stopped_value(7);
+    }
     let operation = source_checked_leaf();
     return await operation;
 }
@@ -337,25 +347,35 @@ export(cpp) async fn fused_yield_stop() -> bool {
 
 export(cpp) async fn prefix_stop(depth: i32) -> i32 {
     let current = cleanup_prefix(depth);
-    if current == 0 { return 7; }
+    if current == 0 {
+        return 7;
+    }
     return await prefix_stop(current - 1);
 }
 
 export(cpp) async fn tail_cancel(depth: i32) -> i32 {
     await cancel_point();
     let current = cleanup_iteration(depth);
-    if current == 0 { return 7; }
+    if current == 0 {
+        return 7;
+    }
     return await tail_cancel(current - 1);
 }
 
 export(cpp) async fn tail_actual_stop(depth: i32, value: i32) -> i32 {
-    if depth == 0 { return value; }
+    if depth == 0 {
+        return value;
+    }
     return await tail_actual_stop(cleanup_stopped_value(depth - 1), cleanup_iteration(value));
 }
 
 private async fn checkpoint(accept: bool) -> i32 {
     let lease = Lease {};
-    if accept { await cancel_point(); } else { await yield_once(); }
+    if accept {
+        await cancel_point();
+    } else {
+        await yield_once();
+    }
     return 7;
 }
 
@@ -382,7 +402,11 @@ private async fn cancelled_value(stop_on_release: bool) -> i32 {
 
 export(cpp) async fn cancellation_policy(cancelled: bool) {
     async let pending = cleanup_observe_cancellation();
-    if cancelled { await cancelled_value(false); } else { await checkpoint(false); }
+    if cancelled {
+        await cancelled_value(false);
+    } else {
+        await checkpoint(false);
+    }
     record('u', 9);
     await pending;
 }
@@ -421,7 +445,9 @@ private async fn failure_producer(
     } catch {
         PayloadFailure(error) => {
             record('l', error.value);
-            if !recover { rethrow; }
+            if !recover {
+                rethrow;
+            }
             error.payload.get() as i32
         },
     };

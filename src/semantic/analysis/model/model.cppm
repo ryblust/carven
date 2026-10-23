@@ -2,8 +2,8 @@ module carven:semantic.analysis.model;
 
 import :semantic.analysis.failure;
 import :semantic.analysis.generics.snapshot;
-import :semantic.semir.contents;
 import :semantic.semir.callable;
+import :semantic.semir.contents;
 import :semantic.semir.program;
 import :semantic.semir.structured;
 import std;

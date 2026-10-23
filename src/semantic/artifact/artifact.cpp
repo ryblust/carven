@@ -1682,7 +1682,7 @@ struct SemanticHeaderContext final {};
 
 enum class SemanticArtifactKind : std::uint32_t { Program = 1, Definitions = 2 };
 
-constexpr auto semantic_artifact_revision = 6u << 16u;
+constexpr auto semantic_artifact_revision = 7u << 16u;
 
 auto write_semantic_nodes(BinaryWriter& writer, SemanticArtifactContext& context) noexcept -> void {
     writer.unsigned_value(context.node_order.size(), 8);

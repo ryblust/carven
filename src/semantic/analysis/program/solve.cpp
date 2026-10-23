@@ -2,8 +2,8 @@ module carven:semantic.analysis.program.solve.impl;
 
 import :semantic.analysis.body.resolve;
 import :semantic.analysis.program;
-import :semantic.semir.children;
 import :semantic.semir.callable;
+import :semantic.semir.children;
 import :semantic.semir.evaluation;
 import :semantic.semir.traversal;
 import :support.invariant;

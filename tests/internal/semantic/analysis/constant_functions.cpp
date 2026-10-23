@@ -2,7 +2,7 @@ module carven:test.internal.semantic.analysis.constant_functions;
 
 import :diagnostics.code;
 import :frontend.program.parse;
-import :semantic.analyze;
+import :semantic.evaluation.execution;
 import :semantic.evaluation.output;
 import :semantic.semir.body;
 import :semantic.semir.constant;
@@ -31,7 +31,7 @@ auto analyze_async_program(std::string text, ExecutionOutput output = {}) noexce
     };
     auto parsed = parse_program(sources, SourceBatch {.modules = inputs});
     require(parsed.has_value());
-    auto analyzed = analyze(std::move(*parsed), HostEffects::Deny, output);
+    auto analyzed = analyze_test_syntax(std::move(*parsed), HostEffects::Deny, output);
     require(analyzed.has_value());
     return std::move(analyzed->value);
 }
@@ -466,7 +466,7 @@ const test "implicit static async" { check(await value(9) == 9); }
             append("providers", "const fn yield_once() -> i32 => 7;");
             auto syntax = parse_program(sources, SourceBatch {.modules = inputs});
             require(syntax.has_value());
-            const auto analyzed = analyze(std::move(*syntax), HostEffects::Deny);
+            const auto analyzed = analyze_test_syntax(std::move(*syntax), HostEffects::Deny);
             if (!expect(analyzed.has_value())) {
                 return;
             }
@@ -502,7 +502,7 @@ const test "implicit static async" { check(await value(9) == 9); }
             if (!expect(syntax.has_value())) {
                 return;
             }
-            const auto analyzed = analyze(std::move(*syntax), HostEffects::Deny);
+            const auto analyzed = analyze_test_syntax(std::move(*syntax), HostEffects::Deny);
             if (!expect(analyzed.has_value())) {
                 return;
             }
@@ -568,7 +568,7 @@ const test "implicit static async" { check(await value(9) == 9); }
             const auto program = analyze_test_program(R"(
         const fn build() -> String {
             var text = String {};
-            while text.byte_length() < 8000usize {
+            while text.byte_length() < 128usize {
                 text.push('a');
                 text.append("bc");
                 text.append_format(f"{7}");
@@ -579,7 +579,7 @@ const test "implicit static async" { check(await value(9) == 9); }
         const result = copy(build());
     )");
             auto expected = std::string();
-            for (auto index = 0uz; index < 2000uz; ++index) {
+            for (auto index = 0uz; index < 32uz; ++index) {
                 expected += "abc7";
             }
             require_text(

@@ -240,12 +240,14 @@ auto analyze_async_contracts(
     };
     const auto check_signature = [&](const auto& signature,
                                      ProgramOriginID origin,
+                                     const auto& parameter_origin,
                                      bool allow_dependent,
                                      bool entry_arguments) noexcept {
         if (!entry_arguments) {
-            for (const auto& parameter : signature.parameters) {
+            for (auto index = 0uz; index < signature.parameters.size(); ++index) {
+                const auto& parameter = signature.parameters[index];
                 if (parameter.stage != ParameterStage::Static) {
-                    check_parameter(parameter, origin, allow_dependent);
+                    check_parameter(parameter, parameter_origin(index), allow_dependent);
                 }
             }
         }
@@ -277,22 +279,38 @@ auto analyze_async_contracts(
         if (!body_id && !native_origin) {
             invariant_violation("async callable has neither a body nor a native import");
         }
-        const auto origin =
-            body_id ? program.bodies().body(*body_id).region().origin : *native_origin;
         const auto function = program.source_function(entry.id);
+        const auto origin = native_origin ? *native_origin
+            : function                    ? program.declarations().function(*function).origin
+                                          : program.bodies().body(*body_id).region().origin;
+        const auto parameter_origin = [&](std::size_t index) noexcept {
+            if (!body_id) {
+                return origin;
+            }
+            const auto& body = program.bodies().body(*body_id);
+            return body.binding(body.inputs().parameters.at(index)).origin;
+        };
         const auto entry_arguments = function
             && program.declarations().function(*function).entry_point
                 == EntryPointKind::WithArguments;
-        check_signature(signature, origin, false, entry_arguments);
-    }
-    for (const auto& definition : generics.definitions) {
-        if (const auto* function = std::get_if<GenericCallableDefinition>(&definition);
-            function && function->signature.execution == CallableExecutionKind::Async) {
-            check_signature(function->signature, function->contract.origin, true, false);
-        }
+        check_signature(signature, origin, parameter_origin, false, entry_arguments);
     }
     for (const auto& [id, body] : model.bodies()) {
-        static_cast<void>(id);
+        if (const auto* definition = std::get_if<GenericDeclarationID>(&id)) {
+            const auto& function =
+                std::get<GenericCallableDefinition>(generics.definition(*definition));
+            if (function.signature.execution == CallableExecutionKind::Async) {
+                check_signature(
+                    function.signature,
+                    function.contract.origin,
+                    [&](std::size_t index) noexcept {
+                        return body.binding(body.inputs().parameters.at(index)).origin;
+                    },
+                    true,
+                    false
+                );
+            }
+        }
         visit_semantic_nodes(
             body.region(),
             Overloaded {
@@ -322,7 +340,15 @@ auto analyze_async_contracts(
                             }
                             signature.result = completion->success;
                             signature.failures = completion->failures;
-                            check_signature(signature, source.origin, true, false);
+                            check_signature(
+                                signature,
+                                source.origin,
+                                [&](std::size_t index) noexcept {
+                                    return call->arguments[index].expression.origin;
+                                },
+                                true,
+                                false
+                            );
                         }
                     }
                     if (source.category == SemanticValueCategory::Value

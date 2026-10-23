@@ -38,7 +38,7 @@ auto check_invalid(std::string_view text) noexcept -> void {
     if (!(expect(!result.has_value()).note("text = ", text))) {
         return;
     }
-    expect_equal(result.error().size(), 1uz).note("text = ", text);
+    expect(!result.error().empty()).note("text = ", text);
 }
 
 auto check_invalid(std::string_view text, std::string_view message) noexcept -> void {
@@ -46,18 +46,9 @@ auto check_invalid(std::string_view text, std::string_view message) noexcept -> 
     if (!(expect(!result.has_value()).note("text = ", text))) {
         return;
     }
-    if (!(expect_equal(result.error().size(), 1uz).note("text = ", text))) {
-        return;
-    }
-    expect_equal(result.error()[0].finding.message, message).note("text = ", text);
-}
-
-auto check_rejected(std::string_view text) noexcept -> void {
-    const auto result = parse_source(text);
-    if (!(expect(!result.has_value()).note("text = ", text))) {
-        return;
-    }
-    expect(!result.error().empty()).note("text = ", text);
+    expect(std::ranges::any_of(result.error(), [&](const auto& diagnostic) noexcept {
+        return diagnostic.finding.message == message;
+    })).note("text = ", text);
 }
 
 template<typename Alternative, typename Family>

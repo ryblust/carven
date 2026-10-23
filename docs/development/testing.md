@@ -17,10 +17,8 @@ and validation.
 
 Choose the group by the tested boundary, independently of implementation language
 or a `std::` module path. Keep application checks with their sources under `examples/`.
-Validate standalone `build.cv` examples through the CLI group so the examples
-remain usable without repository build files.
 
-Use one build-and-run invocation to validate the standalone build example.
+Validate installed build scripts and external adapters in toolchain acceptance.
 Check object reuse and invalidation with small C++ inputs through the build
 Craft's object-compilation function. Same-Craft fixtures can exercise internal
 declarations through ordinary module visibility. Compile library consumers with
@@ -37,7 +35,7 @@ results, interpreter accounting, native storage, or host input.
 ## Targets and execution
 
 Declare each group's targets in its own `xmake.lua`; include groups at the project
-root. Use ordinary Xmake targets with `@carven/carven` for `.cv` sources. Include
+root. Use ordinary Xmake targets with `carven` for `.cv` sources. Include
 runtime headers directly in pure C++ consumers. Mark tests, examples, benchmarks,
 and development tools as non-default targets.
 
@@ -72,7 +70,7 @@ native termination scenarios as separate processes and check their output.
 Construct internal fixtures in the child before observing the operation's
 termination. Use the generated entry for ordinary inline suites.
 
-Use the main project's compiler, installed Crafts, resolved rules, and native
+Use the main project's built compiler, checkout Crafts, resolved rules, and native
 configuration for consumer tests.
 
 Check the same API contracts in portable and accelerated Crafts implementations.
@@ -157,22 +155,26 @@ whitespace in formatter fixtures. Format and parse repository programs in corpus
 Run commands from the repository root through `./xmakew`; use `.\xmakew.ps1` on
 Windows with the same arguments.
 
-The build uses the remote `carven-xmake-repo` by default. For joint compiler and
-rule development, set `CARVEN_XMAKE_REPO_DIR` to a local rule checkout. Relative
-paths resolve from the Carven repository root. In a POSIX shell:
+The repository binds Carven-source targets to its own `carven` build output and
+`crafts/` directory. The process-test harness prepends the supplied executable's
+directory to the child environment's `PATH`, so nested `std::compiler` calls use
+the current build. Relocated-toolchain tests set their installed `bin` explicitly.
+The compiler target does not change the caller's runtime environment.
+Developer tests do not use the user's installed toolchain. Build the compiler first,
+then run the relevant groups or the full suite:
 
 ```sh
-export CARVEN_XMAKE_REPO_DIR=/path/to/carven-xmake-repo
-./xmakew f -c -y
-./xmakew require --force -y
+./xmakew build
+./xmakew test
 ```
 
-In PowerShell, set `$env:CARVEN_XMAKE_REPO_DIR` to the checkout path. Keep the
-variable set for build and test commands. Repeat configuration and package refresh
-after local rule changes; reconfigure after changing the installed Crafts inventory.
+Rebuild after compiler changes before rerunning tests. Installing the toolchain
+is a separate distribution and acceptance step, not a development-test prerequisite.
 
-Build the compiler before testing. After a successful build, select the relevant
-groups or the full suite. Rebuild after code changes before rerunning tests.
+The build loads its rules directly from `xmake/carven/`. Rule changes take effect
+on the next invocation.
+
+Select the relevant test groups or the full registered suite after building.
 
 | Command | Action |
 | --- | --- |
@@ -191,3 +193,9 @@ diagnosing source code.
 
 Build `carven-format` before checking or applying formatting. Rebuild and test after
 formatting changes sources.
+
+## Editor tooling
+
+`./xmakew build` and `./xmakew test` need no Node or editor dependencies. Native
+LSP framing remains a Carven contract test. Node-based protocol and VS Code tests
+run separately in the [editor tests](../../editors/vscode/development.md#automated-checks).

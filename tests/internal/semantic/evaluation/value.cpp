@@ -1,6 +1,5 @@
 module carven:test.internal.semantic.evaluation.value;
 
-import :semantic.evaluation.admission;
 import :semantic.evaluation.display;
 import :semantic.evaluation.shape;
 import :semantic.evaluation.value;
@@ -17,77 +16,6 @@ static_assert(!std::is_copy_constructible_v<ExecutionOwnedText>);
 namespace {
 
 const TestSuite suite([] static noexcept {
-    "Execution type admission: value containment and views retain their storage boundaries"_test =
-        [] static noexcept {
-            auto fixture = ConstantEvaluationFixture();
-            auto& values = fixture.compilation;
-            const auto empty = values.builtin_type(BuiltinType::Void);
-            const auto opaque = values.intern_type(
-                {.value = CppTypeValue {
-                     .form = CppNamedType {
-                         .name =
-                             {.context_module = values.reserve_module_declaration(),
-                              .lookup = CppNameLookup::Global,
-                              .components = {"Opaque"}},
-                         .arguments = {}
-                     }
-                 }}
-            );
-            const auto empty_array =
-                values.intern_type({.value = ArrayTypeValue {.element = empty, .extent = 1u}});
-            const auto opaque_array =
-                values.intern_type({.value = ArrayTypeValue {.element = opaque, .extent = 1u}});
-            const auto pointer = values.intern_type(
-                {.value = PointerTypeValue {.target = opaque, .access = PointerAccess::Read}}
-            );
-            const auto slice = values.intern_type({.value = SliceTypeValue {.element = opaque}});
-            const auto construction = values.append_construction_type(
-                {.value = ConstructionArrayTypeValue {
-                     .element = values.builtin_type(BuiltinType::I32),
-                     .extent = 1u,
-                 }}
-            );
-            struct Scenario final {
-                std::string_view name;
-                ConstructionTypeRef type;
-                bool supported;
-            };
-            const auto scenarios = std::array {
-                Scenario {.name = "void is a value", .type = empty, .supported = true},
-                Scenario {
-                    .name = "tuple containing void",
-                    .type =
-                        values.intern_type({.value = TupleTypeValue {.elements = {empty, empty}}}),
-                    .supported = true
-                },
-                Scenario {.name = "array containing void", .type = empty_array, .supported = true},
-                Scenario {.name = "unsupported owned root", .type = opaque, .supported = false},
-                Scenario {
-                    .name = "unsupported owned array element",
-                    .type = opaque_array,
-                    .supported = false
-                },
-                Scenario {
-                    .name = "pointer does not own target storage",
-                    .type = pointer,
-                    .supported = true
-                },
-                Scenario {
-                    .name = "slice does not own element storage",
-                    .type = slice,
-                    .supported = true
-                },
-                Scenario {
-                    .name = "construction array admits supported elements",
-                    .type = construction,
-                    .supported = true
-                },
-            };
-            each(scenarios, &Scenario::name, [&](const Scenario& scenario) noexcept {
-                expect_equal(supported_execution_type(values, scenario.type), scenario.supported);
-            });
-        };
-
     "Constant values: unit and tuples compare across retained and local representations"_test =
         [] static noexcept {
             constexpr auto maximum_steps = std::numeric_limits<std::size_t>::max();

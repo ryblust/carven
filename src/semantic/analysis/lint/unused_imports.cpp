@@ -28,7 +28,27 @@ auto diagnose_unused_imports(
         }
     }
     for (const auto& binding : catalog.imports()) {
-        if (draft.imported(binding.importer) || usage.was_used(binding.binding_id)) {
+        if (draft.imported(binding.importer)) {
+            continue;
+        }
+        if (usage.was_used(binding.binding_id)) {
+            if (binding.selection_kind != CatalogImportSelectionKind::Wildcard) {
+                for (const auto& selection : binding.selections) {
+                    if (!usage.selection_was_used(binding.binding_id, selection.name)) {
+                        draft.diagnostics().warning(
+                            DiagnosticBuilder(
+                                DiagnosticCode::LintUnusedImport,
+                                "unused import selection"
+                            )
+                                .primary(locate(
+                                    draft.module_source_id(binding.importer),
+                                    selection.origin
+                                ))
+                                .build()
+                        );
+                    }
+                }
+            }
             continue;
         }
         draft.diagnostics().warning(

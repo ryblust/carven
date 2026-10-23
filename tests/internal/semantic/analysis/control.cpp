@@ -3,7 +3,7 @@ module carven:test.internal.semantic.analysis.control;
 import :diagnostics.code;
 import :diagnostics.diagnostic;
 import :frontend.program.parse;
-import :semantic.analyze;
+import :semantic.evaluation.execution;
 import :semantic.semir.body;
 import :semantic.semir.constant;
 import :semantic.semir.decl;
@@ -553,7 +553,7 @@ const TestSuite suite([] static noexcept {
                 if (!expect(parsed.has_value())) {
                     return;
                 }
-                auto result = analyze(std::move(*parsed), HostEffects::Deny);
+                auto result = analyze_test_syntax(std::move(*parsed), HostEffects::Deny);
                 if (!expect(result.has_value())) {
                     return;
                 }

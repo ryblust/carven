@@ -673,6 +673,17 @@ auto BodyRealizer::ExpressionBuilder::build(
     retain_backing |= owner.fallible(value.operation).has_value()
         || std::holds_alternative<SemPrint>(value.operation.value);
     auto& inputs = fragment.preparation.operands;
+    const auto scalar_return = direct_return
+        && result_use != PreparedUse::NativeTake
+        && std::holds_alternative<SemTake>(value.operation.value)
+        && scalar(value.operation.type.resolved())
+        && !owner.context.semantic()
+                .type_contents(value.operation.type.resolved())
+                .contains_native_value;
+    if (scalar_return) {
+        // Scalar return needs the value, not mutable storage for a transfer call.
+        inputs.front().use = PreparedUse::OperandValue;
+    }
     const auto* native_conversion = std::get_if<SemCpp>(&value.operation.value);
     const auto* conversion = native_conversion
         ? std::get_if<CppConvertOperation>(&native_conversion->operation)
@@ -864,6 +875,13 @@ auto BodyRealizer::ExpressionBuilder::build(
         fragment.executes |= has_effect(child);
         fragment.observes |= has_storage_read(child);
     }
+    if (const auto* cast = std::get_if<SemCast>(&value.operation.value);
+        cast != nullptr && cast->kind == CastKind::Identity) {
+        // Reuse completed backing; pending operands still follow the cast's
+        // value contract when consumed.
+        complete(fragment, std::move(children.front().completion));
+        co_return finish_fragment(std::move(fragment));
+    }
     if (const auto* awaited = std::get_if<SemAwait>(&value.operation.value)) {
         auto& operand = children.front();
         const auto& operation = source(operand).operation;
@@ -978,7 +996,7 @@ auto BodyRealizer::ExpressionBuilder::build(
             && std::holds_alternative<TargetLocalExpr>(operands.front().value);
         complete(
             fragment,
-            result_use == PreparedUse::NativeTake || implicit_transfer
+            result_use == PreparedUse::NativeTake || implicit_transfer || scalar_return
                 ? std::move(operands.front())
                 : transfer_expression(std::move(operands.front()))
         );

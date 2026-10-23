@@ -6,7 +6,7 @@ set_languages("c++20")
 
 target("carven-test-language")
     set_kind("binary")
-    add_rules("@carven/carven", {tests = true})
+    add_rules("carven", {tests = true})
     add_tests("default", {run_timeout = 30000})
     add_includedirs(".")
     for _, directory in ipairs({
@@ -23,7 +23,7 @@ includes("traps")
 
 target("carven-test-language-execution")
     set_kind("binary")
-    add_rules("@carven/carven")
+    add_rules("carven")
     add_includedirs(".")
     add_files("main.cv", "io/input.cv", "io/utf_errors.cv")
 
@@ -55,7 +55,7 @@ target("carven-test-language-input")
 target_end()
 
 target("carven-test-language-entry")
-    add_rules("@carven/carven", {tests = {entry = false}})
+    add_rules("carven", {tests = {entry = false}})
 
     add_includedirs(".")
     add_files("entry/explicit.cv")
@@ -76,14 +76,14 @@ target("carven-test-language-entry")
 target_end()
 
 target("carven-test-language-implicit-entry")
-    add_rules("@carven/carven")
+    add_rules("carven")
     add_files("entry/implicit_recovery.cv")
     add_tests("recovery", {run_timeout = 30000})
 target_end()
 
 target("carven-test-language-printing")
     set_languages("c++20")
-    add_rules("@carven/carven")
+    add_rules("carven")
     add_files("printing/core.cv")
     add_tests("printing", {run_timeout = 30000})
     on_test(function (target, opt)
@@ -100,7 +100,7 @@ for _, case in ipairs({
     {name = "async-cancelled", source = "async_cancelled.cv", reports = {"root requested child cancellation", "child accepts cancellation: true", "cancellation escaped the program entry"}},
 }) do
     target("carven-test-language-entry-" .. case.name)
-        add_rules("@carven/carven")
+        add_rules("carven")
         add_files("entry/" .. case.source)
         add_tests("entry", {run_timeout = 30000})
         on_test(function (target, opt)
@@ -115,7 +115,7 @@ end
 
 target("carven-test-language-test-control")
     set_kind("binary")
-    add_rules("@carven/carven", {tests = true})
+    add_rules("carven", {tests = true})
     add_includedirs(".")
     add_files("testing/reporting.cv", "testing/runner_failure.cv", "testing/async_control.cv")
     add_files("testing/async_native_cleanup.cv")

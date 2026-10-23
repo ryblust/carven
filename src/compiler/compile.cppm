@@ -3,6 +3,7 @@ module carven:compiler.compile;
 import :artifacts;
 import :backend.generation.request;
 import :diagnostics.diagnosed;
+import :semantic.analysis.program;
 import :semantic.evaluation.output;
 import :source.batch;
 import :source.manager;
@@ -14,5 +15,6 @@ auto compile(
     SourceBatch batch,
     const TargetPlanningRequest& generation,
     ExecutionOutput output = {},
-    TimingOutput timings = {}
+    TimingOutput timings = {},
+    AnalysisNativeCall native_call = {}
 ) noexcept -> std::expected<Diagnosed<GeneratedArtifactSet>, Diagnostics>;

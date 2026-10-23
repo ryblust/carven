@@ -44,13 +44,13 @@ auto DeclResolver::resolve_function(
         ));
     }
     const auto entry = !symbol.class_operation && symbol.name == "main" && !cpp_import;
-    if (function.const_span && (cpp_import || entry)) {
+    if (function.const_span && entry) {
         co_return std::unexpected(declaration_failure(
             draft,
             symbol.module_id,
             *function.const_span,
             DiagnosticCode::ConstAdmission,
-            cpp_import ? "const fn requires a Carven body" : "the entry function cannot be const fn"
+            "the entry function cannot be const fn"
         ));
     }
     if (entry && function.parameters.size() > 1uz) {

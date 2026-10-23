@@ -13,13 +13,21 @@ end
 
 local function run_case(target, case)
     local steps = case.steps or {case}
-    local formatter = target:dep("carven-format")
-    local program = path.absolute(formatter:targetfile(), os.projectdir())
-    local addenvs, setenvs = runenvs.make(formatter)
+    local compiler = target:dep("carven")
+    local program = path.absolute(compiler:targetfile(), os.projectdir())
+    local addenvs, setenvs = runenvs.make(compiler)
     local envs = runenvs.join(addenvs, setenvs)
     local work = os.tmpfile() .. ".carven-format"
     local tree = path.join(work, "files")
     os.mkdir(tree)
+    if case.name == "missing_formatter" then
+        -- A formatter on PATH must not replace the missing sibling executable.
+        envs.PATH = path.joinenv({path.directory(program), envs.PATH})
+        local relocated = path.join(work, "bin", path.filename(program))
+        os.mkdir(path.directory(relocated))
+        os.cp(program, relocated)
+        program = relocated
+    end
     local state = {}
     for name, bytes in pairs(case.files or {}) do
         local filename = path.join(tree, name)
@@ -28,11 +36,12 @@ local function run_case(target, case)
         state[name] = bytes
     end
     for index, step in ipairs(steps) do
-        local label = case.name .. " step " .. index .. " (" .. report.format_command(program, step.args)
+        local args = table.join({"format"}, step.args)
+        local label = case.name .. " step " .. index .. " (" .. report.format_command(program, args)
             .. "; retained on failure: " .. work .. ")"
         local prefix = path.join(work, tostring(index))
         io.writefile(prefix .. ".stdin", step.stdin or "", {encoding = "binary"})
-        local code, run_error = os.execv(program, step.args, {
+        local code, run_error = os.execv(program, args, {
             try = true, timeout = 10000, curdir = tree, envs = envs,
             stdin = prefix .. ".stdin", stdout = prefix .. ".stdout", stderr = prefix .. ".stderr",
         })

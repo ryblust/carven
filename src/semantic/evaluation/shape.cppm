@@ -1,6 +1,6 @@
 module carven:semantic.evaluation.shape;
 
-import :semantic.semir.constant_access;
+import :semantic.semir.values;
 import std;
 
 struct ExecutionTypeShape final {

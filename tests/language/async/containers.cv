@@ -3,23 +3,23 @@ import std::json using { JSONError, JSONValueError, JSONValue }
 
 async fn parse_owned(&&text: String) -> JSONValue throw JSONError {
     await yield_once();
-    return JSONValue::parse(text.as_str())?;
+    return JSONValue::parse(text)?;
 }
 
 async fn products() -> Vector<(i32, void)> {
-    var values = Vector<(i32, void)> {};
+    var values: Vector<(i32, void)> = [];
     values.push((41, ()));
     await yield_once();
     values.push((42, ()));
-    return &&values;
+    return values;
 }
 
 async fn units() -> Vector<void> {
-    var values = Vector<void> {};
+    var values: Vector<void> = [];
     values.push(());
     await yield_once();
     values.push(());
-    return &&values;
+    return values;
 }
 
 async test "Async containers: owned aggregate results survive suspension" {

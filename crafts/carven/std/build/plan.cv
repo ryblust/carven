@@ -1,0 +1,310 @@
+import .platform using { canonical, resolve }
+import std::build using { BuildError, BuildPlan, BuildTarget, TargetKind, NativeOptions }
+import std::collections using HashSet;
+import std::fs using join;
+import std::process using { OperatingSystem, operating_system }
+import std::utf using { ends_with, starts_with }
+
+struct ResolvedTarget {
+    name: String,
+    kind: TargetKind,
+    sources: Vector<String>,
+    headers: Vector<String>,
+    native: NativeOptions,
+    dependencies: Vector<usize>,
+    output: String,
+    output_identity: String,
+}
+
+struct ResolvedPlan {
+    root: String,
+    crafts_root: String,
+    output_directory: String,
+    work_directory: String,
+    query_directory: String,
+    targets: Vector<ResolvedTarget>,
+    order: Vector<usize>,
+}
+
+const fn append_paths(&paths: HashSet<String>, additions: [String]) {
+    for path in additions {
+        let owned = path;
+        paths.insert(&&owned);
+    }
+}
+
+const fn append_carven_sources(&paths: HashSet<String>, additions: [String]) {
+    for path in additions {
+        if ends_with(path, ".cv") => append_paths(&paths, [path]);
+    }
+}
+
+private const fn validate_name(value: str) throw BuildError {
+    if value.is_empty() => throw BuildError { message: "target name is empty" };
+    for byte in value.bytes {
+        if !(byte >= 0x61 && byte <= 0x7a)
+            && !(byte >= 0x41 && byte <= 0x5a)
+            && !(byte >= 0x30 && byte <= 0x39)
+            && byte != 0x2d
+            && byte != 0x5f {
+            throw BuildError {
+                message: "target name must contain only letters, digits, '-' or '_'"
+            };
+        }
+    }
+}
+
+// Output names must remain distinct on case-insensitive filesystems as well.
+private const fn same_name(left: str, right: str) -> bool {
+    if left.byte_length() != right.byte_length() => return false;
+    for index in 0..left.byte_length() {
+        let a = left.bytes[index];
+        let b = right.bytes[index];
+        let folded_a = if a >= 0x41 && a <= 0x5a { a + 0x20 } else { a };
+        let folded_b = if b >= 0x41 && b <= 0x5a { b + 0x20 } else { b };
+        if folded_a != folded_b => return false;
+    }
+    return true;
+}
+
+private const fn target_index(targets: [BuildTarget], name: str) -> usize throw BuildError {
+    for index in 0..targets.length() {
+        if targets[index].name == name => return index;
+    }
+    throw BuildError { message: f"unknown build dependency '{name}'" };
+}
+
+// Declaration order resolves independent targets; dependencies precede their consumers.
+private const fn target_order(targets: [BuildTarget]) -> Vector<usize> throw BuildError {
+    var completed: Vector<bool> = [];
+    for index in 0..targets.length() {
+        validate_name(targets[index].name)?;
+        for previous in 0..index {
+            if same_name(targets[index].name, targets[previous].name) => throw BuildError {
+                message: f"duplicate build target '{targets[index].name}'"
+            };
+        }
+        for dependency in targets[index].dependencies {
+            let selected = target_index(targets, dependency)?;
+            if targets[selected].kind == .Executable => throw BuildError {
+                message: f"dependency '{dependency}' is an executable"
+            };
+            if targets[index].kind == .SourceLibrary
+                && targets[selected].kind != .SourceLibrary => throw BuildError {
+                message: f"source library '{targets[
+                        index
+                    ].name}' cannot depend on product '{dependency}'"
+            };
+        }
+        completed.push(false);
+    }
+
+    var order: Vector<usize> = [];
+    while order.length() < targets.length() {
+        let before = order.length();
+        for index in 0..targets.length() {
+            if completed[index] => continue;
+            var ready = true;
+            for dependency in targets[index].dependencies {
+                if !completed[target_index(targets, dependency)?] => ready = false;
+            }
+            if ready {
+                completed[index] = true;
+                order.push(index);
+            }
+        }
+        if order.length() == before => throw BuildError {
+            message: "build target dependencies contain a cycle"
+        };
+    }
+
+    return order;
+}
+
+private const fn output_path(target: BuildTarget, root: str, windows: bool) -> String {
+    if !target.output.is_empty() => return join(root, target.output);
+    let name = target.name;
+    return match target.kind {
+        .Executable => if windows { f"{root}/{name}.exe" } else { f"{root}/{name}" },
+        .StaticLibrary => if windows { f"{root}/{name}.lib" } else { f"{root}/lib{name}.a" },
+        .SourceLibrary => "",
+    };
+}
+
+private const fn source_path(path: str, root: str) -> String throw BuildError {
+    let identity = canonical(path)?;
+    if !ends_with(path, ".cv") => return identity;
+    let prefix = if ends_with(root, "/") { root as String } else { f"{root}/" };
+    if !starts_with(identity, prefix) => throw BuildError {
+        message: f"source '{path}' is outside project root '{root}'"
+    };
+    return identity;
+}
+
+private const fn validate_source_library(target: BuildTarget) throw BuildError {
+    if target.kind != .SourceLibrary => return;
+    let native = target.native;
+    if !target.output.is_empty()
+        || !native.include_dirs.is_empty()
+        || !native.defines.is_empty()
+        || !native.compile_flags.is_empty()
+        || !native.library_dirs.is_empty()
+        || !native.link_flags.is_empty()
+        || !native.libraries.is_empty() => throw BuildError {
+        message: f"source library '{target.name}' provides sources, headers, dependencies and syslinks; output and native build options belong to its consumer"
+    };
+}
+
+// Resolution reads declarations and source inventories. It never creates outputs
+// or invokes application analysis, a compiler process, or a linker.
+const fn resolve_plan(plan: BuildPlan) -> ResolvedPlan throw BuildError {
+    if plan.targets.is_empty() => throw BuildError { message: "a build needs at least one target" };
+    let order = target_order(plan.targets)?;
+    let output_root = if plan.output_directory.is_empty() {
+        "build"
+    } else {
+        plan.output_directory.as_str()
+    };
+    let work_root = resolve(join(output_root, ".carven"))?;
+    let project_root = canonical(".")?;
+    let project_crafts = resolve("crafts")?;
+    let windows = operating_system() == OperatingSystem::Windows;
+
+    var outputs: Vector<String> = [];
+    var artifact_index = HashSet<String>::with_capacity(plan.targets.length());
+    for target in plan.targets {
+        validate_source_library(target)?;
+        let path = output_path(target, output_root, windows);
+        if target.kind == .SourceLibrary {
+            outputs.push("");
+            continue;
+        }
+        let identity = resolve(path)?;
+        for previous in artifact_index.values() {
+            if same_name(identity, previous) => throw BuildError {
+                message: f"duplicate build output '{path}'"
+            };
+        }
+        artifact_index.insert(&&identity);
+        outputs.push(&&path);
+    }
+
+    var shared_sources = HashSet<String>::new();
+    for source in plan.shared_sources {
+        append_paths(&shared_sources, [source_path(source, project_root)?]);
+    }
+
+    var targets: Vector<ResolvedTarget> = [];
+    for index in 0..plan.targets.length() {
+        let target = plan.targets[index];
+        var sources = shared_sources;
+        for source in target.sources {
+            append_paths(&sources, [source_path(source, project_root)?]);
+        }
+        var headers: Vector<String> = [];
+        for header in target.headers {
+            headers.push(canonical(header)?);
+        }
+        if sources.is_empty()
+            && target.dependencies.is_empty()
+            && (target.kind != .SourceLibrary || headers.is_empty()) => throw BuildError {
+            message: f"target '{target.name}' needs at least one source"
+        };
+        targets.push({
+            name: target.name,
+            kind: target.kind,
+            sources: Vector<String>::from_slice(sources.values()),
+            headers: &&headers,
+            native: target.native,
+            dependencies: [],
+            output: outputs[index],
+            output_identity: if target.kind == .SourceLibrary {
+                ""
+            } else {
+                resolve(outputs[index])?
+            }
+        });
+    }
+
+    // Dependency closure belongs to the plan; queries and execution consume it.
+    for index in order {
+        var reachable = HashSet<usize>::new();
+        for name in plan.targets[index].dependencies {
+            let dependency = target_index(plan.targets, name)?;
+            for inherited in targets[dependency].dependencies {
+                let row = inherited;
+                reachable.insert(&&row);
+            }
+            reachable.insert(&&dependency);
+        }
+        for dependency in order {
+            if reachable.contains(dependency) => targets[index].dependencies.push(dependency);
+        }
+    }
+
+    return {
+        root: project_root,
+        crafts_root: project_crafts,
+        output_directory: output_root as String,
+        work_directory: work_root,
+        query_directory: join(work_root, "queries"),
+        targets: &&targets,
+        order: order
+    };
+}
+
+// Each native test program retains its target's dependency and compilation contexts.
+const fn test_plan(plan: ResolvedPlan, selected: usize) -> ResolvedPlan throw BuildError {
+    let output_root = join(plan.output_directory, f"tests/{plan.targets[selected].name}");
+    let windows = operating_system() == OperatingSystem::Windows;
+    var positions: Vector<usize> = [];
+    for _ in plan.targets {
+        positions.push(plan.targets.length());
+    }
+    var targets: Vector<ResolvedTarget> = [];
+    var order: Vector<usize> = [];
+    for index in plan.order {
+        var included = index == selected;
+        for dependency in plan.targets[selected].dependencies {
+            if dependency == index => included = true;
+        }
+        if !included => continue;
+        var target = plan.targets[index];
+        if index == selected => target.kind = .Executable;
+        target.output = match target.kind {
+            .Executable => if windows {
+                f"{output_root}/{target.name}.exe"
+            } else {
+                f"{output_root}/{target.name}"
+            },
+            .StaticLibrary => if windows {
+                f"{output_root}/{target.name}.lib"
+            } else {
+                f"{output_root}/lib{target.name}.a"
+            },
+            .SourceLibrary => "",
+        };
+        target.output_identity = if target.kind == .SourceLibrary {
+            ""
+        } else {
+            resolve(target.output)?
+        };
+        target.dependencies.clear();
+        for dependency in plan.targets[index].dependencies {
+            assert(positions[dependency] != plan.targets.length());
+            target.dependencies.push(positions[dependency]);
+        }
+        positions[index] = targets.length();
+        order.push(targets.length());
+        targets.push(&&target);
+    }
+    return {
+        root: plan.root,
+        crafts_root: plan.crafts_root,
+        output_directory: output_root,
+        work_directory: resolve(join(output_root, ".carven"))?,
+        query_directory: plan.query_directory,
+        targets: &&targets,
+        order: &&order
+    };
+}

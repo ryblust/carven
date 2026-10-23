@@ -5,12 +5,11 @@ import :diagnostics.code;
 import :semantic.analysis.constant.admission;
 import :semantic.analysis.operations;
 import :semantic.evaluation.admission;
-import :semantic.evaluation.standard;
 import :semantic.semir.body;
 import :semantic.semir.children;
-import :semantic.semir.constant;
 import :semantic.semir.decl;
 import :semantic.semir.generic;
+import :semantic.semir.initialization;
 import :semantic.semir.structured;
 import :semantic.semir.type;
 import :support.visit;
@@ -31,13 +30,8 @@ public:
 
 private:
     auto reject(ProgramOriginID origin, std::string message) noexcept -> void;
-    auto supported_type(ConstructionTypeRef type) const noexcept -> bool;
     auto check_function(FunctionID function) noexcept -> void;
     auto check_generic_function(GenericDeclarationID definition) noexcept -> void;
-    auto check_contract(
-        const ConstructionCallableContract& contract,
-        ProgramOriginID origin
-    ) noexcept -> bool;
     auto check_body(const StructuredBodyDraft& body) noexcept -> void;
     auto check_call(CallableID target, ProgramOriginID origin) noexcept -> void;
     auto check_call(GenericTypeID target, ProgramOriginID origin) noexcept -> void;
@@ -53,13 +47,6 @@ private:
     std::optional<ProgramOriginID> contract_origin;
     std::optional<AnalysisFailure> failure;
 
-    struct PendingFailures final {
-        ConstructionFailureRef source;
-        ProgramOriginID origin;
-        ProgramOriginID contract;
-    };
-
-    std::vector<PendingFailures> pending_failures;
     std::set<ConstructionCallableRef> checked_closures;
 };
 
@@ -93,25 +80,6 @@ auto ConstFunctionValidator::run() noexcept -> AnalysisResult<void> {
             return std::unexpected(*failure);
         }
     }
-    if (!pending_failures.empty()) {
-        auto effects = draft.preview_failures();
-        if (!effects) {
-            return std::unexpected(effects.error());
-        }
-        for (const auto& pending : pending_failures) {
-            contract_origin = pending.contract;
-            if (std::ranges::any_of(
-                    effects->known_members(pending.source),
-                    [&](const auto type) noexcept { return !supported_type(type); }
-                )) {
-                reject(
-                    pending.origin,
-                    "function signature uses a value without compile-time execution support"
-                );
-                return std::unexpected(*failure);
-            }
-        }
-    }
     return {};
 }
 
@@ -130,121 +98,10 @@ auto ConstFunctionValidator::reject(ProgramOriginID origin, std::string message)
     failure = draft.diagnostics().error(diagnostic.build());
 }
 
-auto ConstFunctionValidator::supported_type(ConstructionTypeRef type) const noexcept -> bool {
-    auto pending = std::vector<ConstructionTypeRef> {type};
-    auto visited = std::set<ConstructionTypeRef>();
-    while (!pending.empty()) {
-        const auto next = pending.back();
-        pending.pop_back();
-        if (std::holds_alternative<TypeID>(next)) {
-            if (!supported_execution_type(draft, next)) {
-                return false;
-            }
-            continue;
-        }
-        if (!visited.insert(next).second) {
-            continue;
-        }
-        if (const auto* generic = std::get_if<GenericTypeID>(&next)) {
-            const auto shape = draft.generic_type_copy(*generic);
-            const auto admitted = shape.visit([&](const auto& value) noexcept -> bool {
-                using Value = std::remove_cvref_t<decltype(value)>;
-                if constexpr (std::same_as<Value, GenericCppNamedType>
-                              || std::same_as<Value, GenericCppQueryType>) {
-                    return standard_execution_type(draft, next);
-                } else if constexpr (std::same_as<Value, TypeID>) {
-                    pending.emplace_back(value);
-                } else if constexpr (std::same_as<Value, GenericArrayType>) {
-                    pending.emplace_back(value.element);
-                } else if constexpr (std::same_as<Value, GenericTupleType>) {
-                    for (const auto element : value.elements) {
-                        pending.emplace_back(element);
-                    }
-                } else if constexpr (std::same_as<Value, GenericNominalApplication>) {
-                    const auto definition = draft.generic_declaration_copy(value.definition);
-                    definition.visit([&](const auto& source) noexcept {
-                        using Definition = std::remove_cvref_t<decltype(source)>;
-                        const auto field = [&](GenericTypeID field) noexcept {
-                            pending.emplace_back(draft.substitute_generic_type(
-                                field,
-                                value.definition,
-                                value.arguments
-                            ));
-                        };
-                        if constexpr (std::same_as<Definition, GenericRecordDefinition>) {
-                            for (const auto& member : source.fields) {
-                                field(member.type);
-                            }
-                        } else if constexpr (std::same_as<Definition, GenericEnumDefinition>) {
-                            for (const auto& member : source.cases) {
-                                for (const auto type : member.payload_types) {
-                                    field(type);
-                                }
-                            }
-                        }
-                    });
-                } else if constexpr (std::same_as<Value, GenericVectorType>) {
-                    pending.emplace_back(value.element);
-                }
-                // Rigid holders carry an argument value; no copy/default/equality
-                // capability is inferred. Views and deferred owners do not execute
-                // or freeze the storage of their targets at this boundary.
-                return true;
-            });
-            if (!admitted) {
-                return false;
-            }
-            continue;
-        }
-        const auto term = std::get<TypeTermID>(next);
-        const auto construction = draft.construction_type_copy(term);
-        if (const auto* array = std::get_if<ConstructionArrayTypeValue>(&construction.value)) {
-            pending.push_back(array->element);
-        } else if (const auto* tuple =
-                       std::get_if<ConstructionTupleTypeValue>(&construction.value)) {
-            for (const auto element : tuple->elements) {
-                pending.push_back(element);
-            }
-        } else if (std::holds_alternative<ConstructionOperationTypeValue>(construction.value)) {
-            // The descriptor is local to execution; freezing separately rejects it.
-        } else if (std::holds_alternative<ConstructionSliceTypeValue>(construction.value)
-                   || std::holds_alternative<ConstructionCallableViewTypeValue>(
-                       construction.value
-                   )) {
-            // Views do not contain their targets' storage.
-        } else {
-            return false;
-        }
-    }
-    return true;
-}
-
-auto ConstFunctionValidator::check_contract(
-    const ConstructionCallableContract& contract,
-    ProgramOriginID origin
-) noexcept -> bool {
-    if (!supported_type(contract.result)
-        || std::ranges::any_of(contract.parameters, [&](const auto& parameter) noexcept {
-               return !supported_type(parameter.type);
-           })) {
-        reject(origin, "function signature uses a value without compile-time execution support");
-        return false;
-    }
-    // Type traversal can form dependent descriptors. Once it is complete, one
-    // shared failure solution checks every const contract in this batch.
-    pending_failures.push_back(
-        {.source = contract.failures, .origin = origin, .contract = *contract_origin}
-    );
-    return true;
-}
-
 auto ConstFunctionValidator::check_generic_function(GenericDeclarationID definition) noexcept
     -> void {
     const auto source =
         std::get<GenericCallableDefinition>(draft.generic_declaration_copy(definition));
-    if (!check_contract(source.signature, source.contract.origin)) {
-        return;
-    }
     if (!draft.has_generic_callable_body(definition)) {
         reject(source.contract.origin, "generic function has no checked compile-time body");
         return;
@@ -261,8 +118,8 @@ auto ConstFunctionValidator::check_function(FunctionID function) noexcept -> voi
         );
         return;
     }
-    const auto contract = draft.construction_callable_contract_copy(declaration.callable);
-    if (!check_contract(contract, declaration.origin)) {
+    if (const auto implementation = draft.callable_implementation_copy(declaration.callable);
+        implementation && std::holds_alternative<CppImportImplementation>(*implementation)) {
         return;
     }
     auto body = function.index() < function_bodies.size() ? function_bodies[function.index()]
@@ -287,10 +144,7 @@ auto ConstFunctionValidator::check_call(CallableID target, ProgramOriginID origi
     if (const auto implementation = draft.callable_implementation_copy(target)) {
         if (const auto* closure = std::get_if<ClosureBodyImplementation>(&*implementation)) {
             if (checked_closures.emplace(target).second) {
-                const auto contract = draft.construction_callable_contract_copy(target);
-                if (check_contract(contract, origin)) {
-                    check_body(draft.body_draft(closure->body));
-                }
+                check_body(draft.body_draft(closure->body));
             }
             return;
         }
@@ -317,15 +171,11 @@ auto ConstFunctionValidator::check_call(
     }
 }
 
-auto ConstFunctionValidator::check_call(GenericTypeID target, ProgramOriginID origin) noexcept
-    -> void {
+auto ConstFunctionValidator::check_call(GenericTypeID target, ProgramOriginID) noexcept -> void {
     const auto shape = draft.generic_type_copy(target);
     const auto& closure = std::get<GenericClosureType>(shape);
     if (checked_closures.emplace(target).second) {
-        const auto contract = draft.callable_contract(ConstructionTypeRef(target));
-        if (check_contract(*contract, origin)) {
-            check_body(draft.generic_callable_body(closure.definition));
-        }
+        check_body(draft.generic_callable_body(closure.definition));
     }
 }
 
@@ -392,28 +242,13 @@ auto ConstFunctionValidator::check_body(const StructuredBodyDraft& body) noexcep
                     std::reverse(nodes.begin() + static_cast<std::ptrdiff_t>(first), nodes.end());
                 },
                 [&](const SemanticExpression* expression) noexcept {
-                    // Control operations select a child result rather than construct
-                    // their contextual result type. Check the reachable producers;
-                    // a noncompleting branch need not produce that type at all.
-                    const auto selects_result = std::holds_alternative<SemIf>(expression->value)
-                        || std::holds_alternative<SemMatch>(expression->value)
-                        || std::holds_alternative<SemTry>(expression->value);
-                    if (expression->operation_reachable
-                        && !selects_result
-                        && !supported_type(expression->type.construction())) {
-                        reject(
-                            expression->origin,
-                            "expression type is not supported in compile-time execution"
-                        );
-                        return;
-                    }
                     if (expression->operation_reachable) {
-                        if ((std::holds_alternative<SemCpp>(expression->value)
-                             || std::holds_alternative<SemCppCall>(expression->value))
-                            && !standard_execution_supported(draft, *expression)) {
+                        if (std::holds_alternative<SemDefault>(expression->value)
+                            && default_initialization(draft, expression->type.construction())
+                                == DefaultInitialization::Native) {
                             reject(
                                 expression->origin,
-                                "native C++ operation has no compile-time implementation"
+                                "native default initialization has no compile-time implementation"
                             );
                             return;
                         }

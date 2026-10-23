@@ -1,0 +1,354 @@
+{
+  "name": "Carven",
+  "scopeName": "source.carven",
+  "patterns": [
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#cpp"
+    },
+    {
+      "match": "^[ \\t]*-{3,}[ \\t]*$",
+      "name": "punctuation.section.embedded.end.carven"
+    },
+    {
+      "include": "#import"
+    },
+    {
+      "include": "#strings"
+    },
+    {
+      "include": "#numbers"
+    },
+    {
+      "include": "#declarations"
+    },
+    {
+      "include": "#words"
+    },
+    {
+      "match": "[-+*/%=!<>?&|^~]+|::|=>",
+      "name": "keyword.operator.carven"
+    },
+    {
+      "match": "[{}\\[\\]();,.:]",
+      "name": "punctuation.carven"
+    }
+  ],
+  "repository": {
+    "comments": {
+      "name": "comment.line.double-slash.carven",
+      "begin": "//",
+      "end": "$"
+    },
+    "cpp": {
+      "name": "meta.embedded.block.cpp",
+      "begin": "(#\\[cpp\\])[ \\t]+(-{3,})[ \\t]*$",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.control.carven"
+        },
+        "2": {
+          "name": "punctuation.section.embedded.begin.carven"
+        }
+      },
+      "while": "^(?![ \\t]*\\2[ \\t]*$)",
+      "patterns": [
+        {
+          "include": "source.cpp"
+        }
+      ]
+    },
+    "import": {
+      "patterns": [
+        {
+          "match": "\\b(import)(\\s+)(\\.?[A-Za-z_][A-Za-z0-9_]*(?:(?:\\s*::\\s*|\\s*\\.\\s*)[A-Za-z_][A-Za-z0-9_]*)*)",
+          "captures": {
+            "1": {
+              "name": "keyword.control.carven"
+            },
+            "3": {
+              "name": "variable.other.carven"
+            }
+          }
+        },
+        {
+          "begin": "\\bimport\\b",
+          "beginCaptures": {
+            "0": {
+              "name": "keyword.control.carven"
+            }
+          },
+          "end": "(?<=[>\\\"])|(?=\\S)",
+          "applyEndPatternLast": true,
+          "patterns": [
+            {
+              "include": "#comments"
+            },
+            {
+              "name": "string.quoted.other.header.carven",
+              "begin": "<",
+              "end": ">|$"
+            },
+            {
+              "name": "string.quoted.other.header.carven",
+              "begin": "\"",
+              "end": "\"|$"
+            }
+          ]
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.raw.multiline.carven",
+          "begin": "\\br(#{0,})\"\"\"",
+          "end": "^[ \\t]*\"\"\"\\1",
+          "patterns": []
+        },
+        {
+          "name": "string.quoted.double.raw.carven",
+          "begin": "\\br(#{0,})\"",
+          "end": "\"\\1|$",
+          "patterns": []
+        },
+        {
+          "name": "string.quoted.double.interpolated.multiline.carven",
+          "begin": "\\bf\"\"\"",
+          "end": "^[ \\t]*\"\"\"",
+          "patterns": [
+            {
+              "match": "\\\\(?:['\"\\\\ntr0]|u\\{[0-9a-fA-F]{1,6}\\})",
+              "name": "constant.character.escape.carven"
+            },
+            {
+              "match": "\\\\.",
+              "name": "invalid.illegal.escape.carven"
+            },
+            {
+              "match": "\\{\\{|\\}\\}",
+              "name": "constant.character.escape.carven"
+            },
+            {
+              "include": "#hole"
+            }
+          ]
+        },
+        {
+          "name": "string.quoted.double.multiline.carven",
+          "begin": "\"\"\"",
+          "end": "^[ \\t]*\"\"\"",
+          "patterns": [
+            {
+              "match": "\\\\(?:['\"\\\\ntr0]|u\\{[0-9a-fA-F]{1,6}\\})",
+              "name": "constant.character.escape.carven"
+            },
+            {
+              "match": "\\\\.",
+              "name": "invalid.illegal.escape.carven"
+            }
+          ]
+        },
+        {
+          "include": "#interpolation"
+        },
+        {
+          "name": "string.quoted.double.carven",
+          "begin": "\\bc\"|\"",
+          "end": "\"|$",
+          "patterns": [
+            {
+              "match": "\\\\(?:['\"\\\\ntr0]|u\\{[0-9a-fA-F]{1,6}\\})",
+              "name": "constant.character.escape.carven"
+            },
+            {
+              "match": "\\\\.",
+              "name": "invalid.illegal.escape.carven"
+            }
+          ]
+        },
+        {
+          "name": "string.quoted.single.carven",
+          "begin": "'",
+          "end": "'|$",
+          "patterns": [
+            {
+              "match": "\\\\(?:['\"\\\\ntr0]|u\\{[0-9a-fA-F]{1,6}\\})",
+              "name": "constant.character.escape.carven"
+            },
+            {
+              "match": "\\\\.",
+              "name": "invalid.illegal.escape.carven"
+            }
+          ]
+        }
+      ]
+    },
+    "interpolation": {
+      "name": "string.quoted.double.interpolated.carven",
+      "begin": "\\bf\"",
+      "end": "\"|$",
+      "patterns": [
+        {
+          "match": "\\\\(?:['\"\\\\ntr0]|u\\{[0-9a-fA-F]{1,6}\\})",
+          "name": "constant.character.escape.carven"
+        },
+        {
+          "match": "\\\\.",
+          "name": "invalid.illegal.escape.carven"
+        },
+        {
+          "match": "\\{\\{|\\}\\}",
+          "name": "constant.character.escape.carven"
+        },
+        {
+          "include": "#hole"
+        }
+      ]
+    },
+    "hole": {
+      "contentName": "meta.embedded.expression.carven",
+      "begin": "\\{",
+      "end": "\\}",
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.section.interpolation.begin.carven"
+        }
+      },
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.section.interpolation.end.carven"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#format"
+        },
+        {
+          "include": "#groups"
+        },
+        {
+          "include": "$self"
+        }
+      ]
+    },
+    "format": {
+      "name": "string.unquoted.format.carven",
+      "begin": "(?<!:):(?!:)",
+      "end": "(?=\\})|$",
+      "patterns": [
+        {
+          "match": "\\\\(?:['\"\\\\ntr0]|u\\{[0-9a-fA-F]{1,6}\\})",
+          "name": "constant.character.escape.carven"
+        },
+        {
+          "match": "\\\\.",
+          "name": "invalid.illegal.escape.carven"
+        },
+        {
+          "include": "#hole"
+        }
+      ]
+    },
+    "groups": {
+      "patterns": [
+        {
+          "begin": "\\(",
+          "end": "\\)",
+          "patterns": [
+            {
+              "include": "#groups"
+            },
+            {
+              "include": "$self"
+            }
+          ]
+        },
+        {
+          "begin": "\\[",
+          "end": "\\]",
+          "patterns": [
+            {
+              "include": "#groups"
+            },
+            {
+              "include": "$self"
+            }
+          ]
+        },
+        {
+          "begin": "\\{",
+          "end": "\\}",
+          "patterns": [
+            {
+              "include": "#groups"
+            },
+            {
+              "include": "$self"
+            }
+          ]
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "match": "\\b(?:[0-9]+\\.[0-9]+(?:[eE][+-]?[0-9]+)?|[0-9]+[eE][+-]?[0-9]+)(?:f32|f64)?\\b|\\b[0-9]+(?:f32|f64)\\b",
+          "name": "constant.numeric.float.carven"
+        },
+        {
+          "match": "\\b(?:0[xX][0-9a-fA-F]+|0[bB][01]+|0[oO][0-7]+|[0-9]+)(?:[iu](?:8|16|32|64|size))?\\b",
+          "name": "constant.numeric.integer.carven"
+        }
+      ]
+    },
+    "declarations": {
+      "patterns": [
+        {
+          "match": "\\b(fn)(\\s+)([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": {
+              "name": "storage.type.function.carven"
+            },
+            "3": {
+              "name": "entity.name.function.carven"
+            }
+          }
+        },
+        {
+          "match": "\\b(struct|enum|class)(\\s+)([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": {
+              "name": "storage.type.carven"
+            },
+            "3": {
+              "name": "entity.name.type.carven"
+            }
+          }
+        }
+      ]
+    },
+    "words": {
+      "patterns": [
+        {
+          "match": "\\b(?:true|false|nullptr)\\b",
+          "name": "constant.language.carven"
+        },
+        {
+          "match": "\\b(?:as|async|await|break|cancel|class|catch|const|continue|else|enum|export|fn|for|if|import|in|is|let|match|private|rethrow|return|struct|test|throw|try|using|var|while)\\b",
+          "name": "keyword.control.carven"
+        },
+        {
+          "match": "\\b(?:bool|str|String|[iu](?:8|16|32|64|size)|f32|f64)\\b",
+          "name": "support.type.carven"
+        },
+        {
+          "match": "[A-Za-z_][A-Za-z0-9_]*",
+          "name": "variable.other.carven"
+        }
+      ]
+    }
+  }
+}

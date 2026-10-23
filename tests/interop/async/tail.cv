@@ -13,7 +13,9 @@ import(cpp) async fn tail_native() -> i32 = ::tail_native;
 import(cpp) fn check_allocations() = ::run_async_allocation_cases;
 
 export(cpp) async fn bounded_tail(depth: i32, accumulator: i32) -> i32 {
-    if depth == 0 { return accumulator; }
+    if depth == 0 {
+        return accumulator;
+    }
     return await bounded_tail(depth - 1, accumulator + 1);
 }
 
@@ -24,9 +26,13 @@ private async fn yielding_increment(value: i32) -> i32 {
 }
 
 private async fn retain_actual_owner(value: i32) -> i32 {
-    if !(lifetime_probe::matches("3 13 ") as bool) { return -1; }
+    if !(lifetime_probe::matches("3 13 ") as bool) {
+        return -1;
+    }
     await yield_once();
-    if !(lifetime_probe::matches("3 13 ") as bool) { return -2; }
+    if !(lifetime_probe::matches("3 13 ") as bool) {
+        return -2;
+    }
     return value;
 }
 
@@ -39,7 +45,9 @@ export(cpp) async fn bounded_producer(count: i32, seed: i32) -> i32 {
 }
 
 async fn effects(a: i32, b: i32, depth: i32, _: i32) -> i32 {
-    if depth == 0 { return a * 10 + b; }
+    if depth == 0 {
+        return a * 10 + b;
+    }
     return await effects(tail_actual(b, 1), tail_actual(a, 2), depth - 1, tail_actual(0, 3));
 }
 
@@ -50,13 +58,17 @@ async fn sibling() {
 async fn yielding(depth: i32) -> i32 {
     tail_mark(1);
     await yield_once();
-    if depth == 0 { return 7; }
+    if depth == 0 {
+        return 7;
+    }
     return await yielding(depth - 1);
 }
 
 async fn owned(depth: i32) -> i32 {
     let _ = tail_owner(depth + 1);
-    if depth == 0 { return 7; }
+    if depth == 0 {
+        return 7;
+    }
     return await owned(depth - 1);
 }
 
@@ -67,14 +79,18 @@ fn expose(&value: i32) {
 async fn addressed(depth: i32) -> i32 {
     var local = depth;
     expose(&local);
-    if depth == 0 { return tail_addresses(); }
+    if depth == 0 {
+        return tail_addresses();
+    }
     return await addressed(depth - 1);
 }
 
 // Await initialization closes the native carrier before the next cold call.
 async fn actual_cleanup(depth: i32) -> i32 {
     tail_mark(1);
-    if depth == 0 { return tail_trace(); }
+    if depth == 0 {
+        return tail_trace();
+    }
     return await actual_cleanup(depth - await tail_native());
 }
 
@@ -82,12 +98,16 @@ fn combine(a: i32, b: i32) -> i32 => a + b;
 
 async fn outer_cleanup(depth: i32) -> i32 {
     tail_mark(1);
-    if depth == 0 { return tail_trace(); }
+    if depth == 0 {
+        return tail_trace();
+    }
     return combine(await tail_native(), if depth > 0 { await outer_cleanup(depth - 1) } else { 0 });
 }
 
 async fn skipped_step(depth: i32) -> i32 {
-    if depth == 0 { return tail_trace(); }
+    if depth == 0 {
+        return tail_trace();
+    }
     for var index = 0; index < 1; tail_mark(9), ++index {
         return await skipped_step(depth - 1);
     }
@@ -98,7 +118,9 @@ async fn scalar_operation(value: i32) -> i32 {
     let _ = tail_owner(3);
     var text: String = "abc";
     tail_mark(1);
-    if value < 0 { return tail_actual(text.byte_length() as i32, 2); }
+    if value < 0 {
+        return tail_actual(text.byte_length() as i32, 2);
+    }
     await yield_once();
     return tail_actual(value + text.byte_length() as i32, 4);
 }
@@ -113,7 +135,9 @@ async fn boolean_operation(value: bool) -> bool {
 
 async fn character_operation(value: bool) -> char {
     let _ = tail_owner(7);
-    if value { return 'a'; }
+    if value {
+        return 'a';
+    }
     await yield_once();
     return 'b';
 }

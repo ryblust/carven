@@ -4,10 +4,20 @@ fn add(a: i32, b: i32) -> i32 {
 
 fn pick(value: i32, const index: usize) -> i32 => value;
 
+private fn reference_choice(flag: bool) -> bool =>
+    ::lifetime_probe::receiver_const_reference().probe(if flag { 3 } else { 4 }) as bool;
+
+fn callback() => [](flag: bool) =>
+    ::lifetime_probe::receiver_const_reference().probe(if flag { 3 } else { 4 }) as bool;
+
 fn unrolled(const count: usize) -> usize {
     var total: usize = 0;
     const for index in 0..count {
-        const if index == 0 { continue; } else if index > 2 { break; }
+        const if index == 0 {
+            continue;
+        } else if index > 2 {
+            break;
+        }
         total += index;
     }
     return total;

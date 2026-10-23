@@ -1,15 +1,14 @@
 target("carven-example-runtime-code")
     set_kind("static")
     set_languages("c++20")
-    add_rules("@carven/carven")
-    set_policy("build.fence", true)
+    add_rules("carven")
     add_files("preview.cv", "preview_provider.cpp")
 target_end()
 
 target("carven-example-runtime")
     set_kind("binary")
     set_languages("c++26")
-    add_deps("carven-modules", "carven-example-runtime-code")
+    add_deps("carven-hosting", "carven-example-runtime-code")
     add_files("main.cpp", {languages = "c++23"})
     add_tests("preview", {
         group = "runtime", run_timeout = 30000, plain = true,

@@ -27,7 +27,9 @@ enum Failure {
 
 async fn fail(first: bool) throw Failure {
     await yield_once();
-    if first { throw Failure::First; }
+    if first {
+        throw Failure::First;
+    }
     throw Failure::Second;
 }
 
@@ -114,7 +116,9 @@ async fn returning_before_step(&trace: i32) -> i32 throw Failure {
     async let child = finish_child(&trace);
     cancel child;
     for ; true; rejected_step(&trace)? {
-        if true { return select_return(&trace); }
+        if true {
+            return select_return(&trace);
+        }
     }
     return 0;
 }
@@ -248,7 +252,9 @@ async fn return_yield_boundary() -> i32 {
 
 fn first_argument(&trace: i32, reject: bool) -> i32 throw Failure {
     trace = trace * 10 + 1;
-    if reject { throw Failure::First; }
+    if reject {
+        throw Failure::First;
+    }
     return 3;
 }
 
@@ -274,7 +280,7 @@ async fn operand_recovery(reject: bool) -> i32 {
     return result * 1000 + trace;
 }
 
-fn typed_relay(&&pending: Operation<i32>) -> Operation<i32> => &&pending;
+fn typed_relay(&&pending: Operation<i32>) -> Operation<i32> => pending;
 
 async fn typed_forward(&&pending: Operation<i32, throw Failure>) -> i32 throw Failure {
     return await pending?;
@@ -298,7 +304,7 @@ private struct Box<T> {
 
 private fn store<T>(&&value: T) -> Box<T> => { value: &&value };
 private fn release<T>(&&box: Box<T>) -> T => (&&box).value;
-private fn relay<T>(&&value: T) -> T => &&value;
+private fn relay<T>(&&value: T) -> T => value;
 
 private async fn complete<T, throw E>(&&pending: Operation<T, throw E>) -> T throw E {
     return (await pending)?;
@@ -310,7 +316,7 @@ private async fn keep_first<T, throw E>(
 ) -> T throw E {
     let value = (await left)?;
     let _ = (await right)?;
-    return &&value;
+    return value;
 }
 
 private fn store_pending<T, throw E>(
@@ -322,7 +328,9 @@ private async fn forwarded<throw E>(&&pending: Operation<i32, throw E>) -> i32 {
 }
 
 private async fn repeat<throw E>(&&pending: Operation<i32, throw E>, again: bool) -> i32 {
-    if again { return (await repeat(&&forwarded(&&pending), false))?; }
+    if again {
+        return (await repeat(&&forwarded(&&pending), false))?;
+    }
     return (await pending)?;
 }
 

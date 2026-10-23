@@ -11,7 +11,9 @@ import "lifetimes/lifetimes.hpp" using lifetime_probe::{
 }
 
 fn owned_outcome(flag: bool) -> Owner throw Failure {
-    if flag { return Owner { 1 }; }
+    if flag {
+        return Owner { 1 };
+    }
     throw Failure::Stop;
 }
 
@@ -106,7 +108,9 @@ test "Lifetimes: void forwarding into Outcome preserves operand cleanup" {
 
 private fn observe_or_fail(owner: Owner, reject: bool) -> i32 throw Failure {
     owner.probe();
-    if reject { throw Failure::Stop; }
+    if reject {
+        throw Failure::Stop;
+    }
     return 7;
 }
 
@@ -134,7 +138,9 @@ test "Lifetimes: nested full expressions clean operands before continuation and 
 
 private fn tail_owner(id: i32, reject: bool) -> Owner throw Failure {
     mark(id + 10);
-    if reject { throw Failure::Stop; }
+    if reject {
+        throw Failure::Stop;
+    }
     return Owner { id };
 }
 

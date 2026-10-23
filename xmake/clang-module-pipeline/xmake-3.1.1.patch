@@ -374,6 +374,15 @@
              table.insert(_built_modules, sourcefile)
          end
      end
+@@ -617,7 +690,7 @@
+     for sourcefile, module in table.orderpairs(modules) do
+         local fileconfig = target:fileconfig(sourcefile)
+         local public = fileconfig and fileconfig.public
+-        if public then
++        if public and fileconfig.install ~= false then
+             public_modules = public_modules or {}
+             table.insert(public_modules, module)
+         end
 @@ -717,6 +790,9 @@
          local modules = scanner.get_modules(target)
          -- avoid building non referenced modules
@@ -1168,6 +1177,15 @@
  end
 
  -- get modules cache directory
+@@ -424,7 +442,7 @@
+     if sourcebatch and sourcebatch.sourcefiles then
+         for _, sourcefile in ipairs(sourcebatch.sourcefiles) do
+             local fileconfig = target:fileconfig(sourcefile)
+-            local install = fileconfig and fileconfig.public or false
++            local install = fileconfig and fileconfig.public and fileconfig.install ~= false
+             if install then
+                 local modulehash = get_modulehash(sourcefile)
+                 local prefixdir = path.join("modules", modulehash)
 --- a/plugins/project/utils/target_cmds.lua
 +++ b/plugins/project/utils/target_cmds.lua
 @@ -24,11 +24,14 @@

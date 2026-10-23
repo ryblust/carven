@@ -15,8 +15,8 @@ export enum ReadResult<T> {
 
 private const async fn bytes(const mode: u8, limit: usize) -> (Vector<u8>, bool) throw IOError {
     let (data, end, system_code, limited) = await read_input(mode, limit);
-    if system_code != 0 { throw IOError::System(system_code); }
-    if limited { throw IOError::InputTooLarge(limit); }
+    if system_code != 0 => throw IOError::System(system_code);
+    if limited => throw IOError::InputTooLarge(limit);
     return (&&data, end);
 }
 
@@ -28,13 +28,13 @@ private const fn decode(data: [u8]) -> String throw IOError => try {
 
 private const async fn chunk(limit: usize) -> ReadResult<Vector<u8>> throw IOError {
     let (data, end) = await bytes(0, limit)?;
-    if end { return .End; }
+    if end => return .End;
     return .Data(&&data);
 }
 
 private const async fn all(limit: usize) -> Vector<u8> throw IOError {
     let (data, _) = await bytes(2, limit)?;
-    return &&data;
+    return data;
 }
 
 private const async fn text(limit: usize) -> String throw IOError {
@@ -44,11 +44,11 @@ private const async fn text(limit: usize) -> String throw IOError {
 
 private const async fn line(limit: usize) -> ReadResult<String> throw IOError {
     let (data, end) = await bytes(1, limit)?;
-    if end { return .End; }
+    if end => return .End;
     var length = data.length();
     if length != 0 && data[length - 1] == 0x0a {
         --length;
-        if length != 0 && data[length - 1] == 0x0d { --length; }
+        if length != 0 && data[length - 1] == 0x0d => --length;
     }
     return .Data(decode(data.slice(0, length))?);
 }
@@ -79,9 +79,8 @@ export class Stdin {
         return text(limit);
     }
 
-    const fn read_line(self) -> Operation<ReadResult<String>, throw IOError> => line(
-        self.line_limit
-    );
+    const fn read_line(self) -> Operation<ReadResult<String>, throw IOError> =>
+        line(self.line_limit);
 }
 
 export const fn stdin() -> Stdin => Stdin::new();
@@ -115,7 +114,7 @@ export class ByteLines {
 
     const fn next(&self, bytes: [u8]) -> LineBoundary {
         assert(self.offset <= bytes.length());
-        if self.offset == bytes.length() { return .End; }
+        if self.offset == bytes.length() => return .End;
         let start = self.offset;
         for end in start..bytes.length() {
             if bytes[end] == 0x0a {
@@ -142,12 +141,13 @@ export class LineFramer {
     };
 
     const fn feed(&self, bytes: [u8]) -> Vector<Vector<u8>> throw LineFrameError {
-        if self.finished { throw LineFrameError::Finished; }
+        if self.finished => throw LineFrameError::Finished;
+
         var records: Vector<Vector<u8>> = [];
         for byte in bytes {
             if byte == 0x0a {
                 var length = self.pending.length();
-                if self.strip_cr && length != 0 && self.pending[length - 1] == 0x0d { --length; }
+                if self.strip_cr && length != 0 && self.pending[length - 1] == 0x0d => --length;
                 records.push(&&Vector<u8>::from_slice(self.pending.slice(0, length)));
                 self.pending.clear();
             } else {
@@ -158,19 +158,23 @@ export class LineFramer {
                 self.pending.push(byte);
             }
         }
-        return &&records;
+
+        return records;
     }
 
     const fn finish(
         &self,
         incomplete: IncompleteLine
     ) -> ReadResult<Vector<u8>> throw LineFrameError {
-        if self.finished { throw LineFrameError::Finished; }
+        if self.finished => throw LineFrameError::Finished;
         self.finished = true;
-        if self.pending.is_empty() { return .End; }
-        if incomplete == .Reject { throw LineFrameError::Truncated; }
+
+        if self.pending.is_empty() => return .End;
+        if incomplete == .Reject => throw LineFrameError::Truncated;
+
         let record = self.pending;
         self.pending.clear();
+
         return .Data(&&record);
     }
 }
@@ -178,12 +182,12 @@ export class LineFramer {
 // Protocol output is verbatim and flushed before returning; system failures are recoverable.
 export const fn write_stdout(text: str) throw IOError {
     let code = io::write_stdout(text) as i32;
-    if code != 0 { throw IOError::System(code); }
+    if code != 0 => throw IOError::System(code);
 }
 
 // One active writer; cancellation may leave an already written prefix on the stream.
 export const async fn write_stdout_async(&&bytes: Vector<u8>) throw IOError {
-    let pending = io::write_output(&&bytes);
+    let pending: Operation<i32> = io::write_output(&&bytes);
     let code = await pending;
-    if code != 0 { throw IOError::System(code); }
+    if code != 0 => throw IOError::System(code);
 }

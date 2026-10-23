@@ -12,13 +12,16 @@ import :frontend.ast.storage;
 import :frontend.ast.tree;
 import :semantic.analysis.body.builder;
 import :semantic.analysis.body.context;
-import :semantic.analysis.body.expr_site;
 import :semantic.analysis.body.resolve;
+import :semantic.analysis.body.site;
 import :semantic.analysis.constant.fold;
 import :semantic.analysis.coverage;
 import :semantic.analysis.expr.scope;
+import :semantic.analysis.names;
 import :semantic.analysis.operations;
+import :semantic.analysis.source.completion;
 import :semantic.analysis.types;
+import :semantic.analysis.types.display;
 import :semantic.analysis.validation;
 import :semantic.evaluation.operation;
 import :semantic.semir.constant;
@@ -30,6 +33,52 @@ import :support.invariant;
 import :support.unique_indirect;
 import :support.visit;
 import std;
+
+auto BodyExprSite::complete_members(ConstructionTypeRef type, Span name, bool associated) noexcept
+    -> void {
+    const auto* query = draft().source_analysis();
+    if (!query || !query->requests_completion(locate(syntax().source_id(), name))) {
+        return;
+    }
+    auto result = associated ? std::vector<SourceCompletionCandidate>()
+                             : source_intrinsic_members(draft(), type);
+    if (const auto shape = record_shape(draft(), type)) {
+        const auto owner = class_declaration(draft(), shape->owner);
+        if (!associated
+            && class_representation_accessible(draft(), shape->owner, body.lexical_class)) {
+            for (const auto& field : shape->fields) {
+                result.push_back(
+                    {draft().spelling_copy(field.name),
+                     SourceCompletionKind::Field,
+                     type_display_name(draft(), field.type, catalog())}
+                );
+            }
+        }
+        {
+            for (const auto& symbol : catalog().symbols()) {
+                const auto& operation = symbol.class_operation;
+                if (!operation || operation->owner != owner || operation->receiver == associated) {
+                    continue;
+                }
+                if (operation->visibility == MemberVisibility::Private
+                    && body.lexical_class != owner) {
+                    continue;
+                }
+                result.push_back({symbol.name, SourceCompletionKind::Method, {}});
+            }
+        }
+    } else if (const auto concrete = draft().try_canonicalize_declared_type(type)) {
+        const auto canonical = draft().type_copy(*concrete);
+        if (associated) {
+            if (const auto* enumeration = std::get_if<EnumTypeValue>(&canonical.value)) {
+                for (const auto& name : catalog().enum_case_names(enumeration->enumeration)) {
+                    result.push_back({name, SourceCompletionKind::EnumCase, {}});
+                }
+            }
+        }
+    }
+    query->complete(result, SourceCompletionContext::Member);
+}
 
 auto BodyElaborator::dereference_expression(const ASTPrefixExpr& source, Span span) noexcept
     -> AnalysisTask<BuiltExpression> {

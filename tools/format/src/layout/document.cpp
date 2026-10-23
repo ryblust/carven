@@ -41,7 +41,13 @@ auto FormattingDocument::text(std::string_view value) noexcept -> FormattingNode
         invariant_violation("Formatter Text must not contain line endings");
     }
     return append(
-        Node {.kind = Kind::Text, .text = std::string(value), .children = {}, .flat_width = width}
+        Node {
+            .kind = Kind::Text,
+            .text = std::string(value),
+            .children = {},
+            .flat_width = width,
+            .breakable = false
+        }
     );
 }
 
@@ -51,7 +57,8 @@ auto FormattingDocument::verbatim(std::string_view value) noexcept -> Formatting
             .kind = Kind::Verbatim,
             .text = std::string(value),
             .children = {},
-            .flat_width = flat_width(value)
+            .flat_width = flat_width(value),
+            .breakable = value.find_first_of("\r\n") != std::string_view::npos
         }
     );
 }
@@ -59,17 +66,20 @@ auto FormattingDocument::verbatim(std::string_view value) noexcept -> Formatting
 auto FormattingDocument::concat(std::vector<FormattingNodeID> children) noexcept
     -> FormattingNodeID {
     auto width = std::optional<std::size_t>(0);
+    auto breakable = false;
     for (const auto child : children) {
         const auto child_width = node(child).flat_width;
         width =
             width && child_width ? std::optional(add_width(*width, *child_width)) : std::nullopt;
+        breakable = breakable || node(child).breakable;
     }
     return append(
         Node {
             .kind = Kind::Concat,
             .text = {},
             .children = std::move(children),
-            .flat_width = width
+            .flat_width = width,
+            .breakable = breakable
         }
     );
 }
@@ -80,40 +90,139 @@ auto FormattingDocument::line(bool space_when_flat) noexcept -> FormattingNodeID
             .kind = Kind::Line,
             .text = space_when_flat ? " " : "",
             .children = {},
-            .flat_width = space_when_flat ? 1uz : 0uz
+            .flat_width = space_when_flat ? 1uz : 0uz,
+            .breakable = true
         }
     );
 }
 
 auto FormattingDocument::hardline() noexcept -> FormattingNodeID {
     return append(
-        Node {.kind = Kind::HardLine, .text = {}, .children = {}, .flat_width = std::nullopt}
+        Node {
+            .kind = Kind::HardLine,
+            .text = {},
+            .children = {},
+            .flat_width = std::nullopt,
+            .breakable = true
+        }
     );
 }
 
 auto FormattingDocument::indent(FormattingNodeID child) noexcept -> FormattingNodeID {
     const auto width = node(child).flat_width;
     return append(
-        Node {.kind = Kind::Indent, .text = {}, .children = {child}, .flat_width = width}
+        Node {
+            .kind = Kind::Indent,
+            .text = {},
+            .children = {child},
+            .flat_width = width,
+            .breakable = node(child).breakable
+        }
     );
 }
 
 auto FormattingDocument::group(FormattingNodeID child) noexcept -> FormattingNodeID {
     const auto width = node(child).flat_width;
-    return append(Node {.kind = Kind::Group, .text = {}, .children = {child}, .flat_width = width});
+    return append(
+        Node {
+            .kind = Kind::Group,
+            .text = {},
+            .children = {child},
+            .flat_width = width,
+            .breakable = node(child).breakable
+        }
+    );
 }
 
-auto FormattingDocument::fits(std::span<const Frame> pending, std::size_t remaining) const noexcept
-    -> bool {
-    auto expanded = std::vector<Frame>();
-    auto cursor = pending.size();
-    while (cursor != 0 || !expanded.empty()) {
-        const auto frame = expanded.empty() ? pending[--cursor] : expanded.back();
-        if (!expanded.empty()) {
-            expanded.pop_back();
+auto FormattingDocument::wrap(
+    FormattingNodeID normal,
+    FormattingNodeID attached,
+    FormattingNodeID element,
+    FormattingNodeID boundary,
+    FormattingNodeID normal_tail
+) noexcept -> FormattingNodeID {
+    if (!node(boundary).flat_width) {
+        return normal;
+    }
+    return append(
+        Node {
+            .kind = Kind::Wrap,
+            .text = {},
+            .children = {normal, attached, element, normal_tail},
+            .flat_width = node(normal).flat_width,
+            .breakable = node(normal).breakable
         }
+    );
+}
+
+auto FormattingDocument::has_leading_break(FormattingNodeID id) const noexcept -> bool {
+    const auto& value = node(id);
+    switch (value.kind) {
+        case Kind::Line:
+        case Kind::HardLine: return true;
+        case Kind::Group:
+        case Kind::Indent:   return has_leading_break(value.children.front());
+        case Kind::Concat:
+            for (const auto child : value.children) {
+                if (node(child).flat_width != 0uz || node(child).breakable) {
+                    return has_leading_break(child);
+                }
+            }
+            return false;
+        default: return false;
+    }
+}
+
+auto FormattingDocument::wrap_body(
+    const Node& value,
+    std::span<const Frame> pending,
+    std::size_t remaining,
+    std::size_t indentation,
+    std::size_t width,
+    std::size_t indent_width
+) const noexcept -> FormattingNodeID {
+    const auto& element = node(value.children[2]);
+    const auto inset = add_width(indentation, indent_width);
+    const auto fresh_width = width > inset ? width - inset : 0uz;
+    // Prefer one complete element per line. When it needs its own breaks,
+    // its wrapper stays attached and does not add another indentation level.
+    if (!element.breakable) {
+        return value.children[0];
+    }
+    auto following = std::vector<Frame>(pending.begin(), pending.end());
+    following.push_back(Frame {.id = value.children[3], .indentation = indentation, .flat = false});
+    if (element.flat_width
+        && *element.flat_width <= fresh_width
+        && fits(following, fresh_width - *element.flat_width, width, indent_width, std::nullopt)) {
+        return value.children[0];
+    }
+    following.back().id = value.children[1];
+    return value.children[fits(following, remaining, width, indent_width, fresh_width) ? 1uz : 0uz];
+}
+
+auto FormattingDocument::fits(
+    std::span<const Frame> pending,
+    std::size_t remaining,
+    std::size_t width,
+    std::size_t indent_width,
+    std::optional<std::size_t> preserve_width
+) const noexcept -> bool {
+    auto work = std::vector<Frame>(pending.begin(), pending.end());
+    while (!work.empty()) {
+        const auto frame = work.back();
+        work.pop_back();
         const auto& value = node(frame.id);
-        if (frame.flat && value.flat_width) {
+        // Attaching a wrapper must not split a group that fits on its own line.
+        auto preserve = preserve_width
+            && value.kind == Kind::Group
+            && value.flat_width
+            && *value.flat_width <= *preserve_width
+            && !has_leading_break(frame.id);
+        if (preserve) {
+            preserve =
+                fits(work, *preserve_width - *value.flat_width, width, indent_width, std::nullopt);
+        }
+        if ((frame.flat || preserve) && value.flat_width) {
             if (*value.flat_width > remaining) {
                 return false;
             }
@@ -144,11 +253,36 @@ auto FormattingDocument::fits(std::span<const Frame> pending, std::size_t remain
                 remaining -= value.text.size();
                 break;
             case Kind::HardLine: return true;
-            case Kind::Concat:
+            case Kind::Wrap:     {
+                work.push_back(
+                    Frame {
+                        .id = wrap_body(
+                            value,
+                            work,
+                            remaining,
+                            frame.indentation,
+                            width,
+                            indent_width
+                        ),
+                        .indentation = frame.indentation,
+                        .flat = frame.flat
+                    }
+                );
+                break;
+            }
             case Kind::Indent:
+                work.push_back(
+                    Frame {
+                        .id = value.children.front(),
+                        .indentation = frame.indentation + indent_width,
+                        .flat = frame.flat
+                    }
+                );
+                break;
+            case Kind::Concat:
             case Kind::Group:
                 for (const auto child : value.children | std::views::reverse) {
-                    expanded.push_back(
+                    work.push_back(
                         Frame {.id = child, .indentation = frame.indentation, .flat = frame.flat}
                     );
                 }
@@ -221,12 +355,36 @@ auto FormattingDocument::render(
                 const auto flat = frame.flat
                     || (value.flat_width
                         && *value.flat_width <= remaining
-                        && fits(pending, remaining - *value.flat_width));
+                        && fits(
+                            pending,
+                            remaining - *value.flat_width,
+                            width,
+                            indent_width,
+                            std::nullopt
+                        ));
                 pending.push_back(
                     Frame {
                         .id = value.children.front(),
                         .indentation = frame.indentation,
                         .flat = flat
+                    }
+                );
+                break;
+            }
+            case Kind::Wrap: {
+                const auto current_column = pending_indentation ? frame.indentation : column;
+                pending.push_back(
+                    Frame {
+                        .id = wrap_body(
+                            value,
+                            pending,
+                            width > current_column ? width - current_column : 0uz,
+                            frame.indentation,
+                            width,
+                            indent_width
+                        ),
+                        .indentation = frame.indentation,
+                        .flat = frame.flat
                     }
                 );
                 break;

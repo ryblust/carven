@@ -125,6 +125,9 @@ auto ASTBuilder::finish(ASTModule ast_module) && noexcept -> SyntaxTree {
     for (const auto item_id : ast_module.items) {
         validate(item_id);
     }
+    for (const auto name : ast_module.unavailable_names) {
+        validate(name);
+    }
     return SyntaxTree(std::move(storage), std::move(ast_module), source_id);
 }
 

@@ -9,6 +9,7 @@ import :backend.target.expr;
 import :backend.target.item;
 import :backend.target.name;
 import :backend.target.origin;
+import :backend.target.raw;
 import :backend.target.stmt;
 import :backend.target.symbol;
 import :backend.target.type;
@@ -126,6 +127,43 @@ const TestSuite suite([] static noexcept {
             std::string_view("\"\\0018\\377\"")
         );
     };
+
+    "Emission: source mapping preserves Unicode filenames and character escapes"_test =
+        [] static noexcept {
+            auto builder = TargetUnitBuilder();
+            auto items = std::vector<TargetItem>();
+            items.push_back({
+                .value = TargetRawFragment {.bytes = "int source;"},
+                .attribution = TargetSourceOwnedAttribution {
+                    .origin = {.display_origin = "目录\\\"main\"\n\t\001.cv", .line = 17},
+                },
+            });
+            items.push_back({
+                .value = TargetRawFragment {.bytes = "int generated;"},
+                .attribution = TargetCompilerOwnedAttribution {
+                    .reason = TargetCompilerReason::ArtifactScaffolding,
+                },
+            });
+            auto unit = std::move(builder).finish(
+                {.preamble = {}, .body = std::move(items), .epilogue = {}},
+                TargetDirectiveInputs {
+                    .pragma_once = false,
+                    .requirements = {},
+                    .native_headers = {},
+                    .generated_dependencies = {},
+                }
+            );
+            const auto artifact = emit(
+                std::move(unit),
+                "fixture.cpp",
+                GeneratedArtifactRole::ModuleImplementation,
+                SourceAttributedEmission {.generated_origin = "生成\\\"fixture\".cpp"}
+            );
+            expect(
+                artifact.content.contains("#line 17 \"目录\\\\\\\"main\\\"\\n\\t\\u0001.cv\"\n")
+            );
+            expect(artifact.content.contains("\"生成\\\\\\\"fixture\\\".cpp\"\n"));
+        };
 
     "Emission: binary grouping preserves associativity and makes comparisons explicit"_test =
         [] static noexcept {

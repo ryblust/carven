@@ -54,18 +54,15 @@ test "Lifetimes: nested receiver temporaries span fallible argument evaluation" 
 
 fn probe_conditional_reference(selected: bool, succeeds: bool) throw Failure {
     let _ = selected
-        && (
-            ::lifetime_probe::receiver_reference().probe(initialization_argument(succeeds)?) as bool
-        );
+        && (::lifetime_probe::receiver_reference().probe(initialization_argument(succeeds)?)
+            as bool);
     mark(8);
 }
 
 fn probe_conditional_const_reference(selected: bool, succeeds: bool) throw Failure {
     let _ = selected
-        && (
-            ::lifetime_probe::receiver_const_reference().probe(initialization_argument(succeeds)?)
-                as bool
-        );
+        && (::lifetime_probe::receiver_const_reference().probe(initialization_argument(succeeds)?)
+            as bool);
     mark(8);
 }
 
@@ -117,21 +114,16 @@ test "Lifetimes: conditional native references borrow noncopyable receivers" {
 
 fn probe_literal_reference(selected: bool, succeeds: bool) throw Failure {
     let _ = selected
-        && (
-            ::lifetime_probe::receiver_from_literal(1).probe(initialization_argument(succeeds)?)
-                as bool
-        );
+        && (::lifetime_probe::receiver_from_literal(1).probe(initialization_argument(succeeds)?)
+            as bool);
     mark(8);
 }
 
 fn probe_ordered_literal_reference(selected: bool, succeeds: bool) throw Failure {
     let _ = selected
-        && (
-            ::lifetime_probe::receiver_from_literal(1, event(5)).probe(
-                    initialization_argument(succeeds)?
-                )
-                as bool
-        );
+        && (::lifetime_probe::receiver_from_literal(1, event(5)).probe(
+            initialization_argument(succeeds)?
+        ) as bool);
     mark(8);
 }
 

@@ -547,6 +547,45 @@ auto multi_source() noexcept -> void {
     balanced(slow);
 }
 
+auto shared_driver() noexcept -> void {
+    auto driver = async::Driver();
+    auto timers = TimerQueue();
+    auto first = Observation {.started = 0, .finished = 0, .cancelled = false};
+    auto second = Observation {.started = 0, .finished = 0, .cancelled = false};
+    auto first_root = async::Root<void>(driver, timer(timers, 1h, first), &timers);
+    auto second_root = async::Root<void>(driver, timer(timers, 1h, second), &timers);
+
+    check(
+        second_root.advance() == async::Progress::Runnable
+            && second.started == 1
+            && first.started == 0,
+        "advancing a shared root does not resume another root's queued work"
+    );
+    check(
+        first_root.advance() == async::Progress::Runnable && timers.pending_count() == 2,
+        "both roots retain registrations in the same event source"
+    );
+
+    first_root.cancel();
+    check(first_root.advance() == async::Progress::Complete, "first root drains cancellation");
+    check(first_root.take_completion().is_cancelled(), "first root preserves cancellation");
+    check(
+        second.finished == 0 && !second.cancelled && timers.pending_count() == 1,
+        "cancelling one root leaves the other registration active"
+    );
+
+    second_root.cancel();
+    check(second_root.advance() == async::Progress::Complete, "remaining root retains its source");
+    check(second_root.take_completion().is_cancelled(), "remaining root drains independently");
+    balanced(timers);
+
+    auto yielding = async::Root<void>(driver, async::yield_once());
+    check(yielding.advance() == async::Progress::Runnable, "yield queues its continuation");
+    check(yielding.wait(), "queued work needs no external event source");
+    check(yielding.advance() == async::Progress::Complete, "queued continuation completes");
+    check(yielding.take_completion().success_if() != nullptr, "yield preserves success");
+}
+
 } // namespace
 
 auto run_timer_cases() noexcept -> void {
@@ -561,6 +600,7 @@ auto run_timer_cases() noexcept -> void {
              std::pair {"committed", committed},
              std::pair {"rearm", rearm},
              std::pair {"multi-source", multi_source},
+             std::pair {"shared-driver", shared_driver},
          }) {
         test.second();
         std::printf("%s: pass\n", test.first);

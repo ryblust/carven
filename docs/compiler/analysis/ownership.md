@@ -328,9 +328,9 @@ Convergence requires both state equality and an unchanged topology revision;
 new owns edges, owning sources, and many upgrades affect the next transfer even
 if the current object rows happen to be equal.
 
-Each evaluation returns its transfer answer, diagnosis, and return-copy
-observations. A query retains its latest diagnosis while the solver accumulates
-an inductive upper bound. A transfer `F(D)` reads dependency answers `D`; the
+Each evaluation returns its transfer answer and diagnosis. A query retains its
+latest diagnosis while the solver accumulates an inductive upper bound.
+A transfer `F(D)` reads dependency answers `D`; the
 accumulated answer `A` covers that transfer after the join. Its closure certificate
 requires unchanged input, topology, and dependency answers.
 
@@ -345,9 +345,8 @@ fact changes.
 
 Contract diagnostics follow source-body order; solved query order determines
 execution-state diagnostic publication. An escaping callee-local relationship
-stops solving and publishes the offending input's diagnosis. Return-copy
-observations combine across successful contexts; warnings are published only
-after every query succeeds. Solver and diagnosis state remain private to analysis.
+stops solving and publishes the offending input's diagnosis. Solver and diagnosis
+state remain private to analysis.
 
 ### Control flow and diagnostics
 

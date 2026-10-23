@@ -157,15 +157,13 @@ fn staged_pattern(value: BoundPair, const stop: bool, &visits: i32,) -> i32 thro
     return match value {
         .Pair(
             (const if stop { throw SelectedFailure {}; } else { 0 })..,
-            (
-                if true {
-                    visits += 1;
-                    0
-                } else {
-                    visits += 1;
-                    0
-                }
-            )..
+            (if true {
+                visits += 1;
+                0
+            } else {
+                visits += 1;
+                0
+            })..
         ) => 1,
         _ => 0,
     };

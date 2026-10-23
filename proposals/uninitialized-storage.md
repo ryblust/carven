@@ -145,8 +145,8 @@ delivery experiment preserves operand evaluation and destruction order, includin
 temporary backing and failure before later operands.
 
 Concrete native adapters can use the existing explicit C++ boundary. The selected
-storage surface determines any generic prerequisites; parameterized class fields
-are implemented, while their operations remain unsupported. Runtime and constant
+storage surface determines any generic prerequisites. Parameterized classes and
+their operations follow definition-site capability rules. Runtime and constant
 execution need their respective operation admission and retained-result rules.
 Text output also needs UTF-8 validity and a failure policy beyond initialized
 byte extents.

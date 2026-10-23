@@ -93,10 +93,11 @@ println(answer());
 ```
 
 Supply both files to the compiler, for example
-`carven compile --stdout main.cv math.cv`. Application and project Craft sources
-are explicit inputs; standard-library dependencies come from the toolchain's
-matching `crafts/carven/`. The command emits C++ artifacts. `std::build` also
-collects the project's `crafts/` sources and compiles the required native providers.
+`carven compile --stdout main.cv math.cv`. Application roots are explicit inputs; imports load sibling modules and project
+Crafts as needed. Standard-library dependencies come from the toolchain's matching
+`crafts/carven/`. The command emits C++ artifacts. A Craft can describe native
+sources and the headers they implement in its ordinary `build.cv`; `std::build`
+selects those targets from actual C++ header dependencies.
 
 An unprefixed module reference starts at the current craft's root. A leading
 `.` starts in the importing module's directory. `json::parser` selects a module
@@ -434,7 +435,7 @@ An exported interface can return an owner, mutate a caller's owner, or take it:
 ```carven
 export(cpp) fn greeting(name: str) -> String => f"Hello, {name}!";
 export(cpp) fn append_note(&text: String, note: str) => text.append(note);
-export(cpp) fn finish(&&text: String) -> String => &&text;
+export(cpp) fn finish(&&text: String) -> String => text;
 ```
 
 `String` maps to `carven::runtime::String`, and `str` to `std::string_view`.

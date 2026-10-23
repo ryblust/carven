@@ -7,11 +7,15 @@ const fn read_temporary_values() -> String {
     var index = 0;
     for value in [first, second, first] {
         ++index;
-        if index == 2 { continue; }
+        if index == 2 {
+            continue;
+        }
         result.append_format(f"{value}");
-        if index == 3 { break; }
+        if index == 3 {
+            break;
+        }
     }
-    return &&result;
+    return result;
 }
 
 const fn read_temporary_snapshots() -> String {
@@ -28,7 +32,7 @@ const fn read_temporary_snapshots() -> String {
         address->clear();
         result.append(value);
     }
-    return &&result;
+    return result;
 }
 
 const fn separate_read_object(value: String, original: ptr<String>) -> bool {
@@ -63,7 +67,9 @@ fn record_loop_effect(&trace: i32, result: i32) -> i32 {
 }
 
 fn advance_loop_step(&value: i32, fail: bool) throw LoopStepFailure {
-    if fail { throw LoopStepFailure {}; }
+    if fail {
+        throw LoopStepFailure {};
+    }
     value += 1;
 }
 
@@ -82,7 +88,9 @@ const fn returning_loop(enabled: bool, &trace: i32) -> i32 {
         };
         trace = trace * 10 + 4 {
         trace = trace * 10 + 3;
-        if true { return 42; }
+        if true {
+            return 42;
+        }
     }
     return 7;
 }
@@ -128,7 +136,9 @@ test "Loops: loops support clauses iteration and control transfer" {
 
     var odd_total: i32 = 0;
     for var index: i32 = 0; index < 6; ++index {
-        if index % 2 == 0 { continue; }
+        if index % 2 == 0 {
+            continue;
+        }
         odd_total += index;
     }
 
@@ -189,7 +199,9 @@ test "Loops: loops support clauses iteration and control transfer" {
     try {
         for ; recovered_index < 2; advance_loop_step(&recovered_index, false)? {
             recovered_visits += 1;
-            if recovered_visits == 1 { continue; }
+            if recovered_visits == 1 {
+                continue;
+            }
         }
     } catch {
         LoopStepFailure(_) => {},

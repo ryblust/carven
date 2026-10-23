@@ -41,8 +41,8 @@ The output shows revision 2 finishing before revision 1, the view retaining the
 updated text, and the provider receiving cancellation when the editor closes.
 Use `.\xmakew.ps1` in Windows PowerShell.
 
-The host uses C++23 headers from `include/carven/hosting/` and links the compiler
-objects built by `carven-modules`. Its sources include the entry, request, and
+The host uses C++23 headers from `tools/hosting/include/carven/hosting/` and links the
+`carven-hosting` static library. Its sources include the entry, request, and
 service interfaces directly. The generated preview and its provider implementation
 use C++20. `preview_provider.cpp` connects the generated native entry point to the
 session's registered provider; both execution modes use the contract generated

@@ -68,7 +68,7 @@ private const fn plan_runs(set: ByteSet, inverted: bool) -> BytePlan {
             if ((bits & 1u64) != 0) != inverted {
                 if inside == false {
                     plan.count += 1;
-                    if plan.count == 5 { return plan; }
+                    if plan.count == 5 => return plan;
                     plan.runs[plan.count - 1].lower = byte;
                     inside = true;
                 }
@@ -80,7 +80,7 @@ private const fn plan_runs(set: ByteSet, inverted: bool) -> BytePlan {
             value += 1;
         }
     }
-    if inside { plan.runs[plan.count - 1].upper = 255; }
+    if inside => plan.runs[plan.count - 1].upper = 255;
     return plan;
 }
 
@@ -109,9 +109,10 @@ private const fn grouped_tables(set: ByteSet) -> GroupedTables {
     var low: [u8; 16] = {};
     var high: [u8; 16] = {};
     var groups: usize = 0;
+
     for upper in 0usize..16 {
         let row = ((set.words[upper >> 2] >> (((upper & 3) * 16) as u64)) & 0xffffu64) as u16;
-        if row == 0 { continue; }
+        if row == 0 => continue;
         var group: usize = 0;
         while group < groups && rows[group] != row {
             group += 1;
@@ -128,11 +129,12 @@ private const fn grouped_tables(set: ByteSet) -> GroupedTables {
             rows[group] = row;
             groups += 1;
             for lower in 0usize..16 {
-                if (row & (1u16 << (lower as u16))) != 0 { low[lower] |= 1u8 << (group as u8); }
+                if (row & (1u16 << (lower as u16))) != 0 => low[lower] |= 1u8 << (group as u8);
             }
         }
         high[upper] = 1u8 << (group as u8);
     }
+
     return GroupedTables {
         low: u8x16::from_array(low),
         high: u8x16::from_array(high),
@@ -164,7 +166,8 @@ private const powers = bit_table();
 export const fn match_set(value: u8x32, const set: ByteSet) -> mask32 {
     const plan = comparison_plan(set);
     const if plan.count == 0 {
-        const if plan.inverted { return mask32::prefix(32); } else { return mask32::prefix(0); }
+        const if plan.inverted => return mask32::prefix(32);
+        else => return mask32::prefix(0);
     } else if plan.count <= 4 {
         var matched = mask32::prefix(0);
         const for index in 0..plan.count {
@@ -177,7 +180,8 @@ export const fn match_set(value: u8x32, const set: ByteSet) -> mask32 {
                 matched |= (value - lower) <= (upper - lower);
             }
         }
-        const if plan.inverted { return ~matched; } else { return matched; }
+        const if plan.inverted => return ~matched;
+        else => return matched;
     } else {
         const grouped = grouped_tables(set);
         let high_nibbles = value.shift_right(4);
@@ -205,9 +209,9 @@ private const fn contains_byte(byte: u8, const set: ByteSet) -> bool {
             const lower = plan.runs[index].lower;
             const upper = plan.runs[index].upper;
             const if lower == upper {
-                if byte == lower { return plan.inverted == false; }
+                if byte == lower => return plan.inverted == false;
             } else {
-                if (byte - lower) <= (upper - lower) { return plan.inverted == false; }
+                if (byte - lower) <= (upper - lower) => return plan.inverted == false;
             }
         }
         return plan.inverted;
@@ -217,18 +221,20 @@ private const fn contains_byte(byte: u8, const set: ByteSet) -> bool {
 }
 
 export const fn count_where(bytes: [u8], const set: ByteSet) -> usize {
-    const if is_empty(set) { return 0; }
-    const if is_complete(set) { return bytes.length(); }
+    const if is_empty(set) => return 0;
+    const if is_complete(set) => return bytes.length();
+
     const chains = 2usize;
     const group_bytes = chains * 32;
     var offset: usize = 0;
     var count: usize = 0;
     let ones = u8x32::splat(1);
     let zero = u8x32::splat(0);
+
     while bytes.length() - offset >= group_bytes * 4 {
         var groups = (bytes.length() - offset) / group_bytes;
         // Each lane receives at most 255 increments before widening the sum.
-        if groups > 255 { groups = 255; }
+        if groups > 255 => groups = 255;
         let batch_end = offset + groups * group_bytes;
         let batch = bytes.slice(offset, batch_end);
         var accumulators = [u8x32::splat(0); chains];
@@ -243,14 +249,17 @@ export const fn count_where(bytes: [u8], const set: ByteSet) -> usize {
             count += accumulators[chain].sum();
         }
     }
+
     while bytes.length() - offset >= 32 {
         count += match_set(u8x32::load(bytes, offset), set).count();
         offset += 32;
     }
+
     while offset < bytes.length() {
-        if contains_byte(bytes[offset], set) { count += 1; }
+        if contains_byte(bytes[offset], set) => count += 1;
         offset += 1;
     }
+
     return count;
 }
 
@@ -261,18 +270,21 @@ export const fn find_where(bytes: [u8], const set: ByteSet) -> usize {
 // Positions refer to the supplied input; its length denotes no match.
 export const fn find_from(bytes: [u8], start: usize, const set: ByteSet) -> usize {
     assert(start <= bytes.length());
-    const if is_empty(set) { return bytes.length(); }
-    const if is_complete(set) { return start; }
+    const if is_empty(set) => return bytes.length();
+    const if is_complete(set) => return start;
     var offset = start;
+
     while bytes.length() - offset >= 32 {
         let matched = match_set(u8x32::load(bytes, offset), set);
-        if matched.any() { return offset + matched.first_or(0); }
+        if matched.any() => return offset + matched.first_or(0);
         offset += 32;
     }
+
     while offset < bytes.length() {
-        if contains_byte(bytes[offset], set) { return offset; }
+        if contains_byte(bytes[offset], set) => return offset;
         offset += 1;
     }
+
     return bytes.length();
 }
 
@@ -280,8 +292,5 @@ export const fn prefix_where(bytes: [u8], const set: ByteSet) -> usize {
     return prefix_end(bytes, 0, set);
 }
 
-export const fn prefix_end(bytes: [u8], start: usize, const set: ByteSet) -> usize => find_from(
-    bytes,
-    start,
-    complement(set)
-);
+export const fn prefix_end(bytes: [u8], start: usize, const set: ByteSet) -> usize =>
+    find_from(bytes, start, complement(set));

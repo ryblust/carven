@@ -1,0 +1,56 @@
+import std::build using project;
+
+project({
+    targets: [
+        {
+            name: "channel",
+            kind: .SourceLibrary,
+            sources: ["std/channel.cv", "std/channel/native.cpp"],
+            headers: ["std/channel/native.hpp"],
+            ...
+        },
+        {
+            name: "collections",
+            kind: .SourceLibrary,
+            sources: ["std/collections.cv", "std/collections/native.cpp"],
+            headers: ["std/collections/native.hpp"],
+            ...
+        },
+        {
+            name: "fs",
+            kind: .SourceLibrary,
+            sources: ["std/fs.cv", "std/fs/native.cpp"],
+            headers: ["std/fs/native.hpp"],
+            ...
+        },
+        {
+            name: "io",
+            kind: .SourceLibrary,
+            sources: ["std/io.cv", "std/io/native.cpp"],
+            headers: ["std/io/native.hpp"],
+            ...
+        },
+        {
+            name: "net",
+            kind: .SourceLibrary,
+            sources: ["std/net.cv", "std/net/native.cpp"],
+            headers: ["std/net/native.hpp"],
+            native: {
+                syslinks: [{
+                    platform: "windows",
+                    libraries: ["ws2_32"]
+                }],
+                ...
+            },
+            ...
+        },
+        {
+            name: "process",
+            kind: .SourceLibrary,
+            sources: ["std/process.cv", "std/process/native.cpp"],
+            headers: ["std/process/native.hpp"],
+            ...
+        },
+    ],
+    ...
+})?;

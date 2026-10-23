@@ -3,17 +3,21 @@ private const fn collect_characters(text: str) -> String {
     for character in text.chars {
         result.push(character);
     }
-    return &&result;
+    return result;
 }
 
 private const fn character_prefix(text: str) -> String {
     var result = String {};
     for character in text.chars {
-        if character == '\0' { continue; }
-        if character == '|' { break; }
+        if character == '\0' {
+            continue;
+        }
+        if character == '|' {
+            break;
+        }
         result.push(character);
     }
-    return &&result;
+    return result;
 }
 
 private const fn temporary_text(&calls: i32) -> String {

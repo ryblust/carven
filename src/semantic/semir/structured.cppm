@@ -1,15 +1,15 @@
 module carven:semantic.semir.structured;
 
 import :semantic.semir.async;
-import :semantic.semir.constant_access;
 import :semantic.semir.body;
 import :semantic.semir.format;
 import :semantic.semir.generic;
 import :semantic.semir.ids;
 import :semantic.semir.operation;
-import :semantic.semir.vector;
 import :semantic.semir.simd;
 import :semantic.semir.type;
+import :semantic.semir.values;
+import :semantic.semir.vector;
 import :support.invariant;
 import :support.tree_value;
 import :support.unique_indirect;

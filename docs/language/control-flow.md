@@ -48,6 +48,27 @@ Conditions and guards require `bool`. Value-form `if` requires an `else` and
 all result branches must be compatible. Statement-form conditionals do not
 produce a value.
 
+A statement-form `if` branch may use `=>` followed by one simple statement,
+including its terminating semicolon. This is useful for short guards:
+
+```carven
+if value < 0 => return 0;
+if done => break;
+if skip => continue;
+
+if ready => process();
+else if pending { wait(); retry(); }
+else => report();
+```
+
+Each branch may choose a block or an arrow. `else` belongs to the same `if`
+chain. The arrow body has the same branch scope and control-transfer rules as
+one statement inside a block. It can contain a declaration, assignment, update,
+expression, cancellation, or control transfer, but cannot directly contain
+another `if`, loop, `match`, `try`, or `const` block. Use a block for those forms
+or multiple statements. `const if` admits the same statement branches.
+Value-form `if` always uses braced result branches.
+
 A value-control block that completes without a final expression produces `()`.
 It is compatible with a `void` result; a branch supplying another result type
 still requires a final expression of that type.

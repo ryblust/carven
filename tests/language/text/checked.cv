@@ -45,8 +45,7 @@ test "Checked text: byte contents and error offsets follow the selected slice" {
         let _ = str::from_utf8(invalid.slice(1, 4))?;
         false
     } catch {
-        UTF8Error(error) => error.kind
-            == .InvalidContinuation
+        UTF8Error(error) => error.kind == .InvalidContinuation
             && error.offset == 1
             && error.sequence_start == 0
     };

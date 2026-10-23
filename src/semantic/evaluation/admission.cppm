@@ -1,8 +1,6 @@
 module carven:semantic.evaluation.admission;
 
-import :semantic.semir.constant_access;
 import :semantic.semir.structured;
-import :semantic.semir.type;
 import std;
 
 // Explicit executor limitations. The expression visitor checks implementation
@@ -18,6 +16,3 @@ constexpr auto unsupported_execution_operation() noexcept -> std::optional<std::
 
 auto unsupported_execution_expression(const SemanticExpression& source) noexcept
     -> std::optional<std::string_view>;
-
-auto supported_execution_type(const ExecutionValueAccess& values, ConstructionTypeRef type) noexcept
-    -> bool;

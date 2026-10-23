@@ -1,12 +1,16 @@
 set_project("carven")
 set_version("0.1.0")
 
-add_rules("mode.debug", "mode.release")
+includes("xmake/carven", "xmake/repository.lua")
+add_rules("mode.debug", "mode.release", "carven-repository")
+
 set_defaultmode("debug")
+
 set_languages("c++26")
 set_exceptions("no-cxx")
 add_cxxflags("-fno-rtti")
 set_warnings("allextra")
+
 set_rundir("$(projectdir)")
 set_policy("build.progress_style", "multirow")
 set_policy("build.c++.modules.non_cascading_changes", true)
@@ -42,94 +46,53 @@ for _, name in ipairs({"ASAN_OPTIONS", "UBSAN_OPTIONS"}) do
     set_runenv(name, (os.getenv(name) or "") .. ":halt_on_error=1:abort_on_error=0:exitcode=86")
 end
 
-local carven_xmake_repo_dir = os.getenv("CARVEN_XMAKE_REPO_DIR")
-if carven_xmake_repo_dir and #carven_xmake_repo_dir > 0 then
-    carven_xmake_repo_dir = path.absolute(carven_xmake_repo_dir, os.projectdir())
-    add_repositories("carven-xmake-repo " .. carven_xmake_repo_dir)
-else
-    add_repositories("carven-xmake-repo https://github.com/ryblust/carven-xmake-repo.git")
-end
-
-add_requires("carven-xmake-repo@carven", {
-    alias = "carven",
-    system = false,
-    configs = {rules_only = true},
-})
-
-local function publish_generated_clang_tidy(target)
-    if not target:rule("@carven/carven") then return end
-    local roots = table.join(table.wrap(target:data("carven.generated_root")),
-        table.wrap(target:data("carven.standard_root")))
-    for _, root in ipairs(table.unique(roots)) do
-        -- Keep the base profile adjacent so custom output directories also
-        -- inherit it, without applying generated-code exceptions to siblings.
-        os.cp(path.join(os.projectdir(), ".clang-tidy"),
-              path.join(path.directory(root), ".clang-tidy"), {copy_if_different = true})
-        os.cp(path.join(os.projectdir(), "xmake", "generated.clang-tidy"),
-              path.join(root, ".clang-tidy"), {copy_if_different = true})
-    end
-end
-
-rule("generated-clang-tidy")
-    after_config(publish_generated_clang_tidy)
-    -- Generation cleans its output inventory. Restore build-owned profiles
-    -- after preparation, including a first build or changed semantic inputs.
-    after_prepare(publish_generated_clang_tidy)
-rule_end()
-
-add_rules("generated-clang-tidy")
-
 target("carven-modules")
     set_default(false)
     set_kind("moduleonly")
     add_files("src/**.cppm")
     add_files("src/**.cpp|carven.cpp")
-    add_files("crafts/carven/std/**.cpp")
-    add_includedirs("include", "crafts", {public = true})
-    if is_plat("windows", "mingw") then
-        add_syslinks("ws2_32", {public = true})
-    end
+    add_includedirs("crafts", {public = true})
 target_end()
 
 target("carven")
+    set_group("toolchain")
     add_deps("carven-modules")
     add_files("src/carven.cpp")
-    add_installfiles("(crafts/carven/**)")
+    add_files(
+        "crafts/carven/std/channel/native.cpp",
+        "crafts/carven/std/collections/native.cpp",
+        "crafts/carven/std/fs/native.cpp",
+        "crafts/carven/std/io/native.cpp",
+        "crafts/carven/std/process/native.cpp"
+    )
     if is_mode("release") then
         set_policy("build.optimization.lto", true)
     end
+    add_installfiles("(crafts/carven/**)")
+    add_installfiles("cmake/*.cmake", {prefixdir = "share/cmake/Carven"})
+    add_installfiles("xmake/carven/*.lua", {prefixdir = "share/xmake/carven"})
+    add_installfiles("LICENSE")
 target_end()
 
-includes("examples")
-includes("tests/harness")
-includes("tests/crafts")
-includes("tests/cli")
-includes("tests/interop")
-includes("tests/internal")
-includes("tests/language")
 includes("tools/format")
 includes("tools/workspace")
+includes("tools/analyzer")
+includes("tools/lsp")
+includes("tools/hosting")
+
+includes("examples")
+
+includes("tests/harness")
+includes("tests/internal")
+includes("tests/language")
+includes("tests/crafts")
+includes("tests/interop")
+includes("tests/cli")
+
 includes("benchmarks/async")
 includes("benchmarks/simd")
 includes("benchmarks/json")
 includes("benchmarks/incremental")
-
-task("bench")
-    set_menu({
-        usage = "xmake bench [options] <name> [options]",
-        description = "Run a Carven benchmark with a built compiler",
-        options = {
-            function ()
-                return import("benchmarks.harness.options", {rootdir = os.projectdir()}).menu()
-            end,
-        },
-    })
-    on_run(function ()
-        local settings = import("benchmarks.harness.options", {rootdir = os.projectdir()}).configure()
-        if not settings then return end
-        import("benchmarks." .. settings.name .. ".run", {rootdir = os.projectdir()}).main(settings)
-    end)
-task_end()
 
 task("format")
     set_menu({
@@ -150,5 +113,22 @@ task("format-check")
     })
     on_run(function ()
         import("xmake.format").main(true)
+    end)
+task_end()
+
+task("bench")
+    set_menu({
+        usage = "xmake bench [options] <name> [options]",
+        description = "Run a Carven benchmark with a built compiler",
+        options = {
+            function ()
+                return import("benchmarks.harness.options", {rootdir = os.projectdir()}).menu()
+            end,
+        },
+    })
+    on_run(function ()
+        local settings = import("benchmarks.harness.options", {rootdir = os.projectdir()}).configure()
+        if not settings then return end
+        import("benchmarks." .. settings.name .. ".run", {rootdir = os.projectdir()}).main(settings)
     end)
 task_end()

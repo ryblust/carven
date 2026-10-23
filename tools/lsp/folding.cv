@@ -1,0 +1,61 @@
+import .protocol using { ProtocolError, position }
+import std::json using { JSONValue, JSONValueError }
+
+private fn number(value: JSONValue, key: str) -> usize throw JSONValueError =>
+    value.get(key)?.as_u64()? as usize;
+
+fn folding_ranges(
+    result: JSONValue,
+    options: JSONValue
+) -> JSONValue throw JSONValueError + ProtocolError {
+    let source = result.get("text")?;
+    let text = source.as_str()?;
+    let items = result.get("items")?;
+    let lines_only = options.has("lineFoldingOnly")? && options.get("lineFoldingOnly")?.as_bool()?;
+    let limit = if options.has("rangeLimit")? {
+        number(options, "rangeLimit")?
+    } else {
+        items.length()?
+    };
+    var output = JSONValue::array();
+    var previous_line: i64 = -1;
+    for index in 0..items.length()? {
+        if output.length()? >= limit => break;
+        let item = items.at(index)?;
+        let begin = number(item, "start")?;
+        let finish = number(item, "end")?;
+        let start = position(text, begin)?;
+        let end = position(text, finish)?;
+        let start_line = number(start, "line")?;
+        var end_line = number(end, "line")?;
+        if lines_only {
+            // Leave a closing delimiter on its own line visible, including indentation.
+            var line_start = finish;
+            while line_start > 0
+                && text.bytes[line_start - 1] != 10
+                && text.bytes[line_start - 1] != 13 {
+                --line_start;
+            }
+            var whitespace = true;
+            for byte in text.bytes.slice(line_start, finish) {
+                if byte != 32 && byte != 9 => whitespace = false;
+            }
+            if whitespace && end_line > 0 => --end_line;
+            if previous_line == start_line as i64 => continue;
+        }
+        if start_line >= end_line => continue;
+        var fold = JSONValue::object();
+        fold.set("startLine", &&JSONValue::unsigned_integer(start_line as u64))?;
+        fold.set("endLine", &&JSONValue::unsigned_integer(end_line as u64))?;
+        if !lines_only {
+            fold.set("startCharacter", &&start.get("character")?)?;
+            fold.set("endCharacter", &&end.get("character")?)?;
+        }
+        let kind = number(item, "kind")?;
+        if kind == 1 => fold.set("kind", &&JSONValue::string("comment"))?;
+        if kind == 2 => fold.set("kind", &&JSONValue::string("imports"))?;
+        output.push(&&fold)?;
+        previous_line = start_line as i64;
+    }
+    return output;
+}

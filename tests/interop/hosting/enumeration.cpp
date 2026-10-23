@@ -34,6 +34,7 @@ auto native_failure(void*) noexcept -> Sync::Response {
     return Sync::Response::failure(Fault::Count(9000000000ll));
 }
 
+// NOLINTNEXTLINE(performance-unnecessary-value-param): Async Start receives an owning request by its exact callback contract.
 auto async_failure(void*, HostRequest<Async::Response> request) noexcept -> void {
     request.complete(Async::Response::failure(Fault::Count(-9000000000ll)));
 }

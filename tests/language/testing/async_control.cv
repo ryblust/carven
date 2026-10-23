@@ -27,13 +27,17 @@ private fn fail_from_helper() {
 }
 
 private async fn require_async(delayed: bool) {
-    if delayed { await yield_once(); }
+    if delayed {
+        await yield_once();
+    }
     require(false, "async require helper stopped");
     println("unreachable async require body");
 }
 
 private async fn fail_async(delayed: bool) {
-    if delayed { await yield_once(); }
+    if delayed {
+        await yield_once();
+    }
     let stop = []() {
         fail("async fail helper stopped");
     };

@@ -1,7 +1,7 @@
 import std::json using { JSONError, JSONErrorKind, validate, validate_bytes }
 import std::utf using UTF8Error;
 
-const fn valid_documents() -> bool {
+private const fn valid_documents() -> bool {
     let inputs = [
         "null",
         "true",
@@ -37,7 +37,7 @@ private struct InvalidCase {
     offset: usize,
 }
 
-const fn invalid_documents() -> bool {
+private const fn invalid_documents() -> bool {
     let inputs = [
         InvalidCase {
             text: "",
@@ -184,7 +184,7 @@ const fn invalid_documents() -> bool {
     return true;
 }
 
-const fn byte_ingress() -> bool {
+private const fn byte_ingress() -> bool {
     let invalid_utf: [u8; 4] = [0x22, 0xff, 0x22, 0];
     var rejected = false;
     try {
@@ -219,7 +219,7 @@ const fn byte_ingress() -> bool {
     return true;
 }
 
-const fn depth_boundary(const count: usize) -> bool {
+private const fn depth_boundary(const count: usize) -> bool {
     var nested: [u8; 130] = {};
     for index in 0..count {
         nested[index] = 0x5b;

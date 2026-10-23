@@ -1,0 +1,327 @@
+import .objects using ObjectFile;
+import .plan using append_paths;
+import .platform using canonical;
+
+import std::build using BuildError;
+import std::collections using { HashMap, HashSet, Lookup }
+import std::compiler using { Compilation, SystemLibraries }
+import std::utf using ends_with;
+
+enum InputKind {
+    Source(String, Lookup<String>),
+    Target(String)
+}
+
+struct BuildInput {
+    unit: InputKind,
+    dependencies: Vector<usize>,
+    headers: Vector<String>,
+    syslinks: Vector<SystemLibraries>
+}
+
+private const fn source_input(
+    path: String,
+    &inputs: Vector<BuildInput>,
+    &sources: HashMap<String, usize>
+) -> usize {
+    let found = sources.find(path);
+    if found != nullptr => return *found;
+    let row = inputs.length();
+    let key = path;
+    let position = row;
+    sources.insert(&&key, &&position);
+    inputs.push({
+        unit: .Source(path, if ends_with(path, ".cv") { .Missing } else { .Found(path) }),
+        dependencies: [],
+        headers: [],
+        syslinks: []
+    });
+    return row;
+}
+
+// The compiler reports source and declaration facts. Build execution owns the
+// target graph, selection policy, and native dependency edges.
+const fn compilation_inputs(compilation: Compilation) -> Vector<BuildInput> throw BuildError {
+    var inputs: Vector<BuildInput> = [];
+    var sources = HashMap<String, usize>::new();
+    for source in compilation.sources {
+        let row = source_input(source.source, &inputs, &sources);
+        inputs[row].unit = .Source(source.source, source.implementation);
+    }
+    for source in compilation.sources {
+        let found_source = sources.find(source.source);
+        assert(found_source != nullptr);
+        let row = *found_source;
+        for dependency in source.dependencies {
+            let found = sources.find(dependency);
+            if found == nullptr => throw BuildError {
+                message: f"missing compilation source '{dependency}'"
+            };
+            inputs[row].dependencies.push(*found);
+        }
+    }
+    for craft in compilation.crafts {
+        var names = HashMap<String, usize>::new();
+        for target in craft.targets {
+            if target.kind != "source-library" => continue;
+            let key = target.name;
+            let row = inputs.length();
+            names.insert(&&key, &&row);
+            inputs.push({
+                unit: .Target(target.name),
+                dependencies: [],
+                headers: target.headers,
+                syslinks: target.syslinks
+            });
+        }
+        for target in craft.targets {
+            if target.kind != "source-library" => continue;
+            let found_target = names.find(target.name);
+            assert(found_target != nullptr);
+            let row = *found_target;
+            for source in target.sources {
+                let dependency = source_input(source, &inputs, &sources);
+                inputs[row].dependencies.push(dependency);
+            }
+            for dependency in target.dependencies {
+                let found = names.find(dependency);
+                if found == nullptr => throw BuildError {
+                    message: f"source library '{target.name}' depends on unavailable source library '{dependency}' in '{craft.root}'"
+                };
+                inputs[row].dependencies.push(*found);
+            }
+        }
+    }
+    return inputs;
+}
+
+struct ImplementationIndex {
+    sources: HashMap<String, usize>,
+    files: HashMap<String, usize>,
+    headers: HashMap<String, Vector<usize>>,
+    owners: HashMap<usize, Vector<usize>>,
+}
+
+const fn index_implementations(inputs: [BuildInput]) -> ImplementationIndex {
+    var sources = HashMap<String, usize>::new();
+    var files = HashMap<String, usize>::new();
+    var headers = HashMap<String, Vector<usize>>::new();
+    var owners = HashMap<usize, Vector<usize>>::new();
+    for row in 0..inputs.length() {
+        match inputs[row].unit {
+            .Source(path, implementation) => {
+                let source = path;
+                let position = row;
+                sources.insert(&&source, &&position);
+                match implementation {
+                    .Missing => {},
+                    .Found(file) => {
+                        let key = file;
+                        let position = row;
+                        files.insert(&&key, &&position);
+                    },
+                }
+            },
+            .Target(_) => {
+                for dependency in inputs[row].dependencies {
+                    match inputs[dependency].unit {
+                        .Target(_) => {},
+                        .Source(_, _) => {
+                            let found = owners.find_mut(dependency);
+                            if found != nullptr {
+                                found->push(row);
+                            } else {
+                                let key = dependency;
+                                let rows: Vector<usize> = [row];
+                                owners.insert(&&key, &&rows);
+                            }
+                        },
+                    }
+                }
+            },
+        }
+        for header in inputs[row].headers {
+            let found = headers.find_mut(header);
+            if found != nullptr {
+                found->push(row);
+            } else {
+                let key = header;
+                let rows: Vector<usize> = [row];
+                headers.insert(&&key, &&rows);
+            }
+        }
+    }
+    return {
+        sources: &&sources,
+        files: &&files,
+        headers: &&headers,
+        owners: &&owners
+    };
+}
+
+private const fn source_owner(
+    row: usize,
+    source: str,
+    index: ImplementationIndex
+) -> usize throw BuildError {
+    let owners = index.owners.find(row);
+    if owners == nullptr || owners->is_empty() => return row;
+    if owners->length() != 1 => throw BuildError {
+        message: f"source '{source}' belongs to several Craft targets; select its header or target dependency"
+    };
+    return (*owners)[0];
+}
+
+const fn source_roots(
+    sources: [String],
+    index: ImplementationIndex
+) -> Vector<usize> throw BuildError {
+    var roots: Vector<usize> = [];
+    for source in sources {
+        let found = index.sources.find(source);
+        if found == nullptr => throw BuildError {
+            message: f"missing compilation input '{source}'"
+        };
+        roots.push(source_owner(*found, source, index)?);
+    }
+    return roots;
+}
+
+private struct InputSelection {
+    selected: HashSet<usize>,
+    sources: Vector<usize>,
+    targets: Vector<usize>
+}
+
+private const fn select_input(row: usize, inputs: [BuildInput], &selection: InputSelection) {
+    let key = row;
+    if !selection.selected.insert(&&key) => return;
+    match inputs[row].unit {
+        .Source(_, _) => selection.sources.push(row),
+        .Target(_) => selection.targets.push(row),
+    }
+}
+
+// Target edges establish ownership before generated source links are followed.
+// A target's sources keep their context even when another target shares them.
+const fn input_closure(
+    roots: [usize],
+    inputs: [BuildInput],
+    index: ImplementationIndex
+) -> Vector<usize> throw BuildError {
+    var selection = InputSelection {
+        selected: HashSet<usize>::new(),
+        sources: [],
+        targets: []
+    };
+    for root in roots {
+        select_input(root, inputs, &selection);
+    }
+    var next_target = 0usize;
+    var next_source = 0usize;
+    while next_target < selection.targets.length() || next_source < selection.sources.length() {
+        if next_target < selection.targets.length() {
+            let current = selection.targets[next_target];
+            next_target += 1;
+            for dependency in inputs[current].dependencies {
+                select_input(dependency, inputs, &selection);
+            }
+            continue;
+        }
+
+        let current = selection.sources[next_source];
+        for dependency in inputs[current].dependencies {
+            match inputs[dependency].unit {
+                .Target(_) => select_input(dependency, inputs, &selection),
+                .Source(_, _) => {},
+            }
+        }
+        if next_target < selection.targets.length() => continue;
+
+        for dependency in inputs[current].dependencies {
+            if selection.selected.contains(dependency) => continue;
+            match inputs[dependency].unit {
+                .Target(_) => {},
+                .Source(path, _) => {
+                    let resolved = if ends_with(path, ".cv") {
+                        source_owner(dependency, path, index)?
+                    } else {
+                        dependency
+                    };
+                    select_input(resolved, inputs, &selection);
+                },
+            }
+            if next_target < selection.targets.length() => break;
+        }
+        if next_target == selection.targets.length() => next_source += 1;
+    }
+    return Vector<usize>::from_slice(selection.selected.values());
+}
+
+const fn implementation_files(
+    selected: [usize],
+    inputs: [BuildInput]
+) -> Vector<String> throw BuildError {
+    var paths: Vector<String> = [];
+    for row in selected {
+        match inputs[row].unit {
+            .Target(_) => {},
+            .Source(source, implementation) => match implementation {
+                .Found(file) => paths.push(file),
+                .Missing => throw BuildError {
+                    message: f"Craft source '{source}' has no generated implementation; import it or include it in the target sources"
+                },
+            },
+        }
+    }
+    return paths;
+}
+
+const fn required_syslinks(
+    selected: [usize],
+    inputs: [BuildInput],
+    platform: str
+) -> Vector<String> {
+    var libraries = HashSet<String>::new();
+    for row in selected {
+        for links in inputs[row].syslinks {
+            if links.platform == "all" || links.platform == platform {
+                append_paths(&libraries, links.libraries);
+            }
+        }
+    }
+    return Vector<String>::from_slice(libraries.values());
+}
+
+// Fresh compiler header dependencies select declaration targets in the same graph.
+const fn record_dependencies(
+    objects: [ObjectFile],
+    &inputs: Vector<BuildInput>,
+    index: ImplementationIndex
+) -> Vector<String> throw BuildError {
+    var selected = HashSet<usize>::new();
+    for object in objects {
+        let found = index.files.find(object.source);
+        if found == nullptr => throw BuildError {
+            message: f"unknown implementation '{object.source}'"
+        };
+        let row = *found;
+        var dependencies = HashSet<usize>::new();
+        for dependency in inputs[row].dependencies {
+            let owned = dependency;
+            dependencies.insert(&&owned);
+        }
+        for header in object.dependencies {
+            let targets = index.headers.find(canonical(header)?);
+            if targets == nullptr => continue;
+            for target in *targets {
+                let dependency = target;
+                dependencies.insert(&&dependency);
+                let pending = target;
+                selected.insert(&&pending);
+            }
+        }
+        inputs[row].dependencies = Vector<usize>::from_slice(dependencies.values());
+    }
+    return implementation_files(input_closure(selected.values(), inputs, index)?, inputs)?;
+}

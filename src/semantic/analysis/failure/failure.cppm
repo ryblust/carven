@@ -6,8 +6,8 @@ import :semantic.semir.identity;
 import :semantic.semir.ids;
 import :semantic.semir.table;
 import :semantic.semir.type;
-import :source.provenance.ids;
 import :source.provenance;
+import :source.provenance.ids;
 import std;
 
 enum class EmptyFailureRequirementKind {
@@ -320,6 +320,12 @@ public:
 
     auto dependencies(ConstructionFailureRef source) const noexcept
         -> std::vector<ConstructionFailureRef>;
+
+    // Observes the current concrete contribution closure without closing applications.
+    auto known_members(
+        ConstructionFailureRef source,
+        const FailureSetStoreBuilder& sets
+    ) const noexcept -> std::vector<TypeID>;
 
     auto application(
         FailureTermID source,

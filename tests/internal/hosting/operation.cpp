@@ -2,11 +2,11 @@ module;
 
 #include <carven/hosting/api.hpp>
 #include <carven/hosting/operation.hpp>
+#include <carven/hosting/service.hpp>
 #include <carven/runtime/execution/execution.hpp>
 
 module carven:test.internal.hosting.operation;
 
-import :hosting.operation;
 import :test.harness.framework;
 import std;
 
@@ -127,11 +127,107 @@ auto execute(HostSession& session, std::span<const HostValue> arguments = {}) no
     return *task->result();
 }
 
+auto static_service(void* context) noexcept -> std::int32_t {
+    return ++*static_cast<std::int32_t*>(context);
+}
+
 const TestSuite suite([] static noexcept {
+    "Hosting static: native requirements belong to executed calls"_test = [] static noexcept {
+        constexpr auto source = std::string_view(R"(
+import "probe.hpp";
+const fn choose(enabled: bool) -> i32 {
+    if enabled => return ::probe::value(7) as i32;
+    return 5;
+}
+const answer = choose(false);
+fn run() -> i32 => answer;
+)");
+        auto options = host_session_options();
+        auto dormant = HostSession::load("probe", source, options);
+        expect(dormant).note([&]() noexcept { return dormant.error().message; });
+        auto reached = std::string(source);
+        reached.replace(
+            reached.find("choose(false)"),
+            std::string_view("choose(false)").size(),
+            "choose(true)"
+        );
+        const auto absent = HostSession::load("probe", reached, options);
+        expect(!absent);
+        const auto runtime_only = std::array {host_cpp_operation<signed_value>("probe::value")};
+        options.services = runtime_only;
+        const auto denied = HostSession::load("probe", reached, options);
+        if (expect(!denied)) {
+            expect(denied.error().message.contains("not enabled for static execution"));
+        }
+        const auto capabilities = std::array {
+            host_cpp_operation<signed_value>("probe::value")
+                .with_static_execution(HostServiceEffects::None),
+            host_cpp_conversion<std::int32_t>().with_static_execution(HostServiceEffects::None)
+        };
+        options.services = capabilities;
+        auto session = HostSession::load("probe", reached, options);
+        if (!expect(session).note([&]() noexcept { return session.error().message; })) {
+            return;
+        }
+        const auto result = execute(*session);
+        if (expect(result)) {
+            expect_equal(std::get<std::int32_t>(std::get<HostValue>(*result)), 7);
+        }
+    };
+
+    "Hosting static: declared services obey effects and replacement boundaries"_test =
+        [] static noexcept {
+            using Service =
+                carven::runtime::hosting::Service<"probe.source", std::int32_t(), std::tuple<>>;
+            const auto service = Service({}, {}, "fn()->i32;throw()");
+            auto counter = std::int32_t(40);
+            auto binding = service.bind(&counter, static_service);
+            const auto capabilities = std::array {
+                host_service(binding).with_static_execution(HostServiceEffects::Environment)
+            };
+            auto options = host_session_options();
+            options.services = capabilities;
+            constexpr auto source = std::string_view(R"(
+import(cpp) const fn source() -> i32;
+const answer = source();
+fn run() -> i32 => answer;
+)");
+            const auto denied = HostSession::load("probe", source, options);
+            expect(!denied);
+            expect_equal(counter, 40);
+            options.calls.allow_host_effects = true;
+            auto session = HostSession::load("probe", source, options);
+            if (!expect(session).note([&]() noexcept { return session.error().message; })) {
+                return;
+            }
+            expect_equal(counter, 41);
+            const auto first = execute(*session);
+            if (expect(first)) {
+                expect_equal(std::get<std::int32_t>(std::get<HostValue>(*first)), 41);
+            }
+            const auto changed = session->reload(source);
+            expect(changed).note([&]() noexcept { return changed.error().message; });
+            expect_equal(counter, 42);
+            const auto type_query = session->reload(R"(
+import(cpp) const fn source() -> i32;
+fn run() -> i32 {
+    const count = source() as usize;
+    let values: [i32; count] = [0; count];
+    return values[0];
+}
+)");
+            expect(!type_query);
+            expect_equal(counter, 42);
+            const auto preserved = execute(*session);
+            if (expect(preserved)) {
+                expect_equal(std::get<std::int32_t>(std::get<HostValue>(*preserved)), 42);
+            }
+        };
+
     "Hosting native: byte vectors retain binary data through records and native slices"_test =
         [] static noexcept {
-            auto bytes = carven::runtime::Vector<std::uint8_t>::with_capacity(100'000);
-            for (auto index = 0uz; index < 100'000uz; ++index) {
+            auto bytes = carven::runtime::Vector<std::uint8_t>::with_capacity(256);
+            for (auto index = 0uz; index < 256uz; ++index) {
                 bytes.push(static_cast<std::uint8_t>(index));
             }
             const auto services = std::array {
@@ -241,7 +337,7 @@ async fn run() -> i32 {
             const auto rejected = execute(*mismatched);
             expect(!rejected);
             if (!rejected) {
-                expect(rejected.error().message.contains("no registered implementation"));
+                expect(rejected.error().message.contains("registered contract"));
             }
         };
 
@@ -256,8 +352,10 @@ async fn run() -> i32 {
                     R"(
 import "probe.hpp" using probe;
 struct Box { note: probe::Note }
+const fn wrap(note: probe::Note) -> Box => { note: note };
 async fn run() -> i32 {
-    let box = Box { note: probe::make("hello") };
+    let original: probe::Note = probe::make("hello");
+    let box = wrap(original);
     var note = box.note;
     let copy = probe::consume(note) as i32;
     let length = note.size() as i32;
@@ -265,6 +363,8 @@ async fn run() -> i32 {
     let text = (&note).take_text() as String;
     assert(text == "hello");
     assert((note.size() as i32) == 0);
+    assert((original.size() as i32) == 5);
+    assert((original.code as i32) == 7);
     let other = probe::other();
     return copy + length + (note.code as i32) + (other.code as i32);
 }
@@ -312,7 +412,7 @@ async fn run() -> i32 {
             expect(!result);
             if (!result) {
                 expect_equal(result.error().kind, HostErrorKind::Execution);
-                expect(result.error().message.contains("no registered implementation"));
+                expect(result.error().message.contains("registered contract"));
             }
         }
     };

@@ -6,6 +6,7 @@ import :semantic.analysis.names;
 import :semantic.analysis.operations;
 import :semantic.analysis.program;
 import :semantic.analysis.source.builder;
+import :semantic.analysis.source.completion;
 import :semantic.analysis.types;
 import :support.invariant;
 import :support.visit;
@@ -116,6 +117,21 @@ auto resolve_named_value(
     const GenericTypeContext* generic_context,
     SourceObservation* observations
 ) noexcept -> AnalysisTask<ConstructionTypeRef> {
+    if (const auto* query = draft.source_analysis(); query
+        && !named.global_root
+        && query->requests_completion(
+            locate(syntax.source_id(), named.components.front().name_span)
+        )) {
+        auto candidates = source_name_candidates(draft, catalog, module_id, true);
+        if (generic_context) {
+            for (const auto parameter : generic_context->parameters) {
+                candidates.push_back(
+                    {draft.spelling_copy(parameter), SourceCompletionKind::Structure, {}}
+                );
+            }
+        }
+        query->complete(candidates, SourceCompletionContext::Type);
+    }
     const auto root = draft.source_slice_copy(module_id, named.components.front().name_span);
     if (!named.global_root && generic_parameter_index(draft, generic_context, root)) {
         co_return std::unexpected(fail(
@@ -291,8 +307,14 @@ auto resolve_named_value(
             "range element must be an integer type"
         ));
     }
-    auto native_name =
-        lookup_cpp_name(draft, catalog, import_usage, module_id, source_name_path(named));
+    auto native_name = lookup_cpp_name(
+        draft,
+        catalog,
+        import_usage,
+        module_id,
+        source_name_path(named),
+        observations
+    );
     if (!native_name.has_value()) {
         co_return std::unexpected(native_name.error());
     }

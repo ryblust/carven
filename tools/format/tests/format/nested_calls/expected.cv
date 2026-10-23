@@ -4,3 +4,11 @@ fn process() {
         supplemental_measurement_series
     );
 }
+
+fn conversion() {
+    return Receiver { 1 }.make().probe(
+        primary_measurement_series,
+        secondary_measurement_series,
+        supplemental_measurement_series
+    ) as bool;
+}

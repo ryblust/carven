@@ -52,7 +52,7 @@ namespace("benchmarks::async", function ()
                         add_deps("measurement-" .. profile)
 
                         if implementation == "carven" then
-                            add_rules("@carven/carven")
+                            add_rules("carven")
                             add_files(case.id .. ".cv", {defines = profile_defines})
                         else
                             local native_defines = table.join(profile_defines, defines(case), {

@@ -4,7 +4,7 @@ set_languages("c++20")
 
 target("carven-example-hello")
     set_kind("binary")
-    add_rules("@carven/carven")
+    add_rules("carven")
     add_files("hello.cv")
     add_tests("output", {
         run_timeout = 30000, plain = true,

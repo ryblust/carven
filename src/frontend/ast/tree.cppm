@@ -12,6 +12,10 @@ struct ASTModule final {
     std::vector<ASTCppHeaderImport> cpp_header_imports;
     std::vector<ASTCppSourceFragment> cpp_source_fragments;
     std::vector<ASTItemID> items;
+    // Known names from declarations that could not retain a complete AST item.
+    std::vector<Span> unavailable_names;
+    // False when recovery cannot determine all names introduced into this scope.
+    bool scope_complete;
 };
 
 class ASTBuilder;

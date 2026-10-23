@@ -12,10 +12,16 @@ private async fn tracked() -> ::Tracked => make_tracked();
 
 private async fn local_after_yield(value: i32) -> i32 {
     let held = make_tracked();
-    if tracked_live() != 1 { return -1; }
+    if tracked_live() != 1 {
+        return -1;
+    }
     await yield_once();
-    if tracked_live() != 1 { return -2; }
-    if value < 0 { return value; }
+    if tracked_live() != 1 {
+        return -2;
+    }
+    if value < 0 {
+        return value;
+    }
     return value + 1;
 }
 

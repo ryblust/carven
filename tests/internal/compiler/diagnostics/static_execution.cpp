@@ -34,7 +34,7 @@ auto compile_constant_program(
         TargetPlanningRequest {
             .test_mode = TestGenerationMode::None,
             .linkage_domain = *LinkageDomain::explicit_value("static-execution"),
-            .library = std::nullopt,
+            .libraries = {},
         },
         write_output
     );

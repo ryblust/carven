@@ -1,9 +1,9 @@
 module carven:semantic.semir.callable;
 
-import :semantic.semir.constant_access;
 import :semantic.semir.decl;
 import :semantic.semir.program;
 import :semantic.semir.structured;
+import :semantic.semir.values;
 import std;
 
 enum class CallableAdaptationKind { CopyTarget, FunctionTarget, StatelessClosure, BorrowObject };

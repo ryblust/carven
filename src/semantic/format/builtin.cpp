@@ -1,7 +1,7 @@
 module carven:semantic.format.builtin.impl;
 
-import :semantic.format.builtin;
 import :semantic.format;
+import :semantic.format.builtin;
 import :semantic.semir.type;
 import :support.utf8;
 import std;

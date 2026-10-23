@@ -9,7 +9,7 @@ async fn successful_number() -> i32 {
     return 42;
 }
 
-private fn forward<T>(&&value: T) -> T => &&value;
+private fn forward<T>(&&value: T) -> T => value;
 
 async fn collect() -> (void, i32) {
     async let empty = successful_void();

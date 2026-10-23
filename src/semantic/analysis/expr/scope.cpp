@@ -1,8 +1,8 @@
 module carven:semantic.analysis.expr.scope.impl;
 
 import :semantic.analysis.expr.scope;
-import :semantic.analysis.program;
 import :semantic.analysis.operations;
+import :semantic.analysis.program;
 import :semantic.semir.type;
 import std;
 

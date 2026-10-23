@@ -34,7 +34,7 @@ const TestSuite suite([] static noexcept {
                         .test_mode = TestGenerationMode::None,
                         .linkage_domain =
                             LinkageDomain::explicit_value("test:constant-limit").value(),
-                        .library = std::nullopt,
+                        .libraries = {},
                     }
                 );
                 expect(!(result.has_value())).note([&] noexcept {

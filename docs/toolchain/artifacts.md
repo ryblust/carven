@@ -51,7 +51,7 @@ Carven evaluation order.
 C++ and its manifest. Each manifest indexes that operation's output artifacts.
 Supplying an analysis directory to `compile` generates C++ from its published
 program, including test generation, without repeating source analysis or static execution.
-A standard-library artifact directory can supply checked definitions to a new
+A checked Craft artifact directory can supply definitions to a new
 source batch. The consuming analysis constructs its new generic and static
 instances. The build system owns dependency freshness.
 
@@ -116,9 +116,8 @@ Project linkage identity combines the generation destination, canonical module
 path, and test generation mode. Generated interface paths carry the same linkage
 domain as their declarations. Each application target owns its application
 generation destination; changing its source membership does not change that
-destination. Installed standard-library modules retain their compiler-defined
-linkage identity; the Xmake rule shares their generated text in a separate
-destination.
+destination. Each Craft has a stable linkage identity derived from its name;
+standard and project Crafts use the same rule.
 
 Public `export(cpp)` names belong to the program-wide `carven::api` namespace.
 Give separately linked public modules distinct canonical paths. Reuse one library
@@ -135,6 +134,10 @@ The manifest projects the compilation result as JSON:
 | `artifacts` | Relative output paths, roles, source mapping, and implementation source ownership |
 | `runtime_test_count` | Runtime inline tests in owned modules, independently of emission mode |
 | `cacheable` | Whether analysis completed without observing host input, time, or waiting |
+| `include_dirs` | Absolute include roots for the toolchain and participating Crafts |
+| `library_roots` | Directories containing available Craft source candidates |
+| `craft_roots` | Participating Craft directories whose optional `build.cv` supplies declarations |
+| `crafts` | Queried Craft project descriptions and their actual loaded script inputs |
 
 Input paths within the workspace are relative; external paths are absolute.
 Artifact roles are `interface`, `cpp-api-header`, `module-implementation`,
@@ -142,118 +145,105 @@ Artifact roles are `interface`, `cpp-api-header`, `module-implementation`,
 `stable-interface` or `source-attributed`. Synthetic outputs have no source owner.
 Native compiler dependency files establish C++ header dependencies.
 
+A Craft uses an ordinary `build.cv` to describe its source groups and dependencies:
+
+```carven
+import std::build using project;
+
+project({
+    targets: [{
+        name: "network",
+        kind: .SourceLibrary,
+        sources: ["net.cv", "net/native.cpp"],
+        headers: ["net/native.hpp"],
+        native: {
+            syslinks: [{ platform: "windows", libraries: ["ws2_32"] }],
+            ...
+        },
+        ...
+    }],
+    ...
+})?;
+```
+
+`carven query` executes the declaration in its directory. `compile` includes the
+queried project descriptions directly in its manifest; no authored JSON is needed.
+Each query contains `project`, the declared model, and `scripts`, the absolute
+paths of sources actually loaded to analyze that build entry, including transitive
+imports and standard-library code. These paths come from the compiler's loaded
+source inventory; declared target sources are not query inputs unless imported.
+Build consumers can separate these stages with `compile --no-query`. Its manifest
+retains `craft_roots` and leaves `crafts` empty. For each present `build.cv`, use
+`check build.cv -o <checked>` and `query <checked>` in that Craft's directory.
+The consumer checks analysis freshness from the checked manifest, then refreshes
+the generated manifest's `crafts` with the query results. Queries always execute;
+retained semantics skip only parsing, analysis, and prior static execution.
+`SourceLibrary` declares sources and requirements without producing an archive.
+A consuming native target compiles these sources with its own configuration.
+Query target `kind` distinguishes `source-library`, `static-library`, and
+`executable`; source dependency adapters consume only `source-library`.
+Each source library has one `sources` list for Carven and native files, `headers` identifying
+its interfaces, `dependencies` naming other targets, and `syslinks` grouped by
+`all`, `windows`, `linux`, or `macos`. Paths in these descriptions are absolute.
+The consumer selects libraries for its target platform, independently of the host
+running the declaration.
+
+Selected sources activate their declared source libraries and dependencies.
+Carven files enter semantic analysis through imports
+or explicit source roots; a declaration does not manufacture a generated implementation
+for an unanalysed file. Such a selected file needs to be added to the semantic inputs.
+Compiler flags, macros, optimization, and dependency acquisition remain the
+consuming build target's responsibility. `SourceLibrary` does not impose native
+compiler flags. Actual static-library targets are build products, not source
+libraries to be flattened by an external adapter.
+
+Analysis reuse follows `inputs` contents, the compiler, options, and candidate
+file names under `library_roots`. Unused candidate contents do not invalidate an
+analysis. Craft queries refresh independently of generation, so dynamic declarations
+are not hidden behind analysis or generated-source reuse.
+Native objects belong to their consuming build configuration; shared source or
+generated text does not imply shared objects. A build system may reuse an object
+only when its compiler, arguments, and input dependencies still match.
+
 ## Build integration
 
-The `compile` command analyzes the supplied sources with the matching toolchain
-and writes generated artifacts. It does not compile or copy native providers.
-A manual native build selects the generated implementations and C++ providers
-needed by its target, including any required native initialization. Supply the
-output root and installed support root as include paths, plus required native
-sources and libraries. A program using only header-based runtime operations needs
-its own generated implementation and runtime headers. Header imports add neither
-include directories nor link inputs.
+`carven compile` writes generated C++ and a manifest describing the selected
+inputs, implementations, and link requirements. The consuming build system owns
+native compiler settings, header dependencies, compilation, linking, and objects.
+Importing a C++ header does not identify its implementation or link library;
+the owning Craft declares these requirements in `build.cv`.
 
-`carven build` executes the project's `build.cv`. The script uses `std::build`
-to construct executables and static libraries, with `build/` as the default
-output directory. `carven run` also launches the selected executable.
+`carven build` executes the project's `build.cv`. Its `std::build` plan constructs
+executables and static libraries. `carven run` launches an executable, and
+`carven test` selects the plan's inline tests and builds their test programs.
 
-External Xmake projects can use the separate Carven rule repository with Xmake
-3.1.1 or later and a C++20-capable toolchain. Declare the package and attach its
-rule to the application:
+External projects include the installed Xmake rule or set `Carven_DIR` and load
+the installed CMake package. These adapters use the compiler and Crafts from that
+installation. They translate the manifest into native source and link inputs;
+projects keep their existing target declarations and need no project `build.cv`.
 
-```lua
-add_repositories("carven-xmake-repo https://github.com/ryblust/carven-xmake-repo.git")
-add_requires("carven")
+Xmake targets select Carven entry sources with `add_files`. Test targets explicitly
+use `add_rules("carven", {tests = true})` and `add_tests`; the compiler emits all
+inline tests in the selected sources. CMake targets use `carven_target_sources`
+for source generation and ordinary CMake declarations for tests. A Carven
+application entry is replaced in test mode; exclude an authored
+C++ entry from a target that uses the generated test entry.
 
-target("app")
-    set_kind("binary")
-    add_rules("@carven/carven")
-    add_files("src/**.cv")
-```
+Xmake shares checked semantics for identical source batches and generated text for
+identical generation requests. CMake retains these artifacts per target.
+Native objects remain subject to their consuming target's
+compiler settings and dependency rules. Separately linked definitions need one
+owner; components exchanging generated types need compatible ABI settings.
 
-```shell
-xmake build
-xmake run app
-xmake test
-```
+Analysis tracks loaded sources and available module names. Analysis that observes
+host effects runs again. Generation preserves unchanged text. Craft queries share
+checked script semantics and execute afresh to observe external configuration;
+changes to query results update native requirements independently of C++ generation.
+The adapters use their build system's dependency and scheduling facilities.
 
-`xmake test` can also be the first build command. The rule discovers runtime
-inline tests in the selected source sets and registers nonempty test programs.
-Empty results add no test record or native test build.
-Ordinary application builds retain their entry and omit runtime test code.
-
-Declare an explicit test target to choose its sources, native settings, or entry.
-For an application with an authored C++ entry, exclude that entry from the test
-program and disable the application's automatic inline-test target:
-
-```lua
-target("app")
-    set_kind("binary")
-    add_rules("@carven/carven", {tests = false})
-    add_files("src/*.cv", "src/*.cpp")
-
-target("app-tests")
-    set_default(false)
-    set_kind("binary")
-    add_rules("@carven/carven", {tests = true})
-    add_files("src/*.cv", "src/*.cpp")
-    remove_files("src/main.cpp")
-    add_tests("default")
-```
-
-```shell
-xmake build app-tests
-xmake test 'app-tests/*'
-```
-
-`tests = true` generates the test program's entry. The compiler replaces a Carven
-application entry while retaining the source's declarations and inline tests;
-keep that `.cv` file in the test target. Xmake's `remove_files` excludes an authored
-C++ entry when the generated test entry replaces it. Use
-`tests = {entry = false}` to emit inline tests and their runner for an authored
-entry to call. Register explicit test executions with `add_tests`; test names and
-execution hooks do not select compiler generation modes.
-
-The package supplies the compiler and matching `crafts/carven/`. The rule also
-collects project-root `crafts/` when present and supplies both Crafts roots as
-native include paths. Target sources use project-relative module paths with the
-`.cv` suffix removed. Each component must match `[A-Za-z_][A-Za-z0-9_]*`.
-Configure native providers through ordinary target settings and dependencies.
-
-Xmake owns target dependencies, native configuration, preparation order, header
-scanning, compilation, linking, and concurrency. The Carven rule supplies generated
-sources and preserves the native settings attached to their originating `.cv`
-files. The rule processes the full installed standard library, then selects its
-generated implementations through the manifests' link dependencies. Consumer
-implementations, test entries, and published standard-library C++ interfaces supply
-the roots. Installed native support sources are included in every consumer target.
-Xmake compiles the selected sources with that target's native configuration and
-manages incremental builds. Native object reuse follows Xmake's mechanisms.
-
-Identical source batches share analysis and publish only semantics and discovery
-facts. Each application target generates its C++ and selected entry from the
-retained program in its own linkage domain. Within one configured Xmake project,
-targets using the same Carven compiler and installed sources share standard-library
-analysis results and generated C++ text. The standard library keeps its fixed
-generated symbol identity across those targets. Analysis that executes host effects,
-including file access, process execution, input, clock sampling, or waiting,
-runs again on the next build request.
-
-Use ordinary Xmake targets, source lists, and dependencies to model component
-boundaries and definition ownership. Standard-library source registration is per
-consumer; text sharing does not deduplicate native definitions at link time.
-Components exchanging generated types must use compatible native ABI settings.
-Runtime state sharing follows C++ definition and platform symbol-binding rules;
-separately linked libraries are not guaranteed to share one runtime instance.
-
-Generate into staging, publish only after a successful compiler invocation, and
-preserve timestamps for unchanged output bytes. Xmake dependency records track
-compiler, source, dependency artifacts, invocation arguments, and outputs.
-Reconfigure after adding or removing installed Crafts files.
-
-The installed layout places `crafts/` beside `bin/`. Runtime headers and native
-sources remain with their owning capability. The rule supplies the standard TCP
-provider's Winsock dependency on Windows; manual builds link `ws2_32`.
+The compiler repository binds its rule to the current compiler build and checkout
+Crafts. Development starts with `./xmakew build`, followed by `./xmakew test`.
+Installed toolchains do not participate in this workflow.
 
 ## Support headers
 
@@ -282,10 +272,10 @@ carven/runtime/execution/timeout.hpp
 carven/runtime/execution/unreachable.hpp
 carven/runtime/format/format.hpp
 carven/runtime/format/writer.hpp
-carven/runtime/io/cursor.hpp
 carven/runtime/io/print.hpp
 carven/runtime/io/queue.hpp
 carven/runtime/io/stdin.hpp
+carven/runtime/io/stream.hpp
 carven/runtime/numeric/float.hpp
 carven/runtime/numeric/numeric.hpp
 carven/runtime/numeric/parse.hpp
@@ -305,6 +295,11 @@ driver. Child scopes own readiness, observation, and closure. Composition depend
 on child scopes, time depends on the core, and timeout combines composition and
 time. Each header includes its dependencies directly; generated files select the
 header that owns each runtime symbol.
+
+The I/O domain keeps platform byte-stream mechanisms in `io/stream.hpp`, input
+request scheduling in `io/queue.hpp`, the native read entry in `io/stdin.hpp`, and
+formatted printing in `io/print.hpp`. Platform differences stay within their
+operation implementations.
 
 Use support headers matching the compiler that generated the artifacts.
 Private target names, helper selections, and representation layouts are

@@ -1,1 +1,2 @@
 fn f(){if x{call();}else if y{return 1;}else{return 2;}while x{--x;}for var i=0;i<3;++i{call(i);}for &v in values{v+=1;}}
+fn guards(){if ready=>return 1;else if failed=>throw Failure{};else{call();}for value in values{const if disabled=>continue;if value==0=>break;}}

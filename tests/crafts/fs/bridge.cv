@@ -2,6 +2,7 @@ import std::channel using ByteChannel;
 
 import std::fs using {
     FileError,
+    FileReader,
     canonical,
     create_directories,
     files,
@@ -46,6 +47,36 @@ fn probe(root: String) -> i32 {
         write_bytes(binary, [0u8, 255u8, 65u8])?;
         let bytes = read_bytes(binary)?;
         assert(bytes.length() == 3 && bytes[0] == 0 && bytes[1] == 255 && bytes[2] == 65);
+
+        let reader = FileReader::open(binary)?;
+        let shared = reader;
+        match reader.read(2)? {
+            .Data(chunk) => assert(chunk.length() == 2 && chunk[0] == 0 && chunk[1] == 255),
+            .End => assert(false),
+        }
+        match shared.read(2)? {
+            .Data(chunk) => assert(chunk.length() == 1 && chunk[0] == 65),
+            .End => assert(false),
+        }
+        for _ in 0..2 {
+            match reader.read(2)? {
+                .Data(_) => assert(false),
+                .End => {},
+            }
+        }
+        reader.close()?;
+        shared.close()?;
+        let closed = try {
+            let _ = shared.read(2)?;
+            false
+        } catch {
+            FileError(error) => match error {
+                .System(_) => true,
+                _ => false,
+            },
+        };
+        assert(closed);
+
         let invalid = try {
             let _ = read_text(binary)?;
             false
@@ -67,29 +98,32 @@ fn probe(root: String) -> i32 {
         create_directories(nested)?;
         assert(canonical(f"{nested}/../text.txt")? == canonical(text)?);
         write_text(f"{nested}/child.txt", "nested")?;
-        let immediate = files(
-            {
-                root: root,
-                recursive: false,
-                excluded_root: ""
-            }
-        )?;
+        let immediate = files({
+            root: root,
+            recursive: false,
+            excluded_root: ""
+        })?;
         assert(immediate.length() == 2);
-        let recursive = files(
-            {
-                root: root,
-                recursive: true,
-                excluded_root: ""
-            }
-        )?;
+        let recursive = files({
+            root: root,
+            recursive: true,
+            excluded_root: ""
+        })?;
         assert(recursive.length() == 3);
-        let selected = files(
-            {
-                root: root,
-                recursive: true,
-                excluded_root: nested
-            }
-        )?;
+        let future_excluded = files({
+            root: root,
+            recursive: true,
+            excluded_root: f"{root}/future/build"
+        })?;
+        assert(future_excluded.length() == recursive.length());
+        for index in 0..recursive.length() {
+            assert(future_excluded[index] == recursive[index]);
+        }
+        let selected = files({
+            root: root,
+            recursive: true,
+            excluded_root: nested
+        })?;
         assert(selected.length() == 2 && selected[0] == binary && selected[1] == text);
         assert(remove(binary)?);
         assert(!remove(binary)?);

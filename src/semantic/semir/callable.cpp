@@ -138,7 +138,7 @@ auto query_callable_adaptation(
 
 auto callable_adaptation(const SemIRProgram& program, TypeID from, TypeID to) noexcept
     -> CallableAdaptation {
-    auto result = query_callable_adaptation(PublishedConstantValues(program), from, to);
+    auto result = query_callable_adaptation(ProgramValues(program), from, to);
     if (!result) {
         invariant_violation("published callable adaptation has unresolved copy identity");
     }

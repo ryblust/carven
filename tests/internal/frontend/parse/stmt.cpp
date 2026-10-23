@@ -108,7 +108,7 @@ const TestSuite suite([] static noexcept {
                  "async fn f() { cancel object.child; }",
                  "async fn f() { cancel child }",
              }) {
-            check_rejected(source);
+            check_invalid(source);
         }
     };
 

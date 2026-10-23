@@ -111,8 +111,8 @@ test "JSON values: ordered duplicate members use last lookup and complete erase"
         object.append_member("y", &&JSONValue::integer(2))?;
         object.append_member("x", &&JSONValue::integer(3))?;
         check(object.length()? == 3);
-        check(object.key_at(0)? == "x" && object.key_at(1)? == "y");
-        check(object.member_value_at(0)?.as_i64()? == 1);
+        check(object.members()?[0].0.as_str() == "x" && object.members()?[1].0.as_str() == "y");
+        check(object.members()?[0].1.as_i64()? == 1);
         var keys = String {};
         var sum = 0i64;
         for (key, value) in object.members()? {
@@ -124,15 +124,15 @@ test "JSON values: ordered duplicate members use last lookup and complete erase"
         object.set("x", &&JSONValue::integer(4))?;
         check(snapshot.as_i64()? == 3);
         check(object.get("x")?.as_i64()? == 4);
-        check(object.member_value_at(0)?.as_i64()? == 1);
-        check(object.length()? == 3 && object.key_at(2)? == "x");
+        check(object.members()?[0].1.as_i64()? == 1);
+        check(object.length()? == 3 && object.members()?[2].0.as_str() == "x");
         object.set("z", &&JSONValue::boolean(false))?;
-        check(object.length()? == 4 && object.key_at(3)? == "z");
+        check(object.length()? == 4 && object.members()?[3].0.as_str() == "z");
         check(object.has("x")? && object.has("missing")? == false);
         check(object.erase("x")? == 2);
         check(object.erase("x")? == 0);
         check(object.length()? == 2);
-        check(object.key_at(0)? == "y" && object.key_at(1)? == "z");
+        check(object.members()?[0].0.as_str() == "y" && object.members()?[1].0.as_str() == "z");
     } catch {
         JSONValueError(_) => fail("object lookup and mutation must preserve the member contract"),
     }
@@ -148,14 +148,12 @@ test "JSON values: wrong kinds absent keys and invalid indices are typed failure
     }
     check(rejected);
     let text = JSONValue::string("42");
-    check(
-        try {
-            let _ = text.as_f64()?;
-            false
-        } catch {
-            JSONValueError(error) => error == .WrongKind,
-        }
-    );
+    check(try {
+        let _ = text.as_f64()?;
+        false
+    } catch {
+        JSONValueError(error) => error == .WrongKind,
+    });
     var array = JSONValue::array();
     rejected = false;
     try {
@@ -179,13 +177,6 @@ test "JSON values: wrong kinds absent keys and invalid indices are typed failure
         JSONValueError(error) => { rejected = error == .MissingKey; },
     }
     check(rejected);
-    rejected = false;
-    try {
-        let _ = object.key_at(0)?;
-    } catch {
-        JSONValueError(error) => { rejected = error == .IndexOutOfBounds; },
-    }
-    check(rejected);
 }
 
 test "JSON values: string construction owns input and text reads borrow that owner" {
@@ -207,7 +198,8 @@ private fn borrow_text(value: JSONValue) -> str throw JSONValueError => value.as
 
 private fn borrow_number(value: JSONValue) -> str throw JSONValueError => value.number_text()?;
 
-private fn borrow_key(value: JSONValue) -> str throw JSONValueError => value.key_at(0)?;
+private fn borrow_key(value: JSONValue) -> str throw JSONValueError =>
+    value.members()?[0].0.as_str();
 
 test "JSON values: text queries retain caller storage through ordinary functions" {
     try {
@@ -234,7 +226,7 @@ test "JSON values: explicit text copies survive replacing their source values" {
         object.set("key", &&JSONValue::null())?;
         let text_copy = text.as_str()? as String;
         let number_copy = number.number_text()? as String;
-        let key_copy = object.key_at(0)? as String;
+        let key_copy = object.members()?[0].0.as_str() as String;
         text = JSONValue::null();
         number = JSONValue::null();
         object.erase("key")?;

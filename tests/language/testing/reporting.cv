@@ -38,7 +38,9 @@ test "Testing: fail reports and exits" {
 
 test "Testing: require exits across nested control" {
     while true {
-        if true { require(traced_reporting_condition(8, false)); }
+        if true {
+            require(traced_reporting_condition(8, false));
+        }
     }
     mark(9);
 }

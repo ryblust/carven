@@ -3,11 +3,11 @@ fn observe(&trace: i32, digit: i32, result: bool) -> bool {
     return result;
 }
 
-fn conjunction(left: bool, right: bool, &trace: i32) -> bool => observe(&trace, 1, left)
-    && observe(&trace, 2, right);
+fn conjunction(left: bool, right: bool, &trace: i32) -> bool =>
+    observe(&trace, 1, left) && observe(&trace, 2, right);
 
-fn disjunction(left: bool, right: bool, &trace: i32) -> bool => observe(&trace, 1, left)
-    || observe(&trace, 2, right);
+fn disjunction(left: bool, right: bool, &trace: i32) -> bool =>
+    observe(&trace, 1, left) || observe(&trace, 2, right);
 
 fn sequenced(left: bool, right: bool, &trace: i32) -> bool {
     return observe(&trace, 1, left)

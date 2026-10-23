@@ -6,7 +6,9 @@ enum Failure {
 }
 
 fn read(ok: bool) -> i32 throw Failure {
-    if ok { return 42; }
+    if ok {
+        return 42;
+    }
     throw Failure::Invalid(7);
 }
 

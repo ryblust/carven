@@ -34,8 +34,19 @@ const TestSuite suite([] static noexcept {
                     .code = DiagnosticCode::AccessImmutable,
                     .primary_text = "value",
                 },
+                {
+                    .name = "return cannot transfer a borrowed owner",
+                    .source = "fn invalid() -> String { let owner: String = \"owned\"; "
+                              "let view = owner.as_str(); return owner; }",
+                    .code = DiagnosticCode::AccessBorrowConflict,
+                    .primary_text = "owner",
+                },
             });
             check_compiler_errors(cases);
+            check_compiler_accepts(
+                "fn copied() -> String { let owner: String = \"owned\"; "
+                "let view = owner.as_str(); return owner as String; }"
+            );
         };
 
     "Compiler diagnostics: converged range backedges retain access witnesses"_test = [] static noexcept {

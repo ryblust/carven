@@ -32,8 +32,15 @@ auto source_context(
     if (artifact.modules.size() != modules.size()) {
         return std::unexpected("compilation ownership does not match semantic modules");
     }
+    auto error = std::error_code();
+    const auto project_root = std::filesystem::canonical(".", error);
+    if (error) {
+        return std::unexpected(std::format("cannot resolve project root: {}", error.message()));
+    }
     auto sources = CommandSources {
+        .project_root = project_root,
         .crafts = {},
+        .library_roots = {},
         .carven = {},
         .standard_modules = {},
         .owned_modules = {},
@@ -61,10 +68,13 @@ auto load_compilation_input(
     const std::filesystem::path& crafts,
     const CompilationOptions& options,
     ExecutionOutput output,
-    TimingOutput timings
+    TimingOutput timings,
+    std::span<const ExecutionNativeBinding> native_bindings
 ) noexcept -> std::expected<CompilationInput, std::string> {
     auto sources = CommandSources {
+        .project_root = {},
         .crafts = {},
+        .library_roots = {},
         .carven = {},
         .standard_modules = {},
         .owned_modules = {},
@@ -126,11 +136,6 @@ auto load_compilation_input(
                     : std::string(),
             };
         }
-        if (!std::ranges::all_of(artifact->modules, [](const auto& module_record) static noexcept {
-                return !module_record.owned || module_record.standard;
-            })) {
-            return std::unexpected("new sources require a standard-library artifact dependency");
-        }
         auto definitions = decode_checked_definitions(artifact->definitions);
         if (!definitions) {
             return std::unexpected(binary_error(definitions.error()));
@@ -138,6 +143,11 @@ auto load_compilation_input(
         auto context = source_context(*artifact, definitions->provenance_view());
         if (!context) {
             return std::unexpected(context.error());
+        }
+        if (!std::ranges::all_of(context->owned_modules, [](const auto& path) static noexcept {
+                return path.module_domain_prefix().craft_name().has_value();
+            })) {
+            return std::unexpected("new sources require a Craft artifact dependency");
         }
         sources = std::move(*context);
         seed.emplace(std::move(*definitions));
@@ -147,23 +157,28 @@ auto load_compilation_input(
             sources.external_modules.push_back(input.module_path);
         }
     }
-    auto collected = artifact_root ? collect_project_sources(source_paths, timings)
-                                   : collect_toolchain_sources(crafts, source_paths, timings);
+    auto collected = collect_toolchain_sources(crafts, source_paths, timings);
     if (!collected) {
         return std::unexpected(collected.error());
     }
+    if (seed) {
+        // Retained definitions own these modules. Inventory candidates must not
+        // reload them; an explicit root remains visible so redefinition is rejected.
+        std::erase_if(collected->carven, [&](const auto& input) noexcept {
+            return !std::ranges::contains(collected->owned_modules, input.module_path)
+                && std::ranges::any_of(sources.carven, [&](const auto& retained) noexcept {
+                       return retained.module_path == input.module_path;
+                   });
+        });
+    }
     const auto retain_definitions =
-        options.command == CompilationCommand::Check
-        && options.destination
-        && !collected->owned_modules.empty()
-        && std::ranges::all_of(collected->owned_modules, [&](const auto& module_path) noexcept {
-               return std::ranges::contains(collected->standard_modules, module_path);
-           });
+        options.command == CompilationCommand::Check && options.destination.has_value();
     auto checked = load_and_analyze_checked_sources(
         *collected,
         std::move(seed),
         retain_definitions,
         output,
+        native_bindings,
         timings
     );
     if (!checked) {
@@ -172,7 +187,9 @@ auto load_compilation_input(
     sources.carven.append_range(collected->carven);
     sources.owned_modules.append_range(collected->owned_modules);
     sources.standard_modules.append_range(collected->standard_modules);
+    sources.project_root = std::move(collected->project_root);
     sources.crafts = std::move(collected->crafts);
+    sources.library_roots = std::move(collected->library_roots);
     return CompilationInput {
         .sources = std::move(sources),
         .semantic = std::move(*checked),

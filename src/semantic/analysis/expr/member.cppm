@@ -158,6 +158,9 @@ auto interpret_member(Site& site, const ASTMemberExpr& source, Span span) noexce
         if (!type->has_value()) {
             co_return site.invalid_type_qualifier(site.syntax().expression(source.operand_id).span);
         }
+        if constexpr (requires { site.complete_members(**type, source.name_span, true); }) {
+            site.complete_members(**type, source.name_span, true);
+        }
         if (site.external(**type)) {
             co_return site.native_associated_reference(**type, source.name_span, span);
         }
@@ -202,6 +205,9 @@ auto interpret_member(Site& site, const ASTMemberExpr& source, Span span) noexce
         co_return std::unexpected(operand.error());
     }
     const auto operand_type = site.type(*operand);
+    if constexpr (requires { site.complete_members(operand_type, source.name_span, false); }) {
+        site.complete_members(operand_type, source.name_span, false);
+    }
     const auto* concrete = std::get_if<TypeID>(&operand_type);
     if (concrete != nullptr
         && (site.draft().type_copy(*concrete).value

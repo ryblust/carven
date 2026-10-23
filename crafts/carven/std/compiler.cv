@@ -1,42 +1,308 @@
-import <carven/std/compiler/native.hpp> using carven::standard::compiler;
+import std::collections using { HashMap, Lookup }
+import std::fs using { FileError, canonical, join, read_text, resolve }
+import std::json using { JSONValue, JSONError, JSONValueError }
+import std::process using { ProcessError, run_with }
+import std::utf using ends_with;
 
 export struct CompilerError {
     message: String
 }
 
-export struct CompiledImplementation {
-    file: String,
+export struct SystemLibraries {
+    platform: String,
+    libraries: Vector<String>
+}
+
+export struct CompilationSource {
     source: String,
+    implementation: Lookup<String>,
     dependencies: Vector<String>
+}
+
+export struct CompilationTarget {
+    name: String,
+    kind: String,
+    sources: Vector<String>,
+    headers: Vector<String>,
+    syslinks: Vector<SystemLibraries>,
+    dependencies: Vector<String>
+}
+
+export struct CompilationCraft {
+    root: String,
+    targets: Vector<CompilationTarget>
 }
 
 export struct Compilation {
     cacheable: bool,
-    implementations: Vector<CompiledImplementation>,
-    include_dirs: Vector<String>,
-    native_providers: Vector<String>
+    sources: Vector<CompilationSource>,
+    crafts: Vector<CompilationCraft>,
+    include_dirs: Vector<String>
+}
+
+struct CompilationRecord {
+    cacheable: bool,
+    inputs: Vector<String>,
+    artifacts: Vector<String>,
+    library_roots: Vector<String>
+}
+
+private const fn strings(value: JSONValue) -> Vector<String> throw JSONValueError {
+    var result: Vector<String> = [];
+    for item in value.elements()? {
+        result.push(item.as_str()? as String);
+    }
+    return result;
+}
+
+private const fn system_libraries(
+    value: JSONValue
+) -> Vector<SystemLibraries> throw JSONValueError + CompilerError {
+    var result: Vector<SystemLibraries> = [];
+    for group in value.elements()? {
+        let platform = group.get("platform")?.as_str()? as String;
+        if platform != "all"
+            && platform != "windows"
+            && platform != "linux"
+            && platform != "macos" => throw CompilerError {
+            message: f"unknown native target platform '{platform}'"
+        };
+        result.push({
+            platform: platform,
+            libraries: strings(group.get("libraries")?)?
+        });
+    }
+    return result;
+}
+
+private const fn parse_compilation(
+    manifest: JSONValue,
+    destination: str
+) -> Compilation throw FileError + JSONValueError + CompilerError {
+    let workspace = manifest.get("workspace")?;
+    let root = workspace.get("root")?;
+    let artifacts = manifest.get("artifacts")?;
+    var sources: Vector<CompilationSource> = [];
+    var positions = HashMap<String, usize>::new();
+    let declared_inputs = manifest.get("inputs")?;
+    for input in declared_inputs.elements()? {
+        let path = canonical(join(root.as_str()?, input.get("path")?.as_str()?))?;
+        let row = sources.length();
+        let key = path;
+        positions.insert(&&key, &&row);
+        sources.push({
+            source: path,
+            implementation: if ends_with(path, ".cv") { .Missing } else { .Found(path) },
+            dependencies: []
+        });
+    }
+
+    var implementations = HashMap<String, String>::new();
+    for artifact in artifacts.elements()? {
+        if artifact.get("role")?.as_str()? != "module-implementation" => continue;
+        let source = canonical(join(root.as_str()?, artifact.get("source")?.as_str()?))?;
+        let found = positions.find(source);
+        if found == nullptr => throw CompilerError {
+            message: f"generated implementation has no source '{source}'"
+        };
+        let file = join(destination, artifact.get("path")?.as_str()?);
+        sources[*found].implementation = .Found(file);
+        implementations.insert(&&file, &&source);
+    }
+    for artifact in artifacts.elements()? {
+        if artifact.get("role")?.as_str()? != "module-implementation" => continue;
+        let file = join(destination, artifact.get("path")?.as_str()?);
+        let found_source = implementations.find(file);
+        assert(found_source != nullptr);
+        let source = *found_source;
+        let found_position = positions.find(source);
+        assert(found_position != nullptr);
+        let row = *found_position;
+        let links = artifact.get("link_dependencies")?;
+        for link in links.elements()? {
+            let dependency = join(destination, link.as_str()?);
+            let found = implementations.find(dependency);
+            if found == nullptr => throw CompilerError {
+                message: f"missing generated implementation '{dependency}'"
+            };
+            sources[row].dependencies.push(*found);
+        }
+    }
+
+    var crafts: Vector<CompilationCraft> = [];
+    let declared_crafts = manifest.get("crafts")?;
+    for query in declared_crafts.elements()? {
+        let craft = query.get("project")?;
+        var targets: Vector<CompilationTarget> = [];
+        let declared_targets = craft.get("targets")?;
+        for target in declared_targets.elements()? {
+            targets.push({
+                name: target.get("name")?.as_str()? as String,
+                kind: target.get("kind")?.as_str()? as String,
+                sources: strings(target.get("sources")?)?,
+                headers: strings(target.get("headers")?)?,
+                syslinks: system_libraries(target.get("syslinks")?)?,
+                dependencies: strings(target.get("dependencies")?)?
+            });
+        }
+        crafts.push({
+            root: craft.get("root")?.as_str()? as String,
+            targets: &&targets
+        });
+    }
+    return {
+        cacheable: manifest.get("cacheable")?.as_bool()?,
+        sources: &&sources,
+        crafts: &&crafts,
+        include_dirs: strings(manifest.get("include_dirs")?)?
+    };
+}
+
+const fn run_compiler(
+    command: str,
+    sources: [String],
+    destination: str,
+    options: [String],
+    directory: str
+) throw CompilerError {
+    if destination.is_empty() => throw CompilerError { message: "output path is empty" };
+    try {
+        var arguments: Vector<String> = [command as String, "-o", resolve(destination)?];
+        arguments.append(options);
+        for source in sources {
+            arguments.push(resolve(join(directory, source))?);
+        }
+        let status = run_with(
+            "carven",
+            arguments,
+            {
+                directory: directory,
+                ...
+            }
+        )?;
+        if status != 0 => throw CompilerError {
+            message: f"carven {command} failed with exit code {status}"
+        };
+    } catch {
+        ProcessError(error) => match error {
+            .System(code) => throw CompilerError {
+                message: f"cannot run carven: system error {code}"
+            },
+        },
+        FileError(error) => match error {
+            .System(code) => throw CompilerError {
+                message: f"cannot resolve compilation paths: system error {code}"
+            },
+            .InvalidUTF8(error) => throw CompilerError {
+                message: f"invalid UTF-8 in compilation paths at byte {error.offset}"
+            },
+        },
+    }
+}
+
+private const fn read_json(path: str) -> JSONValue throw CompilerError {
+    return try {
+        JSONValue::parse(read_text(path)?)?
+    } catch {
+        FileError(error) => match error {
+            .System(code) => throw CompilerError {
+                message: f"cannot read compiler output '{path}': system error {code}"
+            },
+            .InvalidUTF8(error) => throw CompilerError {
+                message: f"invalid UTF-8 in compiler output '{path}' at byte {error.offset}"
+            },
+        },
+        JSONError(error) => throw CompilerError {
+            message: f"invalid JSON in compiler output '{path}' at byte {error.offset}"
+        },
+    };
+}
+
+const fn read_manifest(destination: str) -> JSONValue throw CompilerError =>
+    read_json(join(destination, "carven/manifest.json"))?;
+
+const fn query_compilation(
+    checked: str,
+    directory: str,
+    output: str
+) -> JSONValue throw CompilerError {
+    try {
+        let status = run_with(
+            "carven",
+            ["query", resolve(checked)?],
+            {
+                directory: directory,
+                output: resolve(output)?
+            }
+        )?;
+        if status != 0 => throw CompilerError {
+            message: f"carven query failed with exit code {status}"
+        };
+        return read_json(output)?;
+    } catch {
+        ProcessError(error) => match error {
+            .System(code) => throw CompilerError {
+                message: f"cannot run carven query: system error {code}"
+            },
+        },
+        FileError(error) => match error {
+            .System(code) => throw CompilerError {
+                message: f"cannot resolve query paths: system error {code}"
+            },
+            .InvalidUTF8(error) => throw CompilerError {
+                message: f"invalid UTF-8 in query paths at byte {error.offset}"
+            },
+        },
+    }
+}
+
+const fn compilation_record(destination: str) -> CompilationRecord throw CompilerError {
+    let manifest = read_manifest(destination)?;
+    return try {
+        let workspace = manifest.get("workspace")?;
+        let root = workspace.get("root")?;
+        let declared = manifest.get("inputs")?;
+        var inputs: Vector<String> = [];
+        for input in declared.elements()? {
+            inputs.push(join(root.as_str()?, input.get("path")?.as_str()?));
+        }
+        let artifacts = manifest.get("artifacts")?;
+        var outputs: Vector<String> = [];
+        for artifact in artifacts.elements()? {
+            outputs.push(join(destination, artifact.get("path")?.as_str()?));
+        }
+        {
+            cacheable: manifest.get("cacheable")?.as_bool()?,
+            inputs: &&inputs,
+            artifacts: &&outputs,
+            library_roots: strings(manifest.get("library_roots")?)?
+        }
+    } catch {
+        JSONValueError(_) => throw CompilerError {
+            message: f"invalid compilation manifest in '{destination}'"
+        },
+    };
+}
+
+const fn compilation(manifest: JSONValue, destination: str) -> Compilation throw CompilerError {
+    return try {
+        parse_compilation(manifest, destination)?
+    } catch {
+        FileError(error) => match error {
+            .System(code) => throw CompilerError {
+                message: f"cannot resolve compilation inputs: system error {code}"
+            },
+            .InvalidUTF8(error) => throw CompilerError {
+                message: f"invalid UTF-8 in compilation inputs at byte {error.offset}"
+            },
+        },
+        JSONValueError(_) => throw CompilerError {
+            message: f"invalid compilation manifest in '{destination}'"
+        },
+    };
 }
 
 export const fn compile(sources: [String], destination: str) -> Compilation throw CompilerError {
-    var result = compiler::compile(sources, destination);
-    if !(result.success as bool) {
-        throw CompilerError { message: (&result).take_error() as String };
-    }
-    let native = (&result).take_implementations() as Vector<compiler::Implementation>;
-    var implementations: Vector<CompiledImplementation> = [];
-    for implementation in native {
-        implementations.push(
-            {
-                file: implementation.file as String,
-                source: implementation.source as String,
-                dependencies: implementation.dependencies as Vector<String>
-            }
-        );
-    }
-    return {
-        cacheable: result.cacheable as bool,
-        implementations: &&implementations,
-        include_dirs: (&result).take_include_dirs() as Vector<String>,
-        native_providers: (&result).take_native_providers() as Vector<String>
-    };
+    run_compiler("compile", sources, destination, [], "")?;
+    return compilation(read_manifest(destination)?, destination)?;
 }

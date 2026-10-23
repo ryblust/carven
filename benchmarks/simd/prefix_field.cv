@@ -8,6 +8,5 @@ private const selected = set_union(
     )
 );
 
-export(cpp) fn scan_kernel(bytes: [u8], start: usize) -> usize {
-    return prefix_end(bytes, start, selected);
-}
+export(cpp) fn scan_kernel(bytes: [u8], start: usize) -> usize =>
+    prefix_end(bytes, start, selected);

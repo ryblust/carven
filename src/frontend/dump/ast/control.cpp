@@ -10,8 +10,8 @@ import :frontend.ast.stmt;
 import :frontend.ast.storage;
 import :frontend.ast.type;
 import :frontend.dump.ast;
-import :support.visit;
 import :support.unique_indirect;
+import :support.visit;
 import std;
 
 auto ASTDumper::render_binding_target(

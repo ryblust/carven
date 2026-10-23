@@ -5,7 +5,7 @@ The two self-contained projects use the same `std::build` API. Commands assume
 
 ## declarative
 
-`declarative/build.cv` describes two executable targets in one call to `build`.
+`declarative/build.cv` describes two executable targets in one call to `project`.
 Both use `src/catalog.cv`, listed once in `shared_sources`, and each supplies
 its own entry.
 
@@ -15,10 +15,14 @@ Run in `declarative/`:
 carven build
 carven run inventory
 carven run inventory-check
+carven query
 ```
 
 The application prints two stock counts; the checker prints
 `Checked 2 catalog items`.
+`query` emits target names, source files, and watch paths as JSON. The LSP reads
+the same plan as the build, so it can discover targets while application code is
+incomplete. No separate editor project configuration is needed.
 
 ## imperative
 
@@ -27,6 +31,11 @@ The application prints two stock counts; the checker prints
 `include_checks` selects the checker, and `optimize` adds `-O2`. The script calls
 `build(plan)`, prints the output names and paths, and runs the checker with
 `std::process.run` when enabled.
+
+This example uses explicit build actions and does not publish queryable targets.
+Use the declarative example's `project(plan)` entry for editor discovery. Queries
+execute ordinary scripts, so preparation statements still have effects; see
+[project queries](../../docs/language/build.md#project-queries).
 
 `settings.toml` is data read by the script. Its `minimum_stock` becomes a constant
 in the generated source.

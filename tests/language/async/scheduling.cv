@@ -39,10 +39,8 @@ const async fn completed_order() -> i32 {
     return trace;
 }
 
-const async fn ordering() => await direct_order()
-    * 1000000
-    + await yield_order() * 1000
-    + await completed_order();
+const async fn ordering() =>
+    await direct_order() * 1000000 + await yield_order() * 1000 + await completed_order();
 
 const fn requested() -> bool => cancel_requested();
 
@@ -63,7 +61,7 @@ const async fn cancellation() -> i32 {
     cancel child;
     await yield_once();
     mark(&trace, if requested() { 8 } else { 4 });
-    return trace;
+    return trace as i32;
 }
 
 struct Failure {

@@ -5,13 +5,13 @@ import :backend.generation.names;
 import :backend.generation.plan;
 import :backend.generation.plan.references;
 import :semantic.semir.constant;
-import :semantic.semir.constant_access;
 import :semantic.semir.content;
 import :semantic.semir.decl;
 import :semantic.semir.generic;
 import :semantic.semir.stage;
 import :semantic.semir.traversal;
 import :semantic.semir.type;
+import :semantic.semir.values;
 import :semantic.visibility;
 import :source.provenance;
 import :support.function_ref;
@@ -197,7 +197,7 @@ auto plan_closures(const SemIRProgram& semantic) noexcept -> TargetClosureCatalo
 auto plan_names(
     const SemIRProgram& semantic,
     const TargetPlanningRequest& request,
-    const std::flat_set<ModuleID>& library_modules,
+    const std::flat_map<ModuleID, std::size_t>& library_modules,
     const TargetClosureCatalog& closures
 ) noexcept -> TargetNamePlan {
     const auto& declarations = semantic.declarations();
@@ -364,21 +364,24 @@ auto plan_names(
     }
     const auto generated_namespace = generated_target_namespace();
     const auto domain_namespace = linkage_target_namespace(derive_linkage_domain_id(request));
-    const auto library_namespace = request.library
-        ? std::optional(linkage_target_namespace(derive_linkage_domain_id({
-              .test_mode = TestGenerationMode::None,
-              .linkage_domain = request.library->linkage_domain,
-              .library = std::nullopt,
-          })))
-        : std::nullopt;
+    auto library_namespaces = std::vector<TargetName>();
+    for (const auto& library : request.libraries) {
+        library_namespaces.push_back(linkage_target_namespace(derive_linkage_domain_id({
+            .test_mode = TestGenerationMode::None,
+            .linkage_domain = library.linkage_domain,
+            .libraries = {},
+        })));
+    }
     auto modules = std::vector<std::optional<TargetModuleNames>>(module_count);
     for (const auto module_record : declarations.modules()) {
         const auto& path = provenance.module_record(module_record.value.provenance_module).path;
         const auto module_namespace = TargetIdentifier::from_spelling(
             derive_module_namespace_id(path.value()).namespace_identifier()
         );
-        const auto& module_domain =
-            library_modules.contains(module_record.id) ? *library_namespace : domain_namespace;
+        const auto library = library_modules.find(module_record.id);
+        const auto& module_domain = library == library_modules.end()
+            ? domain_namespace
+            : library_namespaces[library->second];
         auto relative = std::vector<TargetIdentifier>(
             module_domain.components().begin(),
             module_domain.components().end()
@@ -525,7 +528,7 @@ auto plan_names(
             );
         }
     }
-    const auto constant_values = PublishedConstantValues(semantic);
+    const auto constant_values = ProgramValues(semantic);
     for (const auto constant : semantic.constants().entries()) {
         if (constant_has_storage(constant_values, constant.id)
             || std::holds_alternative<SliceConstant>(constant.value.value)

@@ -43,8 +43,7 @@ const fn delivered_payload(selected: bool) -> DeliveredPointerPayload {
 
 const fn payload_is_null(value: DeliveredPointerPayload) -> bool {
     return match value {
-        .Value(pointers) => pointers.pointer
-            == nullptr
+        .Value(pointers) => pointers.pointer == nullptr
             && pointers.nested[0][0] == nullptr
             && pointers.nested[0][1] == nullptr,
         .Empty => false,
@@ -63,23 +62,25 @@ const fn copied_nested_nulls() -> [[ptr<fn() -> i32>; 2]; 1] {
 
 const fn backed_nonnull_delivery() -> bool {
     let callable = delivery_target;
-    let original = [
-        DeliveredPointers {
-            pointer: addressof(callable),
-            nested: [[addressof(callable), addressof(callable)]]
-        }
-    ];
+    let original = [DeliveredPointers {
+        pointer: addressof(callable),
+        nested: [[addressof(callable), addressof(callable)]]
+    }];
     let copied = original;
     let view: [DeliveredPointers] = copied;
     let pointer = view[0].nested[0][1];
-    if pointer == nullptr { return false; }
+    if pointer == nullptr {
+        return false;
+    }
     let selected = *pointer;
     return addressof(selected) != nullptr;
 }
 
 const fn raised_pointer(raise: bool) -> ptr<fn() -> i32> throw DeliveredPointers {
     let pointers = copied_pointer_aggregate();
-    if raise { throw pointers; }
+    if raise {
+        throw pointers;
+    }
     return pointers.pointer;
 }
 

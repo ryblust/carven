@@ -1,6 +1,7 @@
 # Filesystem access
 
-`std::fs` reads and writes whole files, resolves and queries paths, lists files, and creates directories.
+`std::fs` reads files in chunks or as complete values, writes files, resolves and
+queries paths, lists files, and creates directories.
 Operations are synchronous. Paths are UTF-8 strings; relative paths use the process
 working directory. Filesystem operations reject paths containing NUL with
 `FileError::System`. All functions are `const fn`. Filesystem access in static
@@ -35,6 +36,39 @@ Filesystem operations may throw `FileError`; `parent` and `join` do not throw.
 `InvalidUTF8(UTF8Error)` reports invalid input to `read_text`. Byte access accepts
 arbitrary file contents. Successful writes finish closing the file before returning.
 
+## Streaming reads
+
+`FileReader::open(path: str) -> FileReader` opens a binary stream.
+`read(limit: usize) -> std::io::ReadResult<Vector<u8>>` requires a positive limit
+and returns either nonempty `Data(bytes)` containing at most that many bytes or
+`End`. Reads advance the cursor; repeated reads after reaching the end return
+`End`. Each read uses bounded storage independently of the file size.
+
+```carven
+import std::fs using FileReader;
+
+let reader = FileReader::open("input.bin")?;
+var size = 0usize;
+while {
+    match reader.read(16384)? {
+        .Data(bytes) => { size += bytes.length(); },
+        .End => break,
+    }
+}
+reader.close()?;
+println(size);
+```
+
+Reader copies share the cursor and open state. `close()` releases the file for
+all copies; repeated closes succeed, and reading after close throws
+`FileError::System`. The last reader releases the file automatically on scope
+exit, including error exits. Open, read and explicit close failures throw
+`FileError::System`. These methods support `const` execution with host effects;
+readers cannot be frozen as constants. Static execution retains its ordinary
+byte and work budgets even when input is processed in chunks.
+
+## Paths and directories
+
 `status` follows symbolic links. A missing path, including a dangling link, returns
 `Missing`; lookup failures throw. Write operations do not create parent directories.
 `canonical` requires an existing path and returns valid UTF-8 with `/` separators.
@@ -52,6 +86,6 @@ let local = files({ root: ".", recursive: false, excluded_root: "" })?;
 ```
 
 A missing root returns an empty vector. Directory symlinks are not followed.
-A nonempty `excluded_root` names an existing subtree to omit, including paths
-resolving to that subtree. Returned paths retain the root's relative or absolute
+The excluded subtree need not exist yet. A nonempty `excluded_root` names a
+subtree to omit, including paths resolving to that subtree. Returned paths retain the root's relative or absolute
 form and use `/` separators. Filenames must be valid UTF-8.

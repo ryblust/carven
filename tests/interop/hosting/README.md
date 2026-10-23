@@ -1,11 +1,19 @@
 # Hosted execution contracts
 
 These C++23 hosts include `carven/hosting/` headers to call interpreted functions
-and replace selected entries while retaining native application state. They link
-the compiler objects from `carven-modules`. Document and preview
-entries also run as C++20 implementations generated from the same Carven sources.
+and replace selected entries while retaining native application state. Their targets
+link the `carven-hosting` static library. These hosts supply the application bindings
+used by their source; they do not select the optional standard bindings. Document
+and preview entries also run as C++20 implementations generated from the same Carven sources.
 Generated provider contracts use each source module's canonical name in both
 execution paths.
+
+The host target explicitly links its generated entries and native providers.
+Loading Carven source does not load C++ libraries or infer their bindings.
+Use generated service contracts with `host_service` or `host_async_service`,
+`host_method` for a registered object, and `host_cpp_operation` for native C++
+operations reached during interpretation. The provider `.cpp` files in these
+targets route compiled calls through those same registered services.
 
 Build and run from the repository root so the hosts can read their `.cv` files:
 

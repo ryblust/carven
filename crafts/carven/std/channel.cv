@@ -26,23 +26,23 @@ export class ByteChannel {
 
     const fn try_receive(self) -> ChannelReadResult {
         var result = channel::try_receive(self.native);
-        if result.available as bool { return .Data((&result).take_bytes() as Vector<u8>); }
+        if result.available as bool => return .Data((&result).take_bytes() as Vector<u8>);
         return if result.end as bool { .End } else { .Pending };
     }
 
-    const fn try_send(self, &&bytes: Vector<u8>) -> bool => channel::try_send(self.native, &&bytes)
-        as bool;
+    const fn try_send(self, &&bytes: Vector<u8>) -> bool =>
+        channel::try_send(self.native, &&bytes) as bool;
 }
 
 private const async fn send_bytes(native: channel::Handle, &&bytes: Vector<u8>) -> bool {
-    let pending = channel::send(native, &&bytes);
+    let pending: Operation<channel::Result> = channel::send(native, &&bytes);
     let result = await pending;
     return result.available as bool;
 }
 
 private const async fn receive_bytes(native: channel::Handle) -> ReadResult<Vector<u8>> {
-    let pending = channel::receive(native);
+    let pending: Operation<channel::Result> = channel::receive(native);
     var result = await pending;
-    if result.end as bool { return .End; }
+    if result.end as bool => return .End;
     return .Data((&result).take_bytes() as Vector<u8>);
 }

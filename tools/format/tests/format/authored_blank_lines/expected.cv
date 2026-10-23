@@ -11,5 +11,19 @@ fn g() {
 }
 
 fn h() {
-    if ready { return (1); }
+    if ready {
+        return (1);
+    }
+}
+
+fn workflow() {
+    let input = load();
+
+    // Collect usable entries.
+    var total = 0;
+    for value in input {
+        total += value;
+    }
+
+    return total;
 }

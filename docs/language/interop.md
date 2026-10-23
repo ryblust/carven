@@ -232,11 +232,26 @@ paths. Interpretation diagnoses unsupported operations when execution reaches th
 Native calls, external object construction, and native data access require an
 implementation available to the selected execution stage.
 
-The semantic executor supplies the supported Standard Craft operations directly.
-Static capability checking and execution use the same native type and operation
-contracts. Public hosting bindings provide additional native operations for
-interpreted calls. Native handles may remain local to semantic execution but
-cannot be retained as module constants.
+The CLI selects Standard Craft operations through typed native bindings.
+Public hosting sessions use only their supplied bindings; hosts may explicitly
+include `host_standard_services()` from `<carven/hosting/standard.hpp>`. Core
+analysis and execution do not link those providers or infer source types from
+installed bindings.
+A `const fn` validates executable source operations without requiring every native
+provider to be installed. `import(cpp) const fn` declares a native static capability;
+the selected host checks its typed contract when the call executes.
+Passing or wrapping an existing native value requires no registration of that
+type with the compiler. Native construction and access require an implementation
+for the selected stage, including default construction through aggregate fields.
+Within a hosting session, standard and user native operations use the same public
+binding contracts. Bindings are runtime
+only until `.with_static_execution(HostServiceEffects::None)` or
+`.with_static_execution(HostServiceEffects::Environment)` explicitly admits static
+use. The declaration covers the whole native implementation and services it calls.
+Environment operations also require the host's effect permission; type
+dependency evaluation still rejects those effects. Session load and replacement
+use the same bindings as ordinary hosted calls. Native handles may remain local to semantic execution but cannot be
+retained as module constants.
 
 Native programs use C++ initialization and destruction rules. Static execution
 and interpretation do not load collected native inputs or run their dynamic

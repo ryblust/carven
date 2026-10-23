@@ -42,7 +42,7 @@ struct SourceLibrary final {
 struct TargetPlanningRequest final {
     TestGenerationMode test_mode;
     LinkageDomain linkage_domain;
-    std::optional<SourceLibrary> library;
+    std::vector<SourceLibrary> libraries;
     // Omission selects all owned modules. An empty selection emits no module tests.
     std::optional<std::span<const CanonicalModulePath>> test_modules = std::nullopt;
 };

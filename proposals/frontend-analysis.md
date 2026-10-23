@@ -1,24 +1,26 @@
 # Recoverable frontend analysis and compilation control
 
 - **Status:** Draft
-- **Implementation:** Not started
+- **Implementation:** Partial
 - **Scope:** Lossless damaged syntax, snapshot-owned partial semantics, causal diagnostics, query coordination, request cancellation, and analysis fault isolation
 
 ## Summary
 
-Extend existing top-level syntax recovery and complete-selection workspace
-analysis with lossless damaged syntax, independently owned partial types, and
-tracked semantic queries. Preserve established facts and causal diagnostics when
-other work fails, and distinguish source errors from interrupted requests.
+Extend recovering syntax, detached source observations, and complete-selection
+workspace analysis with lossless damaged syntax, independently owned partial
+types, and tracked semantic queries. Preserve established facts and causal
+diagnostics when other work fails, and distinguish source errors from interrupted
+requests. The language server already uses a persistent analysis process;
+cooperative cancellation, worker restart, and failure containment remain open.
 
 Separate diagnostic recording, local recovery, and request coordination. Track
 operand, type, body, and execution-result validity explicitly at their producing
 operations. Use those facts for dependent work and artifact admission.
 
 The design retains strict executable SemIR, source provenance, immutable snapshots,
-explicit failure propagation, and the shared semantic executor. It introduces
-an independently owned partial analysis model and a process boundary for a
-long-lived language server.
+explicit failure propagation, and the shared semantic executor. It extends the
+current source observations into an independently owned partial analysis model
+and adds request control across the language server's process boundary.
 
 ```text
 Immutable source inputs
@@ -36,18 +38,28 @@ LSP supervisor: document revisions, protocol, analysis-worker restart
 - `diagnostics/sink` stores diagnostics without printing or stopping.
   `Diagnostic` has a code, severity, message, source labels, notes, and helps.
 - `lex` returns tokens and diagnostics. `Parser::fail` records a diagnostic and
-  sets parser failure state. Recovery retains complete top-level items, but
-  delimiter preflight and malformed initial imports can discard the entire tree.
-- `parse_program` visits independent files but requires error-free syntax and a
-  closed import graph before producing `SyntaxProgram`. Workspace parsing skips
-  syntax analysis when lexing reports errors.
+  sets parser failure state. Recovery retains complete declarations and body
+  statements after local errors, including some lexer errors and unfinished
+  imports. It can supply missing closing delimiters, but mismatched delimiters
+  and excessive nesting can still prevent a syntax tree. This typed AST is not
+  a lossless tree of damaged source.
+- Ordinary `parse_program` requires error-free syntax and a closed import graph.
+  Source queries can consume recovered syntax. Damaged declaration/import scope
+  is marked incomplete; name lookup and completion do not infer global
+  uniqueness from the remaining declarations.
 - Ordinary function, test, and const-block construction can continue after an
   independent body fails. Failed inferred contracts propagate without repeating
   their originating diagnostic. Declaration, construction, and publication
   gates still stop dependent work.
-- Source observations depend on admission and successful body construction.
-  Failed publication can retain definitions and builtin types, but general
-  `TypeID` observations require a published program owner.
+- Source observations retain established bindings, explicit local types, callable
+  signatures, and source targets from failed bodies. Failed publication detaches
+  descriptions and source locations; general `TypeID` observations still require
+  a published program owner. Declaration and nominal failures can prevent
+  observation. Facts have no individual blocked/unresolved cause yet.
+- Workspace recovery isolates diagnosed statements and repeats semantic analysis
+  over the same immutable AST. Excluded locals retain names and explicit types;
+  their failed bodies cannot publish or infer a valid result. This is local
+  observation recovery driven by diagnostics, not a semantic query database.
 - Workspace retains revisions and complete selection results. An uncached
   semantic selection runs the full compiler pipeline. The current continuation
   loop drives dependencies synchronously; it is not a language-server request
@@ -55,6 +67,11 @@ LSP supervisor: document revisions, protocol, analysis-worker restart
 - Both internal invariant failures and low-level capacity exhaustion can abort.
   Semantic execution has work limits, but source-language task cancellation is
   distinct from cancellation of a compiler or editor request.
+- The LSP owns scheduling, document generations, and cancellation responses. A
+  persistent analyzer serves versioned Workspace requests. Cancelled and stale
+  replies are suppressed, but an active compiler transaction still runs to
+  completion. Analyzer failure ends the server session; restart, state replay,
+  execution deadlines, and cooperative interruption are not implemented.
 
 `SourceDocument`, `ParsedDocument`, and `CompilationAnalysis` provide
 shared immutable source/syntax and an owned complete analysis result, including
@@ -70,17 +87,22 @@ definitions for later generic and staged instantiation. Artifact-only generation
 reuses the published program without static execution. Producer roots execute
 during producer analysis; importing definitions reuses those results. Consumer
 source analysis executes its own roots. These owners require successful
-publication. Partial editor facts still need an owner
-that survives failed publication.
+publication. Detached editor descriptions survive failed publication, but they
+do not provide independently owned partial type identities or dependencies.
+
+Completion substitutes the cursor identifier in a private source snapshot and
+uses the ordinary recovery and semantic observation path. This does not mutate
+the open document or make the parser lossless.
 
 Analysis marks observed host input, time, or waiting as noncacheable for build
 integration. This records whole-producer reuse eligibility. Per-query effects,
 dependencies, interruption, and event delivery remain part of this design.
 
 The remaining work is lossless damaged syntax, types owned independently of
-program publication, per-query semantic invalidation, request cancellation, and
-worker isolation. Measure further reuse against complete-selection caching and
-checked-artifact generation under the same source coverage and execution policy.
+program publication, per-query semantic invalidation, cooperative request
+cancellation, and worker fault containment. Measure further reuse against
+complete-selection caching and checked-artifact generation under the same source
+coverage and execution policy.
 
 ### Research basis
 
@@ -459,6 +481,13 @@ parsing dominates editor latency. These optimizations must preserve the same
 fresh-analysis, revision, and effect-accounting contracts.
 
 ## Implementation
+
+The current delivery covers local syntax recovery, detached partial observations,
+and a persistent versioned analysis process. These establish parts of slices 2,
+3, and 6. Existing strict publication is preserved; slices 1, 4, and 5 still need
+their proposed result, query, and coordinator contracts. Source-query retries
+continue to use diagnostic locations and complete semantic passes. No slice's
+full completion evidence below is established by the current delivery.
 
 | Slice | Changes and owners | Completion evidence |
 | --- | --- | --- |

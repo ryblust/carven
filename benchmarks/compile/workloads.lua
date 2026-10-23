@@ -212,7 +212,7 @@ function inputs(case)
     if case.count then
         for module = 0, case.count - 1 do
             sources[string.format("module_%03d.cv", module)] =
-                string.format("export struct Value%03d { value: i32, }\n", module)
+                string.format("struct Value%03d { value: i32, }\n", module)
         end
     else
         sources[case.id .. ".cv"] = case.source

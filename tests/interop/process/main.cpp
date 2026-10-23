@@ -1,6 +1,7 @@
 module;
 
 #include <carven/hosting/api.hpp>
+#include <carven/hosting/standard.hpp>
 #include <carven/std/process/native.hpp>
 
 module carven:test.interop.process.main;
@@ -12,6 +13,54 @@ namespace {
 auto read_source(const std::filesystem::path& path) noexcept -> std::string {
     auto input = std::ifstream(path);
     return {std::istreambuf_iterator<char>(input), {}};
+}
+
+auto standard_source(void*, std::string_view module_path) noexcept
+    -> std::expected<std::optional<HostSource>, HostError> {
+    constexpr auto prefix = std::string_view("crafts.carven.std.");
+    if (!module_path.starts_with(prefix)) {
+        return std::nullopt;
+    }
+    auto relative = std::string(module_path.substr(prefix.size()));
+    std::ranges::replace(relative, '.', '/');
+    const auto filename = std::format("crafts/carven/std/{}.cv", relative);
+    auto file = std::ifstream(filename, std::ios::binary);
+    if (!file) {
+        return std::unexpected(hosting_error(HostErrorKind::Input, "cannot read " + filename));
+    }
+    return HostSource {
+        .module_path = std::string(module_path),
+        .origin = filename,
+        .text = std::string(std::istreambuf_iterator<char>(file), {})
+    };
+}
+
+auto call(
+    HostSession& session,
+    std::string_view name,
+    std::span<const HostValue> arguments = {}
+) noexcept -> std::expected<HostOutcome, HostError> {
+    auto task = session.submit(name, arguments);
+    if (!task) {
+        return std::unexpected(std::move(task.error()));
+    }
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    while (!task->result() && std::chrono::steady_clock::now() < deadline) {
+        if (session.poll(64) == HostSessionStatus::Waiting) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+    }
+    if (const auto* result = task->result()) {
+        return *result;
+    }
+    return std::unexpected(
+        HostError {
+            .kind = HostErrorKind::Execution,
+            .message = "hosted process call timed out",
+            .location = std::nullopt,
+            .calls = {},
+        }
+    );
 }
 
 } // namespace
@@ -37,28 +86,12 @@ extern "C++" auto main(int argc, char** argv) noexcept -> int {
         );
         return 1;
     }
-    auto sources = std::vector<HostSource>();
-    for (const auto& entry : std::filesystem::recursive_directory_iterator("crafts/carven")) {
-        if (!entry.is_regular_file() || entry.path().extension() != ".cv") {
-            continue;
-        }
-        auto module_path = entry.path();
-        module_path.replace_extension();
-        auto name = module_path.generic_string();
-        std::ranges::replace(name, '/', '.');
-        sources.push_back(
-            {.module_path = std::move(name),
-             .origin = entry.path().generic_string(),
-             .text = read_source(entry.path())}
-        );
-    }
-    std::ranges::sort(sources, {}, &HostSource::module_path);
-    sources.push_back(
-        {.module_path = "probe",
-         .origin = "tests/crafts/process/bridge.cv",
-         .text = "import std::fs using { FileError, read_text }\n"
-             + read_source("tests/crafts/process/bridge.cv")}
-    );
+    auto sources = std::array {HostSource {
+        .module_path = "probe",
+        .origin = "tests/crafts/process/bridge.cv",
+        .text = "import std::fs using { FileError, read_text }\n"
+            + read_source("tests/crafts/process/bridge.cv")
+    }};
     // Loading optional native declarations is safe; invoking one still needs a provider.
     sources.back().text += R"(
 private import(cpp) fn unavailable_native() -> i32 = ::probe::unavailable;
@@ -66,17 +99,16 @@ async fn missing_provider() -> i32 => unavailable_native();
 fn host_environment() -> String throw ProcessError => environment("PATH")?;
 fn missing_file() -> String throw FileError => read_text("carven-test-hosting-missing-file")?;
 )";
-    auto program = HostProgram::load("probe", sources);
-    if (!program) {
-        std::println(std::cerr, "{}", program.error().message);
+    const auto services = host_standard_services();
+    auto options = host_session_options();
+    options.services = services;
+    const auto dependencies = HostSourceResolver {.context = nullptr, .resolve = standard_source};
+    auto restricted = HostSession::load("probe", sources, options, dependencies);
+    if (!restricted) {
+        std::println(std::cerr, "{}", restricted.error().message);
         return 1;
     }
-    const auto platform = program->function("host_platform");
-    if (!platform) {
-        std::println(std::cerr, "{}", platform.error().message);
-        return 1;
-    }
-    const auto platform_result = platform->call({}, host_call_options());
+    const auto platform_result = call(*restricted, "host_platform");
     const auto* platform_value =
         platform_result ? std::get_if<HostValue>(&*platform_result) : nullptr;
     const auto* platform_case = platform_value ? std::get_if<HostEnum>(platform_value) : nullptr;
@@ -93,19 +125,18 @@ fn missing_file() -> String throw FileError => read_text("carven-test-hosting-mi
         std::println(std::cerr, "operating_system must identify the host platform");
         return 1;
     }
-    auto environment = program->function("host_environment");
-    if (!environment) {
-        std::println(std::cerr, "{}", environment.error().message);
-        return 1;
-    }
-    auto call_options = host_call_options();
-    const auto blocked = environment->call({}, call_options);
+    const auto blocked = call(*restricted, "host_environment");
     if (blocked || blocked.error().kind != HostErrorKind::Execution) {
         std::println(std::cerr, "host effects must be enabled before execution");
         return 1;
     }
-    call_options.allow_host_effects = true;
-    const auto permitted = environment->call({}, call_options);
+    options.calls.allow_host_effects = true;
+    auto session = HostSession::load("probe", sources, options, dependencies);
+    if (!session) {
+        std::println(std::cerr, "{}", session.error().message);
+        return 1;
+    }
+    const auto permitted = call(*session, "host_environment");
     if (!permitted) {
         std::println(std::cerr, "{}", permitted.error().message);
         return 1;
@@ -117,12 +148,7 @@ fn missing_file() -> String throw FileError => read_text("carven-test-hosting-mi
         std::println(std::cerr, "enabled host effects must read the host environment");
         return 1;
     }
-    const auto missing_file = program->function("missing_file");
-    if (!missing_file) {
-        std::println(std::cerr, "{}", missing_file.error().message);
-        return 1;
-    }
-    const auto absent = missing_file->call({}, call_options);
+    const auto absent = call(*session, "missing_file");
     const auto* failure = absent ? std::get_if<HostFailure>(&*absent) : nullptr;
     const auto* payload = failure ? std::get_if<HostEnum>(&failure->payload()) : nullptr;
     const auto* code = payload && payload->payload.size() == 1
@@ -136,46 +162,18 @@ fn missing_file() -> String throw FileError => read_text("carven-test-hosting-mi
         std::println(std::cerr, "filesystem failures must retain their enum case and payload");
         return 1;
     }
-    auto options = host_session_options();
-    options.calls.allow_host_effects = true;
-    auto session = HostSession::create(*program, options);
-    if (!session) {
-        std::println(std::cerr, "{}", session.error().message);
-        return 1;
-    }
-    auto missing = session->submit("missing_provider", {});
-    if (!missing) {
-        std::println(std::cerr, "{}", missing.error().message);
-        return 1;
-    }
-    session->poll(64);
-    const auto* denied = missing->result();
-    if (!denied || *denied || denied->error().kind != HostErrorKind::Execution) {
+    const auto denied = call(*session, "missing_provider");
+    if (denied || denied.error().kind != HostErrorKind::Execution) {
         std::println(std::cerr, "unregistered provider did not fail at its call site");
         return 1;
     }
     const auto arguments = std::array {HostValue(std::string(argv[1]))};
-    auto task = session->submit("probe", arguments);
-    if (!task) {
-        std::println(std::cerr, "{}", task.error().message);
-        return 1;
-    }
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
-    while (!task->result() && std::chrono::steady_clock::now() < deadline) {
-        if (session->poll(64) == HostSessionStatus::Waiting) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
-        }
-    }
-    const auto* result = task->result();
+    const auto result = call(*session, "probe", arguments);
     if (!result) {
-        std::println(std::cerr, "process bridge timed out");
+        std::println(std::cerr, "{}", result.error().message);
         return 1;
     }
-    if (!*result) {
-        std::println(std::cerr, "{}", result->error().message);
-        return 1;
-    }
-    const auto* value = std::get_if<HostValue>(&**result);
+    const auto* value = std::get_if<HostValue>(&*result);
     const auto* status = value ? std::get_if<std::int32_t>(value) : nullptr;
     if (!status || *status != 7) {
         std::println(std::cerr, "unexpected process result");

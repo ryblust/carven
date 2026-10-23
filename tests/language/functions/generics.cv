@@ -21,7 +21,7 @@ private struct Box<T> {
     value: T,
 }
 
-private const fn relay<T>(&&value: T) -> T => &&value;
+private const fn relay<T>(&&value: T) -> T => value;
 
 private fn apply<T>(callback: fn(T) -> T, value: T) -> T => callback(value);
 
@@ -77,8 +77,10 @@ test "Generic functions: empty slice delivery has no element storage" {
 }
 
 private const fn choose<T>(first: bool, &&left: T, &&right: T) -> T {
-    if first { return &&left; }
-    return &&right;
+    if first {
+        return left;
+    }
+    return right;
 }
 
 const test "Generic functions: checked bodies specialize ordinary values and products" {
@@ -121,10 +123,12 @@ test "Generic functions: slice forwarding retains its backing and element type" 
     check(from_array[0] + from_array[1] == 42);
 }
 
-private const fn inferred<T>(&&value: T) => &&value;
+private const fn inferred<T>(&&value: T) => value;
 
 private const fn bounce<T>(depth: i32, &&value: T) -> T {
-    if depth == 0 { return &&value; }
+    if depth == 0 {
+        return value;
+    }
     return bounce<T>(depth - 1, &&value);
 }
 

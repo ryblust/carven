@@ -140,6 +140,8 @@ public:
     // Appending may invalidate borrows; replacement invalidates the replaced text's contents.
     auto literal_value(std::size_t token_index) const noexcept -> const TokenLiteralValue&;
     auto replace_interpolation_text(std::size_t token_index, std::string bytes) noexcept -> void;
+    // Drop a partial lexical construct and its literal associations together.
+    auto truncate(std::size_t count) noexcept -> void;
     auto reserve_tokens(std::size_t count) noexcept -> void;
     auto append_token(TokenKind kind, Span span) noexcept -> void;
     auto append_literal_token(Span span, TokenLiteralValue value) noexcept -> void;

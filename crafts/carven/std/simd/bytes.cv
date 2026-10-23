@@ -8,7 +8,7 @@ export struct ByteBlock {
 
 export const fn block_count(bytes: [u8]) -> usize {
     let full = bytes.length() / 32;
-    if bytes.length() % 32 == 0 { return full; }
+    if bytes.length() % 32 == 0 => return full;
     return full + 1;
 }
 
@@ -16,7 +16,7 @@ export const fn block_count(bytes: [u8]) -> usize {
 export const fn load_block(bytes: [u8], offset: usize) -> ByteBlock {
     let value = u8x32::load_partial(bytes, offset, 0);
     var count = bytes.length() - offset;
-    if count > 32 { count = 32; }
+    if count > 32 => count = 32;
     return {
         value: value,
         active: mask32::prefix(count),
@@ -38,17 +38,15 @@ export const fn find_byte(bytes: [u8], needle: u8) -> usize {
     for index in 0..block_count(bytes) {
         let block = load_block(bytes, index * 32);
         let matched = (block.value == needle) & block.active;
-        if matched.any() { return block.offset + matched.first_or(32); }
+        if matched.any() => return block.offset + matched.first_or(32);
     }
     return bytes.length();
 }
 
 export const fn ascii_digit(bytes: u8x32) -> mask32 => (bytes >= 0x30) & (bytes <= 0x39);
 
-export const fn ascii_lower(bytes: u8x32) -> u8x32 => ((bytes >= 0x41) & (bytes <= 0x5a)).select(
-    bytes + 0x20,
-    bytes
-);
+export const fn ascii_lower(bytes: u8x32) -> u8x32 =>
+    ((bytes >= 0x41) & (bytes <= 0x5a)).select(bytes + 0x20, bytes);
 
 // Return the length of the leading ASCII run. Short tails use ordinary scalar reads.
 export const fn ascii_prefix(bytes: [u8]) -> usize {
@@ -58,18 +56,18 @@ export const fn ascii_prefix(bytes: [u8]) -> usize {
         let second = u8x32::load(bytes, offset + 32);
         if ((first | second) >= 0x80).any() {
             let first_non_ascii = first >= 0x80;
-            if first_non_ascii.any() { return offset + first_non_ascii.first_or(32); }
+            if first_non_ascii.any() => return offset + first_non_ascii.first_or(32);
             return offset + 32 + (second >= 0x80).first_or(32);
         }
         offset += 64;
     }
     while bytes.length() - offset >= 32 {
         let non_ascii = u8x32::load(bytes, offset) >= 0x80;
-        if non_ascii.any() { return offset + non_ascii.first_or(32); }
+        if non_ascii.any() => return offset + non_ascii.first_or(32);
         offset += 32;
     }
     while offset < bytes.length() {
-        if bytes[offset] >= 0x80 { return offset; }
+        if bytes[offset] >= 0x80 => return offset;
         offset += 1;
     }
     return offset;

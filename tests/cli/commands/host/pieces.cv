@@ -1,4 +1,4 @@
-import std::io using { IOError, ReadResult }
+import std::io using IOError;
 
 const async fn collect() -> bool throw IOError {
     async let head = stdin().read(2);

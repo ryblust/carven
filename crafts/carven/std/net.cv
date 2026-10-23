@@ -26,7 +26,7 @@ private const fn validate(kind: u8, code: i32) throw NetError {
     }
 }
 
-export async fn read(
+export const async fn read(
     connection: NetConnectionView,
     max_bytes: usize
 ) -> ReadResult<Vector<u8>> throw NetError {
@@ -34,20 +34,23 @@ export async fn read(
     let pending: Operation<net::ReadResult> = net::read(connection.native, max_bytes);
     var result = await pending;
     validate(result.error as u8, result.code as i32)?;
-    if result.end as bool { return .End; }
+    if result.end as bool => return .End;
     return .Data((&result).take_bytes() as Vector<u8>);
 }
 
-export async fn write(connection: NetConnectionView, &&bytes: Vector<u8>) -> usize throw NetError {
-    if bytes.is_empty() { return 0; }
+export const async fn write(
+    connection: NetConnectionView,
+    &&bytes: Vector<u8>
+) -> usize throw NetError {
+    if bytes.is_empty() => return 0;
     let pending: Operation<net::WriteResult> = net::write(connection.native, &&bytes, 0usize);
     let result = await pending;
     validate(result.error as u8, result.code as i32)?;
     return result.count as usize;
 }
 
-export async fn write_all(connection: NetConnectionView, &&bytes: Vector<u8>) throw NetError {
-    if bytes.is_empty() { return; }
+export const async fn write_all(connection: NetConnectionView, &&bytes: Vector<u8>) throw NetError {
+    if bytes.is_empty() => return;
     let pending: Operation<net::WriteResult> = net::write_all(connection.native, &&bytes);
     let result = await pending;
     validate(result.error as u8, result.code as i32)?;

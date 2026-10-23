@@ -4,6 +4,27 @@ export const fn hash_bytes(bytes: [u8]) -> u64 => collections::hash_bytes(bytes)
 
 export const fn hash_text(text: str) -> u64 => hash_bytes(text.bytes);
 
+export class ByteDigest {
+    first: u64,
+    second: u64,
+
+    const fn new() -> ByteDigest {
+        let state = collections::digest();
+        return {
+            first: state.first as u64,
+            second: state.second as u64
+        };
+    }
+
+    const fn update(&self, bytes: [u8]) {
+        let state = collections::update_digest(self.first, self.second, bytes);
+        self.first = state.first as u64;
+        self.second = state.second as u64;
+    }
+
+    const fn value(self) -> (u64, u64) => (self.first, self.second);
+}
+
 private struct HashBucket {
     hash: u64,
     record: usize
@@ -26,14 +47,14 @@ private class HashIndex {
             }
             index.grow(capacity);
         }
-        return &&index;
+        return index;
     }
 
     private const fn probe(self, hash: u64, start: usize) -> usize {
-        if self.buckets.is_empty() { return 0; }
+        if self.buckets.is_empty() => return 0;
         var position = start & (self.buckets.length() - 1);
         while self.buckets[position].record != 0 {
-            if self.buckets[position].hash == hash { return position; }
+            if self.buckets[position].hash == hash => return position;
             position = (position + 1) & (self.buckets.length() - 1);
         }
         return self.buckets.length();
@@ -44,14 +65,16 @@ private class HashIndex {
         for _ in 0..capacity {
             buckets.push(HashBucket {});
         }
+
         for bucket in self.buckets {
-            if bucket.record == 0 { continue; }
+            if bucket.record == 0 => continue;
             var position = (bucket.hash as usize) & (capacity - 1);
             while buckets[position].record != 0 {
                 position = (position + 1) & (capacity - 1);
             }
             buckets[position] = bucket;
         }
+
         self.buckets = &&buckets;
     }
 
@@ -63,6 +86,7 @@ private class HashIndex {
             assert(capacity > self.buckets.length());
             self.grow(capacity);
         }
+
         var position = (hash as usize) & (self.buckets.length() - 1);
         while self.buckets[position].record != 0 {
             position = (position + 1) & (self.buckets.length() - 1);
@@ -82,6 +106,7 @@ private class HashIndex {
                 self.buckets[position].record -= 1;
             }
         }
+
         let capacity = self.buckets.length();
         self.grow(capacity);
     }
@@ -124,7 +149,7 @@ export class HashMap<K: Hash + Equal, V> {
         var bucket = self.hashes.first(hash);
         while bucket != self.hashes.end() {
             let position = self.hashes.record(bucket);
-            if Equal::equal(self.items[position].key, key) { return position; }
+            if Equal::equal(self.items[position].key, key) => return position;
             bucket = self.hashes.next(hash, bucket);
         }
         return self.items.length();
@@ -132,36 +157,35 @@ export class HashMap<K: Hash + Equal, V> {
 
     const fn find(self, key: K) -> ptr<V> {
         let position = self.find_position(key, Hash::hash(key));
-        if position == self.items.length() { return nullptr; }
+        if position == self.items.length() => return nullptr;
         return addressof(self.items[position].value);
     }
 
     const fn find_mut(&self, key: K) -> ptr<&V> {
         let position = self.find_position(key, Hash::hash(key));
-        if position == self.items.length() { return nullptr; }
+        if position == self.items.length() => return nullptr;
         return addressof(&self.items[position].value);
     }
 
-    const fn contains(self, key: K) -> bool => self.find_position(key, Hash::hash(key))
-        != self.items.length();
+    const fn contains(self, key: K) -> bool =>
+        self.find_position(key, Hash::hash(key)) != self.items.length();
 
     // Insertion preserves the first value associated with a key.
     const fn insert(&self, &&key: K, &&value: V) -> bool {
         let hash = Hash::hash(key);
-        if self.find_position(key, hash) != self.items.length() { return false; }
+        if self.find_position(key, hash) != self.items.length() => return false;
+
         self.hashes.insert(hash, self.items.length());
-        self.items.push(
-            {
-                key: &&key,
-                value: &&value
-            }
-        );
+        self.items.push({
+            key: &&key,
+            value: &&value
+        });
         return true;
     }
 
     const fn remove(&self, key: K) -> Lookup<V> {
         let position = self.find_position(key, Hash::hash(key));
-        if position == self.items.length() { return .Missing; }
+        if position == self.items.length() => return .Missing;
         let item = self.items.remove(position);
         self.hashes.remove(position);
         return .Found((&&item).value);
@@ -195,18 +219,18 @@ export class HashSet<T: Hash + Equal> {
         var bucket = self.hashes.first(hash);
         while bucket != self.hashes.end() {
             let position = self.hashes.record(bucket);
-            if Equal::equal(self.items[position], key) { return position; }
+            if Equal::equal(self.items[position], key) => return position;
             bucket = self.hashes.next(hash, bucket);
         }
         return self.items.length();
     }
 
-    const fn contains(self, key: T) -> bool => self.find_position(key, Hash::hash(key))
-        != self.items.length();
+    const fn contains(self, key: T) -> bool =>
+        self.find_position(key, Hash::hash(key)) != self.items.length();
 
     const fn insert(&self, &&key: T) -> bool {
         let hash = Hash::hash(key);
-        if self.find_position(key, hash) != self.items.length() { return false; }
+        if self.find_position(key, hash) != self.items.length() => return false;
         self.hashes.insert(hash, self.items.length());
         self.items.push(&&key);
         return true;
@@ -214,7 +238,7 @@ export class HashSet<T: Hash + Equal> {
 
     const fn remove(&self, key: T) -> Lookup<T> {
         let position = self.find_position(key, Hash::hash(key));
-        if position == self.items.length() { return .Missing; }
+        if position == self.items.length() => return .Missing;
         let item = self.items.remove(position);
         self.hashes.remove(position);
         return .Found(&&item);

@@ -211,8 +211,8 @@ not acquire that qualification.
 The compiler checks the contract before execution; executing an entire function
 in the static stage does not make its ordinary parameters static inputs.
 
-Each `const fn` definition checks its signature and semantically reachable
-operations for executor capability. Reachable named source calls must select a
+Each `const fn` definition checks its semantically reachable operations for
+executor capability. Reachable named source calls must select a
 known `const fn`. Known lambda bodies are checked recursively under the same
 rules. An unknown callable-view parameter does not establish static capability.
 Unsupported operations or unproven callees produce `CV-CONST-ADMISSION` at the
@@ -269,8 +269,15 @@ const decorated = decorate(label(3)); // "[000102]"
 Function signatures follow ordinary rules, including Read, Write, and Take
 parameters. Unit values are supported in parameters, results, bindings and
 aggregate components. Retention checks the completed result and its selected enum payloads. Declaring
-a `const fn` also requires its types and reachable operations to support execution
-for the function's possible inputs. Static execution supports
+a `const fn` requires its reachable operations to support execution for the
+function's possible inputs. Passing, returning, or wrapping an existing opaque
+native value does not require a native operation registration. Native calls, member access, and conversions require a typed implementation from
+that execution's host when reached. Their presence does not require the provider
+while declaring a `const fn`; `import(cpp) const fn` states the same capability for
+a native declaration. A registered runtime binding is available to static roots
+only after the host explicitly enables static execution and declares its effects.
+Native default construction remains unsupported by semantic execution, and opaque
+native values cannot be frozen as constants. Static execution supports
 scalar arithmetic, comparisons, logical operations and casts; local
 initialization, assignment and Take; `if`, `match`, `while`, C-style loops,
 integer ranges, array and slice loops; `return`, `break`, `continue`, direct
@@ -367,13 +374,14 @@ value or Write target.
 Closure owners and callable views remain execution-local and cannot be frozen as
 constant values. Their invocation results follow ordinary constant-value rules.
 
-Native operations and calls through callable values without an executable Carven
-body remain outside the static execution subset. Ordinary type, access, ownership
-and lifetime validation applies throughout execution.
+Native operations require a provider available to static execution. Callable
+values require a proven executable target. Ordinary type, access, ownership and
+lifetime validation applies throughout execution.
 
-Each evaluated call tree has a budget of 100,000 execution steps and 128 nested
-calls. Text construction is limited to 1 MiB per value and 8 MiB of accumulated
-text construction and copying work. Appending charges the added bytes, and
+Each evaluated call tree has a budget of 1,000,000 execution steps and 128 nested
+calls, including calls into standard Crafts. Text construction is limited to
+1 MiB per value and 8 MiB of accumulated text construction and copying work.
+Appending charges the added bytes, and
 queries do not copy their receiver. This is a work budget, not a live-memory limit.
 An aggregate value is limited to 65,536 array and sequence elements, tuple elements,
 struct fields, and enum payload slots across its nested aggregates and 64 aggregate levels.

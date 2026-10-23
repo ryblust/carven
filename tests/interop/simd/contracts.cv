@@ -11,7 +11,9 @@ test "Runtime UTF-8: encodings satisfy Unicode bounds across blocks and tails" {
 }
 
 test "Runtime UTF-8: validation reads only the borrowed range" {
-    if simd_guard_pages_available() { check(simd_utf8_guarded()); }
+    if simd_guard_pages_available() {
+        check(simd_utf8_guarded());
+    }
 }
 
 test "SIMD consumer: float storage preserves signed zeros and NaN bits" {

@@ -104,7 +104,9 @@ const fn access_positions() -> i32 {
     var row = (20, (21, ()));
     row.1.0 += 1;
     let address = addressof(&row.0);
-    if address != nullptr { *address += row.1.0; }
+    if address != nullptr {
+        *address += row.1.0;
+    }
     assert(row.1.1 == ());
     assert((1.0, 2.0).1 == 2.0);
     return row.0 + answer + calls;

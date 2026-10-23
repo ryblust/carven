@@ -12,9 +12,11 @@ public:
     std::size_t capacity;
     bool closed = false;
 
-    explicit State(std::size_t capacity) noexcept
-        : capacity(capacity) {}
+    explicit State(std::size_t capacity) noexcept;
 };
+
+State::State(std::size_t capacity) noexcept
+    : capacity(capacity) {}
 
 auto Result::take_bytes() noexcept -> runtime::Vector<std::uint8_t> {
     return std::move(bytes);
@@ -60,68 +62,88 @@ class Request final : public async::EventSource {
     std::optional<Completion> result;
     bool attached = false;
 
-    auto attempt() noexcept -> bool {
-        if (continuation.cancel_requested()) {
-            result.emplace(Completion::cancelled());
-            return true;
-        }
-        auto& state = *channel.state;
-        if (sending) {
-            if (!state.closed && state.queue.size() == state.capacity) {
-                return false;
-            }
-            if (!state.closed) {
-                state.queue.push_back(std::move(bytes));
-            }
-            result.emplace(Completion::success_from([&]() noexcept {
-                return Result {.bytes = {}, .available = !state.closed, .end = state.closed};
-            }));
-        } else {
-            if (!state.closed && state.queue.empty()) {
-                return false;
-            }
-            result.emplace(Completion::success_from([&]() noexcept {
-                return try_receive(channel);
-            }));
-        }
-        return true;
-    }
+    auto attempt() noexcept -> bool;
+    auto suspend() noexcept -> bool;
 
 public:
-    Request(Handle channel, bool sending, runtime::Vector<std::uint8_t> bytes) noexcept
-        : channel(std::move(channel)),
-          sending(sending),
-          bytes(std::move(bytes)) {}
+    Request(Handle channel, bool sending, runtime::Vector<std::uint8_t> bytes) noexcept;
+    ~Request() noexcept override;
 
-    ~Request() noexcept override {
-        if (attached) {
-            continuation.driver().detach(*this);
-        }
-    }
-
-    auto await_ready() const noexcept -> bool { return false; }
+    auto await_ready() const noexcept -> bool;
 
     template<typename Promise>
     auto await_suspend(std::coroutine_handle<Promise> handle) noexcept -> bool {
         continuation.bind(handle);
-        if (attempt()) {
-            return false;
-        }
-        continuation.driver().attach(*this);
-        attached = true;
+        return suspend();
+    }
+
+    auto await_resume() noexcept -> Completion;
+    auto poll(async::Driver& driver) noexcept -> void override;
+    auto wait(std::optional<std::int64_t>) noexcept -> bool override;
+};
+
+Request::Request(Handle channel, bool sending, runtime::Vector<std::uint8_t> bytes) noexcept
+    : channel(std::move(channel)),
+      sending(sending),
+      bytes(std::move(bytes)) {}
+
+Request::~Request() noexcept {
+    if (attached) {
+        continuation.driver().detach(*this);
+    }
+}
+
+auto Request::attempt() noexcept -> bool {
+    if (continuation.cancel_requested()) {
+        result.emplace(Completion::cancelled());
         return true;
     }
-
-    auto await_resume() noexcept -> Completion { return std::move(*result); }
-
-    auto poll(async::Driver& driver) noexcept -> void override {
-        if (!result && attempt()) {
-            continuation.enqueue(driver);
+    auto& state = *channel.state;
+    if (sending) {
+        if (!state.closed && state.queue.size() == state.capacity) {
+            return false;
         }
+        if (!state.closed) {
+            state.queue.push_back(std::move(bytes));
+        }
+        result.emplace(Completion::success_from([&]() noexcept {
+            return Result {.bytes = {}, .available = !state.closed, .end = state.closed};
+        }));
+    } else {
+        if (!state.closed && state.queue.empty()) {
+            return false;
+        }
+        result.emplace(Completion::success_from([&]() noexcept { return try_receive(channel); }));
     }
+    return true;
+}
 
-    auto wait(std::optional<std::int64_t>) noexcept -> bool override { return false; }
-};
+auto Request::suspend() noexcept -> bool {
+    if (attempt()) {
+        return false;
+    }
+    continuation.driver().attach(*this);
+    attached = true;
+    return true;
+}
+
+auto Request::await_ready() const noexcept -> bool {
+    return false;
+}
+
+auto Request::await_resume() noexcept -> Completion {
+    return std::move(*result);
+}
+
+auto Request::poll(async::Driver& driver) noexcept -> void {
+    if (!result && attempt()) {
+        continuation.enqueue(driver);
+    }
+}
+
+auto Request::wait(std::optional<std::int64_t>) noexcept -> bool {
+    return false;
+}
 
 } // namespace
 

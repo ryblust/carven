@@ -77,8 +77,7 @@ const fn shared_storage() -> bool {
     let copy = local;
     let address = local as ptr<void>;
     let different = c"different C string" as ptr<void>;
-    return address
-        == (copy as ptr<void>)
+    return address == (copy as ptr<void>)
         && address == (c"shared across modules" as ptr<void>)
         && address == constant_text_address()
         && address != different;

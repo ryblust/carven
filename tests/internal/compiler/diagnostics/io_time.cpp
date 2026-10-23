@@ -47,7 +47,7 @@ const TestSuite suite([] static noexcept {
                 TargetPlanningRequest {
                     .test_mode = TestGenerationMode::None,
                     .linkage_domain = *LinkageDomain::explicit_value("test:duration-contract"),
-                    .library = std::nullopt,
+                    .libraries = {},
                 }
             );
             if (expect(!result.has_value())) {

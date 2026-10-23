@@ -41,10 +41,11 @@ a separate completion.
 `await` starts and consumes an operation exactly once. A direct await executes a
 dependency in the current logical task; it does not implicitly yield. Execution
 continues until the dependency actually suspends or completes. A named operation
-does not need `&&` for await or child startup. Ordinary ownership transfer still uses
-`&&`. Operations cannot be copied or captured. Ordinary owning bindings,
-assignment, record fields, Tuple slots, and fixed arrays can hold and transfer
-cold owners under the same Take and lifetime rules.
+does not need `&&` for await or child startup. Passing a named operation to a
+Take parameter requires `&&`; returning a complete local owner or Take parameter
+transfers it implicitly. Operations cannot be copied or captured. Ordinary owning
+bindings, assignment, record fields, Tuple slots, and fixed arrays can hold and
+transfer cold owners under the same Take and lifetime rules.
 An unused named cold owner is destroyed at scope exit without executing its body.
 A bare cold-operation expression statement, such as `next(4);`, is rejected.
 Synchronous functions may accept and return typed cold owners when analysis can
@@ -54,7 +55,7 @@ the complete owner:
 ```carven
 import std::async using Operation;
 
-fn relay(&&pending: Operation<i32>) -> Operation<i32> => &&pending;
+fn relay(&&pending: Operation<i32>) -> Operation<i32> => pending;
 ```
 
 An async successful result cannot itself contain an operation.
@@ -360,7 +361,11 @@ nearest timer. With multiple independent sources, waits are capped at ten
 milliseconds so each source can be polled. Standard input registers its source
 while reads are pending. `drive_root` borrows the host source through root and
 child closure, then detaches it. Providers using `Driver::attach` and `detach`
-keep their source alive throughout that registration. Native requests use
+keep their source alive throughout that registration. Several roots may borrow
+one driver and the same event source; each attachment has a matching detach,
+and the source remains registered until its last borrower finishes. The driver
+outlives its borrowing roots. Advancing a root resumes only that root and its
+children, preserving the host's current invocation context. Native requests use
 `TaskContext::request_cancel()` on the driver thread so parked timer cancellation
 is notified.
 

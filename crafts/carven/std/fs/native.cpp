@@ -8,12 +8,23 @@
 #include <filesystem>
 #include <fstream>
 #include <limits>
+#include <span>
 #include <string>
 #include <string_view>
 #include <system_error>
 #include <utility>
 
 namespace carven::standard::fs {
+
+class ReaderState final {
+public:
+    std::ifstream file;
+
+    explicit ReaderState(const std::filesystem::path& path) noexcept;
+};
+
+ReaderState::ReaderState(const std::filesystem::path& path) noexcept
+    : file(path, std::ios::binary) {}
 
 namespace {
 
@@ -49,6 +60,10 @@ auto resolve_path(std::string_view path, bool require_existing) noexcept -> Path
 }
 
 } // namespace
+
+auto OpenResult::take_reader() noexcept -> Reader {
+    return std::move(reader);
+}
 
 auto ReadResult::take_bytes() noexcept -> runtime::Vector<std::uint8_t> {
     return std::move(bytes);
@@ -106,7 +121,7 @@ auto files(std::string_view root, bool recursive, std::string_view excluded_root
     }
     auto excluded = std::filesystem::path();
     if (!excluded_root.empty()) {
-        excluded = std::filesystem::canonical(path_from_utf8(excluded_root), error);
+        excluded = std::filesystem::weakly_canonical(path_from_utf8(excluded_root), error);
         if (error) {
             return {.code = error.value(), .paths = {}};
         }
@@ -154,28 +169,54 @@ auto files(std::string_view root, bool recursive, std::string_view excluded_root
     return {.code = error.value(), .paths = std::move(paths)};
 }
 
-auto read_bytes(std::string_view path) noexcept -> ReadResult {
+auto open(std::string_view path) noexcept -> OpenResult {
     if (path.find('\0') != std::string_view::npos) {
-        return {.bytes = {}, .code = EINVAL};
+        return {.reader = {}, .code = EINVAL};
     }
     errno = 0;
-    auto file = std::ifstream(path_from_utf8(path), std::ios::binary);
-    if (!file) {
+    auto state = std::make_shared<ReaderState>(path_from_utf8(path));
+    if (!state->file) {
+        return {.reader = {}, .code = io_error()};
+    }
+    return {.reader = {.state = std::move(state)}, .code = 0};
+}
+
+auto read(const Reader& reader, std::size_t limit) noexcept -> ReadResult {
+    auto& file = reader.state->file;
+    if (!file.is_open()) {
+        return {.bytes = {}, .code = EBADF};
+    }
+    if (limit == 0) {
+        return {.bytes = {}, .code = EINVAL};
+    }
+    if (file.eof()) {
+        return {.bytes = {}, .code = 0};
+    }
+
+    auto buffer = std::array<char, 65536>();
+    errno = 0;
+    file.read(buffer.data(), static_cast<std::streamsize>(std::min(limit, buffer.size())));
+    if (file.bad() || (file.fail() && !file.eof())) {
         return {.bytes = {}, .code = io_error()};
     }
-    auto bytes = runtime::Vector<std::uint8_t>();
-    auto buffer = std::array<char, 16384>();
-    while (file) {
-        errno = 0;
-        file.read(buffer.data(), buffer.size());
-        if (file.bad() || (file.fail() && !file.eof())) {
-            return {.bytes = {}, .code = io_error()};
-        }
-        for (auto index = std::streamsize(0); index < file.gcount(); ++index) {
-            bytes.push(static_cast<std::uint8_t>(buffer[index]));
-        }
-    }
+    auto bytes = runtime::Vector<std::uint8_t>::from_slice(
+        runtime::Slice<std::uint8_t>(std::span<const std::uint8_t>(
+            reinterpret_cast<const std::uint8_t*>(buffer.data()),
+            static_cast<std::size_t>(file.gcount())
+        ))
+    );
     return {.bytes = std::move(bytes), .code = 0};
+}
+
+auto close(const Reader& reader) noexcept -> std::int32_t {
+    auto& file = reader.state->file;
+    if (!file.is_open()) {
+        return 0;
+    }
+    errno = 0;
+    file.clear();
+    file.close();
+    return file.fail() ? io_error() : 0;
 }
 
 auto write_bytes(std::string_view path, runtime::Slice<std::uint8_t> bytes) noexcept

@@ -3,7 +3,7 @@ module carven:test.internal.semantic.analysis.const_admission;
 import :diagnostics.code;
 import :diagnostics.diagnostic;
 import :frontend.program.parse;
-import :semantic.analyze;
+import :semantic.evaluation.execution;
 import :source.batch;
 import :source.manager;
 import :source.module_path;
@@ -21,11 +21,12 @@ const TestSuite suite([] static noexcept {
             auto sources = SourceManager();
             const auto application = sources.append_virtual("analysis.cv", R"(
 import provider using close_native;
+import std::async using Operation;
 import <carven/std/channel/native.hpp> using carven::standard::channel;
 const {
     let handle = channel::create(1usize);
     close_native(handle);
-    let pending = channel::receive(handle);
+    let pending: Operation<channel::Result> = channel::receive(handle);
     let result = await pending;
     assert(result.end as bool);
 }
@@ -47,13 +48,14 @@ const fn close_native(handle: channel::Handle) { channel::close(handle); }
             };
             auto parsed = parse_program(sources, SourceBatch {.modules = inputs});
             require(parsed.has_value());
-            const auto analyzed = analyze(std::move(*parsed), HostEffects::Deny);
+            const auto analyzed = analyze_test_syntax(std::move(*parsed), HostEffects::Deny);
             expect(analyzed.has_value());
         };
 
     "Constant native capability: execution checks host permission and available progress"_test =
         [] static noexcept {
             constexpr auto declaration = std::string_view(R"(
+import std::async using Operation;
 import <carven/std/channel/native.hpp> using carven::standard::channel;
 import <carven/std/io/native.hpp> using carven::standard::io;
 import <carven/std/process/native.hpp> using carven::standard::process;
@@ -75,7 +77,7 @@ const fn parallelism() -> i32 => process::parallelism() as i32;
                 auto parsed =
                     parse_program(sources, SourceBatch {.modules = std::span(&input, 1uz)});
                 require(parsed.has_value());
-                const auto analyzed = analyze(std::move(*parsed), effects);
+                const auto analyzed = analyze_test_syntax(std::move(*parsed), effects);
                 if (!rejection) {
                     expect(analyzed.has_value());
                 } else if (expect(!analyzed.has_value())) {
@@ -89,7 +91,7 @@ const fn parallelism() -> i32 => process::parallelism() as i32;
             );
             constexpr auto cold_output = std::string_view(
                 "const { let bytes: Vector<u8> = []; "
-                "let pending = io::write_output(&&bytes); "
+                "let pending: Operation<i32> = io::write_output(&&bytes); "
             );
             check(std::string(cold_output) + "}", HostEffects::Deny, std::nullopt);
             check(
@@ -105,7 +107,7 @@ const fn parallelism() -> i32 => process::parallelism() as i32;
             );
             check(
                 "const { let empty = channel::create(1usize); "
-                "let pending = channel::receive(empty); "
+                "let pending: Operation<channel::Result> = channel::receive(empty); "
                 "let result = await pending; }",
                 HostEffects::Allow,
                 DiagnosticCode::ConstEvaluation
@@ -121,36 +123,37 @@ const fn parallelism() -> i32 => process::parallelism() as i32;
                 "return result.take_path() as String; }",
             });
             each(cases, std::identity {}, [](std::string_view source) static noexcept {
+                const auto declaration =
+                    "import <carven/std/fs/native.hpp> using carven::standard::fs; "
+                    + std::string(source);
+                static_cast<void>(analyze_test_program(declaration));
                 expect_diagnostic(
-                    analyze_test_errors(
-                        "import <carven/std/fs/native.hpp> using carven::standard::fs; "
-                        + std::string(source)
-                    ),
+                    analyze_test_errors(declaration + " const { invalid(); }"),
                     DiagnosticCode::ConstAdmission
                 );
             });
         };
 
-    "Constant native capability: explicit operation types preserve the known native contract"_test =
-        [] static noexcept {
-            constexpr auto cases = std::to_array<std::string_view>({
-                "const fn invalid() { let handle = channel::create(1usize); "
-                "let pending: Operation<i32> = channel::receive(handle); }",
-                "struct Failure {} const fn invalid() { let handle = channel::create(1usize); "
-                "let pending: Operation<channel::Result, throw Failure> = channel::receive(handle); }",
-                "const fn invalid() { let pending: Operation<channel::Handle> = channel::create(1usize); }",
-            });
-            each(cases, std::identity {}, [](std::string_view source) static noexcept {
-                expect_diagnostic(
-                    analyze_test_errors(
-                        "import std::async using Operation; "
-                        "import <carven/std/channel/native.hpp> using carven::standard::channel; "
-                        + std::string(source)
-                    ),
-                    DiagnosticCode::TypeMismatch
-                );
-            });
-        };
+    "Constant native capability: source signatures constrain operation types"_test = [] static noexcept {
+        constexpr auto cases = std::to_array<std::string_view>({
+            "const fn invalid() { let handle = create(1usize); "
+            "let pending: Operation<i32> = receive(handle); }",
+            "struct Failure {} const fn invalid() { let handle = create(1usize); "
+            "let pending: Operation<channel::Result, throw Failure> = receive(handle); }",
+        });
+        each(cases, std::identity {}, [](std::string_view source) static noexcept {
+            expect_diagnostic(
+                analyze_test_errors(
+                    "import std::async using Operation; "
+                    "import <carven/std/channel/native.hpp> using carven::standard::channel; "
+                    "private import(cpp) const fn create(capacity: usize) -> channel::Handle = ::carven::standard::channel::create; "
+                    "private import(cpp) const async fn receive(handle: channel::Handle) -> channel::Result = ::carven::standard::channel::receive; "
+                    + std::string(source)
+                ),
+                DiagnosticCode::TypeMismatch
+            );
+        });
+    };
 
     "Constant function admission: capability diagnostics preserve evaluation order"_test = [] static noexcept {
         struct Scenario final {
@@ -192,7 +195,7 @@ const fn parallelism() -> i32 => process::parallelism() as i32;
             };
             auto parsed = parse_program(sources, SourceBatch {.modules = std::span(&input, 1uz)});
             require(parsed.has_value());
-            const auto analyzed = analyze(std::move(*parsed), HostEffects::Deny);
+            const auto analyzed = analyze_test_syntax(std::move(*parsed), HostEffects::Deny);
             if (!expect(!analyzed.has_value())) {
                 return;
             }
@@ -250,7 +253,7 @@ const fn parallelism() -> i32 => process::parallelism() as i32;
                     .diagnostic = DiagnosticCode::ConstAdmission
                 },
                 Case {
-                    .name = "native cold construction requires unsupported provider capability",
+                    .name = "unmarked native cold construction is not statically admitted",
                     .source = "private import(cpp) async fn provider() -> i32; "
                               "const { let operation = provider(); }",
                     .diagnostic = DiagnosticCode::ConstAdmission
@@ -283,7 +286,7 @@ const fn parallelism() -> i32 => process::parallelism() as i32;
                 if (!expect(parsed.has_value()).note("source = ", input.source)) {
                     return;
                 }
-                const auto analyzed = analyze(std::move(*parsed), HostEffects::Deny);
+                const auto analyzed = analyze_test_syntax(std::move(*parsed), HostEffects::Deny);
                 if (!expect(!analyzed.has_value()).note("source = ", input.source)) {
                     return;
                 }
@@ -313,7 +316,7 @@ const fn parallelism() -> i32 => process::parallelism() as i32;
             if (!expect(parsed.has_value()).note("source = ", text)) {
                 return;
             }
-            const auto analyzed = analyze(std::move(*parsed), HostEffects::Deny);
+            const auto analyzed = analyze_test_syntax(std::move(*parsed), HostEffects::Deny);
             expect(analyzed.has_value()).note("source = ", text);
         });
     };
@@ -343,7 +346,7 @@ const fn parallelism() -> i32 => process::parallelism() as i32;
             };
             auto parsed = parse_program(sources, SourceBatch {.modules = modules});
             require(parsed.has_value());
-            const auto analyzed = analyze(std::move(*parsed), HostEffects::Deny);
+            const auto analyzed = analyze_test_syntax(std::move(*parsed), HostEffects::Deny);
             if (!expect(!analyzed.has_value())) {
                 return;
             }
@@ -543,19 +546,28 @@ const fn parallelism() -> i32 => process::parallelism() as i32;
             });
         };
 
-    "Constant functions: view signatures do not require executable target storage"_test =
+    "Constant functions: native contracts separate source admission from host execution"_test =
         [] static noexcept {
             constexpr auto accepted = std::to_array<std::string_view>({
+                "private import(cpp) const fn provider() -> i32;",
+                "const fn read(value: ::Native) -> i32 => value.code as i32;",
                 "const fn ignore(action: fn(::Native) -> ::Native) {}",
                 "const fn length(values: [::Native]) -> usize => values.length();",
+                "const fn own(value: ::Native) -> ::Native => value;",
+                "const fn own(values: [::Native; 2]) -> [::Native; 2] => values;",
+                "struct Box { value: ::Native } "
+                "const fn wrap(value: ::Native) -> Box => { value: value };",
+                "struct Box<T> { value: T } "
+                "const fn wrap<T>(&&value: ::Native<T>) -> Box<::Native<T>> => { value: &&value };",
+                "struct Box { values: [::Native; 0] } const fn empty() -> Box => Box {};",
             });
             each(accepted, std::identity {}, [&](const auto& source) noexcept {
                 static_cast<void>(analyze_test_program(std::string(source)));
             });
             constexpr auto rejected = std::to_array<std::string_view>({
-                "const fn own(value: ::Native) {}",
-                "const fn own(values: [::Native; 2]) {}",
                 "const fn invoke(action: fn(::Native) -> ::Native, value: ::Native) { action(value); }",
+                "private import(cpp) const fn provider() -> i32; const value = provider();",
+                "struct Box { value: ::Native } const fn make() -> Box => Box {};",
             });
             each(rejected, std::identity {}, [&](const auto& source) noexcept {
                 const auto diagnostics = analyze_test_errors(std::string(source));

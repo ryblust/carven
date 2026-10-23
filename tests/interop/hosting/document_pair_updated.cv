@@ -22,7 +22,9 @@ private import(cpp) fn inspect(accepted: bool) -> ReadError throw ReadError;
 private import(cpp) fn token() -> ::documents::Token;
 
 fn render(document: Ref, index: i32) -> bool {
-    if !alive(document) { return false; }
+    if !alive(document) {
+        return false;
+    }
     let text = try {
         read(document)?
     } catch {

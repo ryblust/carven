@@ -1,0 +1,104 @@
+import .protocol using { ProtocolError, range }
+import std::json using { JSONValue, JSONValueError }
+
+private fn text_edit(
+    location: JSONValue,
+    text: str,
+    replacement: JSONValue
+) -> JSONValue throw JSONValueError + ProtocolError {
+    let start = location.get("start")?;
+    let end = location.get("end")?;
+    var edit = JSONValue::object();
+    edit.set("range", &&range(text, start.as_u64()? as usize, end.as_u64()? as usize)?)?;
+    let value = replacement;
+    edit.set("newText", &&value)?;
+    return edit;
+}
+
+// Shared by rename and compiler fixes. Open documents carry captured versions;
+// unopened documents use null as specified by OptionalVersionedTextDocumentIdentifier.
+fn workspace_edit(
+    documents: JSONValue,
+    request: JSONValue
+) -> JSONValue throw JSONValueError + ProtocolError {
+    let versions = request.get("documentVersions")?;
+    let versioned = request.get("documentChanges")?.as_bool()?;
+    var changes = JSONValue::object();
+    var document_changes = JSONValue::array();
+    for index in 0..documents.length()? {
+        let document = documents.at(index)?;
+        let uri = document.get("uri")?;
+        let text = document.get("text")?;
+        let locations = document.get("edits")?;
+        var edits = JSONValue::array();
+        for item in 0..locations.length()? {
+            let location = locations.at(item)?;
+            let replacement = location.get("replacement")?;
+            edits.push(&&text_edit(location, text.as_str()?, replacement)?)?;
+        }
+        if versioned {
+            var target = JSONValue::object();
+            target.set("uri", &&JSONValue::string(uri.as_str()?))?;
+            target.set(
+                "version",
+                &&(if versions.has(uri.as_str()?)? {
+                    versions.get(uri.as_str()?)?
+                } else {
+                    JSONValue::null()
+                })
+            )?;
+            var edit = JSONValue::object();
+            edit.set("textDocument", &&target)?;
+            edit.set("edits", &&edits)?;
+            document_changes.push(&&edit)?;
+        } else {
+            changes.set(uri.as_str()?, &&edits)?;
+        }
+    }
+    var response = JSONValue::object();
+    if versioned {
+        response.set("documentChanges", &&document_changes)?;
+    } else {
+        response.set("changes", &&changes)?;
+    }
+    return response;
+}
+
+fn edit_response(
+    result: JSONValue,
+    request: JSONValue,
+    actions: bool
+) -> JSONValue throw JSONValueError + ProtocolError {
+    let text = result.get("text")?;
+    let items = result.get("items")?;
+    var output = JSONValue::array();
+    for index in 0..items.length()? {
+        let item = items.at(index)?;
+        if !actions {
+            output.push(&&text_edit(item, text.as_str()?, item.get("replacement")?)?)?;
+        } else {
+            var action = JSONValue::object();
+            if item.has("message")? {
+                let start = item.get("start")?;
+                let end = item.get("end")?;
+                var diagnostic = JSONValue::object();
+                diagnostic.set(
+                    "range",
+                    &&range(text.as_str()?, start.as_u64()? as usize, end.as_u64()? as usize)?
+                )?;
+                diagnostic.set("message", &&item.get("message")?)?;
+                diagnostic.set("code", &&item.get("code")?)?;
+                diagnostic.set("severity", &&item.get("severity")?)?;
+                diagnostic.set("source", &&JSONValue::string("carven"))?;
+                var diagnostics = JSONValue::array();
+                diagnostics.push(&&diagnostic)?;
+                action.set("diagnostics", &&diagnostics)?;
+            }
+            action.set("title", &&item.get("title")?)?;
+            action.set("kind", &&item.get("kind")?)?;
+            action.set("edit", &&workspace_edit(item.get("documents")?, request)?)?;
+            output.push(&&action)?;
+        }
+    }
+    return output;
+}

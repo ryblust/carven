@@ -67,6 +67,22 @@ const TestSuite suite([] static noexcept {
         expect_equal(stdout->test_mode, TestGenerationMode::RunnerEntryPoint);
     };
 
+    "Compilation options: empty compilation requests resources and checking requires inputs"_test =
+        [] static noexcept {
+            const auto args = std::to_array<std::string>({"-o", "resources"});
+            const auto compilation = parse_compilation_options(args, CompilationCommand::Compile);
+            require(compilation.has_value());
+            expect(compilation->input_paths.empty());
+            require(compilation->destination.has_value());
+            const auto* destination =
+                std::get_if<DirectoryArtifactDestination>(&*compilation->destination);
+            require(destination != nullptr);
+            expect_equal(destination->root, std::filesystem::path("resources"));
+            const auto check = parse_compilation_options(args, CompilationCommand::Check);
+            require(!check.has_value());
+            expect_equal(check.error().kind, CompilationOptionErrorKind::NoSourceInput);
+        };
+
     "Compilation options: artifact directories use the ordinary input and output path"_test =
         [] static noexcept {
             const auto args =
@@ -127,12 +143,6 @@ const TestSuite suite([] static noexcept {
                     .args = {"--unknown", "main.cv"},
                     .kind = CompilationOptionErrorKind::UnknownOption,
                     .option = "--unknown",
-                },
-                InvalidCase {
-                    .name = "missing source input",
-                    .args = {"--tests"},
-                    .kind = CompilationOptionErrorKind::NoSourceInput,
-                    .option = std::nullopt,
                 },
             };
 

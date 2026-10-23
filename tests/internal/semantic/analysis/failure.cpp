@@ -52,6 +52,7 @@ const TestSuite suite([] static noexcept {
                 const auto application =
                     terms.application(source, {{parameter, transformed}}, sets);
                 terms.add_contribution(source, application);
+                expect(terms.known_members(application, sets).empty());
                 expect(!terms.complete_applications(sets));
                 expect(terms.growing_parameter() == std::optional(parameter));
             }
@@ -115,6 +116,7 @@ const TestSuite suite([] static noexcept {
             terms.add_guarded_contribution(root, root, added);
             const auto self_excited = terms.add_empty_term();
             terms.add_guarded_contribution(self_excited, self_excited, added);
+            expect(terms.known_members(root, sets).empty());
             auto diagnostics = DiagnosticSink();
             const auto names = FailureTypeDiagnosticNames(
                 types,
@@ -161,6 +163,8 @@ const TestSuite suite([] static noexcept {
                 }
             );
             const auto active_root = active_instance.substitute(root);
+            const auto active_set = sets.intern({first, second});
+            expect(terms.known_members(active_root, sets) == sets.copy(active_set).members);
             const auto closed = solve_failure_constraints(
                 terms.snapshot(),
                 sets,
@@ -173,7 +177,7 @@ const TestSuite suite([] static noexcept {
                 return;
             }
             expect(closed->failure_set(empty_root) == empty);
-            expect(closed->failure_set(active_root) == sets.intern({first, second}));
+            expect(closed->failure_set(active_root) == active_set);
             expect(
                 preview->term_copy(root).guarded_inputs.front().gate == ConstructionFailureRef(root)
             );
@@ -378,6 +382,17 @@ const TestSuite suite([] static noexcept {
                 terms.add_member(retained_growth, first);
                 terms.add_contribution(retained_growth, second_hop);
 
+                const auto expected_target = scenario.seeded
+                    ? std::vector {scenario.source_first ? first : second}
+                    : std::vector<TypeID> {};
+                const auto expected_growth =
+                    scenario.seeded ? std::vector {second} : std::vector<TypeID> {};
+                expect(terms.known_members(target, sets) == expected_target);
+                expect(terms.known_members(residual_growth, sets) == expected_growth);
+                expect(terms.known_members(retained_growth, sets) == expected_growth);
+                expect(terms.known_members(filtered, sets).empty());
+                expect(terms.known_members(disabled, sets).empty());
+
                 auto diagnostics = DiagnosticSink();
                 const auto solved = solve_failure_constraints(
                     std::move(terms).finish(),
@@ -395,13 +410,8 @@ const TestSuite suite([] static noexcept {
                     return;
                 }
                 expect_equal(diagnostics.empty(), true);
-                const auto expected_target = scenario.seeded
-                    ? std::vector {scenario.source_first ? first : second}
-                    : std::vector<TypeID> {};
                 expect(sets.copy(solved->failure_set(target)).members == expected_target)
                     .note("guarded contribution retains its source members");
-                const auto expected_growth =
-                    scenario.seeded ? std::vector {second} : std::vector<TypeID> {};
                 for (const auto term : {first_hop, second_hop, residual_growth, retained_growth}) {
                     expect(sets.copy(solved->failure_set(term)).members == expected_growth)
                         .note("delayed propagation and filtering retain the second member");

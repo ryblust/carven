@@ -32,8 +32,8 @@ auto edit_distance(std::string_view left, std::string_view right) noexcept -> st
 
 } // namespace
 
-auto spelling_suggestion(std::string_view name, std::span<const std::string> candidates) noexcept
-    -> std::string {
+auto closest_spelling(std::string_view name, std::span<const std::string> candidates) noexcept
+    -> std::optional<std::string> {
     // Bound suggestions to one edit per three bytes, with a minimum of one.
     const auto limit = std::max(1uz, name.size() / 3uz);
     auto best = std::optional<std::string_view>();
@@ -50,6 +50,12 @@ auto spelling_suggestion(std::string_view name, std::span<const std::string> can
     }
     // Exclude a replacement of the entire spelling.
     return best && best_distance <= limit && best_distance < name.size()
-        ? std::format("; did you mean '{}'?", *best)
-        : std::string();
+        ? std::optional(std::string(*best))
+        : std::nullopt;
+}
+
+auto spelling_suggestion(std::string_view name, std::span<const std::string> candidates) noexcept
+    -> std::string {
+    const auto best = closest_spelling(name, candidates);
+    return best ? std::format("; did you mean '{}'?", *best) : std::string();
 }

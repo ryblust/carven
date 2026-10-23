@@ -3,6 +3,7 @@ module carven:semantic.analysis.failure.solve.impl;
 import :diagnostics.builder;
 import :diagnostics.code;
 import :semantic.analysis.failure;
+import :support.function_ref;
 import :support.invariant;
 import :support.visit;
 import std;
@@ -60,6 +61,132 @@ auto retain_members(std::vector<TypeID>& destination, std::span<const TypeID> re
 
 auto subset(std::span<const TypeID> actual, std::span<const TypeID> allowed) noexcept -> bool {
     return std::ranges::includes(allowed, actual, {}, &TypeID::index, &TypeID::index);
+}
+
+struct FailureMembers final {
+    std::vector<FailureTermID> term_ids;
+    std::vector<std::vector<TypeID>> values;
+    std::vector<std::vector<std::uint32_t>> dependents;
+    bool has_symbolic_sources;
+};
+
+auto fixed_failure_members(
+    ConstructionFailureRef source,
+    const FailureSetStoreBuilder& sets,
+    const GenericFailureAlgebra& algebra
+) noexcept -> std::vector<TypeID> {
+    if (const auto* known = std::get_if<FailureSetID>(&source)) {
+        return sets.copy(*known).members;
+    }
+    return algebra.known_members(std::get<GenericFailureID>(source));
+}
+
+// Roots retain their input order. Only their concrete transfer dependencies enter
+// the worklist; symbolic proof bounds and application completion belong to callers.
+auto solve_failure_members(
+    std::span<const FailureTermID> roots,
+    FunctionRef<FailureTerm(FailureTermID) noexcept> read_term,
+    const FailureSetStoreBuilder& sets,
+    const GenericFailureAlgebra& algebra
+) noexcept -> FailureMembers {
+    auto result = FailureMembers {
+        .term_ids = {},
+        .values = {},
+        .dependents = {},
+        .has_symbolic_sources = false,
+    };
+    auto indices = std::map<FailureTermID, std::uint32_t>();
+    const auto include = [&](FailureTermID id) noexcept {
+        const auto [position, inserted] =
+            indices.try_emplace(id, static_cast<std::uint32_t>(result.term_ids.size()));
+        if (inserted) {
+            result.term_ids.push_back(id);
+            result.values.emplace_back();
+            result.dependents.emplace_back();
+        }
+        return position->second;
+    };
+    for (const auto root : roots) {
+        static_cast<void>(include(root));
+    }
+    auto terms = std::vector<FailureTerm>();
+    for (auto index = 0uz; index < result.term_ids.size(); ++index) {
+        auto term = read_term(result.term_ids[index]);
+        const auto depend = [&](ConstructionFailureRef source) noexcept {
+            if (const auto* input = std::get_if<FailureTermID>(&source)) {
+                const auto predecessor = include(*input);
+                result.dependents[predecessor].push_back(static_cast<std::uint32_t>(index));
+            } else {
+                static_cast<void>(fixed_failure_members(source, sets, algebra));
+                result.has_symbolic_sources =
+                    result.has_symbolic_sources || std::holds_alternative<GenericFailureID>(source);
+            }
+        };
+        for (const auto input : term.inputs) {
+            depend(input);
+        }
+        for (const auto& guarded : term.guarded_inputs) {
+            depend(guarded.gate);
+            depend(guarded.source);
+        }
+        auto initial = term.direct_members;
+        remove_members(initial, term.excluded_members);
+        if (term.retained_members) {
+            retain_members(initial, *term.retained_members);
+        }
+        result.values[index] = std::move(initial);
+        terms.push_back(std::move(term));
+    }
+    for (auto& targets : result.dependents) {
+        std::ranges::sort(targets);
+        targets.erase(std::ranges::unique(targets).begin(), targets.end());
+    }
+    const auto members = [&](ConstructionFailureRef source) noexcept -> std::vector<TypeID> {
+        if (const auto* term = std::get_if<FailureTermID>(&source)) {
+            return result.values[indices.at(*term)];
+        }
+        return fixed_failure_members(source, sets, algebra);
+    };
+    auto worklist = std::deque<std::uint32_t>();
+    auto queued = std::vector<std::uint8_t>(terms.size(), 1u);
+    // Known set inputs contribute without a mutable predecessor. Enter every
+    // transfer once, then revisit only consumers of growing terms.
+    for (auto index = 0uz; index < terms.size(); ++index) {
+        worklist.push_back(static_cast<std::uint32_t>(index));
+    }
+    while (!worklist.empty()) {
+        const auto index = worklist.front();
+        worklist.pop_front();
+        queued[index] = 0u;
+        const auto& term = terms[index];
+        auto next = term.direct_members;
+        for (const auto input : term.inputs) {
+            static_cast<void>(merge_members(next, members(input)));
+        }
+        for (const auto& guarded : term.guarded_inputs) {
+            if (!members(guarded.gate).empty()) {
+                static_cast<void>(merge_members(next, members(guarded.source)));
+            }
+        }
+        remove_members(next, term.excluded_members);
+        if (term.retained_members) {
+            retain_members(next, *term.retained_members);
+        }
+        if (!subset(result.values[index], next)) {
+            invariant_violation("failure fixed-point transfer was not monotone");
+        }
+        if (next == result.values[index]) {
+            continue;
+        }
+        result.values[index] = std::move(next);
+        for (const auto dependent : result.dependents[index]) {
+            if (queued[dependent] == 0u) {
+                queued[dependent] = 1u;
+                worklist.push_back(dependent);
+            }
+        }
+    }
+    return result;
 }
 
 auto sorted_names(
@@ -395,6 +522,25 @@ auto FailureSolution::known_members(ConstructionFailureRef source) const noexcep
     return known_members_by_term[std::get<FailureTermID>(source).index()];
 }
 
+auto FailureConstraintStore::known_members(
+    ConstructionFailureRef source,
+    const FailureSetStoreBuilder& sets
+) const noexcept -> std::vector<TypeID> {
+    if (sets.owner() != program_identity) {
+        invariant_violation("failure member query inputs belong to different semantic programs");
+    }
+    require_source(source);
+    if (const auto* term = std::get_if<FailureTermID>(&source)) {
+        const auto roots = std::array {*term};
+        const auto read = [&](FailureTermID id) noexcept {
+            return term_table.copy(id);
+        };
+        auto result = solve_failure_members(roots, read, sets, *symbolic_graph);
+        return std::move(result.values.front());
+    }
+    return fixed_failure_members(source, sets, *symbolic_graph);
+}
+
 auto solve_failure_constraints(
     FrozenFailureConstraints&& constraints,
     FailureSetStoreBuilder& failure_sets,
@@ -412,99 +558,27 @@ auto solve_failure_constraints(
 
     const auto& terms = constraints.terms();
     auto& algebra = *constraints.symbolic_graph;
-    auto has_symbolic_sources = false;
-    auto values = std::vector<std::vector<TypeID>>(terms.size());
-    auto dependents = std::vector<std::vector<std::uint32_t>>(terms.size());
-    auto term_ids = std::vector<FailureTermID>();
-    term_ids.reserve(terms.size());
-    const auto members = [&](ConstructionFailureRef source) noexcept -> std::vector<TypeID> {
-        if (const auto* known = std::get_if<FailureSetID>(&source)) {
-            return failure_sets.copy(*known).members;
-        }
-        if (const auto* symbolic = std::get_if<GenericFailureID>(&source)) {
-            return algebra.copy(algebra.lower_bound(*symbolic)).concrete_members;
-        }
-        const auto term = std::get<FailureTermID>(source);
-        if (!terms.contains(term)) {
-            invariant_violation("failure source refers to a foreign or invalid term");
-        }
-        return values[term.index()];
+    auto roots = std::vector<FailureTermID>();
+    roots.reserve(terms.size());
+    for (const auto [id, term] : terms.entries()) {
+        roots.push_back(id);
+    }
+    const auto read = [&](FailureTermID id) noexcept {
+        return terms.get(id);
     };
-    for (const auto [term_id, term] : terms.entries()) {
-        term_ids.push_back(term_id);
-        values[term_id.index()] = term.direct_members;
-        const auto depend = [&](ConstructionFailureRef source) noexcept {
-            if (const auto* input = std::get_if<FailureTermID>(&source)) {
-                if (!terms.contains(*input)) {
-                    invariant_violation("failure term depends on a foreign or invalid term");
-                }
-                dependents[input->index()].push_back(term_id.index());
-            } else if (const auto* known = std::get_if<FailureSetID>(&source)) {
-                static_cast<void>(failure_sets.copy(*known));
-            } else {
-                static_cast<void>(algebra.copy(std::get<GenericFailureID>(source)));
-                has_symbolic_sources = true;
+    auto concrete = solve_failure_members(roots, read, failure_sets, algebra);
+    const auto& term_ids = concrete.term_ids;
+    auto& values = concrete.values;
+    const auto& dependents = concrete.dependents;
+    const auto members = [&](ConstructionFailureRef source) noexcept -> std::vector<TypeID> {
+        if (const auto* term = std::get_if<FailureTermID>(&source)) {
+            if (!terms.contains(*term)) {
+                invariant_violation("failure source refers to a foreign or invalid term");
             }
-        };
-        for (const auto input : term.inputs) {
-            depend(input);
+            return values[term->index()];
         }
-        for (const auto& guarded : term.guarded_inputs) {
-            depend(guarded.gate);
-            depend(guarded.source);
-        }
-        remove_members(values[term_id.index()], term.excluded_members);
-        if (term.retained_members.has_value()) {
-            retain_members(values[term_id.index()], *term.retained_members);
-        }
-    }
-    for (auto& targets : dependents) {
-        std::ranges::sort(targets);
-        targets.erase(std::ranges::unique(targets).begin(), targets.end());
-    }
-
-    auto worklist = std::deque<std::uint32_t>();
-    auto queued = std::vector<std::uint8_t>(terms.size(), 0u);
-    // Known set inputs also contribute without a mutable predecessor. Enter
-    // every transfer once, then revisit only consumers of growing terms.
-    for (auto index = 0uz; index < terms.size(); ++index) {
-        queued[index] = 1u;
-        worklist.push_back(static_cast<std::uint32_t>(index));
-    }
-    while (!worklist.empty()) {
-        const auto index = worklist.front();
-        worklist.pop_front();
-        queued[index] = 0u;
-
-        const auto term_id = term_ids[index];
-        const auto& term = terms.get(term_id);
-        auto next = term.direct_members;
-        for (const auto input : term.inputs) {
-            static_cast<void>(merge_members(next, members(input)));
-        }
-        for (const auto& guarded : term.guarded_inputs) {
-            if (!members(guarded.gate).empty()) {
-                static_cast<void>(merge_members(next, members(guarded.source)));
-            }
-        }
-        remove_members(next, term.excluded_members);
-        if (term.retained_members.has_value()) {
-            retain_members(next, *term.retained_members);
-        }
-        if (!subset(values[index], next)) {
-            invariant_violation("failure fixed-point transfer was not monotone");
-        }
-        if (next == values[index]) {
-            continue;
-        }
-        values[index] = std::move(next);
-        for (const auto dependent : dependents[index]) {
-            if (queued[dependent] == 0u) {
-                queued[dependent] = 1u;
-                worklist.push_back(dependent);
-            }
-        }
-    }
+        return fixed_failure_members(source, failure_sets, algebra);
+    };
 
     auto failure_ids = std::vector<FailureSetID>();
     failure_ids.reserve(values.size());
@@ -598,7 +672,7 @@ auto solve_failure_constraints(
     for (const auto id : failure_ids) {
         normalized.emplace_back(id);
     }
-    if (has_symbolic_sources) {
+    if (concrete.has_symbolic_sources) {
         support_rows = solve_rows(BoundMode::Support);
         lower_rows = solve_rows(BoundMode::Lower);
         upper_rows = solve_rows(BoundMode::Upper);

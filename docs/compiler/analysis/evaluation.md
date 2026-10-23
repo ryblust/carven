@@ -16,7 +16,6 @@ Modules in `semantic/evaluation` have these responsibilities:
 | `shape` | Cached compound nesting depth and slot counts for resource accounting |
 | `operation` | Checked scalar operations and retained-input queries |
 | `execution` | Execution entries and call context |
-| `standard` | Standard capability contracts, native dispatch, and execution-value conversion |
 | `executor` | Execution state, with `expr`, `control`, `text`, and `vector` implementation slices |
 | `memory` | Addressable objects and projection resolution |
 | `limits` | Resource bounds |
@@ -66,9 +65,9 @@ demands during acquisition. Native Read preserves exact storage borrows; Carven
 Read follows the type's snapshot rules. Value initialization and captures retain
 their copying and transfer rules.
 
-`semantic.semir.constant_access` defines `ConstantValueReader` queries and their
+`semantic.semir.values` defines `ConstantValueReader` queries and their
 execution-specific extension, `ExecutionValueAccess`. `ProgramDraft` supplies
-construction facts; `PublishedConstantValues` reads a sealed program. Execution
+construction facts; `ProgramValues` reads a sealed program. Execution
 borrows these interfaces through const references. `analysis.constant.freeze`
 retains completed execution results through a single `ProgramDraft`, which supplies
 both type queries and canonical interning. Retained IDs belong to that program.
@@ -129,7 +128,7 @@ Static execution consumes completed structured function bodies after ordinary
 contextual typing, name binding, operation selection and result completion.
 Ordinary functions remain runtime callable but cannot be called from static
 roots. Each `const fn` definition receives a local capability check over
-its signature and semantically reachable body paths. Named callees on those
+its semantically reachable body operations. Named callees on those
 paths must also be declared `const fn`. Known closure bodies are checked recursively;
 unproven callable targets fail admission.
 The body producer records statement, tail, and expression-operation reachability
@@ -262,8 +261,8 @@ capability; explicit static roots perform host effects when they execute.
 Ordinary runtime calls remain required work.
 
 Standard Craft providers own filesystem, process, and channel operations.
-`semantic.evaluation.standard` dispatches their typed native contracts and adapts
-results to execution values. Builtin clock and input operations use
+The CLI selects typed bindings from `crafts/carven/std/providers.hpp` and passes
+them to the driver's internal native execution support. Builtin clock and input operations use
 `support.clock` and `support.input`; the latter owns the process input cursor.
 Source wrappers construct public results and typed failures.
 
@@ -285,8 +284,9 @@ for host input or its nearest timer.
 Tasks share one memory domain and cumulative resource budget. An execution halt or
 failed semantic dependency stops the whole domain. Exhaustion can stop source
 cleanup and further output; already written output remains observable.
-Arbitrary native C++ provider bodies remain outside semantic execution capability.
-Host operations use their supported semantic contracts. Await is admitted
+Native C++ implementations are admitted through typed host contracts, never by
+loading arbitrary source or libraries. Missing providers and mismatched contracts
+are diagnosed only when the operation is reached. Await is admitted
 in static roots, `const` blocks, and static tests as well as async function and
 async test bodies. A synchronous const function's ordinary body cannot await.
 Runtime realization consumes the same published body and emits its C++ coroutine
@@ -424,8 +424,14 @@ without changing element types, nominal identities, or field types. Struct field
 use declaration order. Publication verifies the type, arity, and exact child
 types; compound constants reference already interned children. Freezing checks
 the completed value tree, including only the selected enum payload. Definition
-admission for `const fn` separately checks its declared types and reachable
-operations across possible inputs.
+admission for `const fn` checks reachable operations across possible inputs.
+Native carriers use the existing execution-object representation; their presence
+in a signature or aggregate does not require a provider. Const admission checks
+source operation structure and explicit const callees, including native declarations.
+Native requirements already reside in SemIR; the executing host resolves them
+against typed bindings, with no second requirement list. `SemDefault` uses
+the shared default-initialization classification to reject native construction,
+including through aggregate fields, while allowing empty native containers.
 `Vector<u8>` and detached byte slices own contiguous Runtime byte storage.
 Element reads produce a scalar observation; writes update the byte in place.
 Borrowed slices retain owner coordinates and an extent. Other vectors own typed
@@ -631,27 +637,38 @@ descriptors are retained in the binding and shared by signature matching and
 recursive value conversion, including native elements inside source containers.
 These bindings are independent
 of the calling module and its expressions. Invocations retain their argument
-storage, use hosting value conversion, and drive asynchronous work through the
+storage, use shared native value conversion, and drive asynchronous work through the
 native execution root. Missing or ambiguous bindings report execution errors. This is explicit
 registration, not C++ name lookup: templates, default arguments, implicit native
 conversions, and arbitrary header expressions are not inferred at runtime.
-`semantic.evaluation.standard` supplies the standard native operations to both
-static and interpreted execution. One typed catalog describes their functions,
-members, conversions, and effects. Capability validation and execution use that
-catalog with `ExecutionValueAccess`, over either construction or published facts.
-Construction derives known by-value result types from these native signatures:
-scalars, owned strings, vectors, named native carriers, and cold operations.
-Field and reference results retain their delegated C++ queries. Publication
-checks the selected result against the same signature facts.
-The adapter converts execution values directly to native parameters and converts
-native results back into execution values. Asynchronous activations retain their
-arguments and advance through `ExecutionExternalOperation`.
+`crafts/carven/std/providers.hpp` provides one native function inventory. CLI and
+workspace tools derive internal bindings from it; the SDK's optional
+`host_standard_services()` factory derives public `HostServiceBinding` values.
+Hosting sessions use only their supplied bindings. Typed contracts derive from
+the selected C++ functions, members, and conversions. Standard and user operations
+retain the same source access, failure, and effect requirements.
 
-Execution contexts control standard host effects. Synchronous effects require
+Core analysis preserves delegated C++ queries and source-written result contracts;
+it never consults installed providers to infer a different source type. Native
+asynchronous calls therefore supply an explicit `Operation` completion type when
+needed by source execution. Publication checks unresolved queries against their
+source operations. Actual execution and generated C++ check explicit contracts
+against the selected implementation. Published artifacts retain no host callback
+or provider directory.
+
+Core execution receives one borrowed native-call callback.
+`semantic.evaluation.native` supplies internal typed calls over `ExecutionValue`
+and `ExecutionValueAccess`; it does not use public SDK values or contexts.
+`tools/hosting/src/` adapts public host values and services to core execution.
+Callers retain their selected bindings through execution and cleanup.
+
+Execution contexts control declared native host effects. Synchronous effects require
 permission before invocation; cold asynchronous work requires it when execution
 starts. Static effects mark the analysis uncacheable. Native values remain local
-to execution and cannot be frozen. Public hosting bindings supply additional
-user operations through their own value and contract adapters.
+to execution and cannot be frozen. Standard and user operations use the same value and contract adapters. Each binding explicitly
+declares static availability and whether it performs environment effects. A runtime
+registration alone grants no static permission. Session load and replacement borrow
+the session's bindings for their static roots, and publish only after analysis succeeds.
 
 Semantic execution calls native providers linked into the compiler process.
 Collected C++ inputs supply generated programs; their presence does not load
@@ -678,13 +695,13 @@ and diagnostic presentation.
 
 ### Hosted execution
 
-The C++23 headers under `include/carven/hosting/` expose program, function, and
-session contracts. `entry.hpp`, `operation.hpp`, `method.hpp`, and `service.hpp`
-own typed native adapters; `call.hpp` supplies signatures and result delivery.
-`arguments.hpp` decodes owning arguments. Ordinary C++ operations retain opaque
+The C++23 headers under `tools/hosting/include/carven/hosting/` expose program,
+function, session, value, and binding contracts. `entry.hpp`, `operation.hpp`,
+`method.hpp`, and `service.hpp` provide typed adapters. `call.hpp` supplies signatures
+and result delivery, and `arguments.hpp` decodes owning arguments. Ordinary C++ operations retain opaque
 receivers and borrowed argument backing in their invocation storage.
-`request.hpp` owns typed asynchronous completion mailboxes. Compiler modules
-implement semantic checking and execution behind this header boundary.
+`request.hpp` owns typed asynchronous completion mailboxes. `tools/hosting/src/`
+implements the public API and its adaptation to core execution.
 Private `hosting.program` state owns published programs and retained function selections.
 `HostProgram::load(entry_module, sources, output, dependencies)` analyzes every
 explicit `HostSource` module. The optional source resolver supplies missing
@@ -698,16 +715,19 @@ declarations. Bare and exported functions are admitted;
 private functions and imported bindings cannot be selected as hosted entries.
 Source imports still obey ordinary craft visibility. The single-source overload
 uses the same path. Callers own filesystem access and available source inventories.
-Loading permits static output and checks standard capability contracts, but
-disables host effects. User service registrations apply to subsequent calls.
+`HostProgram::load` permits static output but supplies no native providers. `HostSession::load` and `reload` also provide the session's
+explicitly enabled static bindings and effect policy. The native invocation scope
+covers analysis, asynchronous advancement, and cleanup. A provider's declared
+static capability and effects cover its whole native implementation, including
+services it calls; these declarations are host contracts, not a C++ sandbox.
 
 `HostFunction::call` accepts synchronous source functions and drives them
 through a temporary `HostSession`. It uses the same argument admission,
 execution activation, result conversion, and cleanup as long-lived sessions.
 Its options supply output, execution limits, native type mappings, and
-`allow_host_effects`. This flag defaults to false and controls standard host
-effects in interpreted calls, including file access, processes, input, and time.
-Registered user services and compiled native entries execute their own contracts.
+`allow_host_effects`. This flag defaults to false and controls effects declared
+by native bindings as environmental, as well as builtin input and time.
+Providers and compiled native entries satisfy their declared effect contracts.
 Native service registrations belong to `HostSessionOptions::services`.
 Function handles retain their original program. Each call has a fresh execution
 domain and budget. Callers supply execution options explicitly;
@@ -849,8 +869,8 @@ call site.
 
 The C++20 contracts live under `crafts/carven/runtime/hosting/`. The C++23 hosting
 headers include their object and service contracts directly and reuse String,
-Outcome, Completion, Root, and EventSource. Compiler partitions include these
-headers in global module fragments.
+Outcome, Completion, Root, and EventSource. The core imports these shared definitions through `semantic.evaluation.runtime`;
+SDK implementation partitions include their public headers in global module fragments.
 Binding factories expose opaque `HostServiceBinding` registrations.
 A native execution slice borrows the session's registration span
 through one internal scope. Typed calls resolve their process-local contract key
@@ -865,8 +885,11 @@ the first diagnostic and drains outstanding requests before returning `HostError
 Entry admission rejects invalid arguments before execution. Calling a service
 without an active invocation is a native protocol violation and terminates.
 
-The C++20 `execution::Root` owns a native driver, task context, and root frame.
-Its nonblocking advance polls once and dispatches at most one continuation;
+The C++20 `execution::Root` owns or borrows a native driver and owns its task context
+and root frame. A hosting environment shares one driver across its native roots.
+Event-source attachments to that driver are reference counted. Nonblocking advance
+polls once and dispatches at most one continuation belonging to that root or its
+children, preserving each invocation's host scope even during source replacement;
 its owner finishes it before destruction. The task request distinguishes
 cancellation from invocation stopping. A stopped child marks the root and wakes
 cleanup through the existing cancellation registry. Generated resume boundaries
@@ -900,8 +923,8 @@ cleared on completion. Dropping a handle does not cancel session-owned work.
 Closing a session first closes its event mailbox and revokes subscriptions, then
 cancels and drains active calls before releasing registrations. Fatal exhaustion
 keeps the evaluator's ordinary abandoned-cleanup behavior. Completed effects remain
-observable. Interpreted standard host effects follow the call's
-`allow_host_effects` policy; registered user services follow their binding contracts.
+observable. Native bindings marked with environment effects follow the call's
+`allow_host_effects` policy in static and interpreted execution.
 
 `Object` registers an externally owned native instance at a stable address.
 `reference()` returns a weak identity; the host invalidates it before moving or

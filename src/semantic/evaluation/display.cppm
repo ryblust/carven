@@ -2,7 +2,7 @@ module carven:semantic.evaluation.display;
 
 import :semantic.evaluation.execution;
 import :semantic.evaluation.value;
-import :semantic.semir.constant_access;
+import :semantic.semir.values;
 import std;
 
 auto display_execution_value(

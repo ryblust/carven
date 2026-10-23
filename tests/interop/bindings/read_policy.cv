@@ -122,7 +122,9 @@ test "Native Read borrows nontrivial storage across later arguments" {
     check(move_only_read(holder.value, change_move_only(&holder.value)) == 9);
     let other: MoveOnly = MoveOnly { 11 };
     var selected: ptr<MoveOnly> = addressof(holder.value);
-    if selected == nullptr { fail("missing Read source"); }
+    if selected == nullptr {
+        fail("missing Read source");
+    }
     check(move_only_read(*selected, redirect_read(&selected, addressof(other))) == 9);
     check(selected == addressof(other));
 }

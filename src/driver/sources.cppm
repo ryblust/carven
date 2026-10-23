@@ -15,7 +15,9 @@ struct SourceInput final {
 };
 
 struct CommandSources final {
+    std::filesystem::path project_root;
     std::filesystem::path crafts;
+    std::vector<std::filesystem::path> library_roots;
     // Available inputs before analysis; loaded dependencies afterwards.
     std::vector<SourceInput> carven;
     std::vector<CanonicalModulePath> standard_modules;
@@ -25,8 +27,8 @@ struct CommandSources final {
     std::vector<CanonicalModulePath> external_modules;
 };
 
-// Explicit paths select the complete owned source set. Installed Crafts supply
-// dependencies and retain their root-relative identity when explicitly selected.
+// Explicit paths select roots. Installed and project Crafts supply dependency
+// candidates; only the selected source closure participates in analysis.
 auto collect_command_sources(
     std::span<const std::string_view> inputs,
     TimingOutput timings
@@ -36,16 +38,24 @@ auto collect_command_sources(
 auto collect_toolchain_sources(
     const std::filesystem::path& crafts,
     std::span<const std::string_view> inputs,
-    TimingOutput timings
+    TimingOutput timings,
+    const std::filesystem::path& project_root = "."
 ) noexcept -> std::expected<CommandSources, std::string>;
 
 // Checked dependencies already supply installed definitions.
 auto collect_project_sources(
     std::span<const std::string_view> inputs,
-    TimingOutput timings
+    TimingOutput timings,
+    const std::filesystem::path& project_root = "."
 ) noexcept -> std::expected<CommandSources, std::string>;
 
-// Installed sources keep a compiler-defined native identity independently of
-// consumer paths, test modes, and native compilation settings.
-auto standard_source_library(const CommandSources& sources) noexcept
-    -> std::optional<SourceLibrary>;
+// Locate an ordinary project dependency by canonical module identity. The root
+// is the canonical project directory already established by source collection.
+auto locate_project_source(
+    const CanonicalModulePath& module_path,
+    const std::filesystem::path& project_root
+) noexcept -> std::optional<SourceInput>;
+
+// Each Craft keeps one native identity independently of consumer paths and test
+// modes. Retained dependencies keep their external implementation ownership.
+auto source_libraries(const CommandSources& sources) noexcept -> std::vector<SourceLibrary>;

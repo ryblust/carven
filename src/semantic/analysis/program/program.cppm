@@ -9,20 +9,30 @@ import :semantic.analysis.generics.snapshot;
 import :semantic.analysis.source.builder;
 import :semantic.evaluation.execution;
 import :semantic.evaluation.output;
-import :semantic.semir.constant_access;
 import :semantic.semir.generic;
 import :semantic.semir.program;
 import :semantic.semir.stage;
 import :semantic.semir.structured;
 import :semantic.semir.type;
+import :semantic.semir.values;
 import :source.manager;
 import :source.provenance;
+import :support.function_ref;
 import :support.timing;
 import std;
 
 class CheckedDefinitions;
 class AnalysisCatalog;
 class SemanticArtifactAccess;
+class ProgramDraft;
+
+using AnalysisNativeCall = FunctionRef<std::expected<ExecutionHostResult, ExecutionCallFailure>(
+    ProgramDraft&,
+    SemanticExecutionContext&,
+    ExecutionCallSite,
+    std::span<ExecutionValue>,
+    ProgramOriginID
+) noexcept>;
 
 class BodyReservation final {
 public:
@@ -83,7 +93,8 @@ public:
         ExecutionOutput output = {},
         SourceAnalysisBuilder* source_analysis = nullptr,
         TimingOutput timings = {},
-        CheckedDefinitions* seed = nullptr
+        CheckedDefinitions* seed = nullptr,
+        AnalysisNativeCall native_call = {}
     ) noexcept -> ProgramDraft;
 
     ProgramDraft(const ProgramDraft&) = delete;
@@ -95,6 +106,7 @@ public:
     auto source_analysis() const noexcept -> SourceAnalysisBuilder*;
     auto timings() const noexcept -> TimingOutput;
     auto host_effects() const noexcept -> HostEffects;
+    auto native_call() const noexcept -> AnalysisNativeCall;
     auto provenance_identity() const noexcept -> ProvenanceIdentity;
     auto diagnostics() const noexcept -> AnalysisDiagnostics;
     auto write_output(ExecutionOutputStream stream, std::string_view bytes) const noexcept -> void;
@@ -143,6 +155,13 @@ public:
     auto read_borrows_storage(ConstructionTypeRef type) const noexcept -> bool override;
     auto intern_constant(ConstantFact fact) noexcept -> ConstantID;
     auto display_names(TypeID type) const noexcept -> ExecutionDisplayNames override;
+    auto module_path(ModuleID module_id) const noexcept -> std::string override;
+
+    auto struct_declaration_copy(StructID structure) const noexcept
+        -> std::optional<StructDeclaration> override;
+
+    auto enum_case_declaration_copy(EnumCaseID enum_case) const noexcept
+        -> std::optional<EnumCaseDeclaration> override;
 
     auto struct_field_types(StructID structure) const noexcept
         -> std::optional<std::vector<TypeID>> override;
@@ -198,10 +217,10 @@ public:
     auto validate_vector_elements() noexcept -> AnalysisResult<void>;
 
     auto generic_nominal_instance_copy(NominalDeclarationRef declaration) const noexcept
-        -> std::optional<GenericNominalInstance>;
+        -> std::optional<GenericNominalInstance> override;
 
     auto generic_declaration_contract_copy(GenericDeclarationID definition) const noexcept
-        -> GenericDeclarationContract;
+        -> GenericDeclarationContract override;
 
     auto generic_parameter_contract_copy(GenericDeclarationID definition) const noexcept
         -> GenericDeclarationContract;
@@ -373,7 +392,7 @@ public:
     auto construction_struct_declaration_copy(StructID id) const noexcept
         -> ConstructionStructDeclaration;
 
-    auto enum_declaration_copy(EnumID id) const noexcept -> EnumDeclaration;
+    auto enum_declaration_copy(EnumID id) const noexcept -> EnumDeclaration override;
 
     auto equality_support(std::span<const ConstructionTypeRef> roots) const noexcept
         -> std::vector<bool>;
@@ -519,7 +538,8 @@ private:
         SourceAnalysisBuilder* source_analysis,
         TimingOutput timings,
         HostEffects host_effects,
-        CheckedDefinitions* seed
+        CheckedDefinitions* seed,
+        AnalysisNativeCall native_call
     ) noexcept;
 
     auto resolve() && noexcept -> AnalysisResult<ResolvedAnalysisProgram>;
@@ -565,6 +585,7 @@ private:
     SourceAnalysisBuilder* source_observer;
     TimingOutput analysis_timings;
     HostEffects execution_host_effects;
+    AnalysisNativeCall execution_native_call;
     State state;
     std::vector<std::optional<SyntaxTree>> syntax_by_module;
     ResolvedModuleImportGraph resolved_import_graph;

@@ -17,7 +17,7 @@ import std;
 namespace {
 
 const TestSuite suite([] static noexcept {
-    "Compiler diagnostics: unused imports are tracked per import declaration"_test =
+    "Compiler diagnostics: unused selections and whole imports retain their source"_test =
         [] static noexcept {
             auto sources = SourceManager();
             const auto used_provider = *sources.append_virtual(
@@ -54,25 +54,26 @@ const TestSuite suite([] static noexcept {
                 TargetPlanningRequest {
                     .test_mode = TestGenerationMode::None,
                     .linkage_domain = LinkageDomain::explicit_value("test:imports").value(),
-                    .library = std::nullopt,
+                    .libraries = {},
                 }
             );
 
             if (!expect(result.has_value())) {
                 return;
             }
-            const auto* unused =
-                find_diagnostic(result->diagnostics, DiagnosticCode::LintUnusedImport);
-            if (!expect(unused != nullptr)) {
-                return;
+            auto unused = std::set<std::string_view>();
+            for (const auto& diagnostic : result->diagnostics) {
+                if (diagnostic.finding.code != DiagnosticCode::LintUnusedImport) {
+                    continue;
+                }
+                require(diagnostic.attachment.primary.has_value());
+                const auto span = diagnostic.attachment.primary->span;
+                expect(span.source_id == app);
+                unused.insert(sources.slice(span));
             }
-            if (!expect(unused->attachment.primary.has_value())) {
-                return;
-            }
-            expect((unused->attachment.primary->span.source_id == app));
             expect_equal(
-                sources.slice(unused->attachment.primary->span),
-                std::string_view("import unused_provider using spare;")
+                unused,
+                std::set<std::string_view> {"selected_peer", "import unused_provider using spare;"}
             );
         };
 
@@ -110,7 +111,7 @@ const TestSuite suite([] static noexcept {
                 TargetPlanningRequest {
                     .test_mode = TestGenerationMode::None,
                     .linkage_domain = LinkageDomain::explicit_value("test:imports").value(),
-                    .library = std::nullopt,
+                    .libraries = {},
                 }
             );
 

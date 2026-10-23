@@ -13,7 +13,7 @@ namespace("benchmarks::incremental", function ()
         set_languages("c++20")
         set_optimize("none")
         set_symbols("debug")
-        add_rules("@carven/carven", {timings = true})
+        add_rules("carven")
         add_files(path.join(root, "*.cv"))
         on_load(function (target)
             if not os.isdir(root) then

@@ -16,8 +16,7 @@ private fn verify_block_rejections(prefixes: [usize]) -> bool {
                 validate_utf8(data.slice(0, prefix + item.length))?;
             } catch {
                 UTF8Error(error) => {
-                    rejected = error.kind
-                        == item.error.kind
+                    rejected = error.kind == item.error.kind
                         && error.offset == prefix + item.error.offset
                         && error.sequence_start == prefix + item.error.sequence_start;
                 },

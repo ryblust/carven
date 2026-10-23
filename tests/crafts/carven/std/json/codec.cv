@@ -107,7 +107,9 @@ private fn same_syntax_error(text: str) -> bool {
             invalid = true;
         },
     }
-    if invalid == false { return false; }
+    if invalid == false {
+        return false;
+    }
     try {
         let _ = JSONValue::parse(text)?;
     } catch {
@@ -123,15 +125,17 @@ test "JSON parse: events build independent owners and preserve nested value kind
         input.clear();
         check(document.kind() == .Object);
         check(document.length()? == 2);
-        check(document.key_at(0)? == "k" && document.key_at(1)? == "empty");
-        let values = document.member_value_at(0)?;
+        check(
+            document.members()?[0].0.as_str() == "k" && document.members()?[1].0.as_str() == "empty"
+        );
+        let values = document.members()?[0].1;
         check(values.length()? == 3);
         check(values.at(0)?.kind() == .Null);
         check(values.at(1)?.as_bool()?);
         let object = values.at(2)?;
         check(object.get("s")?.as_str()? == "owned");
         check(object.get("n")?.number_text()? == "123");
-        let empty = document.member_value_at(1)?;
+        let empty = document.members()?[1].1;
         check(empty.get("")?.length()? == 0);
     } catch {
         JSONError(error) => fail(f"parse rejected valid input at byte {error.offset}"),

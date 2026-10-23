@@ -17,8 +17,7 @@ const async fn verify_utf_errors() throw IOError {
             false
         } catch {
             IOError(error) => match error {
-                .InvalidUTF8(detail) => detail.kind
-                    == kinds[index]
+                .InvalidUTF8(detail) => detail.kind == kinds[index]
                     && detail.offset == offsets[index]
                     && detail.sequence_start == 1,
                 _ => false

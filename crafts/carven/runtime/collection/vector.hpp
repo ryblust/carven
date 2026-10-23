@@ -4,6 +4,7 @@
 #include <carven/runtime/collection/slice.hpp>
 
 #include <cstddef>
+#include <cstring>
 #include <limits>
 #include <memory>
 #include <type_traits>
@@ -150,7 +151,22 @@ public:
 
     // The source must not borrow this vector's storage.
     constexpr auto append(Slice<Element> values) noexcept -> void {
+        if (values.empty()) {
+            return;
+        }
         grow(values.size());
+        if constexpr (std::is_trivially_copyable_v<Element>
+                      && std::is_trivially_copy_constructible_v<Element>) {
+            if (!std::is_constant_evaluated()) {
+                std::memcpy(
+                    writable() + tagged_length,
+                    values.data(),
+                    values.size() * sizeof(Element)
+                );
+                tagged_length += values.size();
+                return;
+            }
+        }
         for (const auto& value : values) {
             std::construct_at(writable() + tagged_length, value);
             ++tagged_length;
@@ -158,6 +174,12 @@ public:
     }
 
     constexpr auto clear() noexcept -> void {
+        if constexpr (std::is_trivially_destructible_v<Element>) {
+            if (!std::is_constant_evaluated()) {
+                tagged_length = 0;
+                return;
+            }
+        }
         while (tagged_length != 0) {
             --tagged_length;
             std::destroy_at(writable() + tagged_length);

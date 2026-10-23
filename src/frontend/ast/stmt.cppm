@@ -134,6 +134,8 @@ struct ASTBlock final {
 
 struct ASTBranchBlock final {
     Span span;
+    // Present for a statement-form if branch containing one simple statement.
+    std::optional<Span> arrow_span;
     std::vector<ASTStmtID> statements;
     std::optional<ASTExprID> result;
 };

@@ -4,7 +4,7 @@ target("carven-test-fixtures")
     set_default(false)
     set_group("tests/internal")
     set_kind("moduleonly")
-    add_deps("carven-test-support")
+    add_deps("carven-test-support", "carven-hosting")
     add_files(path.join(internal_dir, "**.cppm"))
 target_end()
 
@@ -16,9 +16,12 @@ target("carven-test-internal")
     set_default(false)
     set_group("tests/internal")
     set_kind("binary")
-    add_deps("carven-modules", "carven-test-fixtures", "carven-test-runner")
-    add_includedirs(path.join(internal_dir, "../../crafts"))
+    add_deps("carven-test-fixtures", "carven-test-runner")
     add_files(path.join(internal_dir, "**.cpp"))
+    add_files(path.join(os.projectdir(), "crafts/carven/std/net/native.cpp"))
+    if is_plat("windows", "mingw") then
+        add_syslinks("ws2_32")
+    end
     local shards = 6
     for index = 1, shards do
         add_tests("shard-" .. index, {

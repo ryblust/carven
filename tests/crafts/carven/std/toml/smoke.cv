@@ -1,8 +1,8 @@
-import std::toml using { parse, parse_bytes, validate, TOMLError, TOMLValueError, TOMLValue }
+import std::toml using { validate, TOMLError, TOMLValueError, TOMLValue }
 import std::utf using UTF8Error;
 
 private const fn copied_child() -> TOMLValue throw TOMLError + TOMLValueError {
-    let document = parse(
+    let document = TOMLValue::parse(
         "title='demo'\n[[items]]\nname='first'\nvalues=[1,2]\n[[items]]\nname='second'\nvalues=[]"
     )?;
     let members = document.members()?;
@@ -16,7 +16,9 @@ private const fn copied_child() -> TOMLValue throw TOMLError + TOMLValueError {
             check(items.length() == 2);
             for item in items {
                 for (field, child) in item.members()? {
-                    if field == "name" { names.append(child.as_str()?); }
+                    if field == "name" {
+                        names.append(child.as_str()?);
+                    }
                     if field == "values" {
                         for number in child.elements()? {
                             total += number.as_i64()?;
@@ -27,23 +29,19 @@ private const fn copied_child() -> TOMLValue throw TOMLError + TOMLValueError {
         }
     }
     check(names.as_str() == "firstsecond" && total == 3);
-    check(parse("")?.members()?.is_empty());
-    check(
-        try {
-            let _ = document.elements()?;
-            false
-        } catch {
-            TOMLValueError(error) => error == .WrongKind,
-        }
-    );
-    check(
-        try {
-            let _ = members[0].1.members()?;
-            false
-        } catch {
-            TOMLValueError(error) => error == .WrongKind,
-        }
-    );
+    check(TOMLValue::parse("")?.members()?.is_empty());
+    check(try {
+        let _ = document.elements()?;
+        false
+    } catch {
+        TOMLValueError(error) => error == .WrongKind,
+    });
+    check(try {
+        let _ = members[0].1.members()?;
+        false
+    } catch {
+        TOMLValueError(error) => error == .WrongKind,
+    });
     return members[1].1;
 }
 
@@ -67,10 +65,10 @@ test "TOML: traversal borrows nested collections" {
 
 const test "TOML: static parsing owns nested values" {
     try {
-        let document = parse("project.name=\"\\u0041\\U0001F600\"\ndate=2024-02-29")?;
+        let document = TOMLValue::parse("project.name=\"\\u0041\\U0001F600\"\ndate=2024-02-29")?;
         check(document.get("project")?.get("name")?.as_str()? == "A😀");
         check(document.get("date")?.kind() == .LocalDate);
-        let strings = parse(
+        let strings = TOMLValue::parse(
             "basic=\"line\\ntext\"\nliteral='line\\ntext'\nbasic_multi=\"\"\"\r\none\\\r\n  two\r\nthree\"\"\"\nliteral_multi='''\r\none\\\r\ntwo'''"
         )?;
         check(strings.get("basic")?.as_str()? == "line\ntext");
@@ -85,11 +83,11 @@ const test "TOML: static parsing owns nested values" {
 
 test "TOML: project configuration and ordinary values" {
     try {
-        let document = parse(
+        let document = TOMLValue::parse(
             "# minimal project\n[project]\nname='hello'\nversion='0.1.0'\n[options]\nenabled=true\ncount=0x2a\nratio=1_2.5e+1\nitems=[1, 'two', false,]\npoint={x=1, nested.y=2}\ndate=2000-02-29\ntime=07:32:00.123\nstamp=1979-05-27 07:32:00Z"
         )?;
         let project = document.get("project")?;
-        check(project.length()? == 2 && project.key_at(0)? == "name");
+        check(project.length()? == 2 && project.members()?[0].0.as_str() == "name");
         check(project.get("name")?.as_str()? == "hello");
         check(project.get("version")?.as_str()? == "0.1.0");
         check(project.has("name")? && !project.has("missing")?);
@@ -103,8 +101,8 @@ test "TOML: project configuration and ordinary values" {
         check(options.get("time")?.kind() == .LocalTime);
         check(options.get("stamp")?.kind() == .OffsetDateTime);
         check(options.get("stamp")?.date_time_text()? == "1979-05-27 07:32:00Z");
-        check(parse_bytes("x=true".bytes)?.get("x")?.as_bool()?);
-        check(parse("")?.length()? == 0);
+        check(TOMLValue::parse_bytes("x=true".bytes)?.get("x")?.as_bool()?);
+        check(TOMLValue::parse("")?.length()? == 0);
     } catch {
         TOMLError(error) => fail(f"configuration failed at {error.offset}"),
         TOMLValueError(_) => fail("parsed fields must have their expected values"),
@@ -114,7 +112,7 @@ test "TOML: project configuration and ordinary values" {
 
 test "TOML: strings namespaces and table arrays" {
     try {
-        let document = parse(
+        let document = TOMLValue::parse(
             "\"\"=''\n'quoted.key'='C:\\tools'\ntext=\"\\u4F60\\U0001F600\"\nmulti=\"\"\"\r\none\\\r\n  two\r\nthree\"\"\"\nfruit.apple.color='red'\n[[items]]\nname='first'\n[items.detail]\nvalue=1\n[[items]]\nname='second'"
         )?;
         check(document.get("")?.as_str()? == "");
@@ -135,7 +133,7 @@ test "TOML: strings namespaces and table arrays" {
             long.push('a');
         }
         long.push('\'');
-        check(parse(long)?.get("key")?.as_str()?.byte_length() == 73);
+        check(TOMLValue::parse(long)?.get("key")?.as_str()?.byte_length() == 73);
     } catch {
         TOMLError(error) => fail(f"valid syntax failed at {error.offset}"),
         TOMLValueError(_) => fail("nested values must retain their owners"),
@@ -144,17 +142,17 @@ test "TOML: strings namespaces and table arrays" {
 
 test "TOML: invalid input and field queries report typed failures" {
     for text in [
-            "x=1\nx=2",
-            "x=01",
-            "x=1__0",
-            "x=9223372036854775808",
-            "x='unfinished",
-            "x=\"\\uD800\"",
-            "x=1900-02-29",
-            "x={a=1,}",
-            "x={a=1}\nx.b=2",
-            "[a]\n[a]"
-        ] {
+        "x=1\nx=2",
+        "x=01",
+        "x=1__0",
+        "x=9223372036854775808",
+        "x='unfinished",
+        "x=\"\\uD800\"",
+        "x=1900-02-29",
+        "x={a=1,}",
+        "x={a=1}\nx.b=2",
+        "[a]\n[a]"
+    ] {
         let rejected = try {
             validate(text)?;
             false
@@ -164,41 +162,33 @@ test "TOML: invalid input and field queries report typed failures" {
         check(rejected, text);
     }
     try {
-        let document = parse("x=1")?;
-        check(
-            try {
-                let _ = document.get("missing")?;
-                false
-            } catch {
-                TOMLValueError(error) => error == .MissingKey,
-            }
-        );
-        check(
-            try {
-                let _ = document.get("x")?.as_bool()?;
-                false
-            } catch {
-                TOMLValueError(error) => error == .WrongKind,
-            }
-        );
+        let document = TOMLValue::parse("x=1")?;
+        check(try {
+            let _ = document.get("missing")?;
+            false
+        } catch {
+            TOMLValueError(error) => error == .MissingKey,
+        });
+        check(try {
+            let _ = document.get("x")?.as_bool()?;
+            false
+        } catch {
+            TOMLValueError(error) => error == .WrongKind,
+        });
     } catch {
         TOMLError(_) => fail("valid input must parse"),
     }
-    check(
-        try {
-            validate("x=")?;
-            false
-        } catch {
-            TOMLError(error) => error.kind == .UnexpectedEnd && error.offset == 2,
-        }
-    );
-    check(
-        try {
-            let _ = parse_bytes([0xffu8])?;
-            false
-        } catch {
-            UTF8Error(error) => error.offset == 0,
-            TOMLError(_) => false,
-        }
-    );
+    check(try {
+        validate("x=")?;
+        false
+    } catch {
+        TOMLError(error) => error.kind == .UnexpectedEnd && error.offset == 2,
+    });
+    check(try {
+        let _ = TOMLValue::parse_bytes([0xffu8])?;
+        false
+    } catch {
+        UTF8Error(error) => error.offset == 0,
+        TOMLError(_) => false,
+    });
 }

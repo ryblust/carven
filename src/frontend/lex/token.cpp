@@ -88,6 +88,17 @@ auto TokenBuffer::replace_interpolation_text(std::size_t token_index, std::strin
     literal_values[index] = InterpolationTextValue {.bytes = std::move(bytes)};
 }
 
+auto TokenBuffer::truncate(std::size_t count) noexcept -> void {
+    if (count > token_storage.size()) {
+        invariant_violation("token truncation exceeds its retained prefix");
+    }
+    const auto first = std::ranges::lower_bound(literal_token_indices, count);
+    const auto values = first - literal_token_indices.begin();
+    literal_values.erase(literal_values.begin() + values, literal_values.end());
+    literal_token_indices.erase(first, literal_token_indices.end());
+    token_storage.erase(token_storage.begin() + count, token_storage.end());
+}
+
 auto TokenBuffer::reserve_tokens(std::size_t count) noexcept -> void {
     token_storage.reserve(count);
 }

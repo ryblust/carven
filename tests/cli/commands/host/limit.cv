@@ -1,4 +1,4 @@
-import std::io using { IOError, ReadResult }
+import std::io using IOError;
 
 const {
     let input = stdin().with_line_limit(2);
@@ -14,11 +14,9 @@ const {
         }
     }
     assert(rejected);
-    assert(
-        match await input.with_line_limit(8).read_line()? {
-            .Data(text) => text == "abcd",
-            .End => false
-        }
-    );
+    assert(match await input.with_line_limit(8).read_line()? {
+        .Data(text) => text == "abcd",
+        .End => false
+    });
     println("limit");
 }

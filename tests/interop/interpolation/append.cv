@@ -50,12 +50,8 @@ test "Formatted append interop: String reads follow all holes and own appended b
 test "Formatted append interop: known bytes retain backing and hole effects" {
     ::formatted_append_probe::reset();
     var destination: String = "prefix:";
-    destination.append_format(
-        f"{(::formatted_append_probe::make(42).value == 42) && false}/{(
-                ::formatted_append_probe::record() == 1
-            )
-                || true}"
-    );
+    destination.append_format(f"{(::formatted_append_probe::make(42).value == 42)
+            && false}/{(::formatted_append_probe::record() == 1) || true}");
     check(destination == "prefix:false/true");
     check(::formatted_append_probe::events() == 23);
     check(::formatted_append_probe::observed() == 1);

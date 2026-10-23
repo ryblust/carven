@@ -2,9 +2,9 @@ module carven:source.provenance.impl;
 
 import :source.document;
 import :source.manager;
+import :source.provenance;
 import :source.provenance.ids;
 import :source.provenance.verify;
-import :source.provenance;
 import :support.invariant;
 import :support.visit;
 import std;

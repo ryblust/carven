@@ -44,8 +44,17 @@ auto builtin_result_type(BuiltinFunction function) noexcept -> BuiltinType {
 
 auto BodyElaborator::select_name(const ASTNameExpr& name, Span span) noexcept
     -> AnalysisTask<SelectedExpression> {
+    complete_names(name.name_span);
     const auto text = spelling(name.name_span);
     observe_source(name.name_span, std::nullopt, std::nullopt);
+    if (const auto declaration = unavailable_local(text)) {
+        observe_source(name.name_span, *declaration, std::nullopt);
+        co_return std::unexpected(fail(
+            span,
+            DiagnosticCode::NameUnresolved,
+            "binding type is unavailable after an earlier error"
+        ));
+    }
     if (const auto* local = use_local(text)) {
         if (runtime_local_outside_static_scope(text)) {
             co_return std::unexpected(fail(
@@ -88,7 +97,8 @@ auto BodyElaborator::select_name(const ASTNameExpr& name, Span span) noexcept
         catalog(),
         import_usage(),
         source_module_id,
-        {.global_root = std::nullopt, .components = {name.name_span}}
+        {.global_root = std::nullopt, .components = {name.name_span}},
+        observe_sources ? &source_occurrences : nullptr
     );
     if (!name_reference.has_value()) {
         co_return std::unexpected(name_reference.error());

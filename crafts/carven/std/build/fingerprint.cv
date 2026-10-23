@@ -1,0 +1,101 @@
+import std::collections using { ByteDigest, HashMap }
+import std::fs using { FileError, FileReader }
+
+private const fn frame(&digest: ByteDigest, text: str) {
+    digest.update(f"{text.bytes.length()}:".bytes);
+    digest.update(text.bytes);
+}
+
+private const fn buffer_frame(&digest: ByteDigest, &buffer: String, text: str) {
+    let prefix = f"{text.bytes.length()}:";
+    if buffer.bytes.length() + prefix.bytes.length() + text.bytes.length() > 65536 {
+        digest.update(buffer.bytes);
+        buffer.clear();
+    }
+    if prefix.bytes.length() + text.bytes.length() > 65536 {
+        digest.update(prefix.bytes);
+        digest.update(text.bytes);
+    } else {
+        buffer.append(prefix);
+        buffer.append(text);
+    }
+}
+
+private const fn finish(digest: ByteDigest) -> String {
+    let (first, second) = digest.value();
+    return f"{first:016x}{second:016x}";
+}
+
+private const fn file_fingerprint(path: str) -> String => try {
+    let file = FileReader::open(path)?;
+    var digest = ByteDigest::new();
+    frame(&digest, "carven-file-v1");
+    var size = 0u64;
+    while {
+        match file.read(65536)? {
+            .Data(bytes) => {
+                digest.update(bytes);
+                size += bytes.length() as u64;
+            },
+            .End => break,
+        }
+    }
+    file.close()?;
+    frame(&digest, f"{size}");
+    finish(digest)
+} catch {
+    FileError(_) => "",
+};
+
+private const fn cached_file(path: String, &files: HashMap<String, String>) -> String {
+    let found = files.find(path);
+    if found != nullptr => return *found;
+
+    let content = file_fingerprint(path.as_str());
+    let key = path;
+    let cached = content;
+    files.insert(&&key, &&cached);
+    return content;
+}
+
+private const fn record(
+    paths: [String],
+    values: [String],
+    &files: HashMap<String, String>
+) -> String {
+    var digest = ByteDigest::new();
+    var metadata = String {};
+    buffer_frame(&digest, &metadata, "carven-content-v2");
+    buffer_frame(&digest, &metadata, f"{values.length()}");
+    for value in values {
+        buffer_frame(&digest, &metadata, value.as_str());
+    }
+
+    buffer_frame(&digest, &metadata, f"{paths.length()}");
+    for path in paths {
+        let content = cached_file(path, &files);
+        if content.is_empty() => return "";
+        buffer_frame(&digest, &metadata, path.as_str());
+        buffer_frame(&digest, &metadata, content.as_str());
+    }
+    digest.update(metadata.bytes);
+    return finish(digest);
+}
+
+// Missing or unreadable inputs invalidate a record; callers require a nonempty
+// fingerprint before publishing a successful build record.
+const fn fingerprint(paths: [String], values: [String]) -> String {
+    var files = HashMap<String, String>::with_capacity(paths.length());
+    return record(paths, values, &files);
+}
+
+// One validation batch observes each distinct path at most once, including
+// failed reads. The cache ends with the batch so later builds see changed files.
+const fn fingerprints(paths: [Vector<String>]) -> Vector<String> {
+    var files = HashMap<String, String>::new();
+    var results = Vector<String>::with_capacity(paths.length());
+    for group in paths {
+        results.push(record(group, [], &files));
+    }
+    return results;
+}

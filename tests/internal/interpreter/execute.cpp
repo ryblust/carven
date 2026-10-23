@@ -4,10 +4,10 @@ import :diagnostics.code;
 import :interpreter.execute;
 import :semantic.evaluation.display;
 import :semantic.evaluation.execution;
-import :semantic.semir.constant_access;
 import :semantic.semir.decl;
 import :semantic.semir.program;
 import :semantic.semir.type;
+import :semantic.semir.values;
 import :test.harness.framework;
 import :test.internal.semantic.analysis.fixture;
 import std;
@@ -281,7 +281,7 @@ println("after");
     )");
         const auto types = program.types().size();
         const auto constants = program.constants().size();
-        const auto values = PublishedConstantValues(program);
+        const auto values = ProgramValues(program);
         for (const auto kind : builtin_types) {
             expect(values.builtin_type(kind) == program.types().builtin_type(kind));
         }

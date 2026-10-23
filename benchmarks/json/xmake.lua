@@ -12,7 +12,7 @@ for _, variant in ipairs({"native", "portable"}) do
             if variant == "portable" then
                 add_defines("CARVEN_SIMD_FORCE_PORTABLE=1")
             end
-            add_rules("@carven/carven")
+            add_rules("carven")
             add_files("main.cpp", "workload.cv")
         target_end()
     end)

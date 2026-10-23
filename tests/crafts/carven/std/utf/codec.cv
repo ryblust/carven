@@ -150,8 +150,7 @@ test "UTF8: prefix errors use offsets relative to the selected input" {
         let _ = decode_utf8_prefix(bytes.slice(1, 4))?;
     } catch {
         UTF8Error(error) => {
-            rejected = error.kind
-                == .InvalidContinuation
+            rejected = error.kind == .InvalidContinuation
                 && error.offset == 1
                 && error.sequence_start == 0;
         },

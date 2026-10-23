@@ -35,7 +35,9 @@ fn fail_parse(code: i32) -> i32 throw ParseError {
 }
 
 fn fail_selected(read_failure: bool) -> i32 throw ReadError + ParseError {
-    if read_failure { throw ReadError { code: 31 }; }
+    if read_failure {
+        throw ReadError { code: 31 };
+    }
     throw ParseError { code: 47 };
 }
 
@@ -229,7 +231,9 @@ fn nested_rethrow() -> i32 throw ReadError {
         read()?
     } catch {
         ReadError(error) => {
-            if error.code == 7 { rethrow; }
+            if error.code == 7 {
+                rethrow;
+            }
             0
         },
     };
@@ -244,12 +248,16 @@ fn recover_nested_rethrow() -> i32 {
 }
 
 private fn recursive_failure_left(fail_here: bool) -> i32 {
-    if fail_here { throw RecursiveError { code: 83 }; }
+    if fail_here {
+        throw RecursiveError { code: 83 };
+    }
     return recursive_failure_right(true)?;
 }
 
 private fn recursive_failure_right(visit_left: bool) -> i32 {
-    if visit_left { return recursive_failure_left(true)?; }
+    if visit_left {
+        return recursive_failure_left(true)?;
+    }
     return 0;
 }
 

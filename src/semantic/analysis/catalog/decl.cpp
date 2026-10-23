@@ -8,6 +8,7 @@ import :frontend.ast.tree;
 import :semantic.analysis.catalog;
 import :semantic.analysis.catalog.builder;
 import :semantic.analysis.program;
+import :semantic.analysis.source.imports;
 import :semantic.analysis.types;
 import :semantic.visibility;
 import :source.standard;
@@ -40,44 +41,6 @@ auto declaration_name(const ASTItem& item) noexcept -> std::optional<Span> {
     );
 }
 
-auto semantic_visibility(const ASTDeclarationVisibility& visibility) noexcept
-    -> DeclarationVisibility {
-    return visibility.visit(
-        Overloaded {
-            [](const ASTPrivateDeclarationVisibility&) static noexcept {
-                return DeclarationVisibility::Module;
-            },
-            [](const ASTBareDeclarationVisibility&) static noexcept {
-                return DeclarationVisibility::ModuleDomain;
-            },
-            [](const ASTExportDeclarationVisibility&) static noexcept {
-                return DeclarationVisibility::Compilation;
-            },
-        }
-    );
-}
-
-auto declaration_visibility(const ASTItem& item) noexcept -> DeclarationVisibility {
-    return item.value.visit(
-        Overloaded {
-            [](const ASTEnumDecl& value) static noexcept {
-                return semantic_visibility(value.visibility);
-            },
-            [](const ASTRecordDecl& value) static noexcept {
-                return semantic_visibility(value.visibility);
-            },
-            [](const ASTFunctionDecl& value) static noexcept {
-                return value.is_implicit_entry ? DeclarationVisibility::Module
-                                               : semantic_visibility(value.visibility);
-            },
-            [](const ASTConstantDecl& value) static noexcept {
-                return semantic_visibility(value.visibility);
-            },
-            [](const ASTTestDecl&) static noexcept { return DeclarationVisibility::Module; },
-            [](const ASTConstBlock&) static noexcept { return DeclarationVisibility::Module; },
-        }
-    );
-}
 
 } // namespace
 
@@ -301,7 +264,7 @@ auto AnalysisCatalogBuilder::collect_declarations() noexcept -> void {
                 .item_id = item_id,
                 .name = std::move(name),
                 .form = std::move(form),
-                .visibility = declaration_visibility(item),
+                .visibility = source_declaration_visibility(item),
                 .declaration_span = *name_span,
                 .class_operation = std::nullopt,
             });

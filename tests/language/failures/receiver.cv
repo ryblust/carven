@@ -13,13 +13,17 @@ private fn record(&trace: i32, marker: i32) -> i32 {
 
 private fn step(&trace: i32, marker: i32, reject: bool) -> i32 throw Failure {
     let code = record(&trace, marker);
-    if reject { throw Failure { code }; }
+    if reject {
+        throw Failure { code };
+    }
     return code * 10;
 }
 
 private fn other_step(&trace: i32, marker: i32, reject: bool) -> i32 throw OtherFailure {
     let code = record(&trace, marker);
-    if reject { throw OtherFailure { code }; }
+    if reject {
+        throw OtherFailure { code };
+    }
     return code * 10;
 }
 
@@ -101,7 +105,9 @@ private fn repeated_body(&trace: i32, rejected_iteration: i32) -> i32 {
 private fn condition(&trace: i32, &calls: i32, rejected_iteration: i32) -> bool throw Failure {
     calls += 1;
     let code = record(&trace, calls);
-    if calls == rejected_iteration { throw Failure { code }; }
+    if calls == rejected_iteration {
+        throw Failure { code };
+    }
     return calls < 4;
 }
 
@@ -163,7 +169,9 @@ test "Failure receivers: a receiver inside a loop starts fresh on every iteratio
 private fn nested_condition(&trace: i32, &calls: i32, rejected_poll: i32) -> bool throw Failure {
     calls += 1;
     let code = record(&trace, calls);
-    if calls == rejected_poll { throw Failure { code }; }
+    if calls == rejected_poll {
+        throw Failure { code };
+    }
     return calls < 2;
 }
 
@@ -177,7 +185,9 @@ private fn handler_loop_exit(&trace: i32, rejected_poll: i32, break_loop: bool) 
         } catch {
             Failure(_) => {
                 total += iteration;
-                if break_loop { break; }
+                if break_loop {
+                    break;
+                }
                 continue;
             },
         }
@@ -291,29 +301,31 @@ test "Failure receivers: a direct throw snapshots its source before a mutating g
 
 private fn guard(&trace: i32, accepted: bool, reject: bool) -> bool throw OtherFailure {
     let code = record(&trace, 2);
-    if reject { throw OtherFailure { code }; }
+    if reject {
+        throw OtherFailure { code };
+    }
     return accepted;
 }
 
 private fn guarded(&trace: i32, accepted: bool, reject: bool) -> i32 {
     return try {
-        (
-            try {
-                step(&trace, 1, true)?
-            } catch {
-                Failure(error) if guard(&trace, accepted, reject)? => {
-                    record(&trace, 3);
-                    error.code
-                },
-                Failure(error) => {
-                    let owned = error;
-                    let copy = &&owned;
-                    record(&trace, 7);
-                    if copy.code == 1 { rethrow; }
-                    -1
-                },
-            }
-        )
+        (try {
+            step(&trace, 1, true)?
+        } catch {
+            Failure(error) if guard(&trace, accepted, reject)? => {
+                record(&trace, 3);
+                error.code
+            },
+            Failure(error) => {
+                let owned = error;
+                let copy = &&owned;
+                record(&trace, 7);
+                if copy.code == 1 {
+                    rethrow;
+                }
+                -1
+            },
+        })
     } catch {
         Failure(error) => {
             record(&trace, 8);
@@ -340,26 +352,26 @@ test "Failure receivers: rejected guards rethrow the original and guard failures
 
 private fn nested_handler(&trace: i32) -> i32 {
     return try {
-        (
-            try {
-                step(&trace, 1, true)?
-            } catch {
-                Failure(error) => {
-                    let owned = error;
-                    let copy = &&owned;
-                    let nested = try {
-                        other_step(&trace, 2, true)?
-                    } catch {
-                        OtherFailure(inner) => {
-                            record(&trace, 3);
-                            inner.code
-                        },
-                    };
-                    if copy.code + nested == 3 { rethrow; }
-                    -1
-                },
-            }
-        )
+        (try {
+            step(&trace, 1, true)?
+        } catch {
+            Failure(error) => {
+                let owned = error;
+                let copy = &&owned;
+                let nested = try {
+                    other_step(&trace, 2, true)?
+                } catch {
+                    OtherFailure(inner) => {
+                        record(&trace, 3);
+                        inner.code
+                    },
+                };
+                if copy.code + nested == 3 {
+                    rethrow;
+                }
+                -1
+            },
+        })
     } catch {
         Failure(error) => {
             record(&trace, 9);

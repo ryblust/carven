@@ -18,7 +18,9 @@ private import(cpp) fn decorate(text: String) -> Vector<String>;
 private import(cpp) fn submit(decision: Decision);
 
 fn process(record: Record) -> Decision throw RecordError {
-    if record.text.is_empty() { throw RecordError { reason: "empty record" }; }
+    if record.text.is_empty() {
+        throw RecordError { reason: "empty record" };
+    }
     var notes = decorate(record.text);
     notes.push(f"score: {record.score}");
     let decision = Decision {

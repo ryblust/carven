@@ -1,44 +1,69 @@
+import .execute using execute_plan;
+import .plan using { ResolvedPlan, resolve_plan, test_plan }
 import .platform using { run, process_error }
-import std::build using { BuildError, TargetKind, BuildOutput, BuildPlan, build_outputs }
+import .query using write_query;
+import std::build using { BuildError, TargetKind, BuildOutput, BuildPlan }
 import std::process using { ProcessError, arguments as process_arguments }
 import std::utf using { starts_with, ends_with }
 
+private enum CommandMode {
+    Build,
+    Run,
+    Test,
+    Query,
+}
+
 private struct Command {
-    running: bool,
+    mode: CommandMode,
     target: String,
-    source: String,
+    sources: Vector<String>,
     arguments: Vector<String>,
 }
 
 private const fn parse(arguments: [String]) -> Command throw BuildError {
     var command = Command {
-        running: false,
+        mode: .Build,
         target: "",
-        source: "",
+        sources: [],
         arguments: [],
     };
-    if arguments.is_empty() || (arguments[0] != "build" && arguments[0] != "run") {
-        return &&command;
+    if arguments.is_empty()
+        || (arguments[0] != "build"
+            && arguments[0] != "run"
+            && arguments[0] != "test"
+            && arguments[0] != "query") {
+        return command;
     }
-    command.running = arguments[0] == "run";
+
+    command.mode = match arguments[0].as_str() {
+        "run" => .Run,
+        "test" => .Test,
+        "query" => .Query,
+        _ => .Build,
+    };
+
+    // Query input selection and timing options belong to the compiler driver.
+    if command.mode == .Query => return command;
+
     var separated = false;
     for index in 1usize..arguments.length() {
         let argument = arguments[index];
         if separated {
             command.arguments.push(argument);
-        } else if argument == "--" && command.running {
+        } else if argument == "--" && command.mode == .Run {
             separated = true;
         } else if starts_with(argument, "-") {
             throw BuildError { message: f"unknown {arguments[0]} option '{argument}'" };
-        } else if index == 1 && ends_with(argument, ".cv") {
-            command.source = argument;
-        } else if index == 1 && command.running {
+        } else if command.mode == .Run && command.target.is_empty() && ends_with(argument, ".cv") {
+            command.sources.push(argument);
+        } else if index == 1 && (command.mode == .Run || command.mode == .Test) {
             command.target = argument;
         } else {
             throw BuildError { message: f"unexpected {arguments[0]} argument '{argument}'" };
         }
     }
-    return &&command;
+
+    return command;
 }
 
 private const fn run_selected(
@@ -48,9 +73,9 @@ private const fn run_selected(
 ) throw BuildError {
     var selected = outputs.length();
     for index in 0..outputs.length() {
-        if outputs[index].kind != TargetKind::Executable { continue; }
+        if outputs[index].kind != TargetKind::Executable => continue;
         if !target.is_empty() {
-            if outputs[index].name == target { selected = index; }
+            if outputs[index].name == target => selected = index;
         } else {
             if selected != outputs.length() {
                 throw BuildError {
@@ -60,10 +85,12 @@ private const fn run_selected(
             selected = index;
         }
     }
+
     if selected == outputs.length() {
-        if target.is_empty() { throw BuildError { message: "no executable target to run" }; }
+        if target.is_empty() => throw BuildError { message: "no executable target to run" };
         throw BuildError { message: f"unknown executable target '{target}'" };
     }
+
     var command: Vector<String> = [outputs[selected].path];
     command.append(arguments);
     run(command)?;
@@ -78,40 +105,61 @@ private const fn process_command() -> Command throw BuildError {
     return parse(arguments)?;
 }
 
-private const fn execute(
-    plan: BuildPlan,
-    command: Command
-) -> Vector<BuildOutput> throw BuildError {
-    let outputs = build_outputs(plan)?;
-    if command.running { run_selected(outputs, command.target, command.arguments)?; }
-    return &&outputs;
+private const fn test_selected(plan: ResolvedPlan, name: str) throw BuildError {
+    var found = name.is_empty();
+    for index in plan.order {
+        let target = plan.targets[index];
+        if !name.is_empty() && target.name != name => continue;
+        found = true;
+        let outputs = execute_plan(test_plan(plan, index)?, true)?;
+        if outputs.is_empty() {
+            println(f"No runtime tests for {target.name}");
+        } else {
+            run_selected(outputs, target.name, [])?;
+        }
+    }
+    if !found => throw BuildError { message: f"unknown test target '{name}'" };
 }
 
-const fn run_plan(plan: BuildPlan) -> Vector<BuildOutput> throw BuildError {
-    return execute(plan, process_command()?)?;
+private const fn execute(plan: ResolvedPlan, command: Command) throw BuildError {
+    match command.mode {
+        .Query => write_query(plan)?,
+        .Build => {
+            let _ = execute_plan(plan, false)?;
+        },
+        .Run => {
+            let outputs = execute_plan(plan, false)?;
+            run_selected(outputs, command.target, command.arguments)?;
+        },
+        .Test => test_selected(plan, command.target)?,
+    }
 }
 
-const fn execute_source() throw BuildError {
+const fn run_project(plan: BuildPlan) throw BuildError {
     let command = process_command()?;
-    if command.source.is_empty() { throw BuildError { message: "expected a .cv source file" }; }
-    let bytes = command.source.bytes;
+    execute(resolve_plan(plan)?, command)?;
+}
+
+const fn run_sources() throw BuildError {
+    let command = process_command()?;
+    if command.sources.is_empty() => throw BuildError { message: "expected .cv source files" };
+    let bytes = command.sources[0].bytes;
     var start = 0usize;
     for index in 0..bytes.length() {
-        if bytes[index] == 0x2f || bytes[index] == 0x5c { start = index + 1; }
+        if bytes[index] == 0x2f || bytes[index] == 0x5c => start = index + 1;
     }
+
     let name = str::from_utf8_unchecked(bytes.slice(start, bytes.length() - 3)) as String;
     execute(
-        {
-            targets: [
-                {
-                    name: name,
-                    kind: TargetKind::Executable,
-                    sources: [command.source],
-                    ...
-                }
-            ],
+        resolve_plan({
+            targets: [{
+                name: name,
+                kind: TargetKind::Executable,
+                sources: command.sources,
+                ...
+            }],
             ...
-        },
+        })?,
         command
     )?;
 }

@@ -50,13 +50,11 @@ const test "Array initialization: each element executes in order and zero execut
     check(array_repeated == [7u8, 7u8, 7u8]);
     check(array_zero.length() == 0);
     check(array_skipped_failure.length() == 0);
-    check(
-        array_nested_repeat
-            == [
-                [2u8, 2u8, 2u8],
-                [2u8, 2u8, 2u8]
-            ]
-    );
+    check(array_nested_repeat
+        == [
+            [2u8, 2u8, 2u8],
+            [2u8, 2u8, 2u8]
+        ]);
     let typed: [u16; 3] = [9; 3];
     check(typed == [9u16, 9u16, 9u16]);
 }

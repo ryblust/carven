@@ -1,8 +1,8 @@
 module carven:backend.preparation.format;
 
-import :semantic.semir.constant_access;
 import :semantic.semir.format;
 import :semantic.semir.type;
+import :semantic.semir.values;
 import std;
 
 constexpr auto maximum_prepared_format_bytes = 64uz * 1024uz;

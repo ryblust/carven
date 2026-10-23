@@ -10,9 +10,9 @@ import :semantic.semir.generic;
 import :semantic.semir.initialization;
 import :semantic.semir.operation;
 import :semantic.semir.program;
-import :semantic.semir.vector;
 import :semantic.semir.structured;
 import :semantic.semir.type;
+import :semantic.semir.vector;
 import std;
 
 enum class OperatorResult {
@@ -56,9 +56,9 @@ auto hash_type_support(const CanonicalType& type, ElementCapability&& element) n
                 || shape.kind == BuiltinType::String
                 || shape.kind == BuiltinType::Str;
         } else if constexpr (std::same_as<Shape, ArrayTypeValue>) {
-            return element(shape.element);
+            return std::forward<ElementCapability>(element)(shape.element);
         } else if constexpr (std::same_as<Shape, TupleTypeValue>) {
-            return std::ranges::all_of(shape.elements, element);
+            return std::ranges::all_of(shape.elements, std::forward<ElementCapability>(element));
         } else {
             return false;
         }

@@ -103,11 +103,14 @@ type. Taking a complete owner makes that binding unavailable, including for a
 copyable type. Analysis checks this state transition; the selected C++ operation
 must preserve its ownership and observable effects.
 
-Returning a named owner copies it; a return ends the owner but does not imply
-Take. `CV-LINT-RETURN-COPY` reports a returned owner whose type can hold Carven
-`String` storage by value, excluding zero-length array elements, and has no
-native value component, when Take is admitted at that return in every analyzed
-call context. Writing `return &&owner;` states the transfer and removes the warning.
+Returning a name that denotes a complete local `let` or `var` owner or a `Take`
+parameter of the current function or lambda implicitly transfers that owner.
+Parentheses do not change this rule, and expression bodies follow the same rule
+as `return`. An active borrow that prevents Take also prevents this return.
+Other operands retain their ordinary access, including Read and Write parameters,
+captures, fields, and indexed elements. Result conversions retain their ordinary
+value or borrowing rules. To return a copy of an owner with type `T`, write
+`return owner as T;`; the type must support copying.
 
 Every use of an unavailable binding is invalid. A complete plain assignment to
 a `var` is the only operation that may restore it, and restoration happens only

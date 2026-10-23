@@ -1,0 +1,20 @@
+target("carven-lsp")
+    set_group("toolchain")
+    set_default(false)
+    set_kind("binary")
+    if is_mode("release") then
+        set_policy("build.optimization.lto", true)
+    end
+    set_languages("c++20")
+    add_rules("carven")
+    add_files("*.cv")
+target_end()
+
+target("carven-test-lsp-framing")
+    set_default(false)
+    set_kind("binary")
+    set_languages("c++20")
+    add_rules("carven", {tests = true})
+    add_files("protocol.cv", "tests/framing.cv")
+    add_tests("framing", {group = "lsp", run_timeout = 30000})
+target_end()

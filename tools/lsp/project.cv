@@ -1,0 +1,149 @@
+import .analyzer using request;
+import .protocol using ProtocolError;
+import std::fs using { status, PathKind, FileError, join }
+import std::io using ByteLines;
+import std::json using { JSONValue, JSONValueKind, JSONValueError, JSONError }
+import std::process using { Process, ProcessError }
+import std::utf using UTF8Error;
+
+// Read the same configured arguments that xmake passes to `carven check`.
+// Module naming and source selection stay in the existing package rule.
+private const query: str = r"""
+os.cd(os.projectdir())
+import("core.project.config").load()
+local project = import("core.project.project")
+project.load_targets()
+local json = import("core.base.json")
+local targets = json.mark_as_array({})
+local roots = {os.projectdir()}
+for _, target in ipairs(project.ordertargets()) do
+    local sources = target:data("carven.source_arguments")
+    local generation = target:data("carven.generation_target")
+    if sources and generation then
+        local dependencies = json.mark_as_array({})
+        for _, dependency in ipairs(target:orderdeps()) do
+            if dependency:data("carven.source_arguments") and dependency:data("carven.generation_target") then
+                table.insert(dependencies, dependency:fullname())
+            end
+        end
+        table.insert(targets, {name = target:fullname(), default = target:get("default") ~= false,
+                              sources = sources, dependencies = dependencies})
+    end
+end
+local inputs = {root = path.unix(os.projectdir()), targets = targets, roots = roots, scripts = project.allfiles()}
+print("\nCARVEN_INPUTS:" .. json.encode(inputs, {pure = true}))
+""";
+
+private async fn execute(
+    &&program: String,
+    &&arguments: Vector<String>,
+    &&directory: String
+) -> Vector<u8> throw ProcessError + ProtocolError {
+    let child = Process::spawn_in(program.as_str(), arguments, directory.as_str())?;
+    child.close_input()?;
+    var output: Vector<u8> = [];
+    while {
+        match await child.read(65536)? {
+            .End => break,
+            .Data(bytes) => {
+                for byte in bytes {
+                    output.push(byte);
+                }
+            },
+        }
+    }
+    if await child.wait()? != 0 => throw ProtocolError::Analyzer;
+    return output;
+}
+
+private fn project_inputs(bytes: [u8]) -> JSONValue throw ProtocolError + JSONError + UTF8Error {
+    var lines = ByteLines::new();
+    const prefix: str = "CARVEN_INPUTS:";
+    while {
+        match lines.next(bytes) {
+            .End => break,
+            .Line(start, end, _) => {
+                let line = bytes.slice(start, end);
+                if line.length() >= prefix.byte_length() {
+                    var matches = true;
+                    for index in 0..prefix.byte_length() {
+                        if line[index] != prefix.bytes[index] => matches = false;
+                    }
+                    if matches => return JSONValue::parse_bytes(
+                        line.slice(prefix.byte_length(), line.length())
+                    )?;
+                }
+            },
+        }
+    }
+    throw ProtocolError::Analyzer;
+}
+
+async fn workspace(
+    analyzer: Process,
+    &&compiler: String,
+    &&message: JSONValue
+) -> JSONValue throw ProcessError + JSONValueError + JSONError + UTF8Error + ProtocolError {
+    let configure = message.get("configure")?;
+    var command = message;
+    if configure.as_bool()? {
+        var discovery = JSONValue::object();
+        discovery.set("method", &&JSONValue::string("discover"))?;
+        discovery.set("roots", &&command.get("roots")?)?;
+        let found = await request(analyzer, &&discovery)?;
+        let projects = found.get("projects")?;
+        let executable = command.get("xmake")?;
+        let program = executable.as_str()? as String;
+        var inputs = JSONValue::array();
+        for index in 0..projects.length()? {
+            let item = projects.at(index)?;
+            let directory = item.as_str()? as String;
+            var model = JSONValue::null();
+            try {
+                if status(join(directory.as_str(), "build.cv").as_str())? == PathKind::File {
+                    let bytes = await execute(
+                        &&(compiler as String),
+                        &&["query"],
+                        &&(directory as String)
+                    )?;
+                    let result = JSONValue::parse_bytes(bytes)?;
+                    model = result.get("project")?;
+                    model.set("scripts", &&result.get("scripts")?)?;
+                } else {
+                    let _ = await execute(
+                        &&(program as String),
+                        &&["f", "-y", "--require=no"],
+                        &&(directory as String)
+                    )?;
+                    let bytes = await execute(
+                        &&(program as String),
+                        &&["lua", "-c", query as String],
+                        &&(directory as String)
+                    )?;
+                    model = project_inputs(bytes)?;
+                }
+            } catch {
+                FileError(_) => {},
+                ProcessError(_) => {},
+                ProtocolError(_) => {},
+                JSONError(_) => {},
+                UTF8Error(_) => {},
+            }
+            let available = model.kind() != JSONValueKind::Null;
+            if !available {
+                model = JSONValue::object();
+                model.set("root", &&JSONValue::string(directory.as_str()))?;
+                var roots = JSONValue::array();
+                roots.push(&&JSONValue::string(directory.as_str()))?;
+                model.set("roots", &&roots)?;
+                model.set("scripts", &&JSONValue::array())?;
+                model.set("targets", &&JSONValue::array())?;
+            }
+            model.set("directory", &&JSONValue::string(directory.as_str()))?;
+            model.set("available", &&JSONValue::boolean(available))?;
+            inputs.push(&&model)?;
+        }
+        command.set("projects", &&inputs)?;
+    }
+    return await request(analyzer, &&command)?;
+}

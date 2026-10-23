@@ -6,8 +6,7 @@ const fn text_views_share_backing() -> bool {
     let copy = bytes;
     let suffix = view.bytes.slice(1usize, 3usize);
     let independent = source;
-    return addressof(bytes[1])
-        == addressof(copy[1])
+    return addressof(bytes[1]) == addressof(copy[1])
         && addressof(bytes[1]) == addressof(source.bytes[1])
         && addressof(bytes[1]) == addressof(suffix[0])
         && addressof(bytes[1]) != addressof(independent.bytes[1]);

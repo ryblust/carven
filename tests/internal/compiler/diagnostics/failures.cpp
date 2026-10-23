@@ -38,7 +38,7 @@ const TestSuite suite([] static noexcept {
                 TargetPlanningRequest {
                     .test_mode = TestGenerationMode::None,
                     .linkage_domain = LinkageDomain::explicit_value("test:failures").value(),
-                    .library = std::nullopt,
+                    .libraries = {},
                 }
             );
 
@@ -87,7 +87,7 @@ const TestSuite suite([] static noexcept {
                         .test_mode = TestGenerationMode::None,
                         .linkage_domain =
                             LinkageDomain::explicit_value("test:catch-warnings").value(),
-                        .library = std::nullopt,
+                        .libraries = {},
                     }
                 );
 
@@ -433,7 +433,7 @@ const TestSuite suite([] static noexcept {
                     TargetPlanningRequest {
                         .test_mode = TestGenerationMode::None,
                         .linkage_domain = *LinkageDomain::explicit_value("test:entry"),
-                        .library = std::nullopt,
+                        .libraries = {},
                     }
                 );
                 if (!item.error.has_value()) {
@@ -517,7 +517,7 @@ const TestSuite suite([] static noexcept {
                         .test_mode = TestGenerationMode::None,
                         .linkage_domain =
                             *LinkageDomain::explicit_value("test:failure-explanations"),
-                        .library = std::nullopt,
+                        .libraries = {},
                     }
                 );
                 if (!(expect(!(result.has_value())))) {
@@ -576,7 +576,7 @@ const TestSuite suite([] static noexcept {
                     TargetPlanningRequest {
                         .test_mode = TestGenerationMode::None,
                         .linkage_domain = *LinkageDomain::explicit_value("test:catch-type-names"),
-                        .library = std::nullopt,
+                        .libraries = {},
                     }
                 );
                 if (!expect(!(result.has_value()))) {
@@ -621,7 +621,7 @@ const TestSuite suite([] static noexcept {
             TargetPlanningRequest {
                 .test_mode = TestGenerationMode::None,
                 .linkage_domain = LinkageDomain::explicit_value("test:adoption").value(),
-                .library = std::nullopt,
+                .libraries = {},
             }
         );
         expect(result.has_value());

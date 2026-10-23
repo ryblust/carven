@@ -12,25 +12,22 @@ private const minimum_nanoseconds = -9223372036854775808i64;
 private const maximum_nanoseconds = 9223372036854775807i64;
 
 private const fn scaled(value: i64, factor: i64) -> Duration throw TimeRangeError {
-    if value < minimum_nanoseconds / factor || value > maximum_nanoseconds / factor {
-        throw TimeRangeError {};
-    }
+    if value < minimum_nanoseconds / factor
+        || value > maximum_nanoseconds / factor => throw TimeRangeError {};
     return { nanoseconds: value * factor };
 }
 
 export const fn nanoseconds(value: i64) -> Duration => { nanoseconds: value };
 export const fn microseconds(value: i64) -> Duration throw TimeRangeError => scaled(value, 1000)?;
 
-export const fn milliseconds(value: i64) -> Duration throw TimeRangeError => scaled(
-    value,
-    1000000
-)?;
+export const fn milliseconds(value: i64) -> Duration throw TimeRangeError =>
+    scaled(value, 1000000)?;
 
 export const fn seconds(value: i64) -> Duration throw TimeRangeError => scaled(value, 1000000000)?;
 
 private const fn checked_add_nanoseconds(base: i64, offset: i64) -> i64 throw TimeRangeError {
-    if offset > 0 && base > maximum_nanoseconds - offset { throw TimeRangeError {}; }
-    if offset < 0 && base < minimum_nanoseconds - offset { throw TimeRangeError {}; }
+    if offset > 0 && base > maximum_nanoseconds - offset => throw TimeRangeError {};
+    if offset < 0 && base < minimum_nanoseconds - offset => throw TimeRangeError {};
     return base + offset;
 }
 
@@ -50,8 +47,8 @@ export class TimePoint {
         )?
     };
 
-    const fn is_before(self, other: TimePoint) -> bool => self.nanoseconds_since_epoch
-        < other.nanoseconds_since_epoch;
+    const fn is_before(self, other: TimePoint) -> bool =>
+        self.nanoseconds_since_epoch < other.nanoseconds_since_epoch;
 
     const fn has_passed(self) -> bool => self.nanoseconds_since_epoch <= monotonic_now();
 
@@ -60,7 +57,7 @@ export class TimePoint {
 
 export const async fn sleep(duration: Duration) throw TimeRangeError {
     await cancel_point();
-    if duration.nanoseconds <= 0 { return; }
+    if duration.nanoseconds <= 0 => return;
     let deadline = TimePoint::after(duration)?;
     await deadline.wait();
 }

@@ -9,7 +9,6 @@ import :semantic.analysis.stage.session;
 import :semantic.analysis.stage.specialization;
 import :semantic.evaluation.display;
 import :semantic.evaluation.execution;
-import :semantic.evaluation.standard;
 import :semantic.evaluation.value;
 import :semantic.semir.decl;
 import :semantic.semir.simd;
@@ -189,15 +188,8 @@ auto StaticExecutionContext::operator()(
     std::span<ExecutionValue> arguments,
     ProgramOriginID origin
 ) noexcept -> std::expected<ExecutionHostResult, ExecutionCallFailure> {
-    auto result = standard_execution_call(
-        draft,
-        *this,
-        *std::get<const SemanticExpression*>(target),
-        arguments,
-        origin
-    );
-    if (result) {
-        return std::move(*result);
+    if (const auto invoke = draft.native_call()) {
+        return invoke(draft, *this, target, arguments, origin);
     }
     return std::unexpected(
         ExecutionEvent {
@@ -265,6 +257,15 @@ auto StaticExecutionContext::prepare_call(ExecutionCallSite target, ProgramOrigi
                 ExecutionReason::Admission,
                 "compile-time execution can only call an explicitly declared const fn"
             ));
+        }
+        if (const auto implementation = draft.callable_implementation_copy(callable);
+            implementation && std::holds_alternative<CppImportImplementation>(*implementation)) {
+            co_return ExecutionHostCall {
+                .target = target,
+                .invoke = *this,
+                .asynchronous = draft.construction_callable_contract_copy(callable).execution
+                    == CallableExecutionKind::Async
+            };
         }
         if (draft.static_instance(callable)) {
             const auto body = draft.static_instance_body(callable);

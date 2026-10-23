@@ -54,7 +54,7 @@ const TestSuite suite([] static noexcept {
                     {
                         .test_mode = TestGenerationMode::None,
                         .linkage_domain = *LinkageDomain::explicit_value("linear_composition"),
-                        .library = std::nullopt,
+                        .libraries = {},
                     },
                     {}
                 );

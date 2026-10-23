@@ -6,8 +6,8 @@ import :semantic.semir.body;
 import :semantic.semir.program;
 import :semantic.semir.structured;
 import :semantic.semir.traversal;
-import :test.harness.framework;
 import :test.harness.diagnostics;
+import :test.harness.framework;
 import :test.internal.semantic.analysis.fixture;
 import std;
 

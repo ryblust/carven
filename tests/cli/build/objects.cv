@@ -1,16 +1,40 @@
 import std::build using BuildError;
-
-import std::build.artifacts using {
-    compile_objects,
-    index_implementations,
-    index_providers,
-    record_providers,
-    required_implementations,
-}
-
-import std::compiler using CompiledImplementation;
+import std::build.fingerprint using { fingerprint, fingerprints }
+import std::build.objects using compile_objects;
 import std::fs using write_text;
 import std::process using environment;
+
+test "Build records: boundaries and missing inputs preserve identity" {
+    try {
+        write_text("record-first", "shared contents")?;
+        write_text("record-second", "shared contents")?;
+        write_text("record-empty", "")?;
+
+        let first = fingerprint(["record-first"], []);
+        require(!first.is_empty());
+        check(first != fingerprint(["record-second"], []));
+        check(first != fingerprint([], ["record-first"]));
+        check(!fingerprint(["record-empty"], []).is_empty());
+        check(fingerprint([], ["ab", "c"]) != fingerprint([], ["a", "bc"]));
+        check(fingerprint([], []) != fingerprint([], [""]));
+
+        let groups: Vector<Vector<String>> = [
+            ["record-first"],
+            ["record-first", "record-missing"],
+            ["record-first"],
+        ];
+        let records = fingerprints(groups);
+        require(records.length() == groups.length());
+        check(records[0] == first);
+        check(records[1].is_empty());
+        check(records[2] == first);
+
+        write_text("record-first", "changed contents")?;
+        check(fingerprint(["record-first"], []) != first);
+    } catch {
+        _ => fail("build records must preserve their input boundaries"),
+    }
+}
 
 test "Build objects: reuse follows source and header contents" {
     try {
@@ -26,39 +50,7 @@ test "Build objects: reuse follows source and header contents" {
         let first = compile_objects(command, sources, "objects", "test", true)?;
         require(first.files.length() == 2);
         check(first.compiled == 2);
-        var implementations: Vector<CompiledImplementation> = [
-            {
-                file: "first.cpp",
-                source: "first.cpp",
-                dependencies: []
-            },
-            {
-                file: "second.cpp",
-                source: "second.cpp",
-                dependencies: []
-            },
-        ];
-        let candidates: Vector<String> = ["shared 值 $#.cpp", "unused.cpp"];
-        let provider_index = index_providers(candidates);
-        var implementation_index = index_implementations(implementations);
-        let providers = record_providers(
-            first.files,
-            candidates,
-            provider_index,
-            &implementations,
-            &implementation_index
-        );
-        require(providers.length() == 1);
-        check(providers[0] == "shared 值 $#.cpp");
-        for source in ["first.cpp", "second.cpp"] {
-            let closure = required_implementations(
-                [source as String],
-                implementations,
-                implementation_index
-            )?;
-            require(closure.length() == 2);
-            check(closure[1] == "shared 值 $#.cpp");
-        }
+
         let reused = compile_objects(command, ["first.cpp"], "objects", "test", true)?;
         require(reused.files.length() == 1);
         check(reused.compiled == 0);

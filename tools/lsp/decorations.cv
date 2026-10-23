@@ -1,0 +1,99 @@
+import .protocol using { ProtocolError, PositionCursor }
+import std::json using { JSONValue, JSONValueError }
+
+fn semantic_provider() -> JSONValue throw JSONValueError {
+    var types = JSONValue::array();
+    for name in [
+        "type",
+        "struct",
+        "class",
+        "enum",
+        "typeParameter",
+        "parameter",
+        "variable",
+        "property",
+        "enumMember",
+        "function",
+        "method"
+    ] {
+        types.push(&&JSONValue::string(name))?;
+    }
+    var modifiers = JSONValue::array();
+    for name in ["declaration", "readonly", "static", "async", "defaultLibrary"] {
+        modifiers.push(&&JSONValue::string(name))?;
+    }
+    var legend = JSONValue::object();
+    legend.set("tokenTypes", &&types)?;
+    legend.set("tokenModifiers", &&modifiers)?;
+    var provider = JSONValue::object();
+    provider.set("legend", &&legend)?;
+    provider.set("full", &&JSONValue::boolean(true))?;
+    provider.set("range", &&JSONValue::boolean(true))?;
+    return provider;
+}
+
+private fn number(value: JSONValue, key: str) -> usize throw JSONValueError {
+    let field = value.get(key)?;
+    return field.as_u64()? as usize;
+}
+
+fn decorations(result: JSONValue, tokens: bool) -> JSONValue throw JSONValueError + ProtocolError {
+    let source = result.get("text")?;
+    let text = source.as_str()?;
+    let items = result.get("items")?;
+    var cursor = PositionCursor::new();
+    var output = JSONValue::array();
+    var previous_line: usize = 0;
+    var previous_character: usize = 0;
+    for index in 0..items.length()? {
+        let item = items.at(index)?;
+        if tokens {
+            let start = cursor.seek(text, number(item, "start")?)?;
+            let end = cursor.seek(text, number(item, "end")?)?;
+            let line = number(start, "line")?;
+            let character = number(start, "character")?;
+            output.push(&&JSONValue::unsigned_integer((line - previous_line) as u64))?;
+            output.push(&&JSONValue::unsigned_integer(
+                (if line == previous_line { character - previous_character } else { character })
+                    as u64
+            ))?;
+            output.push(
+                &&JSONValue::unsigned_integer((number(end, "character")? - character) as u64)
+            )?;
+            output.push(&&item.get("kind")?)?;
+            output.push(&&item.get("modifiers")?)?;
+            previous_line = line;
+            previous_character = character;
+        } else {
+            var hint = JSONValue::object();
+            hint.set("position", &&cursor.seek(text, number(item, "position")?)?)?;
+            hint.set("label", &&item.get("label")?)?;
+            hint.set("kind", &&item.get("kind")?)?;
+            if number(item, "kind")? == 2 => hint.set("paddingRight", &&JSONValue::boolean(true))?;
+            output.push(&&hint)?;
+        }
+    }
+    if tokens {
+        var response = JSONValue::object();
+        response.set("data", &&output)?;
+        return response;
+    }
+    return output;
+}
+
+fn document_highlights(result: JSONValue) -> JSONValue throw JSONValueError + ProtocolError {
+    let text = result.get("text")?;
+    let items = result.get("items")?;
+    var cursor = PositionCursor::new();
+    var output = JSONValue::array();
+    for index in 0..items.length()? {
+        let item = items.at(index)?;
+        var span = JSONValue::object();
+        span.set("start", &&cursor.seek(text.as_str()?, number(item, "start")?)?)?;
+        span.set("end", &&cursor.seek(text.as_str()?, number(item, "end")?)?)?;
+        var highlight = JSONValue::object();
+        highlight.set("range", &&span)?;
+        output.push(&&highlight)?;
+    }
+    return output;
+}

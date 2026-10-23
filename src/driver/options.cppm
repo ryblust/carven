@@ -20,6 +20,7 @@ struct CompilationOptions final {
     TestGenerationMode test_mode;
     std::vector<std::string_view> input_paths;
     bool timings;
+    bool query_crafts;
 };
 
 enum class CompilationOptionErrorKind {

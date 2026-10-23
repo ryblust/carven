@@ -30,7 +30,7 @@ struct GenericTypeContext final {
 };
 
 auto resolve_source_capability(
-    ProgramDraft& draft,
+    const ProgramDraft& draft,
     AnalysisCatalogView catalog,
     ImportUsage& usage,
     ProgramModuleID module_id,

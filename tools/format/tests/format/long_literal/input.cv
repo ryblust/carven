@@ -1,1 +1,1 @@
-fn message() { let text = "This indivisible literal intentionally extends beyond the target line width to preserve its original spelling and content."; }
+fn message() { let size = "This indivisible literal intentionally extends beyond the target line width to preserve its original spelling and content.".length(); }

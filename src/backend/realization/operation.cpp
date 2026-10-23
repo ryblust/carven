@@ -506,7 +506,7 @@ auto realize_operation(
             },
             [&](const SemCast& value) noexcept -> TargetExpr {
                 if (value.kind == CastKind::Identity) {
-                    return std::move(operands[0]);
+                    invariant_violation("identity cast preserves its operand completion");
                 }
                 if (const auto* builtin = std::get_if<BuiltinTypeValue>(
                         &context.semantic().types().type(source.type.resolved()).value

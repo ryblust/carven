@@ -3,7 +3,7 @@ module carven:semantic.analysis.body.conversion.impl;
 import :diagnostics.code;
 import :semantic.analysis.body.builder;
 import :semantic.analysis.body.context;
-import :semantic.analysis.body.expr_site;
+import :semantic.analysis.body.site;
 import :semantic.analysis.expr.conversion;
 import :semantic.analysis.expr.interpret;
 import :semantic.analysis.operations;

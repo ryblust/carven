@@ -4,10 +4,24 @@
 #include <carven/runtime/collection/vector.hpp>
 #include <carven/runtime/text/string.hpp>
 
+#include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <string_view>
 
 namespace carven::standard::fs {
+
+class ReaderState;
+
+struct Reader final {
+    std::shared_ptr<ReaderState> state;
+};
+
+struct OpenResult final {
+    Reader reader;
+    std::int32_t code;
+    auto take_reader() noexcept -> Reader;
+};
 
 struct ReadResult final {
     runtime::Vector<std::uint8_t> bytes;
@@ -46,7 +60,9 @@ auto join(std::string_view base, std::string_view path) noexcept -> runtime::Str
 auto files(std::string_view root, bool recursive, std::string_view excluded_root) noexcept
     -> PathsResult;
 
-auto read_bytes(std::string_view path) noexcept -> ReadResult;
+auto open(std::string_view path) noexcept -> OpenResult;
+auto read(const Reader& reader, std::size_t limit) noexcept -> ReadResult;
+auto close(const Reader& reader) noexcept -> std::int32_t;
 
 auto write_bytes(std::string_view path, runtime::Slice<std::uint8_t> bytes) noexcept
     -> std::int32_t;

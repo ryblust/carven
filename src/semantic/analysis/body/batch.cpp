@@ -122,6 +122,16 @@ auto BodyElaborator::run(const ASTCallableBody& source_body) noexcept
     if (!built.has_value()) {
         co_return std::unexpected(built.error());
     }
+    if (nested_body_failure) {
+        co_return std::unexpected(*nested_body_failure);
+    }
+    if (excluded_statement) {
+        co_return std::unexpected(fail(
+            *excluded_statement,
+            DiagnosticCode::CompilationInput,
+            "source query contains an unavailable statement"
+        ));
+    }
     if (!result_type.has_value()) {
         result_type = draft().builtin_type(BuiltinType::Void);
     }

@@ -12,13 +12,14 @@ import :frontend.ast.storage;
 import :frontend.ast.tree;
 import :semantic.analysis.body.builder;
 import :semantic.analysis.body.context;
-import :semantic.analysis.body.expr_site;
 import :semantic.analysis.body.resolve;
+import :semantic.analysis.body.site;
 import :semantic.analysis.coverage;
 import :semantic.analysis.expr.interpret;
 import :semantic.analysis.expr.member;
 import :semantic.analysis.expr.scope;
 import :semantic.analysis.operations;
+import :semantic.analysis.source.builder;
 import :semantic.analysis.types;
 import :semantic.analysis.validation;
 import :semantic.evaluation.operation;
@@ -224,6 +225,12 @@ auto BodyElaborator::lambda_expression(
     }
 
     const auto finish = [&](ConstructionCallableRef callable) noexcept -> BuiltExpression {
+        if (observe_sources && std::holds_alternative<CallableID>(callable)) {
+            draft().source_analysis()->closure(
+                std::get<CallableID>(callable),
+                locate(ast.source_id(), Span::from_bounds(span.start(), span.start() + 1))
+            );
+        }
         auto operands = std::vector<SemCapture>();
         operands.reserve(captures.size());
         for (auto& capture : captures) {
@@ -237,6 +244,18 @@ auto BodyElaborator::lambda_expression(
                     return identity;
                 }
             });
+        if (observe_sources) {
+            source_occurrences.record(
+                draft(),
+                locate(ast.source_id(), Span::from_bounds(span.start(), span.start() + 1)),
+                std::nullopt,
+                closure_type,
+                std::nullopt,
+                std::holds_alternative<CallableID>(callable)
+                    ? std::optional(std::get<CallableID>(callable))
+                    : std::nullopt
+            );
+        }
         auto value = active_builder().make_expression(
             closure_type,
             active_builder().lifetime(),
@@ -316,6 +335,24 @@ auto BodyElaborator::lambda_expression(
             }
         );
     }
+
+    // An explicit/contextual contract is independent of body completion, just
+    // as for a named function. Queries retain it without inventing a body or
+    // inferring a result from damaged source.
+    const auto* observation = draft().source_analysis();
+    const auto retain_contract =
+        observation && observation->is_source_query() && !static_stage() && lambda_result;
+    auto callable = std::optional<CallableID>();
+    if (retain_contract && !definition) {
+        callable = draft().append_body_callable({
+            .execution = CallableExecutionKind::Synchronous,
+            .parameters = parameters,
+            .result = *lambda_result,
+            .failures = signature_failures,
+            .policy = failure_policy,
+        });
+    }
+
     auto reservation = definition ? draft().reserve_generic_body(*definition)
                                   : draft().reserve_body(BodyKind::Closure);
     const auto body_id = reservation.id();
@@ -357,6 +394,23 @@ auto BodyElaborator::lambda_expression(
     }
     auto child_body = (co_await child.run(source.body));
     if (!child_body.has_value()) {
+        if (retain_contract) {
+            if (!nested_body_failure) {
+                nested_body_failure = child_body.error();
+            }
+            if (definition) {
+                const auto closure = draft().intern_generic_type(
+                    GenericClosureType {
+                        .definition = *definition,
+                        .arguments = draft().generic_parameter_environment(*definition),
+                    }
+                );
+                lambda_callables.emplace(span, closure);
+                co_return finish(closure);
+            }
+            lambda_callables.emplace(span, *callable);
+            co_return finish(*callable);
+        }
         co_return std::unexpected(child_body.error());
     }
     const auto resolved_result = child.inferred_result_type();
@@ -390,20 +444,22 @@ auto BodyElaborator::lambda_expression(
         lambda_callables.emplace(span, closure);
         co_return finish(closure);
     }
-    const auto callable = draft().append_body_callable(
-        ConstructionCallableContract {
-            .execution = CallableExecutionKind::Synchronous,
-            .parameters = std::move(parameters),
-            .result = resolved_result,
-            .failures = signature_failures,
-            .policy = failure_policy,
-        }
-    );
-    draft().complete_callable(callable, ClosureBodyImplementation {.body = body_id});
+    if (!callable) {
+        callable = draft().append_body_callable(
+            ConstructionCallableContract {
+                .execution = CallableExecutionKind::Synchronous,
+                .parameters = std::move(parameters),
+                .result = resolved_result,
+                .failures = signature_failures,
+                .policy = failure_policy,
+            }
+        );
+    }
+    draft().complete_callable(*callable, ClosureBodyImplementation {.body = body_id});
     draft().add_body_draft(std::move(*child_body));
 
-    lambda_callables.emplace(span, callable);
-    co_return finish(callable);
+    lambda_callables.emplace(span, *callable);
+    co_return finish(*callable);
 }
 
 auto BodyExprSite::interpret_enum_case(

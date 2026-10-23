@@ -16,8 +16,8 @@ const fn spaces(bytes: [u8], &offset: usize) {
 const fn newline(bytes: [u8], &offset: usize) throw TOMLError {
     if bytes[offset] == 0x0d {
         offset += 1;
-        if offset == bytes.length() { throw error(.UnexpectedEnd, offset); }
-        if bytes[offset] != 0x0a { throw error(.UnexpectedByte, offset); }
+        if offset == bytes.length() => throw error(.UnexpectedEnd, offset);
+        if bytes[offset] != 0x0a => throw error(.UnexpectedByte, offset);
     }
     offset += 1;
 }
@@ -26,8 +26,8 @@ const fn comment(bytes: [u8], &offset: usize) throw TOMLError {
     offset += 1;
     while {
         offset = find_from(bytes, offset, comment_stops);
-        if offset == bytes.length() || bytes[offset] == 0x0a || bytes[offset] == 0x0d { return; }
-        if bytes[offset] != 0x09 { throw error(.ControlCharacter, offset); }
+        if offset == bytes.length() || bytes[offset] == 0x0a || bytes[offset] == 0x0d => return;
+        if bytes[offset] != 0x09 => throw error(.ControlCharacter, offset);
         offset += 1;
     }
 }
@@ -35,7 +35,7 @@ const fn comment(bytes: [u8], &offset: usize) throw TOMLError {
 const fn trivia(bytes: [u8], &offset: usize) throw TOMLError {
     while offset < bytes.length() {
         spaces(bytes, &offset);
-        if offset == bytes.length() { return; }
+        if offset == bytes.length() => return;
         match bytes[offset] {
             0x23 => comment(bytes, &offset)?,
             0x0a | 0x0d => newline(bytes, &offset)?,
@@ -45,7 +45,7 @@ const fn trivia(bytes: [u8], &offset: usize) throw TOMLError {
 }
 
 const fn expect(bytes: [u8], &offset: usize, byte: u8) throw TOMLError {
-    if offset == bytes.length() { throw error(.UnexpectedEnd, offset); }
-    if bytes[offset] != byte { throw error(.UnexpectedByte, offset); }
+    if offset == bytes.length() => throw error(.UnexpectedEnd, offset);
+    if bytes[offset] != byte => throw error(.UnexpectedByte, offset);
     offset += 1;
 }

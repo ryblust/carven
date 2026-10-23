@@ -132,7 +132,7 @@ function main(options)
         benchmark.checkpoint(session)
         write_files(root, inputs, fixtures)
         write_files(root, scenario.baseline, fixtures)
-        local build = {"build", name}
+        local build = {"build", "--verbose", name}
         benchmark.step(session, record, "initial build", os.programfile(), build, os.projectdir(),
             {timings = true, capture_stdout = true, timeout = 300000})
         local targets = import("benchmarks.harness.targets", {rootdir = os.projectdir()})
@@ -195,8 +195,8 @@ function main(options)
                 table.insert(validation_errors, "source edit rebuilt the unrelated module")
             end
             if scenario.unchanged then
-                for _, metric in ipairs({"carven_invocations", "changed_objects",
-                    "generated_changes", "unchanged_generated_touched"}) do
+                for _, metric in ipairs({"semantic_analyses", "cpp_generations",
+                    "changed_objects", "generated_changes", "unchanged_generated_touched"}) do
                     if raw.metrics[metric] ~= 0 then
                         table.insert(validation_errors, string.format(
                             "unchanged inputs repeated build work: %s = %d", metric, raw.metrics[metric]))

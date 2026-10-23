@@ -4,6 +4,8 @@ import :diagnostics.builder;
 import :diagnostics.code;
 import :diagnostics.suggestion;
 import :frontend.ast.expr;
+import :frontend.ast.interop;
+import :frontend.ast.tree;
 import :semantic.analysis.names;
 import :semantic.analysis.program;
 import :semantic.semir.generic;
@@ -11,7 +13,20 @@ import :source.cpp.identifier;
 import :support.invariant;
 import std;
 
-namespace {
+auto source_name_available(
+    const ProgramDraft& draft,
+    ProgramModuleID module,
+    std::string_view name
+) noexcept -> bool {
+    if (draft.imported(module)) {
+        return true;
+    }
+    const auto& scope = draft.syntax_tree(module).view().ast_module();
+    return scope.scope_complete
+        && std::ranges::none_of(scope.unavailable_names, [&](Span unavailable) noexcept {
+               return draft.source_slice_copy(module, unavailable) == name;
+           });
+}
 
 auto class_declaration(const ProgramDraft& draft, ConstructionStructRef owner) noexcept
     -> ClassDeclarationRef {
@@ -26,8 +41,6 @@ auto class_declaration(const ProgramDraft& draft, ConstructionStructRef owner) n
     )
         .definition;
 }
-
-} // namespace
 
 auto source_name_path(const ASTNamedType& type) noexcept -> SourceNamePath {
     return {
@@ -67,13 +80,11 @@ auto source_name_path(ASTView syntax, ASTExprID expression) noexcept
     return path;
 }
 
-auto check_class_representation_access(
+auto class_representation_accessible(
     const ProgramDraft& draft,
-    ProgramModuleID source_module,
     ConstructionStructRef owner,
-    std::optional<ClassDeclarationRef> lexical_class,
-    Span span
-) noexcept -> AnalysisResult<void> {
+    std::optional<ClassDeclarationRef> lexical_class
+) noexcept -> bool {
     const auto declaration = class_declaration(draft, owner);
     const auto kind = std::holds_alternative<StructID>(declaration)
         ? draft.construction_struct_declaration_copy(std::get<StructID>(declaration)).kind
@@ -81,7 +92,17 @@ auto check_class_representation_access(
               draft.generic_declaration_copy(std::get<GenericDeclarationID>(declaration))
           )
               .kind;
-    if (kind == RecordKind::Class && lexical_class != declaration) {
+    return kind != RecordKind::Class || lexical_class == declaration;
+}
+
+auto check_class_representation_access(
+    const ProgramDraft& draft,
+    ProgramModuleID source_module,
+    ConstructionStructRef owner,
+    std::optional<ClassDeclarationRef> lexical_class,
+    Span span
+) noexcept -> AnalysisResult<void> {
+    if (!class_representation_accessible(draft, owner, lexical_class)) {
         return std::unexpected(draft.diagnostics().error(
             DiagnosticBuilder(
                 DiagnosticCode::AccessClassPrivate,
@@ -99,15 +120,24 @@ auto lookup_cpp_name(
     AnalysisCatalogView catalog,
     ImportUsage& usage,
     ProgramModuleID source_module,
-    const SourceNamePath& path
+    const SourceNamePath& path,
+    SourceObservation* observations
 ) noexcept -> AnalysisResult<std::optional<CppNameReference>> {
     const auto& components = path.components;
     if (components.empty()) {
         invariant_violation("C++ lookup requires a name");
     }
     const auto root = draft.source_slice_copy(source_module, components.front());
+    if (!path.global_root && !source_name_available(draft, source_module, root)) {
+        return std::unexpected(draft.diagnostics().error(
+            DiagnosticBuilder(DiagnosticCode::ImportResolution, "module binding is unavailable")
+                .primary(locate(draft.module_source_id(source_module), components.front()))
+                .build()
+        ));
+    }
     auto selected = std::optional<std::vector<std::string>>();
     auto lookup = path.global_root ? CppNameLookup::Global : CppNameLookup::ModuleScope;
+    auto binding = std::optional<SourceSpan>();
     if (lookup == CppNameLookup::ModuleScope) {
         // Carven declarations take precedence in both type and value positions.
         if (!catalog.lookup(source_module, root).empty()) {
@@ -117,6 +147,8 @@ auto lookup_cpp_name(
         const auto selections = catalog.cpp_selection(source_module, root);
         if (!selections.empty()) {
             selected = imports[selections.front()].components;
+            binding =
+                locate(draft.module_source_id(source_module), imports[selections.front()].origin);
             for (const auto index : selections) {
                 usage.record_cpp(source_module, imports[index].origin);
             }
@@ -146,6 +178,58 @@ auto lookup_cpp_name(
     }
     if (selected) {
         lookup = CppNameLookup::Global;
+    }
+    if (observations) {
+        auto path = lookup == CppNameLookup::Global ? std::string("::") : std::string();
+        for (const auto& name : names) {
+            if (!path.empty() && !path.ends_with("::")) {
+                path += "::";
+            }
+            path += name;
+        }
+        auto documentation = std::string(
+            lookup == CppNameLookup::Global
+                ? "External C++ name. Signature, overloads and availability are checked by the C++ compiler."
+                : "Unqualified C++ lookup. The C++ compiler resolves the name in the imported namespace environment."
+        );
+        const auto bindings = catalog.cpp_imports(source_module);
+        auto headers = std::set<std::size_t>();
+        for (const auto& binding : bindings) {
+            if ((selected
+                 && !binding.opens_namespace
+                 && draft.source_slice_copy(source_module, binding.origin) == root)
+                || (lookup == CppNameLookup::ModuleScope && binding.opens_namespace)) {
+                headers.insert(binding.header_index);
+            }
+        }
+        if (!headers.empty()) {
+            const auto syntax = draft.syntax_tree(source_module).view();
+            for (const auto index : headers) {
+                const auto& header = syntax.ast_module().cpp_header_imports[index];
+                documentation += "\nImport: " + draft.source_slice_copy(source_module, header.span);
+            }
+        }
+        if (binding && components.size() > 1uz) {
+            // Only the selected root is a Carven binding. Appended C++ members
+            // have no known declaration, even though their path is retained.
+            auto root_path = std::string();
+            const auto selections = catalog.cpp_selection(source_module, root);
+            for (const auto& component : bindings[selections.front()].components) {
+                root_path += "::" + component;
+            }
+            observations->external(
+                locate(draft.module_source_id(source_module), components.front()),
+                std::move(root_path),
+                documentation,
+                binding
+            );
+        }
+        observations->external(
+            locate(draft.module_source_id(source_module), components.back()),
+            std::move(path),
+            std::move(documentation),
+            components.size() == 1uz ? binding : std::nullopt
+        );
     }
     return CppNameReference {
         .context_module = catalog.find_module(source_module)->declaration,
@@ -216,21 +300,30 @@ auto select_catalog_entity(
     DiagnosticCode unresolved
 ) noexcept -> AnalysisResult<CatalogEntity> {
     const auto location = locate(draft.module_source_id(module_id), origin);
-    const auto candidates = catalog.lookup(module_id, name);
-    if (candidates.empty()) {
+    if (!source_name_available(draft, module_id, name)) {
         return std::unexpected(draft.diagnostics().error(
-            DiagnosticBuilder(
-                unresolved,
-                std::format(
-                    "unresolved {}name '{}'{}",
-                    unresolved == DiagnosticCode::TypeUnresolved ? "type " : "",
-                    name,
-                    spelling_suggestion(name, catalog.visible_names(module_id))
-                )
-            )
+            DiagnosticBuilder(DiagnosticCode::ImportResolution, "module binding is unavailable")
                 .primary(location)
                 .build()
         ));
+    }
+    const auto candidates = catalog.lookup(module_id, name);
+    if (candidates.empty()) {
+        const auto suggested = closest_spelling(name, catalog.visible_names(module_id));
+        auto diagnostic = DiagnosticBuilder(
+            unresolved,
+            std::format(
+                "unresolved {}name '{}'{}",
+                unresolved == DiagnosticCode::TypeUnresolved ? "type " : "",
+                name,
+                suggested ? std::format("; did you mean '{}'?", *suggested) : std::string()
+            )
+        );
+        diagnostic.primary(location);
+        if (suggested) {
+            diagnostic.fix(std::format("Change to '{}'", *suggested), {{location, *suggested}});
+        }
+        return std::unexpected(draft.diagnostics().error(diagnostic.build()));
     }
     if (candidates.size() != 1uz) {
         auto diagnostic = DiagnosticBuilder(
@@ -250,10 +343,18 @@ auto select_catalog_entity(
         return std::unexpected(draft.diagnostics().error(diagnostic.build()));
     }
     const auto& candidate = candidates.front();
+    if (const auto* declaration = catalog.symbol(candidate.entity);
+        declaration && !source_name_available(draft, declaration->module_id, declaration->name)) {
+        return std::unexpected(draft.diagnostics().error(
+            DiagnosticBuilder(DiagnosticCode::ImportResolution, "module binding is unavailable")
+                .primary(location)
+                .build()
+        ));
+    }
     const auto entity = catalog.source_entity(draft, candidate.entity);
     auto alias = std::optional<SourceSpan>();
     if (candidate.import_binding) {
-        usage.record(*candidate.import_binding);
+        usage.record(*candidate.import_binding, name);
         const auto& binding = catalog.imports()[candidate.import_binding->index()];
         for (const auto& selected : binding.selections) {
             if (selected.name == name && selected.aliased) {

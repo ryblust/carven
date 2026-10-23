@@ -39,7 +39,7 @@ const fn find_member(members: Vector<(String, TOMLValue)>, key: str) -> usize {
     var index = members.length();
     while index != 0 {
         index -= 1;
-        if members[index].0.as_str() == key { return index; }
+        if members[index].0.as_str() == key => return index;
     }
     return members.length();
 }

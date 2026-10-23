@@ -106,15 +106,6 @@ auto OwnershipBodyAnalyzer::object_origin(std::size_t object) const noexcept -> 
     return topology.objects[object].origin;
 }
 
-auto OwnershipBodyAnalyzer::diagnosis_record() noexcept -> OwnershipDiagnosisRecord& {
-    if (!diagnosis) {
-        diagnosis = std::make_unique<OwnershipDiagnosisRecord>(
-            OwnershipDiagnosisRecord {.error = {}, .returned_copies = {}}
-        );
-    }
-    return *diagnosis;
-}
-
 auto OwnershipBodyAnalyzer::diagnose(
     DiagnosticCode code,
     std::string message,
@@ -123,20 +114,17 @@ auto OwnershipBodyAnalyzer::diagnose(
     std::string related_label,
     std::string help
 ) noexcept -> void {
-    if (!diagnosing) {
+    if (!diagnosing || diagnosis) {
         return;
     }
-    auto& record = diagnosis_record();
-    if (!record.error.has_value()) {
-        record.error = OwnershipRecordedError {
-            .code = code,
-            .message = std::move(message),
-            .origin = origin,
-            .related = related,
-            .related_label = std::move(related_label),
-            .help = std::move(help)
-        };
-    }
+    diagnosis = std::make_unique<OwnershipRecordedError>(OwnershipRecordedError {
+        .code = code,
+        .message = std::move(message),
+        .origin = origin,
+        .related = related,
+        .related_label = std::move(related_label),
+        .help = std::move(help)
+    });
 }
 
 auto OwnershipBodyAnalyzer::outlives(std::size_t source, std::size_t destination) const noexcept
@@ -644,34 +632,6 @@ auto OwnershipBodyAnalyzer::restore_storage_readers(std::size_t count) noexcept 
         storage_readers.begin() + static_cast<std::ptrdiff_t>(count),
         storage_readers.end()
     );
-}
-
-auto OwnershipBodyAnalyzer::observe_returned_copy(
-    const SemanticExpression& source,
-    const OwnershipState& state
-) noexcept -> void {
-    const auto* binding = std::get_if<SemBinding>(&source.value);
-    if (!diagnosing || binding == nullptr) {
-        return;
-    }
-    const auto& local = body.binding(binding->binding);
-    const auto* parameter = std::get_if<ParameterBindingStorage>(&local.storage);
-    const auto owner = std::holds_alternative<OwnerBindingStorage>(local.storage)
-        || (parameter != nullptr && parameter->access == AccessMode::Take);
-    const auto contents = analysis.contents(local.type);
-    if (!owner || !contents.contains_string_storage || contents.contains_native_value) {
-        return;
-    }
-    // The owner ends with the return, so the copy is redundant exactly when
-    // Take would be admitted here.
-    const auto target = binding_place(binding->binding);
-    const auto transferable =
-        state.objects[target.object].available && !take_conflict(state, target).has_value();
-    const auto [found, inserted] =
-        diagnosis_record().returned_copies.emplace(source.origin, transferable);
-    if (!inserted) {
-        found->second = found->second && transferable;
-    }
 }
 
 auto OwnershipBodyAnalyzer::take_conflict(

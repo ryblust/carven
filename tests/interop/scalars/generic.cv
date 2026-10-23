@@ -8,11 +8,8 @@ private fn native_value<T>(box: ::generic_native::Box<T>) -> T => box.get() as T
 
 private fn static_identity<T>(&&value: T) -> T => ::generic_native::Box<T>::identity(&&value) as T;
 
-private fn static_add<T>(&&value: T, &&increment: T) -> T => ::generic_native::Box<T>::identity(
-        &&value,
-        &&increment
-    )
-    as T;
+private fn static_add<T>(&&value: T, &&increment: T) -> T =>
+    ::generic_native::Box<T>::identity(&&value, &&increment) as T;
 
 private fn static_size<T>() -> usize => ::generic_native::Box<T>::size as usize;
 

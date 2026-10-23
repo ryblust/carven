@@ -8,14 +8,14 @@ export struct FloatBlock {
 
 export const fn block_count(values: [f32]) -> usize {
     let full = values.length() / 8;
-    if values.length() % 8 == 0 { return full; }
+    if values.length() % 8 == 0 => return full;
     return full + 1;
 }
 
 export const fn load_block(values: [f32], offset: usize) -> FloatBlock {
     let value = f32x8::load_partial(values, offset, 0.0);
     var count = values.length() - offset;
-    if count > 8 { count = 8; }
+    if count > 8 => count = 8;
     return {
         value: value,
         active: mask8::prefix(count),

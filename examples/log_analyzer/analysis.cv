@@ -64,7 +64,7 @@ private const fn redact(text: str) -> String throw TextError {
         match cursor.next(text, " ")? {
             .End => break,
             .Value(word) => {
-                if !first { result.push(' '); }
+                if !first => result.push(' ');
                 first = false;
                 if starts_with(word, rules.secret_marker) {
                     result.append(rules.secret_marker);
@@ -75,18 +75,18 @@ private const fn redact(text: str) -> String throw TextError {
             },
         }
     }
-    return &&result;
+    return result;
 }
 
 fn parse_record(bytes: [u8]) -> Record throw RecordError {
     try {
         let text = str::from_utf8(bytes)?;
         let first = split_once(text, " ")?;
-        if !first.found { throw RecordError::Shape; }
+        if !first.found => throw RecordError::Shape;
         let second = split_once(first.after, " ")?;
-        if !second.found || second.before.is_empty() { throw RecordError::Shape; }
+        if !second.found || second.before.is_empty() => throw RecordError::Shape;
         let milliseconds = u64::parse(second.before)?;
-        if milliseconds > maximum_latency_ms { throw RecordError::Latency; }
+        if milliseconds > maximum_latency_ms => throw RecordError::Latency;
         return {
             level: level(first.before)?,
             milliseconds: milliseconds,
@@ -107,8 +107,8 @@ fn analyze(bytes: [u8]) -> Report {
             .End => break,
             .Line(start, end, _) => {
                 var limit = end;
-                if limit > start && bytes[limit - 1] == 0x0d { --limit; }
-                if limit == start { continue; }
+                if limit > start && bytes[limit - 1] == 0x0d => --limit;
+                if limit == start => continue;
                 try {
                     let record = parse_record(bytes.slice(start, limit))?;
                     ++report.accepted;
@@ -117,14 +117,14 @@ fn analyze(bytes: [u8]) -> Report {
                         .Warning => { ++report.warnings; },
                         .Error => { ++report.errors; },
                     }
-                    if record.milliseconds >= rules.slow_ms { report.slow.push(record.message); }
+                    if record.milliseconds >= rules.slow_ms => report.slow.push(record.message);
                 } catch {
                     RecordError(_) => { ++report.rejected; },
                 }
             },
         }
     }
-    return &&report;
+    return report;
 }
 
 fn to_json(report: Report) -> String throw JSONValueError {
@@ -142,28 +142,21 @@ fn to_json(report: Report) -> String throw JSONValueError {
 }
 
 const test "log rules redact credentials before retaining messages" {
-    check(
-        try {
-            level("WARN")? == .Warning
-        } catch {
-            RecordError(_) => false
-        }
-    );
-    check(
-        try {
-            redact("connected token=secret peer=本机")?
-                == "connected token=[redacted] peer=本机"
-        } catch {
-            TextError(_) => false
-        }
-    );
-    check(
-        try {
-            report_template.get("accepted")?.number_text()? == "0"
-        } catch {
-            JSONValueError(_) => false
-        }
-    );
+    check(try {
+        level("WARN")? == .Warning
+    } catch {
+        RecordError(_) => false
+    });
+    check(try {
+        redact("connected token=secret peer=本机")? == "connected token=[redacted] peer=本机"
+    } catch {
+        TextError(_) => false
+    });
+    check(try {
+        report_template.get("accepted")?.number_text()? == "0"
+    } catch {
+        JSONValueError(_) => false
+    });
 }
 
 test "log analysis recovers per record and keeps slow messages in order" {
@@ -186,36 +179,30 @@ test "log validation rejects invalid fields and UTF-8 without losing valid input
     bytes.push(0xff);
     bytes.push(0x0a);
     check(analyze(bytes).rejected == 1);
-    check(
-        try {
-            let _ = parse_record(bytes)?;
-            false
-        } catch {
-            RecordError(error) => match error {
-                .InvalidText(detail) => detail.kind == .InvalidLead && detail.offset == 7,
-                _ => false
-            },
-        }
-    );
-    check(
-        try {
-            let _ = parse_record("INFO -1 negative".bytes)?;
-            false
-        } catch {
-            RecordError(error) => match error {
-                .InvalidLatency(detail) => detail == .Invalid,
-                _ => false
-            },
-        }
-    );
+    check(try {
+        let _ = parse_record(bytes)?;
+        false
+    } catch {
+        RecordError(error) => match error {
+            .InvalidText(detail) => detail.kind == .InvalidLead && detail.offset == 7,
+            _ => false
+        },
+    });
+    check(try {
+        let _ = parse_record("INFO -1 negative".bytes)?;
+        false
+    } catch {
+        RecordError(error) => match error {
+            .InvalidLatency(detail) => detail == .Invalid,
+            _ => false
+        },
+    });
 }
 
 const test "Log redaction: preserve leading adjacent and trailing spaces" {
-    check(
-        try {
-            redact("  token=abc  ready ")? == "  token=[redacted]  ready " && redact("")? == ""
-        } catch {
-            TextError(_) => false
-        }
-    );
+    check(try {
+        redact("  token=abc  ready ")? == "  token=[redacted]  ready " && redact("")? == ""
+    } catch {
+        TextError(_) => false
+    });
 }

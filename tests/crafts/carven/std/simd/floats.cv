@@ -1,22 +1,24 @@
 import std::simd.floats using { block_count, load_block }
 
-const frozen = f32x8::from_array([1.0, -2.0, 0.5, 4.0, 1.0, -2.0, 0.5, 4.0]);
-const frozen_mask = frozen < 1.0;
-const frozen_zero = -f32x8::splat(0.0);
-const frozen_nan = f32x8::splat(0.0) / f32x8::splat(0.0);
+private const frozen = f32x8::from_array([1.0, -2.0, 0.5, 4.0, 1.0, -2.0, 0.5, 4.0]);
+private const frozen_mask = frozen < 1.0;
+private const frozen_zero = -f32x8::splat(0.0);
+private const frozen_nan = f32x8::splat(0.0) / f32x8::splat(0.0);
 
-const fn stamped(&trace: i32, digit: i32) -> f32x8 {
+private const fn stamped(&trace: i32, digit: i32) -> f32x8 {
     trace = trace * 10 + digit;
     return f32x8::splat(digit as f32);
 }
 
-fn control_effect(&trace: i32, digit: i32) -> bool {
+private fn control_effect(&trace: i32, digit: i32) -> bool {
     trace = trace * 10 + digit;
     return true;
 }
 
 private const fn same_float(actual: f32, expected: f32) -> bool {
-    if expected != expected { return actual != actual; }
+    if expected != expected {
+        return actual != actual;
+    }
     return actual == expected && (expected != 0.0 || 1.0 / actual == 1.0 / expected);
 }
 
@@ -49,14 +51,12 @@ test "SIMD: floating method operands run once in source order" {
     let bounded = stamped(&trace, 1).clamp(stamped(&trace, 2).lane(0), stamped(&trace, 3));
     check(trace == 123 && (bounded == 2.0).all());
     var value = f32x8::splat(-2.0);
-    let snapshot = value.max(
-        if true {
-            value = f32x8::splat(3.0);
-            -1.0f32
-        } else {
-            0.0f32
-        }
-    );
+    let snapshot = value.max(if true {
+        value = f32x8::splat(3.0);
+        -1.0f32
+    } else {
+        0.0f32
+    });
     check((snapshot == -1.0).all() && (value == 3.0).all());
 }
 
@@ -135,10 +135,8 @@ const fn verify_floats() -> bool {
         assert(load_block(view, size).active.any() == false);
     }
     assert(f32x8::load(data, 1).to_array() == [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]);
-    assert(
-        f32x8::load_partial(data, 8, -1.0).to_array()
-            == [8.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0]
-    );
+    assert(f32x8::load_partial(data, 8, -1.0).to_array()
+        == [8.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0]);
     var trace = 0;
     let result = stamped(&trace, 1) + stamped(&trace, 2);
     assert(trace == 12 && (result == 3.0).all());

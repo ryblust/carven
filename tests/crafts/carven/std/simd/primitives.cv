@@ -22,10 +22,9 @@ const fn verify_narrow_primitives() -> bool {
     assert(finite.all());
     assert(
         magnitudes.min(2.0).max(f32x4::from_array([0.0, 3.0, 0.0, 3.0])).clamp(
-                0.0,
-                f32x4::from_array([1.0, 2.0, 3.0, 4.0])
-            ).to_array()
-            == [1.0, 2.0, 2.0, 3.0]
+            0.0,
+            f32x4::from_array([1.0, 2.0, 3.0, 4.0])
+        ).to_array() == [1.0, 2.0, 2.0, 3.0]
     );
     assert(floats.extract(floats, 4).to_array() == floats.to_array());
     assert(mask4::from_bits(0xf8).bits() == 8);

@@ -81,7 +81,11 @@ auto BodyPreparation::operands(
             },
             [&](const SemCast& value) noexcept {
                 visit_semantic_children(value, [&](const SemanticExpression& input) noexcept {
-                    add(input, PreparedUse::OperandValue);
+                    // Identity constructs a value, including transferable backing
+                    // when its operand must be saved before later effects.
+                    add(input,
+                        value.kind == CastKind::Identity ? PreparedUse::Consume
+                                                         : PreparedUse::OperandValue);
                 });
             },
             [&](const SemField& value) noexcept {

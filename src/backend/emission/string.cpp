@@ -24,3 +24,35 @@ auto cpp_string_token(std::string_view bytes) noexcept -> std::string {
     result.push_back('"');
     return result;
 }
+
+auto cpp_filename_token(std::string_view text) noexcept -> std::string {
+    auto result = std::string("\"");
+    result.reserve(text.size() + 2uz);
+    static constexpr auto hexadecimal = std::string_view("0123456789abcdef");
+    for (const auto character : text) {
+        switch (character) {
+            case '\\': result += "\\\\"; break;
+            case '"':  result += "\\\""; break;
+            case '\a': result += "\\a"; break;
+            case '\b': result += "\\b"; break;
+            case '\f': result += "\\f"; break;
+            case '\n': result += "\\n"; break;
+            case '\r': result += "\\r"; break;
+            case '\t': result += "\\t"; break;
+            case '\v': result += "\\v"; break;
+            default:   {
+                const auto byte = static_cast<unsigned char>(character);
+                if (byte < 0x20 || byte == 0x7f) {
+                    result += "\\u00";
+                    result.push_back(hexadecimal[byte >> 4]);
+                    result.push_back(hexadecimal[byte & 0x0f]);
+                } else {
+                    result.push_back(character);
+                }
+                break;
+            }
+        }
+    }
+    result.push_back('"');
+    return result;
+}

@@ -1,0 +1,55 @@
+import .protocol using { range, ProtocolError }
+import std::json using { JSONValue, JSONValueError }
+
+private fn number(value: JSONValue, key: str) -> usize throw JSONValueError {
+    let field = value.get(key)?;
+    return field.as_u64()? as usize;
+}
+
+private fn document_symbol(
+    symbol: JSONValue,
+    text: str
+) -> JSONValue throw JSONValueError + ProtocolError {
+    var result = JSONValue::object();
+    result.set("name", &&symbol.get("name")?)?;
+    result.set("kind", &&symbol.get("kind")?)?;
+    result.set("range", &&range(text, number(symbol, "start")?, number(symbol, "end")?)?)?;
+    result.set(
+        "selectionRange",
+        &&range(text, number(symbol, "selectionStart")?, number(symbol, "selectionEnd")?)?
+    )?;
+    let children = symbol.get("children")?;
+    var nested = JSONValue::array();
+    for index in 0..children.length()? {
+        nested.push(&&document_symbol(children.at(index)?, text)?)?;
+    }
+    result.set("children", &&nested)?;
+    return result;
+}
+
+fn symbols(result: JSONValue, document: bool) -> JSONValue throw JSONValueError + ProtocolError {
+    let items = result.get("symbols")?;
+    var output = JSONValue::array();
+    for index in 0..items.length()? {
+        let item = items.at(index)?;
+        if document {
+            let text = result.get("text")?;
+            output.push(&&document_symbol(item, text.as_str()?)?)?;
+        } else {
+            let destination = item.get("uri")?;
+            let text = result.get("texts")?.get(destination.as_str()?)?;
+            var location = JSONValue::object();
+            location.set("uri", &&destination)?;
+            location.set(
+                "range",
+                &&range(text.as_str()?, number(item, "start")?, number(item, "end")?)?
+            )?;
+            var symbol = JSONValue::object();
+            symbol.set("name", &&item.get("name")?)?;
+            symbol.set("kind", &&item.get("kind")?)?;
+            symbol.set("location", &&location)?;
+            output.push(&&symbol)?;
+        }
+    }
+    return output;
+}

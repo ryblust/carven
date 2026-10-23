@@ -30,7 +30,9 @@ private fn stopped_first(flag: bool) {
 }
 
 private fn stopped_last(flag: bool) {
-    if !flag { return 7; }
+    if !flag {
+        return 7;
+    }
     return if true { throw ResultFailure {}; } else { throw ResultFailure {}; };
 }
 

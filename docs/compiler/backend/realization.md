@@ -84,8 +84,8 @@ sequencing, retaining const references for read projections and propagating writ
 demands to the owning object. Dereference reads the pointer slot; the pointer type
 determines access to the pointee.
 
-Named values preserve copy access at C++ return sites through const access, such
-as `std::as_const`. Take parameters own value storage. Deferred initialization
+Named Read operands preserve copy access at C++ return sites through const access,
+such as `std::as_const`. Take parameters own value storage. Deferred initialization
 constructs directly in final storage.
 
 ## Final storage and owning snapshots
@@ -169,9 +169,10 @@ its subsequent native delivery retains the queried `T&&` and its constness.
 
 A direct Take return of a named automatic owner uses a C++ name expression when
 its type contains neither native values nor closures. C++ can then elide the
-local return or move from the parameter. Ordinary named returns retain copy
-semantics. Native-containing values, closure captures, deferred storage, and
-failure transport retain explicit transfer realization.
+local return or move from the parameter. Implicit and explicit Take returns use
+the same realization; Read returns retain copy semantics. Native-containing
+values, closures, deferred storage, and failure transport retain explicit
+transfer realization.
 
 ## Ranges, mutation, and calls
 

@@ -17,6 +17,7 @@ DiagnosticBuilder::DiagnosticBuilder(DiagnosticCode code, std::string message) n
               .related = {},
               .notes = {},
               .helps = {},
+              .fixes = {},
           },
       } {}
 
@@ -49,6 +50,12 @@ auto DiagnosticBuilder::note(std::string message, std::optional<SourceSpan> span
 
 auto DiagnosticBuilder::help(std::string message) noexcept -> DiagnosticBuilder& {
     diagnostic.attachment.helps.push_back(std::move(message));
+    return *this;
+}
+
+auto DiagnosticBuilder::fix(std::string title, std::vector<DiagnosticEdit> edits) noexcept
+    -> DiagnosticBuilder& {
+    diagnostic.attachment.fixes.push_back({std::move(title), std::move(edits)});
     return *this;
 }
 

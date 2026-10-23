@@ -2,6 +2,5 @@ import std::simd.scan using { one_of, prefix_end }
 
 private const selected = one_of([0, 9, 34, 47, 65, 97, 127, 128, 200, 255]);
 
-export(cpp) fn scan_kernel(bytes: [u8], start: usize) -> usize {
-    return prefix_end(bytes, start, selected);
-}
+export(cpp) fn scan_kernel(bytes: [u8], start: usize) -> usize =>
+    prefix_end(bytes, start, selected);

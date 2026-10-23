@@ -1,22 +1,20 @@
-import std::build using build;
+import std::build using project;
 
-build(
-    {
-        shared_sources: ["src/catalog.cv"],
-        targets: [
-            {
-                name: "inventory",
-                kind: .Executable,
-                sources: ["src/main.cv"],
-                ...
-            },
-            {
-                name: "inventory-check",
-                kind: .Executable,
-                sources: ["src/check.cv"],
-                ...
-            },
-        ],
-        ...
-    }
-)?;
+project({
+    shared_sources: ["src/catalog.cv"],
+    targets: [
+        {
+            name: "inventory",
+            kind: .Executable,
+            sources: ["src/main.cv"],
+            ...
+        },
+        {
+            name: "inventory-check",
+            kind: .Executable,
+            sources: ["src/check.cv"],
+            ...
+        },
+    ],
+    ...
+})?;

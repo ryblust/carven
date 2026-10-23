@@ -18,7 +18,9 @@ struct ParentFailure {}
 private fn sync_fixed() -> ::Fixed => make_fixed();
 
 private fn nominal_fixed(fail: bool) -> ::Fixed throw ParentFailure {
-    if fail { throw ParentFailure {}; }
+    if fail {
+        throw ParentFailure {};
+    }
     return ::Fixed {};
 }
 
@@ -49,40 +51,31 @@ private async fn parent() -> ::Fixed throw ParentFailure {
 async test "Async native values: immovable identity and completion cleanup" {
     try {
         check(await fixed_aligned_frames());
-        check(
-            (
-                fixed_created(),
-                fixed_destroyed(),
-                fixed_live(),
-                fixed_trace(),
-                fixed_identity_stable()
-            )
-                == (0, 0, 0, 0, 0)
-        );
+        check((
+            fixed_created(),
+            fixed_destroyed(),
+            fixed_live(),
+            fixed_trace(),
+            fixed_identity_stable()
+        ) == (0, 0, 0, 0, 0));
         if true {
             let held = await parent()?;
             check(held.at_construction_address() as bool);
-            check(
-                (
-                    fixed_created(),
-                    fixed_destroyed(),
-                    fixed_live(),
-                    fixed_trace(),
-                    fixed_identity_stable()
-                )
-                    == (1, 0, 1, 1, 1)
-            );
-        }
-        check(
-            (
+            check((
                 fixed_created(),
                 fixed_destroyed(),
                 fixed_live(),
                 fixed_trace(),
                 fixed_identity_stable()
-            )
-                == (1, 1, 0, 12, 0)
-        );
+            ) == (1, 0, 1, 1, 1));
+        }
+        check((
+            fixed_created(),
+            fixed_destroyed(),
+            fixed_live(),
+            fixed_trace(),
+            fixed_identity_stable()
+        ) == (1, 1, 0, 12, 0));
         if true {
             let held = await timeout(parent(), 1s)?;
             check(held.at_construction_address() as bool);

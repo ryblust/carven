@@ -433,9 +433,21 @@ auto Parser::parse_call(ASTExprID callee) noexcept -> std::optional<ASTExprID> {
     {
         const auto depth = enter_depth(expression_nesting);
         while (!failed && !check(TokenKind::RightParen)) {
+            const auto checkpoint = builder.checkpoint();
             const auto expression = parse_expression();
-            if (!expression) {
-                break;
+            if (!expression || failed) {
+                if (speculation_depth == 0
+                    && (at_end()
+                        || on_statement_line()
+                        || check(TokenKind::Semicolon)
+                        || check(TokenKind::RightBrace)
+                        || check(TokenKind::RightParen)
+                        || check(TokenKind::RightBracket))) {
+                    builder.rewind(checkpoint);
+                    failed = false;
+                    break;
+                }
+                return std::nullopt;
             }
             arguments.push_back(*expression);
             if (!match(TokenKind::Comma)) {
@@ -698,7 +710,7 @@ auto Parser::parse_primary_expression() noexcept -> std::optional<ASTExprID> {
         );
     }
     if (check_optionally_const(TokenKind::If)) {
-        auto form = parse_if_form();
+        auto form = parse_if_form(false);
         if (!form) {
             return std::nullopt;
         }

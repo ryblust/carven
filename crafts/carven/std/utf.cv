@@ -81,8 +81,9 @@ export const fn decode_utf8_prefix(bytes: [u8]) -> UTF8DecodeResult throw UTF8Er
         } else {
             scalar = (scalar << 6) | ((byte & 63) as u32);
         }
-        if state.remaining == 0 { return .Scalar(char::from_u32_unchecked(scalar), state.offset); }
+        if state.remaining == 0 => return .Scalar(char::from_u32_unchecked(scalar), state.offset);
     }
+
     check_utf8_complete(state)?;
     return .End;
 }
@@ -152,23 +153,24 @@ private const fn boundary(text: str, offset: usize) -> bool {
 
 // Offsets are UTF-8 byte offsets. The result borrows the original text.
 export const fn substring(text: str, start: usize, end: usize) -> str throw TextError {
-    if start > end || end > text.byte_length() { throw TextError::OutOfBounds; }
-    if !boundary(text, start) || !boundary(text, end) { throw TextError::NotCharBoundary; }
+    if start > end || end > text.byte_length() => throw TextError::OutOfBounds;
+    if !boundary(text, start) || !boundary(text, end) => throw TextError::NotCharBoundary;
     return str::from_utf8_unchecked(text.bytes.slice(start, end));
 }
 
 private const fn matches_at(bytes: [u8], start: usize, pattern: [u8]) -> bool {
     var offset: usize = 0;
     while pattern.length() - offset >= 32 {
-        if (u8x32::load(bytes, start + offset) != u8x32::load(pattern, offset)).any() {
-            return false;
-        }
+        if (u8x32::load(bytes, start + offset)
+            != u8x32::load(pattern, offset)).any() => return false;
         offset += 32;
     }
+
     while offset < pattern.length() {
-        if bytes[start + offset] != pattern[offset] { return false; }
+        if bytes[start + offset] != pattern[offset] => return false;
         ++offset;
     }
+
     return true;
 }
 
@@ -177,18 +179,18 @@ export const fn starts_with(text: str, prefix: str) -> bool {
 }
 
 export const fn ends_with(text: str, suffix: str) -> bool {
-    if suffix.byte_length() > text.byte_length() { return false; }
+    if suffix.byte_length() > text.byte_length() => return false;
     return matches_at(text.bytes, text.byte_length() - suffix.byte_length(), suffix.bytes);
 }
 
 export const fn split_once(text: str, separator: str) -> TextSplit throw TextError {
-    if separator.is_empty() { throw TextError::EmptySeparator; }
+    if separator.is_empty() => throw TextError::EmptySeparator;
     if separator.byte_length() <= text.byte_length() {
         let candidates_end = text.byte_length() - separator.byte_length() + 1;
         var start: usize = 0;
         while start < candidates_end {
             start += find_byte(text.bytes.slice(start, candidates_end), separator.bytes[0]);
-            if start == candidates_end { break; }
+            if start == candidates_end => break;
             if matches_at(text.bytes, start, separator.bytes) {
                 // A complete match of valid UTF-8 starts and ends at character boundaries.
                 return {
@@ -202,6 +204,7 @@ export const fn split_once(text: str, separator: str) -> TextSplit throw TextErr
             ++start;
         }
     }
+
     return {
         found: false,
         before: text,
@@ -216,7 +219,7 @@ export const fn split(text: str, separator: str) -> Vector<String> throw TextErr
     while {
         let part = split_once(remaining, separator)?;
         parts.push(part.before as String);
-        if !part.found { return &&parts; }
+        if !part.found => return parts;
         remaining = part.after;
     }
 }
@@ -237,8 +240,8 @@ export class TextSplitCursor {
     };
 
     const fn next(&self, text: str, separator: str) -> TextSplitField throw TextError {
-        if separator.is_empty() { throw TextError::EmptySeparator; }
-        if self.finished { return .End; }
+        if separator.is_empty() => throw TextError::EmptySeparator;
+        if self.finished => return .End;
         let part = split_once(substring(text, self.offset, text.byte_length())?, separator)?;
         if part.found {
             self.offset += part.before.byte_length() + separator.byte_length();
@@ -255,9 +258,9 @@ export const fn lines(text: str) -> Vector<String> {
     var start: usize = 0;
     while start < text.byte_length() {
         let end = start + find_byte(text.bytes.slice(start, text.byte_length()), 0x0a);
-        if end == text.byte_length() { break; }
+        if end == text.byte_length() => break;
         var limit = end;
-        if limit > start && text.bytes[limit - 1] == 0x0d { --limit; }
+        if limit > start && text.bytes[limit - 1] == 0x0d => --limit;
         result.push(str::from_utf8_unchecked(text.bytes.slice(start, limit)) as String);
         start = end + 1;
     }
@@ -266,5 +269,5 @@ export const fn lines(text: str) -> Vector<String> {
             str::from_utf8_unchecked(text.bytes.slice(start, text.byte_length())) as String
         );
     }
-    return &&result;
+    return result;
 }

@@ -58,6 +58,7 @@ using BodyLocalNames = std::flat_map<std::string, BodyLocalStorage, std::less<>>
 struct BodyLocalFrame final {
     LifetimeRegionID lifetime;
     BodyLocalNames names;
+    std::map<std::string, SourceSpan, std::less<>> unavailable;
 };
 
 using BodyExpressionStorage = std::variant<SemanticExpression, PlaceExpression>;
@@ -338,6 +339,7 @@ private:
     ) noexcept -> void;
 
     auto observe_binding(Span location, const BodyLocalStorage& local) noexcept -> void;
+    auto observe_enum_case(Span location, ConstructionEnumCaseRef reference) noexcept -> void;
     auto catalog() const noexcept -> AnalysisCatalogView;
     auto import_usage() const noexcept -> ImportUsage&;
     auto origin(Span span) noexcept -> ProgramOriginID;
@@ -473,6 +475,9 @@ private:
     auto pop_frame(bool diagnose) noexcept -> void;
     auto collect_unused_locals(const BodyLocalFrame& frame) noexcept -> void;
     auto visible_locals() const noexcept -> BodyLocalNames;
+    auto complete_names(Span span) const noexcept -> void;
+    auto unavailable_local(std::string_view name) const noexcept -> std::optional<SourceSpan>;
+    auto exclude_statement(ASTStmtID statement) noexcept -> bool;
 
     auto bind_local(Span name, BodyLocalStorage storage, DiagnosticCode duplicate_code) noexcept
         -> AnalysisResult<void>;
@@ -485,8 +490,6 @@ private:
 
     auto find_global(std::string_view name, Span span) noexcept -> AnalysisTask<CatalogEntity>;
 
-    auto find_enum_case(EnumID owner, std::string_view name, Span span) noexcept
-        -> std::optional<EnumCaseID>;
 
     auto consume_value(BuiltExpression& expression, Span span, AccessMode access) noexcept
         -> AnalysisResult<SemanticExpression>;
@@ -802,6 +805,8 @@ private:
     std::size_t aggregate_construction_work = 0uz;
     bool observe_sources;
     SourceObservation source_occurrences;
+    std::optional<Span> excluded_statement;
+    std::optional<AnalysisFailure> nested_body_failure;
     bool static_body = false;
     std::optional<LifetimeRegionID> active_full_expression;
     bool reachable;

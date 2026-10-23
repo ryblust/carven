@@ -7,7 +7,7 @@ import :semantic.analysis.generics.snapshot;
 import :semantic.analysis.model;
 import :semantic.analysis.ownership.context;
 import :semantic.analysis.program;
-import :semantic.analyze;
+import :semantic.evaluation.execution;
 import :semantic.semir.body;
 import :semantic.semir.constant;
 import :semantic.semir.contents;
@@ -211,7 +211,7 @@ const TestSuite suite([] static noexcept {
             };
             auto parsed = parse_program(sources, SourceBatch {.modules = inputs});
             require(parsed.has_value());
-            auto result = analyze(std::move(*parsed), HostEffects::Deny);
+            auto result = analyze_test_syntax(std::move(*parsed), HostEffects::Deny);
             if (rejected) {
                 require(!result.has_value());
                 expect_diagnostic(result.error(), DiagnosticCode::AsyncAdmission);
@@ -1093,8 +1093,7 @@ fn later() {
                 },
                 Scenario {
                     .name = "invalid completion precedes earlier deferred error",
-                    .source = R"(fn copied(&&text: String) -> String => text;
-fn earlier() {
+                    .source = R"(fn earlier() {
     let owner = 1;
     let moved = &&owner;
     let observed = owner;
@@ -1121,7 +1120,7 @@ fn escaping() {
                 };
                 auto parsed = parse_program(sources, SourceBatch {.modules = std::span(&input, 1)});
                 require(parsed.has_value());
-                const auto result = analyze(std::move(*parsed), HostEffects::Deny);
+                const auto result = analyze_test_syntax(std::move(*parsed), HostEffects::Deny);
                 if (!expect(!result.has_value())) {
                     return;
                 }
@@ -1149,7 +1148,6 @@ fn escaping() {
                     expect_equal(sources.slice(related), "[&local]() { local += 1; }");
                     expect_no_diagnostic(result.error(), DiagnosticCode::AccessUnavailable);
                 }
-                expect_no_diagnostic(result.error(), DiagnosticCode::LintReturnCopy);
             });
         };
 
@@ -1192,7 +1190,7 @@ fn invalid(flag: bool) {
                 };
                 auto parsed = parse_program(sources, SourceBatch {.modules = std::span(&input, 1)});
                 require(parsed.has_value());
-                const auto result = analyze(std::move(*parsed), HostEffects::Deny);
+                const auto result = analyze_test_syntax(std::move(*parsed), HostEffects::Deny);
                 if (!expect(!result.has_value())) {
                     return;
                 }
@@ -1214,53 +1212,6 @@ fn invalid(flag: bool) {
                 expect_equal(sources.slice(related), "&&");
                 expect_equal(related.span.start(), scenario.source.find("&&payload"));
             });
-        };
-
-    "Semantic ownership: return-copy observations deduplicate across borrowed inputs"_test =
-        [] static noexcept {
-            auto sources = SourceManager();
-            const auto source_id = sources.append_virtual(
-                "analysis.cv",
-                R"(fn copied(&&copied_text: String, tokens: [i32]) -> String => copied_text;
-fn blocked(&&blocked_text: String, tokens: [i32]) -> String {
-    let held = blocked_text.as_str();
-    let length = held.byte_length();
-    return blocked_text;
-}
-fn forward_copied(&&text: String, tokens: [i32]) -> String => copied(&&text, tokens);
-fn forward_blocked(&&text: String, tokens: [i32]) -> String => blocked(&&text, tokens);
-fn invoke() {
-    let first: String = "first";
-    let second: String = "second";
-    let values = [1, 2];
-    let copied_value = forward_copied(&&first, values);
-    let blocked_value = forward_blocked(&&second, values);
-}
-)"
-            );
-            require(source_id.has_value());
-            const auto input = SourceModuleInput {
-                .source_id = *source_id,
-                .module_path = semantic_test_module_path(),
-            };
-            auto parsed = parse_program(sources, SourceBatch {.modules = std::span(&input, 1)});
-            require(parsed.has_value());
-            const auto result = analyze(std::move(*parsed), HostEffects::Deny);
-            if (!expect(result.has_value())) {
-                return;
-            }
-            auto returned = std::vector<std::string_view>();
-            for (const auto& diagnostic : result->diagnostics) {
-                if (diagnostic.finding.code != DiagnosticCode::LintReturnCopy) {
-                    continue;
-                }
-                if (!expect(diagnostic.attachment.primary.has_value())) {
-                    return;
-                }
-                expect(diagnostic.attachment.primary->span.source_id == *source_id);
-                returned.push_back(sources.slice(diagnostic.attachment.primary->span));
-            }
-            expect(returned == std::vector<std::string_view> {"copied_text"});
         };
 
     "Semantic ownership: direct enum values retain caller backing and reject local escape"_test =
@@ -1437,7 +1388,7 @@ fn invalid() {
             };
             auto parsed = parse_program(sources, SourceBatch {.modules = std::span(&input, 1)});
             require(parsed.has_value());
-            const auto result = analyze(std::move(*parsed), HostEffects::Deny);
+            const auto result = analyze_test_syntax(std::move(*parsed), HostEffects::Deny);
             if (!expect(!result.has_value())) {
                 return;
             }

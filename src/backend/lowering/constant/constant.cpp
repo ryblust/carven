@@ -9,12 +9,12 @@ import :backend.target.expr;
 import :backend.target.symbol;
 import :backend.target.type;
 import :semantic.semir.constant;
-import :semantic.semir.constant_access;
 import :semantic.semir.decl;
 import :semantic.semir.ids;
 import :semantic.semir.program;
 import :semantic.semir.simd;
 import :semantic.semir.type;
+import :semantic.semir.values;
 import :source.provenance;
 import :support.invariant;
 import :support.visit;
@@ -208,7 +208,7 @@ auto tuple_expression(
 }
 
 auto constant_has_storage(const SemIRProgram& program, ConstantID id) noexcept -> bool {
-    return constant_has_storage(PublishedConstantValues(program), id);
+    return constant_has_storage(ProgramValues(program), id);
 }
 
 namespace {

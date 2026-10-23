@@ -1,5 +1,0 @@
-export(cpp) fn value() -> i32 => 42;
-
-test "value" {
-    check(value() == 42);
-}

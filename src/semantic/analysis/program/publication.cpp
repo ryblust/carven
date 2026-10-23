@@ -5,12 +5,14 @@ import :semantic.analysis.model;
 import :semantic.analysis.nullability;
 import :semantic.analysis.ownership;
 import :semantic.analysis.program;
+import :semantic.analysis.source.builder;
 import :semantic.analysis.validation;
 import :semantic.semir.passing;
 import :support.timing;
 import std;
 
 auto ProgramDraft::finish() && noexcept -> AnalysisResult<SemIRProgram> {
+    auto* observations = source_analysis();
     const auto diagnostics = analysis_diagnostics;
     const auto timings = analysis_timings;
     auto solve_scope = TimingScope(timings, TimingStage::SemanticSolving);
@@ -26,6 +28,9 @@ auto ProgramDraft::finish() && noexcept -> AnalysisResult<SemIRProgram> {
     auto result = AnalysisResult<SemIRProgram> {std::move(solved->program)};
     if (const auto failure = diagnostics.failure()) {
         return std::unexpected(*failure);
+    }
+    if (observations) {
+        observations->complete_construction();
     }
     const auto validation_scope = TimingScope(timings, TimingStage::SemanticValidation);
     const auto& program = *result;

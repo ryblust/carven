@@ -1,0 +1,125 @@
+{
+  "name": "carven",
+  "displayName": "Carven",
+  "description": "Carven language support powered by the Carven LSP.",
+  "version": "0.1.0",
+  "publisher": "carven-lang",
+  "private": true,
+  "engines": {
+    "vscode": "^1.142.0",
+    "node": ">=24.12.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "main": "./dist/extension.cjs",
+  "extensionKind": [
+    "workspace"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false
+    },
+    "virtualWorkspaces": {
+      "supported": false
+    }
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "vscode:prepublish": "node build.mjs",
+    "test": "node --test tests/lsp/run.ts",
+    "test:vscode": "node build.mjs --tests && node tests/run-integration.ts",
+    "check:tests": "tsc --noEmit",
+    "format": "prettier --config .prettierrc.json --write \"**/*.{ts,js,cjs,mjs,json}\" \"../../tools/release/*.mjs\"",
+    "format-check": "prettier --config .prettierrc.json --check \"**/*.{ts,js,cjs,mjs,json}\" \"../../tools/release/*.mjs\"",
+    "package": "node package.mjs"
+  },
+  "contributes": {
+    "languages": [
+      {
+        "id": "carven",
+        "aliases": [
+          "Carven",
+          "carven"
+        ],
+        "extensions": [
+          ".cv"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "carven",
+        "scopeName": "source.carven",
+        "path": "./syntaxes/carven.tmLanguage.json",
+        "embeddedLanguages": {
+          "meta.embedded.block.cpp": "cpp",
+          "meta.embedded.expression.carven": "carven"
+        }
+      }
+    ],
+    "configuration": {
+      "title": "Carven",
+      "properties": {
+        "carven.serverPath": {
+          "type": "string",
+          "default": "carven-lsp",
+          "scope": "machine-overridable",
+          "description": "Language server executable. Use an absolute path to try a local build. Changes restart the language server."
+        },
+        "carven.xmakePath": {
+          "type": "string",
+          "default": "xmake",
+          "scope": "machine",
+          "description": "xmake executable used to configure and discover project targets. Changes restart the language server."
+        },
+        "carven.target": {
+          "type": "string",
+          "default": "",
+          "scope": "window",
+          "description": "Optional project target to analyze. Empty selects default targets and the target owning each open document. Changes restart the language server."
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "carven.restartServer",
+        "title": "Carven: Restart Language Server"
+      },
+      {
+        "command": "carven.reloadProject",
+        "title": "Carven: Reload Project"
+      }
+    ]
+  },
+  "dependencies": {
+    "vscode-languageclient": "10.1.2"
+  },
+  "license": "MIT",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ryblust/carven.git",
+    "directory": "editors/vscode"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "@types/vscode": "1.140.0",
+    "@vscode/vsce": "4.0.0",
+    "esbuild": "0.28.2",
+    "prettier": "3.9.10",
+    "typescript": "7.0.2",
+    "vscode-languageserver-protocol": "3.18.4",
+    "vscode-languageserver-textdocument": "1.0.15"
+  },
+  "files": [
+    "README.md",
+    "LICENSE",
+    "language-configuration.json",
+    "syntaxes/**",
+    "dist/extension.cjs",
+    "dist/THIRD_PARTY_NOTICES.txt"
+  ],
+  "packageManager": "pnpm@11.25.0"
+}

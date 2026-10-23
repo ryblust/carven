@@ -78,6 +78,10 @@ facts.
 An unmarked argument has Read access. Calls and C++ construction use this result;
 parameter access checks report mismatches in their own contexts.
 
+Return construction consumes a direct, takeable binding owned by the current body
+with Take before result inference and coercion. Other operands retain their
+analyzed access. Block and expression bodies share this path.
+
 Index construction checks the receiver before the index; a diagnosed operand
 failure stops construction. Index type and bounds rules require both operands
 to succeed. Binary expressions and integer ranges share
@@ -396,6 +400,10 @@ expression directly; reading a callable contract does not create an inference
 term. Cold operation types use the same references, and the shared callable
 shape retains synchronous or async execution. Adoption checks failure subsets,
 while Write access requires equal contracts.
+
+Known-member queries evaluate the current concrete contribution closure with
+the same worklist used by failure solving. Application completion is separate;
+full failure solving supplies symbolic proofs and closed-set decisions.
 
 `analysis.expr` interprets each expression once, with concrete constant and body
 sites. The interpreter owns contextual typing, operation selection, enum and

@@ -1,9 +1,9 @@
 module carven:semantic.semir.contents.impl;
 
-import :semantic.semir.constant_access;
 import :semantic.semir.contents;
 import :semantic.semir.decl;
 import :semantic.semir.type;
+import :semantic.semir.values;
 import :support.invariant;
 import std;
 
@@ -187,7 +187,6 @@ auto solve_type_content_graph(
             .contains_storage_owner = (contents[index] & storage_owner_content) != 0u,
             .contains_storage_view = (contents[index] & storage_view_content) != 0u,
             .contains_native_value = (contents[index] & native_value_content) != 0u,
-            .contains_string_storage = (contents[index] & string_storage_content) != 0u,
             .contains_parametric_value = (contents[index] & parametric_value_content) != 0u,
             .has_value_storage_constraint = (contents[index] & value_storage_constraint) != 0u,
         });
@@ -202,7 +201,6 @@ auto TypeContents::mask() const noexcept -> unsigned {
         | (contains_storage_owner ? storage_owner_content : 0u)
         | (contains_storage_view ? storage_view_content : 0u)
         | (contains_native_value ? native_value_content : 0u)
-        | (contains_string_storage ? string_storage_content : 0u)
         | (contains_parametric_value ? parametric_value_content : 0u)
         | (has_value_storage_constraint ? value_storage_constraint : 0u);
 }

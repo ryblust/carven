@@ -7,7 +7,7 @@ C++ conventions.
 
 | Source | Applicable rules |
 | --- | --- |
-| Project source in `src/`, `include/`, `tests/`, `crafts/`, `benchmarks/`, and `tools/` | Apply these source conventions |
+| Project source in `src/`, `tests/`, `crafts/`, `benchmarks/`, and `tools/` | Apply these source conventions |
 | Vendored source and external-interface fixtures | Follow their owning format |
 | Generated artifacts | Apply the C++ baseline and header-order rules |
 
@@ -18,7 +18,7 @@ Use `.clang-format` for C++ formatting and neighboring code for local idioms.
 | Source | Requirement |
 | --- | --- |
 | `src/`, `tests/internal/`, and `tools/` | May use C++26 |
-| Hosting headers in `include/carven/hosting/` and their native consumers | Must compile with C++23 |
+| Public headers in `tools/hosting/include/carven/hosting/` and their native consumers | Must compile with C++23 |
 | Crafts, installed support source, generated code, baseline consumer fixtures, and native benchmarks | Must compile with C++20 |
 
 Select newer facilities only when the consumer's standard and library support them,
@@ -68,7 +68,7 @@ contracts and implementation slices by domain:
 | `execution/` | Program entry, control support, asynchronous operations, and timers |
 | `format/` | General formatting and prepared fragment writing |
 | `hosting/` | Shared native object references, typed host binding, and native value/async adapters |
-| `io/` | Host input cursor and scheduling, native read operations, and printing |
+| `io/` | Platform byte streams, input cursor and scheduling, native read operations, and printing |
 | `numeric/` | Scalar numeric operations and arithmetic checks |
 | `simd/` | Vector and mask operations with native and portable backends |
 | `testing/` | Inline-test execution and reporting contexts |
@@ -84,21 +84,26 @@ The shared `runtime/hosting/object.hpp` and `service.hpp` contracts depend only 
 the C++ standard library. Hosting headers include these contracts directly.
 Compiler partitions preserve these headers' global-module identity.
 Semantic execution includes `runtime/hosting/object.hpp` for native object
-references and `runtime/collection/vector.hpp` for contiguous byte storage.
-These uses preserve the headers' C++ entity identity. Native declarations and
-platform implementations belong to their Craft. Internal
-standard-capability adapters call those providers from semantic execution.
-Public hosting adapters bind user-supplied native services.
+references, `runtime/collection/vector.hpp` for contiguous byte storage, and
+`runtime/collection/hash.hpp` for the shared hash kernel. These uses preserve the
+headers' C++ entity identity. Native declarations and platform implementations
+belong to their Craft. The compiler core accepts native execution through a generic
+callback and supplies internal typed binding support in `semantic.evaluation.native`.
+`crafts/carven/std/providers.hpp` owns the standard function inventory; CLI and SDK
+consumers derive their own bindings from it and link the native implementations.
 Generated programs and source Crafts consume runtime headers through native
 interoperation.
 
-The C++23 user-facing hosting interface lives under `include/carven/hosting/`. These
-self-contained headers declare owning boundary values, opaque program and session
-state, and typed native bindings. Keep semantic types and execution storage in
-`src/semantic/`, boundary conversions and hosting state in `src/hosting/`, and
-compiler utilities in `src/support/`. Public callbacks declare the context and
-function pointer they need. Native consumers include the headers they use.
-Compiler drivers and standard-capability execution use internal module interfaces.
+Public C++23 contracts and typed adapters live under
+`tools/hosting/include/carven/hosting/`. Keep semantic types and execution storage
+in `src/semantic/`, public value conversion and hosting state in
+`tools/hosting/src/`, command orchestration in `src/driver/`, and compiler utilities
+in `src/support/`. Public callbacks declare the context and function pointer they
+need. Native embedding consumers include the headers they use and link the
+`carven-hosting` static library. CLI and workspace tools use core internal contracts.
+Public headers are the sole declarations of the public API; its implementation
+includes them in global module fragments and imports internal compiler partitions.
+Compiler semantic declarations do not mirror public boundary types.
 
 Use complete `carven/` paths, including within a domain. Ordinary dependencies use
 angle brackets. Shared native headers retain their own dependencies when included
@@ -169,27 +174,35 @@ restrictions or lint requirements.
 
 - `src/carven.cppm` contains only `export module carven;`, declaring the primary
   module unit. Keep compiler contracts and implementations in internal partitions.
-  Native hosting interfaces are self-contained headers under `include/carven/hosting/`;
-  their consumers include those headers and link the compiler objects.
+  The `carven-modules` target is `moduleonly` and includes all `src/` implementations
+  except the executable entry `src/carven.cpp`, which belongs to the `carven`
+  target. Keep external API adaptation outside this core; it does not include SDK
+  headers or public `Host*` types. CLI `driver.*` partitions live in `src/driver/`;
+  `src/carven.cpp` selects standard execution providers and forwards to
+  `carven_main`. Keep command logic in the driver. Native hosting interfaces are
+  self-contained headers under
+  `tools/hosting/include/carven/hosting/`;
+  their consumers include those headers and link the `carven-hosting` library.
 - Use `.cppm` for contract partitions and `.cpp` for implementation partitions.
   End implementation partition names in `.impl`; match file stems to the final
   module segment before `.impl`.
 - Partition names use the owning responsibility and the file's role. Collapse a
   repeated owner name at its entry.
-- Put imports in one block after the module declaration, partitions in lexical
-  order and `import std;` last. Directly import the partition owning the declarations
-  a file uses; implementations import their contract. Keep imports limited to
-  actual dependencies.
+- Put imports in one block after the module declaration. Sort lexically by module
+  or partition name, excluding statement punctuation. Place a shared prefix before
+  its extensions: `a:b` before `a:b.c`. Put `import std;` last. Directly import the
+  partition owning the declarations a file uses; implementations import their
+  contract. Keep imports limited to actual dependencies.
 - Shared declarations in compiler, tool, and internal-test partitions use distinct
   names identifying their domain, without named C++ namespaces. Imports control
   visibility; partitions of one named module still share declaration identity.
 - Use global module fragments for required platform headers or macro-only test
   headers, and for shared C++ contract headers, preserving their global-module
   identity.
-- `semantic.evaluation.value` includes the shared Runtime object and byte-storage headers after
+- `semantic.evaluation.runtime` includes shared Runtime execution headers once after
   `import std`, inside an unexported `extern "C++"` block. This keeps the same
-  global C++ entities and avoids Clang's definition-reachability failure through
-  indirect imports. The native header remains self-contained.
+  global C++ entities and avoids Clang's definition-reachability failures and
+  duplicate platform declarations across partitions. The headers remain self-contained.
 - Put translation-unit-private declarations in an anonymous namespace.
 - Follow each namespace opening with a blank line and close it with a namespace
   comment, including the name for named namespaces. Combine consecutive named

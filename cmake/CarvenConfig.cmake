@@ -1,0 +1,15 @@
+if(CMAKE_VERSION VERSION_LESS 3.21)
+    message(FATAL_ERROR "Carven requires CMake 3.21 or newer")
+endif()
+
+get_filename_component(_carven_prefix "${CMAKE_CURRENT_LIST_DIR}/../../.." ABSOLUTE)
+set(Carven_EXECUTABLE "${_carven_prefix}/bin/carven")
+if(CMAKE_HOST_WIN32)
+    string(APPEND Carven_EXECUTABLE ".exe")
+endif()
+if(NOT EXISTS "${Carven_EXECUTABLE}")
+    message(FATAL_ERROR "Missing compiler from this Carven installation: ${Carven_EXECUTABLE}")
+endif()
+unset(_carven_prefix)
+
+include("${CMAKE_CURRENT_LIST_DIR}/Carven.cmake")

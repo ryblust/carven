@@ -1,12 +1,16 @@
 import std::async using yield_once;
 
 const async fn rotate(a: i32, b: i32, depth: i32) -> i32 {
-    if depth == 0 { return a * 10 + b; }
+    if depth == 0 {
+        return a * 10 + b;
+    }
     return await rotate(b, a, depth - 1);
 }
 
 async fn ordered(a: i32, b: i32, depth: i32) -> i32 {
-    if depth == 0 { return a * 100 + b; }
+    if depth == 0 {
+        return a * 100 + b;
+    }
     var trace = 0;
     return await ordered(
         if true {
@@ -26,7 +30,9 @@ async fn ordered(a: i32, b: i32, depth: i32) -> i32 {
 }
 
 async fn nested(depth: i32) -> i32 {
-    if depth == 0 { return 7; }
+    if depth == 0 {
+        return 7;
+    }
     for var index = 0; index < 1; ++index {
         return await nested(depth - 1);
     }
@@ -42,7 +48,9 @@ async fn matched(depth: i32) -> i32 {
 
 async fn yielding(depth: i32) -> i32 {
     await yield_once();
-    if depth == 0 { return 7; }
+    if depth == 0 {
+        return 7;
+    }
     return await yielding(depth - 1);
 }
 

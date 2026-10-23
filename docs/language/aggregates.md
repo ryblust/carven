@@ -105,9 +105,9 @@ For `-> T throw E`, a return construction uses `T`, not the failure carrier.
 
 In expression positions, `{}` means empty initialization. At the start of a
 match or catch arm body, `{ field: value }` is a construction but `{}` remains
-an empty branch block; write `({})` for an empty construction arm. A function,
-if, or try body retains its required block, whose final expression may itself
-be a contextual construction.
+an empty branch block; write `({})` for an empty construction arm. A braced
+function, conditional, or try body is a block, whose final expression may
+itself be a contextual construction.
 
 ## Structures and arrays
 

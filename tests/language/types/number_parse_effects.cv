@@ -14,16 +14,22 @@ const fn observe(&count: i32, text: str) -> str {
 const fn checked_count(text: str) -> i32 throw InvalidNumber => Count::parse(text)?;
 
 private const fn effects() -> bool throw InvalidNumber {
-    if forward_value != 42 { return false; }
+    if forward_value != 42 {
+        return false;
+    }
     var count = 0;
     let parsed = Count::parse(observe(&count, "123"))?;
-    if parsed != 123 || count != 1 { return false; }
+    if parsed != 123 || count != 1 {
+        return false;
+    }
     try {
         Count::parse(observe(&count, "invalid"))?;
         return false;
     } catch {
         InvalidNumber(error) => {
-            if error != InvalidNumber::Invalid || count != 2 { return false; }
+            if error != InvalidNumber::Invalid || count != 2 {
+                return false;
+            }
         },
     }
     var text: String = "456";
@@ -33,21 +39,17 @@ private const fn effects() -> bool throw InvalidNumber {
 }
 
 const test "Numeric parsing: static aliases failures and input effects" {
-    check(
-        try {
-            effects()?
-        } catch {
-            InvalidNumber(_) => false
-        }
-    );
+    check(try {
+        effects()?
+    } catch {
+        InvalidNumber(_) => false
+    });
 }
 
 test "Numeric parsing: native aliases failures and independent results" {
-    check(
-        try {
-            effects()?
-        } catch {
-            InvalidNumber(_) => false
-        }
-    );
+    check(try {
+        effects()?
+    } catch {
+        InvalidNumber(_) => false
+    });
 }

@@ -12,20 +12,20 @@ const fn key_path(bytes: [u8], &offset: usize) -> Vector<String> throw TOMLError
     var path: Vector<String> = [];
     while {
         spaces(bytes, &offset);
-        if offset == bytes.length() { throw error(.UnexpectedEnd, offset); }
+        if offset == bytes.length() => throw error(.UnexpectedEnd, offset);
         var key = String {};
         if bytes[offset] == 0x22 || bytes[offset] == 0x27 {
             key = read_string(bytes, &offset, false)?;
         } else {
             let start = offset;
             offset = prefix_end(bytes, offset, bare_key);
-            if start == offset { throw error(.InvalidKey, offset); }
+            if start == offset => throw error(.InvalidKey, offset);
             key.append(str::from_utf8_unchecked(bytes.slice(start, offset)));
         }
         path.push(&&key);
-        if path.length() > 64 { throw error(.DepthLimit, offset); }
+        if path.length() > 64 => throw error(.DepthLimit, offset);
         spaces(bytes, &offset);
-        if offset == bytes.length() || bytes[offset] != 0x2e { return &&path; }
+        if offset == bytes.length() || bytes[offset] != 0x2e => return path;
         offset += 1;
     }
 }

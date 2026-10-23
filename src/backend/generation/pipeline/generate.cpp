@@ -17,41 +17,41 @@ import std;
 namespace {
 
 auto library_modules(const SemIRProgram& semantic, const TargetPlanningRequest& request) noexcept
-    -> std::expected<std::flat_set<ModuleID>, std::string> {
-    if (!request.library) {
-        return {};
-    }
-    const auto& library = *request.library;
-    auto paths = std::flat_set<CanonicalModulePath>();
-    for (const auto& path : library.modules) {
-        if (!paths.insert(path).second) {
-            return std::unexpected(std::format("duplicate library module '{}'", path.value()));
+    -> std::expected<std::flat_map<ModuleID, std::size_t>, std::string> {
+    auto paths = std::flat_map<CanonicalModulePath, std::size_t>();
+    for (const auto [index, library] : std::views::enumerate(request.libraries)) {
+        for (const auto& path : library.modules) {
+            if (!paths.emplace(path, index).second) {
+                return std::unexpected(std::format("duplicate library module '{}'", path.value()));
+            }
+        }
+        auto owned = std::flat_set<CanonicalModulePath>();
+        for (const auto& path : library.owned_modules) {
+            if (!owned.insert(path).second) {
+                return std::unexpected(
+                    std::format("duplicate owned library module '{}'", path.value())
+                );
+            }
+            if (!std::ranges::contains(library.modules, path)) {
+                return std::unexpected(
+                    std::format("owned module '{}' is not in the library", path.value())
+                );
+            }
         }
     }
-    auto owned = std::flat_set<CanonicalModulePath>();
-    for (const auto& path : library.owned_modules) {
-        if (!owned.insert(path).second) {
-            return std::unexpected(
-                std::format("duplicate owned library module '{}'", path.value())
-            );
-        }
-        if (!paths.contains(path)) {
-            return std::unexpected(
-                std::format("owned module '{}' is not in the library", path.value())
-            );
-        }
-    }
-    auto modules = std::flat_set<ModuleID>();
+    auto modules = std::flat_map<ModuleID, std::size_t>();
     for (const auto module_decl : semantic.declarations().modules()) {
         const auto& path =
             semantic.provenance().module_record(module_decl.value.provenance_module).path;
-        if (paths.contains(path)) {
-            modules.insert(module_decl.id);
-            paths.erase(path);
+        if (const auto found = paths.find(path); found != paths.end()) {
+            modules.emplace(module_decl.id, found->second);
+            paths.erase(found);
         }
     }
     if (!paths.empty()) {
-        return std::unexpected(std::format("unknown library module '{}'", paths.begin()->value()));
+        return std::unexpected(
+            std::format("unknown library module '{}'", paths.begin()->first.value())
+        );
     }
     for (const auto function : semantic.declarations().functions()) {
         if (modules.contains(function.value.module_id) && function.value.entry_point) {
@@ -96,8 +96,9 @@ auto generate_artifacts(
         if (selected_modules) {
             return std::ranges::contains(*selected_modules, path);
         }
-        return !library->contains(id)
-            || std::ranges::contains(request.library->owned_modules, path);
+        const auto found = library->find(id);
+        return found == library->end()
+            || std::ranges::contains(request.libraries[found->second].owned_modules, path);
     };
     auto visited = std::vector<bool>(compilation.target().artifact_count());
     auto generated =

@@ -1,9 +1,11 @@
 #include <carven/std/process/native.hpp>
 
 #include <carven/runtime/execution/clock.hpp>
+#include <carven/runtime/io/stream.hpp>
 #include <carven/runtime/text/utf8.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cerrno>
 #include <chrono>
 #include <climits>
@@ -20,9 +22,6 @@
 #include <vector>
 
 #if defined(_WIN32)
-#define NOMINMAX
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
 #include <corecrt_startup.h>
 #else
 #include <fcntl.h>
@@ -48,6 +47,8 @@ public:
     pid_t pid = -1;
 #else
     HANDLE process = nullptr;
+    HANDLE input = nullptr;
+    HANDLE output = nullptr;
 #endif
     bool input_closed = false;
     bool reading = false;
@@ -69,6 +70,12 @@ State::~State() noexcept {
         }
     }
 #else
+    if (input) {
+        CloseHandle(input);
+    }
+    if (output) {
+        CloseHandle(output);
+    }
     if (process) {
         if (!status) {
             TerminateProcess(process, 1);
@@ -243,6 +250,8 @@ auto find_executable(std::string_view name) noexcept -> TextResult {
     if (name.empty() || name.find('\0') != std::string_view::npos) {
         return {.code = EINVAL, .text = {}};
     }
+    // Windows adds an executable extension below.
+    // NOLINTNEXTLINE(misc-const-correctness)
     auto program = path_from_utf8(name);
 #if defined(_WIN32)
     if (!program.has_extension()) {
@@ -377,6 +386,52 @@ namespace {
 
 namespace async = runtime::execution;
 
+#if defined(_WIN32)
+struct HandleCloser final {
+    auto operator()(void* handle) const noexcept -> void;
+};
+
+auto HandleCloser::operator()(void* handle) const noexcept -> void {
+    CloseHandle(handle);
+}
+
+using OwnedHandle = std::unique_ptr<void, HandleCloser>;
+
+auto inherited_handle(DWORD standard) noexcept -> OwnedHandle {
+    const auto source = GetStdHandle(standard);
+    if (!source || source == INVALID_HANDLE_VALUE) {
+        auto attributes = SECURITY_ATTRIBUTES {
+            .nLength = sizeof(SECURITY_ATTRIBUTES),
+            .lpSecurityDescriptor = nullptr,
+            .bInheritHandle = TRUE
+        };
+        const auto handle = CreateFileW(
+            L"NUL",
+            standard == STD_INPUT_HANDLE ? GENERIC_READ : GENERIC_WRITE,
+            FILE_SHARE_READ | FILE_SHARE_WRITE,
+            &attributes,
+            OPEN_EXISTING,
+            FILE_ATTRIBUTE_NORMAL,
+            nullptr
+        );
+        return OwnedHandle(handle == INVALID_HANDLE_VALUE ? nullptr : handle);
+    }
+    auto duplicate = HANDLE();
+    if (!DuplicateHandle(
+            GetCurrentProcess(),
+            source,
+            GetCurrentProcess(),
+            &duplicate,
+            0,
+            TRUE,
+            DUPLICATE_SAME_ACCESS
+        )) {
+        return {};
+    }
+    return OwnedHandle(duplicate);
+}
+#endif
+
 auto spawn_impl(
     std::string_view program,
     runtime::Slice<runtime::String> arguments,
@@ -384,13 +439,13 @@ auto spawn_impl(
     bool inherited,
     std::string_view output = {}
 ) noexcept -> SpawnResult {
-    if (output.find('\0') != std::string_view::npos) {
+    if (program.empty()
+        || program.find('\0') != std::string_view::npos
+        || directory.find('\0') != std::string_view::npos
+        || output.find('\0') != std::string_view::npos) {
         return {.process = {}, .code = EINVAL};
     }
 #if defined(_WIN32)
-    if (!inherited) {
-        return {.process = {}, .code = ENOTSUP};
-    }
     auto command = std::string();
     const auto quote = [&](std::string_view value) noexcept {
         command += '"';
@@ -407,9 +462,6 @@ auto spawn_impl(
         command.append(slashes * 2, '\\');
         command += '"';
     };
-    if (program.empty() || program.find('\0') != std::string_view::npos) {
-        return {.process = {}, .code = EINVAL};
-    }
     quote(program);
     for (const auto& argument : arguments) {
         if (argument.as_str().find('\0') != std::string_view::npos) {
@@ -444,11 +496,56 @@ auto spawn_impl(
         wide.data(),
         count
     );
-    auto output_handle = INVALID_HANDLE_VALUE;
+    if (!runtime::utf8_is_valid(directory) || !runtime::utf8_is_valid(output)) {
+        return {.process = {}, .code = EILSEQ};
+    }
+    const auto cwd = path_from_utf8(directory);
+    auto state = std::make_shared<State>();
+    auto child_input = OwnedHandle();
+    auto child_output = OwnedHandle();
+    auto child_error = inherited_handle(STD_ERROR_HANDLE);
+    if (!child_error) {
+        return {.process = {}, .code = static_cast<std::int32_t>(GetLastError())};
+    }
+    if (inherited) {
+        child_input = inherited_handle(STD_INPUT_HANDLE);
+        if (!child_input) {
+            return {.process = {}, .code = static_cast<std::int32_t>(GetLastError())};
+        }
+        child_output = inherited_handle(STD_OUTPUT_HANDLE);
+        if (!child_output) {
+            return {.process = {}, .code = static_cast<std::int32_t>(GetLastError())};
+        }
+    } else {
+        HANDLE reader;
+        HANDLE writer;
+        if (!CreatePipe(&reader, &writer, nullptr, 0)) {
+            return {.process = {}, .code = static_cast<std::int32_t>(GetLastError())};
+        }
+        child_input.reset(reader);
+        state->input = writer;
+        if (!CreatePipe(&reader, &writer, nullptr, 0)) {
+            return {.process = {}, .code = static_cast<std::int32_t>(GetLastError())};
+        }
+        state->output = reader;
+        child_output.reset(writer);
+        if (!SetHandleInformation(child_input.get(), HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT)
+            || !SetHandleInformation(
+                child_output.get(),
+                HANDLE_FLAG_INHERIT,
+                HANDLE_FLAG_INHERIT
+            )) {
+            return {.process = {}, .code = static_cast<std::int32_t>(GetLastError())};
+        }
+    }
     if (!output.empty()) {
-        auto attributes = SECURITY_ATTRIBUTES {sizeof(SECURITY_ATTRIBUTES), nullptr, TRUE};
-        const auto path = std::filesystem::path(std::u8string(output.begin(), output.end()));
-        output_handle = CreateFileW(
+        auto attributes = SECURITY_ATTRIBUTES {
+            .nLength = sizeof(SECURITY_ATTRIBUTES),
+            .lpSecurityDescriptor = nullptr,
+            .bInheritHandle = TRUE
+        };
+        const auto path = path_from_utf8(output);
+        const auto handle = CreateFileW(
             path.c_str(),
             GENERIC_WRITE,
             FILE_SHARE_READ,
@@ -457,16 +554,43 @@ auto spawn_impl(
             FILE_ATTRIBUTE_NORMAL,
             nullptr
         );
-        if (output_handle == INVALID_HANDLE_VALUE) {
+        if (handle == INVALID_HANDLE_VALUE) {
             return {.process = {}, .code = static_cast<std::int32_t>(GetLastError())};
         }
+        child_output.reset(handle);
     }
-    auto startup = STARTUPINFOW {};
-    startup.cb = sizeof(startup);
-    startup.dwFlags = STARTF_USESTDHANDLES;
-    startup.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
-    startup.hStdOutput = output.empty() ? GetStdHandle(STD_OUTPUT_HANDLE) : output_handle;
-    startup.hStdError = GetStdHandle(STD_ERROR_HANDLE);
+    auto startup = STARTUPINFOEXW {};
+    startup.StartupInfo.cb = sizeof(startup);
+    startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
+    startup.StartupInfo.hStdInput = child_input.get();
+    startup.StartupInfo.hStdOutput = child_output.get();
+    startup.StartupInfo.hStdError = child_error.get();
+
+    // Inherit exactly this child's stdio. Other live children must not keep its
+    // pipes open, even when several process operations coexist.
+    auto attribute_size = SIZE_T();
+    InitializeProcThreadAttributeList(nullptr, 1, 0, &attribute_size);
+    auto attributes = std::vector<std::uintptr_t>(
+        (attribute_size + sizeof(std::uintptr_t) - 1) / sizeof(std::uintptr_t)
+    );
+    startup.lpAttributeList = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(attributes.data());
+    if (!InitializeProcThreadAttributeList(startup.lpAttributeList, 1, 0, &attribute_size)) {
+        return {.process = {}, .code = static_cast<std::int32_t>(GetLastError())};
+    }
+    auto handles = std::array {child_input.get(), child_output.get(), child_error.get()};
+    if (!UpdateProcThreadAttribute(
+            startup.lpAttributeList,
+            0,
+            PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
+            handles.data(),
+            sizeof(handles),
+            nullptr,
+            nullptr
+        )) {
+        const auto code = GetLastError();
+        DeleteProcThreadAttributeList(startup.lpAttributeList);
+        return {.process = {}, .code = static_cast<std::int32_t>(code)};
+    }
     auto info = PROCESS_INFORMATION {};
     const auto started = CreateProcessW(
         nullptr,
@@ -474,29 +598,21 @@ auto spawn_impl(
         nullptr,
         nullptr,
         TRUE,
-        0,
+        EXTENDED_STARTUPINFO_PRESENT,
         nullptr,
-        nullptr,
-        &startup,
+        directory.empty() ? nullptr : cwd.c_str(),
+        &startup.StartupInfo,
         &info
     );
     const auto start_error = GetLastError();
-    if (output_handle != INVALID_HANDLE_VALUE) {
-        CloseHandle(output_handle);
-    }
+    DeleteProcThreadAttributeList(startup.lpAttributeList);
     if (!started) {
         return {.process = {}, .code = static_cast<std::int32_t>(start_error)};
     }
     CloseHandle(info.hThread);
-    auto state = std::make_shared<State>();
     state->process = info.hProcess;
     return {.process = {.state = std::move(state)}, .code = 0};
 #else
-    if (program.empty()
-        || program.find('\0') != std::string_view::npos
-        || directory.find('\0') != std::string_view::npos) {
-        return {.process = {}, .code = EINVAL};
-    }
     auto owned = std::vector<std::string> {std::string(program)};
     for (const auto& argument : arguments) {
         if (argument.as_str().find('\0') != std::string_view::npos) {
@@ -696,11 +812,12 @@ auto wait_any(std::span<const Handle> processes) noexcept -> Exit {
 auto run(
     std::string_view program,
     runtime::Slice<runtime::String> arguments,
+    std::string_view directory,
     std::string_view output
 ) noexcept -> RunResult {
     std::cout.flush();
     std::cerr.flush();
-    auto child = spawn_inherited(program, arguments, output);
+    auto child = spawn_impl(program, arguments, directory, true, output);
     if (child.code != 0) {
         return {.status = 0, .code = child.code};
     }
@@ -753,14 +870,20 @@ class Request final : public async::EventSource {
     Handle process;
     Kind kind;
     runtime::Vector<std::uint8_t> bytes;
+#if !defined(_WIN32)
     std::size_t offset = 0;
+#endif
     bool active = false;
     bool attached = false;
     async::ResumeContinuation continuation;
     std::optional<Completion> completion;
+#if defined(_WIN32)
+    runtime::io::detail::WriteWorker writer;
+#endif
 
     auto busy() noexcept -> bool&;
     auto attempt() noexcept -> std::optional<Completion>;
+    auto suspend() noexcept -> bool;
 
     auto finish(std::int32_t code, bool end, std::int32_t status) noexcept -> Completion;
 
@@ -768,40 +891,51 @@ public:
     Request(Handle process, Kind kind, runtime::Vector<std::uint8_t> bytes) noexcept;
     ~Request() noexcept override;
 
-    auto await_ready() const noexcept -> bool { return false; }
+    auto await_ready() const noexcept -> bool;
 
     template<typename Promise>
     auto await_suspend(std::coroutine_handle<Promise> handle) noexcept -> bool {
         continuation.bind(handle);
-        if (continuation.cancel_requested()) {
-            completion.emplace(Completion::cancelled());
-            return false;
-        }
-        if (!process.state) {
-            completion.emplace(finish(EBADF, false, 0));
-            return false;
-        }
-        if (busy()) {
-            completion.emplace(finish(EBUSY, false, 0));
-            return false;
-        }
-        busy() = true;
-        active = true;
-        auto ready = attempt();
-        if (ready) {
-            completion.emplace(std::move(*ready));
-            return false;
-        }
-        continuation.driver().attach(*this);
-        attached = true;
-        return true;
+        return suspend();
     }
 
-    auto await_resume() noexcept -> Completion { return std::move(*completion); }
-
+    auto await_resume() noexcept -> Completion;
     auto poll(async::Driver& driver) noexcept -> void override;
     auto wait(std::optional<std::int64_t> deadline) noexcept -> bool override;
 };
+
+auto Request::suspend() noexcept -> bool {
+    if (continuation.cancel_requested()) {
+        completion.emplace(Completion::cancelled());
+        return false;
+    }
+    if (!process.state) {
+        completion.emplace(finish(EBADF, false, 0));
+        return false;
+    }
+    if (busy()) {
+        completion.emplace(finish(EBUSY, false, 0));
+        return false;
+    }
+    busy() = true;
+    active = true;
+    auto ready = attempt();
+    if (ready) {
+        completion.emplace(std::move(*ready));
+        return false;
+    }
+    continuation.driver().attach(*this);
+    attached = true;
+    return true;
+}
+
+auto Request::await_ready() const noexcept -> bool {
+    return false;
+}
+
+auto Request::await_resume() noexcept -> Completion {
+    return std::move(*completion);
+}
 
 Request::Request(Handle process, Kind kind, runtime::Vector<std::uint8_t> bytes) noexcept
     : process(std::move(process)),
@@ -812,6 +946,9 @@ Request::~Request() noexcept {
     if (attached) {
         continuation.driver().detach(*this);
     }
+#if defined(_WIN32)
+    writer.close();
+#endif
     if (active) {
         busy() = false;
     }
@@ -842,7 +979,59 @@ auto Request::attempt() noexcept -> std::optional<Completion> {
         return std::nullopt;
     }
 #if defined(_WIN32)
-    return finish(ENOTSUP, false, 0);
+    const auto& state = *process.state;
+    if (kind == Kind::Write) {
+        if (state.input_closed || !state.input) {
+            return finish(EBADF, false, 0);
+        }
+        if (bytes.empty()) {
+            return finish(0, false, 0);
+        }
+        if (!writer.started()) {
+            const auto code = writer.start(state.input, std::span(bytes.begin(), bytes.size()));
+            if (code != 0) {
+                return finish(code, false, 0);
+            }
+        }
+        if (!writer.ready()) {
+            return std::nullopt;
+        }
+        return finish(writer.result(), false, 0);
+    }
+    if (!state.output) {
+        return finish(EBADF, false, 0);
+    }
+    auto available = DWORD();
+    if (!PeekNamedPipe(state.output, nullptr, 0, nullptr, &available, nullptr)) {
+        const auto code = GetLastError();
+        return finish(
+            code == ERROR_BROKEN_PIPE ? 0 : static_cast<std::int32_t>(code),
+            code == ERROR_BROKEN_PIPE,
+            0
+        );
+    }
+    if (available == 0) {
+        return std::nullopt;
+    }
+    auto count = DWORD();
+    if (!ReadFile(
+            state.output,
+            const_cast<std::uint8_t*>(bytes.begin()),
+            std::min(available, static_cast<DWORD>(bytes.size())),
+            &count,
+            nullptr
+        )) {
+        const auto code = GetLastError();
+        return finish(
+            code == ERROR_BROKEN_PIPE ? 0 : static_cast<std::int32_t>(code),
+            code == ERROR_BROKEN_PIPE,
+            0
+        );
+    }
+    bytes = runtime::Vector<std::uint8_t>::from_slice(
+        runtime::Slice<std::uint8_t>(std::span(bytes.begin(), static_cast<std::size_t>(count)))
+    );
+    return finish(0, count == 0, 0);
 #else
     const auto& state = *process.state;
     if (kind == Kind::Write && offset == bytes.size()) {
@@ -891,6 +1080,14 @@ auto Request::poll(async::Driver& driver) noexcept -> void {
     if (completion) {
         return;
     }
+#if defined(_WIN32)
+    if (continuation.cancel_requested() && writer.started()) {
+        writer.cancel();
+        if (!writer.ready()) {
+            return;
+        }
+    }
+#endif
     auto ready =
         continuation.cancel_requested() ? std::optional(Completion::cancelled()) : attempt();
     if (ready) {
@@ -925,7 +1122,16 @@ auto Request::wait(std::optional<std::int64_t> deadline) noexcept -> bool {
 #else
     const auto timeout = async::detail::steady_poll_timeout(deadline);
     if (kind == Kind::Wait) {
-        WaitForSingleObject(process.state->process, timeout < 0 ? 10 : std::min(timeout, 10));
+        WaitForSingleObject(
+            process.state->process,
+            timeout < 0 ? INFINITE : static_cast<DWORD>(timeout)
+        );
+    } else if (kind == Kind::Write) {
+        writer.wait(timeout < 0 ? INFINITE : static_cast<DWORD>(timeout));
+    } else {
+        // Anonymous pipe reads have no readiness event. Peek before each read
+        // and bound the polling interval without consuming data on cancellation.
+        Sleep(timeout < 0 ? 10 : static_cast<DWORD>(std::min(timeout, 10)));
     }
 #endif
     return true;
@@ -951,9 +1157,6 @@ auto wait(Handle process) noexcept -> async::AsyncOperation<Result> {
 }
 
 auto close_input(const Handle& process) noexcept -> std::int32_t {
-#if defined(_WIN32)
-    return process.state ? 0 : EBADF;
-#else
     if (!process.state) {
         return EBADF;
     }
@@ -964,6 +1167,15 @@ auto close_input(const Handle& process) noexcept -> std::int32_t {
     if (state.writing) {
         return EBUSY;
     }
+#if defined(_WIN32)
+    if (!state.input) {
+        return EBADF;
+    }
+    if (!CloseHandle(state.input)) {
+        return static_cast<std::int32_t>(GetLastError());
+    }
+    state.input = nullptr;
+#else
     if (::shutdown(state.socket, SHUT_WR) != 0) {
         const auto code = errno;
         // The child may close its endpoint immediately after its final reply.
@@ -972,9 +1184,9 @@ auto close_input(const Handle& process) noexcept -> std::int32_t {
             return code;
         }
     }
+#endif
     state.input_closed = true;
     return 0;
-#endif
 }
 
 auto terminate(const Handle& process) noexcept -> std::int32_t {
@@ -982,11 +1194,16 @@ auto terminate(const Handle& process) noexcept -> std::int32_t {
     if (!process.state) {
         return EBADF;
     }
-    if (process.state->status) {
+    const auto completed = poll_exit(process);
+    if (completed.code || completed.done) {
+        return completed.code;
+    }
+    if (TerminateProcess(process.state->process, 1)) {
         return 0;
     }
-    return TerminateProcess(process.state->process, 1) ? 0
-                                                       : static_cast<std::int32_t>(GetLastError());
+    const auto code = GetLastError();
+    // The process may have exited between the nonblocking observation and kill.
+    return poll_exit(process).done ? 0 : static_cast<std::int32_t>(code);
 #else
     if (!process.state) {
         return EBADF;

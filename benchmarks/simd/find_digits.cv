@@ -2,6 +2,4 @@ import std::simd.scan using { byte_range, find_from }
 
 private const selected = byte_range(48, 57);
 
-export(cpp) fn scan_kernel(bytes: [u8], start: usize) -> usize {
-    return find_from(bytes, start, selected);
-}
+export(cpp) fn scan_kernel(bytes: [u8], start: usize) -> usize => find_from(bytes, start, selected);

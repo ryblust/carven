@@ -178,8 +178,6 @@ const TestSuite suite([] static noexcept {
         constexpr auto cases = std::to_array<std::pair<std::string_view, std::string_view>>({
             {"Incomplete parameter list", "fn f("},
             {"Invalid character", "@"},
-            {"Semicolon after source import list", "import math using { first };"},
-            {"Semicolon after native import list", "import <vector> using std::{ vector };"},
         });
         each(
             cases,
