@@ -406,7 +406,7 @@ target("embedding")
             ...environment,
             CARVEN_LSP: join(bin, 'carven-lsp' + suffix),
             CARVEN_XMAKE: 'xmake',
-            CARVEN_VSIX: join(artifacts, `carven-${extension.version}.vsix`),
+            CARVEN_VSIX: join(artifacts, `${extension.name}-${extension.version}.vsix`),
         };
         await run(
             process.execPath,

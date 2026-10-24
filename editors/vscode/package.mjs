@@ -13,9 +13,11 @@ const stage = join(output, 'extension');
 
 await rm(stage, { recursive: true, force: true });
 await mkdir(join(stage, 'dist'), { recursive: true });
+await mkdir(join(stage, 'resources'), { recursive: true });
 for (const name of [
     'README.md',
     'LICENSE',
+    'resources/icon.png',
     'language-configuration.json',
     'syntaxes',
     'dist/extension.cjs',
@@ -32,5 +34,5 @@ await writeFile(join(stage, 'package.json'), JSON.stringify(manifest, null, 2) +
 await createVSIX({
     cwd: stage,
     dependencies: false,
-    packagePath: join(output, `carven-${manifest.version}.vsix`),
+    packagePath: join(output, `${manifest.name}-${manifest.version}.vsix`),
 });

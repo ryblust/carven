@@ -1236,6 +1236,17 @@
          _add_lto_optimization(target, sourcekind)
      end
  end
+--- a/toolchains/llvm/xmake.lua
++++ b/toolchains/llvm/xmake.lua
+@@ -114,6 +114,8 @@
+             end
+             -- load configurations
+             import(".xcode.load")(toolchain)
++            -- Keep the LLVM archiver after loading Apple's SDK configuration.
++            toolchain:set("toolset", "ar", "llvm-ar")
+         elseif toolchain:is_plat("cross") then
+             local sysroot
+             local sdkdir = toolchain:sdkdir()
 --- a/modules/private/check/checkers/clang/tidy.lua
 +++ b/modules/private/check/checkers/clang/tidy.lua
 @@ -19,9 +19,11 @@

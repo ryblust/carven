@@ -208,7 +208,11 @@ auto executable() noexcept -> TextResult {
             return {.code = static_cast<std::int32_t>(GetLastError()), .text = {}};
         }
         if (count < path.size()) {
-            return windows_text(std::wstring_view(path).substr(0, count));
+            auto text = windows_text(std::wstring_view(path).substr(0, count));
+            if (text.code != 0) {
+                return text;
+            }
+            return path_result(path_from_utf8(text.text.as_str()).lexically_normal());
         }
         if (path.size() > std::numeric_limits<DWORD>::max() / 2) {
             return {.code = E2BIG, .text = {}};

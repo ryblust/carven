@@ -91,7 +91,10 @@ async fn probe(&&program: String) -> i32 {
         assert(arguments.length() == 3);
         assert(arguments[0] == program && arguments[1].is_empty() && arguments[2] == "我😀");
         let current = executable()?;
-        assert(!current.is_empty() && find_executable(current)? == current);
+        assert(
+            !current.is_empty() && find_executable(current)? == current,
+            "executable must round trip through find_executable"
+        );
         let path = environment("PATH")?;
         assert(run(
             program,

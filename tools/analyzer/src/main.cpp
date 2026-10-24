@@ -1,6 +1,7 @@
 module;
 
 #if defined(_WIN32)
+#include <cstdio>
 #include <fcntl.h>
 #include <io.h>
 #endif

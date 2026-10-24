@@ -84,7 +84,7 @@ try {
         throw
     }
     Write-Output "Installed Carven in $Prefix"
-    Write-Output "Add $Prefix\bin to your user PATH, then install the separate carven-lang.carven VS Code extension."
+    Write-Output "Add $Prefix\bin to your user PATH, then install the separate carven-lang.carven-vscode VS Code extension."
 } catch {
     [Console]::Error.WriteLine("carven: $($_.Exception.Message)")
     exit 1

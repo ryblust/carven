@@ -147,7 +147,7 @@ async function continuousEditing(
 }
 
 async function exercise() {
-    const extension = vscode.extensions.getExtension('carven-lang.carven');
+    const extension = vscode.extensions.getExtension('carven-lang.carven-vscode');
     assert.ok(extension);
     assert(vscode.workspace.workspaceFolders?.length);
 
@@ -628,7 +628,7 @@ async function exercise() {
 export async function run(): Promise<void> {
     try {
         if (process.env.CARVEN_VSIX) {
-            const extension = vscode.extensions.getExtension('carven-lang.carven');
+            const extension = vscode.extensions.getExtension('carven-lang.carven-vscode');
             assert(extension);
             assert(
                 extension.extensionPath.startsWith(

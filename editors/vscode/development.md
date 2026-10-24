@@ -74,7 +74,7 @@ toolchain, external build adapters, and optional VSIX.
 pnpm --dir editors/vscode run package
 ```
 
-The VSIX is written to `build/packages/carven-<version>.vsix`. It contains the
+The VSIX is written to `build/packages/carven-vscode-<version>.vsix`. It contains the
 editor integration and language client. To run VS Code checks against a package,
 set `CARVEN_VSIX` to that file and `CARVEN_LSP` to the installed server, with the
 installed toolchain on `PATH`.

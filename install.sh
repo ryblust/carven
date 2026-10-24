@@ -77,4 +77,4 @@ fi
 for name in carven carven-format carven-lsp carven-analyzer; do
     ln -sfn "$prefix/bin/$name" "$bin_dir/$name"
 done
-printf '%s\n' "Installed Carven in $prefix" "Add $bin_dir to PATH, then install the separate carven-lang.carven VS Code extension."
+printf '%s\n' "Installed Carven in $prefix" "Add $bin_dir to PATH, then install the separate carven-lang.carven-vscode VS Code extension."

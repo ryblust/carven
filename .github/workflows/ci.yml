@@ -14,19 +14,34 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  macos:
-    name: macOS / LLVM / ${{ matrix.mode == 'release' && 'Release' || 'ASan + UBSan' }}
+  test:
+    name: ${{ matrix.platform }} / ${{ matrix.mode == 'release' && 'Release' || 'ASan + UBSan' }}
     strategy:
       fail-fast: false
       matrix:
+        platform: [macOS, Linux, Windows]
         mode: [release, debug]
-    runs-on: macos-latest
+        include:
+          - platform: macOS
+            os: macos-latest
+            shell: bash
+            xmake: ./xmakew
+          - platform: Linux
+            os: ubuntu-latest
+            shell: bash
+            xmake: ./xmakew
+          - platform: Windows
+            os: windows-latest
+            shell: pwsh
+            xmake: .\xmakew.ps1
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     defaults:
       run:
-        shell: bash
+        shell: ${{ matrix.shell }}
     env:
-      ASAN_OPTIONS: ${{ matrix.mode == 'debug' && 'detect_leaks=1:detect_stack_use_after_return=1:strict_string_checks=1' || '' }}
+      # LeakSanitizer is unsupported on Windows.
+      ASAN_OPTIONS: ${{ matrix.mode == 'debug' && format('detect_leaks={0}:detect_stack_use_after_return=1:strict_string_checks=1', matrix.platform == 'Windows' && '0' || '1') || '' }}
       UBSAN_OPTIONS: ${{ matrix.mode == 'debug' && 'print_stacktrace=1' || '' }}
 
     steps:
@@ -41,115 +56,23 @@ jobs:
           xmake-version: '3.1.1'
 
       - name: Install LLVM on macOS
+        if: runner.os == 'macOS'
         run: |
           brew install llvm
           echo "$(brew --prefix llvm)/bin" >> "$GITHUB_PATH"
 
-      - name: Show toolchain versions
-        run: |
-          ./xmakew --version
-          clang --version
-          llvm-symbolizer --version
-          clang-format --version
-
-      - name: Configure build
-        run: ./xmakew f -y -m ${{ matrix.mode }} --sanitizers=${{ matrix.mode == 'debug' && 'y' || 'n' }}
-
-      - name: Show detected toolchain
-        run: ./xmakew show -t carven
-
-      - name: Build compiler
-        run: ./xmakew build -y
-
-      - name: Test all groups
-        run: ./xmakew test -v
-
-      - name: Check formatting
-        if: matrix.mode == 'release'
-        run: ./xmakew format-check
-
-  ubuntu:
-    name: Ubuntu / LLVM / ${{ matrix.mode == 'release' && 'Release' || 'ASan + UBSan' }}
-    strategy:
-      fail-fast: false
-      matrix:
-        mode: [release, debug]
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    defaults:
-      run:
-        shell: bash
-    env:
-      ASAN_OPTIONS: ${{ matrix.mode == 'debug' && 'detect_leaks=1:detect_stack_use_after_return=1:strict_string_checks=1' || '' }}
-      UBSAN_OPTIONS: ${{ matrix.mode == 'debug' && 'print_stacktrace=1' || '' }}
-
-    steps:
-      - name: Check out Carven
-        uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-
-      - name: Install patch-compatible Xmake
-        uses: xmake-io/github-action-setup-xmake@v1
-        with:
-          xmake-version: '3.1.1'
-
-      - name: Install LLVM on Ubuntu
+      - name: Install LLVM on Linux
+        if: runner.os == 'Linux'
         run: |
           curl -fsSL https://apt.llvm.org/llvm.sh -o "$RUNNER_TEMP/llvm.sh"
           sudo bash "$RUNNER_TEMP/llvm.sh" 23 all
-          echo "/usr/lib/llvm-23/bin" >> "$GITHUB_PATH"
+          echo /usr/lib/llvm-23/bin >> "$GITHUB_PATH"
 
-      - name: Show toolchain versions
-        run: |
-          ./xmakew --version
-          clang --version
-          llvm-symbolizer --version
-          clang-format --version
-
-      - name: Configure build
-        run: ./xmakew f -y -m ${{ matrix.mode }} --sanitizers=${{ matrix.mode == 'debug' && 'y' || 'n' }}
-
-      - name: Show detected toolchain
-        run: ./xmakew show -t carven
-
-      - name: Build compiler
-        run: ./xmakew build -y
-
-      - name: Test all groups
-        run: ./xmakew test -v
-
-  windows:
-    name: Windows / LLVM-MinGW / ${{ matrix.mode == 'release' && 'Release' || 'ASan + UBSan' }}
-    strategy:
-      fail-fast: false
-      matrix:
-        mode: [release, debug]
-    runs-on: windows-latest
-    timeout-minutes: 60
-    defaults:
-      run:
-        shell: pwsh
-    env:
-      # LeakSanitizer is unsupported on Windows.
-      ASAN_OPTIONS: ${{ matrix.mode == 'debug' && 'detect_leaks=0:detect_stack_use_after_return=1:strict_string_checks=1' || '' }}
-      UBSAN_OPTIONS: ${{ matrix.mode == 'debug' && 'print_stacktrace=1' || '' }}
-      LLVM_MINGW_RELEASE: '20261006'
-      LLVM_MINGW_SHA256: 317492c456aa27ee607a5919f1d2d38dcdc1112516a24d0bf4b00d078f52d17a
-      AR: llvm-ar
-
-    steps:
-      - name: Check out Carven
-        uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-
-      - name: Install patch-compatible Xmake
-        uses: xmake-io/github-action-setup-xmake@v1
-        with:
-          xmake-version: '3.1.1'
-
-      - name: Install LLVM-MinGW
+      - name: Install LLVM-MinGW on Windows
+        if: runner.os == 'Windows'
+        env:
+          LLVM_MINGW_RELEASE: '20261020'
+          LLVM_MINGW_SHA256: fd5462b7f5d93b2ff981fcd3f9c7e427e47f3203c64ea91c27bcc444eebd74cd
         run: |
           $archiveName = "llvm-mingw-$env:LLVM_MINGW_RELEASE-ucrt-x86_64.zip"
           $archive = Join-Path $env:RUNNER_TEMP $archiveName
@@ -163,8 +86,18 @@ jobs:
           "$llvmRoot/bin" >> $env:GITHUB_PATH
           "$llvmRoot/x86_64-w64-mingw32/bin" >> $env:GITHUB_PATH
           "LLVM_MINGW_ROOT=$llvmRoot" >> $env:GITHUB_ENV
+          "AR=llvm-ar" >> $env:GITHUB_ENV
 
       - name: Show toolchain versions
+        if: runner.os != 'Windows'
+        run: |
+          ./xmakew --version
+          clang --version
+          llvm-symbolizer --version
+          clang-format --version
+
+      - name: Show toolchain versions on Windows
+        if: runner.os == 'Windows'
         run: |
           .\xmakew.ps1 --version
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -174,121 +107,66 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Configure build
-        run: .\xmakew.ps1 f -y -m ${{ matrix.mode }} --sanitizers=${{ matrix.mode == 'debug' && 'y' || 'n' }}
+        run: ${{ matrix.xmake }} f -y -m ${{ matrix.mode }} --sanitizers=${{ matrix.mode == 'debug' && 'y' || 'n' }}
 
       - name: Show detected toolchain
-        run: .\xmakew.ps1 show -t carven
+        run: ${{ matrix.xmake }} show -t carven
 
       - name: Build compiler
-        run: .\xmakew.ps1 build -y
+        run: ${{ matrix.xmake }} build -y
 
       - name: Test all groups
-        run: .\xmakew.ps1 test -v
+        run: ${{ matrix.xmake }} test
 
-  editors:
-    name: Editors / ${{ matrix.os }} / Release
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
-    defaults:
-      run:
-        shell: bash
+      - name: Build editor toolchain
+        if: matrix.mode == 'release' && runner.os != 'Linux'
+        run: ${{ matrix.xmake }} build -g toolchain
 
-    steps:
-      - name: Check out Carven
-        uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-
-      - name: Install patch-compatible Xmake
-        uses: xmake-io/github-action-setup-xmake@v1
-        with:
-          xmake-version: '3.1.1'
-
-      - name: Install LLVM on macOS
-        if: runner.os == 'macOS'
+      - name: Locate editor toolchain
+        if: matrix.mode == 'release' && runner.os != 'Linux'
         run: |
-          brew install llvm
-          echo "$(brew --prefix llvm)/bin" >> "$GITHUB_PATH"
+          ${{ matrix.xmake }} lua -c '
+            import("core.project.config")
+            config.load()
+            import("core.project.project")
+            local environment = assert(io.open(os.getenv("GITHUB_ENV"), "a"))
+            environment:write("CARVEN_LSP=" .. path.absolute(project.target("carven-lsp"):targetfile()) .. "\n")
+            environment:write("CARVEN_TEST_COMPILER=" .. path.absolute(project.target("carven"):targetfile()) .. "\n")
+            environment:write("CARVEN_TEST_CRAFTS=" .. path.join(os.projectdir(), "crafts") .. "\n")
+            environment:close()
+          '
 
-      - name: Install LLVM-MinGW on Windows
-        if: runner.os == 'Windows'
-        shell: pwsh
-        env:
-          LLVM_MINGW_RELEASE: '20261006'
-          LLVM_MINGW_SHA256: 317492c456aa27ee607a5919f1d2d38dcdc1112516a24d0bf4b00d078f52d17a
-        run: |
-          $archiveName = "llvm-mingw-$env:LLVM_MINGW_RELEASE-ucrt-x86_64.zip"
-          $archive = Join-Path $env:RUNNER_TEMP $archiveName
-          $url = "https://github.com/mstorsjo/llvm-mingw/releases/download/$env:LLVM_MINGW_RELEASE/$archiveName"
-          Invoke-WebRequest -Uri $url -OutFile $archive
-          if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne $env:LLVM_MINGW_SHA256) {
-            throw "LLVM-MinGW archive checksum mismatch"
-          }
-          Expand-Archive -LiteralPath $archive -DestinationPath $env:RUNNER_TEMP
-          $llvmRoot = Join-Path $env:RUNNER_TEMP "llvm-mingw-$env:LLVM_MINGW_RELEASE-ucrt-x86_64"
-          "$llvmRoot/bin" >> $env:GITHUB_PATH
-          "$llvmRoot/x86_64-w64-mingw32/bin" >> $env:GITHUB_PATH
-          "AR=llvm-ar" >> $env:GITHUB_ENV
-
-      - name: Build editor toolchain on macOS
-        if: runner.os == 'macOS'
-        run: |
-          ./xmakew f -y -m release --sanitizers=n
-          ./xmakew build
-          ./xmakew build -g toolchain
-
-      - name: Build editor toolchain on Windows
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          .\xmakew.ps1 f -y -m release --sanitizers=n
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          .\xmakew.ps1 build
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          .\xmakew.ps1 build -g toolchain
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Check formatting
+        if: matrix.mode == 'release' && runner.os == 'macOS'
+        run: ./xmakew format-check
 
       - name: Set up Node
+        if: matrix.mode == 'release' && runner.os != 'Linux'
         uses: actions/setup-node@v6
         with:
           node-version: '24'
 
       - name: Set up pnpm
+        if: matrix.mode == 'release' && runner.os != 'Linux'
         uses: pnpm/action-setup@v4
         with:
           version: 11.25.0
           package_json_file: editors/vscode/package.json
 
       - name: Install editor test dependencies
+        if: matrix.mode == 'release' && runner.os != 'Linux'
         run: pnpm --dir editors/vscode install --frozen-lockfile
 
       - name: Build VS Code extension
-        if: runner.os == 'macOS'
+        if: matrix.mode == 'release' && runner.os == 'macOS'
         run: pnpm --dir editors/vscode run build
 
       - name: Check editor sources
-        if: runner.os == 'macOS'
+        if: matrix.mode == 'release' && runner.os == 'macOS'
         run: |
           pnpm --dir editors/vscode run format-check
           pnpm --dir editors/vscode run check:tests
 
-      - name: Test editors on macOS
-        if: runner.os == 'macOS'
-        run: |
-          export CARVEN_LSP="$PWD/build/macosx/$(uname -m)/release/carven-lsp"
-          export CARVEN_TEST_COMPILER="$(dirname "$CARVEN_LSP")/carven"
-          export CARVEN_TEST_CRAFTS="$PWD/crafts"
-          pnpm --dir editors/vscode test
-
-      - name: Test editors on Windows
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $env:CARVEN_LSP = "$PWD/build/windows/x86_64/release/carven-lsp.exe"
-          $env:CARVEN_TEST_COMPILER = "$PWD/build/windows/x86_64/release/carven.exe"
-          $env:CARVEN_TEST_CRAFTS = "$PWD/crafts"
-          pnpm --dir editors/vscode test
+      - name: Test editor contracts
+        if: matrix.mode == 'release' && runner.os != 'Linux'
+        run: pnpm --dir editors/vscode test

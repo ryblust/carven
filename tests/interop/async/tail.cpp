@@ -2,6 +2,10 @@
 
 #include <carven/api/tests/interop/async/tail.hpp>
 
+#if __has_feature(address_sanitizer)
+#include <sanitizer/allocator_interface.h>
+#endif
+
 #include <array>
 #include <cstddef>
 #include <cstdio>
@@ -18,6 +22,8 @@ thread_local std::size_t allocations = 0;
 
 } // namespace
 
+#if !__has_feature(address_sanitizer)
+// ASan owns these operators on Windows; sanitizer builds count through its hooks.
 auto operator new(std::size_t size, std::align_val_t alignment, const std::nothrow_t&) noexcept
     -> void* {
     if (track_allocations) {
@@ -30,6 +36,7 @@ auto operator delete(void* storage, std::align_val_t alignment, const std::nothr
     -> void {
     ::operator delete(storage, alignment);
 }
+#endif
 
 TailOwner::TailOwner(std::int32_t value) noexcept
     : digit(value) {}
@@ -131,6 +138,31 @@ auto operation_allocations(
 } // namespace
 
 auto run_async_allocation_cases() noexcept -> void {
+#if __has_feature(address_sanitizer)
+    const auto hooks = __sanitizer_install_malloc_and_free_hooks(
+        [](const volatile void*, std::size_t) noexcept {
+            if (track_allocations) {
+                ++allocations;
+            }
+        },
+        [](const volatile void*) noexcept {}
+    );
+    if (hooks == 0) {
+        std::fputs("failed to install allocation tracking hooks\n", stderr);
+        std::abort();
+    }
+#endif
+    // Check the observer before comparing growth; zero counts must not hide a broken hook.
+    allocations = 0;
+    track_allocations = true;
+    void* volatile probe = ::operator new(1, std::align_val_t {32}, std::nothrow);
+    track_allocations = false;
+    ::operator delete(probe, std::align_val_t {32});
+    if (allocations == 0) {
+        std::fputs("allocation tracking did not observe an aligned allocation\n", stderr);
+        std::abort();
+    }
+
     const auto shallow =
         operation_allocations(carven::api::tests::interop::async::tail::bounded_tail, 4, 4);
     const auto deep =

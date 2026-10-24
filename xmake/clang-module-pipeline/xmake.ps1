@@ -34,6 +34,7 @@ $patchedPaths = @(
     "rules/c++/modules/scanner.lua"
     "rules/c++/modules/support.lua"
     "rules/c++/modules/xmake.lua"
+    "toolchains/llvm/xmake.lua"
 )
 $keyParts = @($sourceProgramDir, $sourceVersion)
 foreach ($relativePath in $patchedPaths) {

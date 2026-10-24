@@ -75,7 +75,7 @@ irm https://github.com/ryblust/carven/releases/latest/download/install.ps1 | iex
 Add `%LOCALAPPDATA%\Programs\Carven\bin` to your user PATH.
 
 For VS Code, download the release's `.vsix` and use **Extensions: Install from VSIX**.
-The `carven-lang.carven` extension uses the installed toolchain; Node is not required.
+The `carven-lang.carven-vscode` extension uses the installed toolchain; Node is not required.
 
 ## Run a program
 

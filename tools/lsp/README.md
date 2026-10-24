@@ -12,7 +12,7 @@ Install the toolchain and run `carven-lsp` over stdio. It uses `carven` and
 `--analyzer <program> [args...]` selects a transport fixture for process tests
 and debugging.
 
-The separate `carven-lang.carven` VS Code extension starts `carven-lsp` from
+The separate `carven-lang.carven-vscode` VS Code extension starts `carven-lsp` from
 PATH. Set `carven.serverPath` to select a built server in an existing window;
 saving the setting restarts it. The extension contains its language client and
 metadata; VS Code supplies the JavaScript runtime.

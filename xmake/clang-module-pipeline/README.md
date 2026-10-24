@@ -180,6 +180,9 @@ LTO configuration reads the target policy, which already resolves the project
 default. An explicit target `false` therefore disables LTO even when the project
 enables it.
 
+On Apple platforms, the LLVM toolchain retains `llvm-ar` after loading Xcode SDK
+settings, so static archives preserve LLVM bitcode members.
+
 The POSIX wrapper attempts an APFS clone on macOS or a reflink on Linux, with a
 regular copy as fallback. Windows uses `robocopy`. Each wrapper prepares a
 staging directory before publishing the overlay. The POSIX wrapper requires

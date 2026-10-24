@@ -2,9 +2,6 @@ target("carven-lsp")
     set_group("toolchain")
     set_default(false)
     set_kind("binary")
-    if is_mode("release") then
-        set_policy("build.optimization.lto", true)
-    end
     set_languages("c++20")
     add_rules("carven")
     add_files("*.cv")

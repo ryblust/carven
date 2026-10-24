@@ -30,7 +30,7 @@ pnpm --dir editors/vscode run package
 ```
 
 `build/packages` contains `carven-<platform>-<arch>.tar.gz`, its
-`.sha256` sidecar, and `carven-<extension-version>.vsix`. Packaging checks the
+`.sha256` sidecar, and `carven-vscode-<extension-version>.vsix`. Packaging checks the
 toolchain files and includes Linux/Windows runtime libraries and license notices.
 macOS uses its system C++ runtime.
 

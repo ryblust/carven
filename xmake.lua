@@ -15,6 +15,10 @@ set_rundir("$(projectdir)")
 set_policy("build.progress_style", "multirow")
 set_policy("build.c++.modules.non_cascading_changes", true)
 
+if is_mode("release") then
+    set_policy("build.optimization.lto", true)
+end
+
 if is_plat("windows") then
     set_toolchains("mingw[clang]")
     set_runtimes("c++_shared")
@@ -65,9 +69,6 @@ target("carven")
         "crafts/carven/std/io/native.cpp",
         "crafts/carven/std/process/native.cpp"
     )
-    if is_mode("release") then
-        set_policy("build.optimization.lto", true)
-    end
     add_installfiles("(crafts/carven/**)")
     add_installfiles("cmake/*.cmake", {prefixdir = "share/cmake/Carven"})
     add_installfiles("xmake/carven/*.lua", {prefixdir = "share/xmake/carven"})

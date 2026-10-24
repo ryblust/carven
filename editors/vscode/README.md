@@ -7,7 +7,7 @@ semantic highlighting, formatting and quick fixes.
 
 1. [Install the Carven toolchain](https://github.com/ryblust/carven#install)
    and add its commands to `PATH` before starting VS Code.
-2. Install `carven-0.1.0.vsix` with **Extensions: Install from VSIX**.
+2. Install `carven-vscode-0.1.0.vsix` with **Extensions: Install from VSIX**.
 3. Open a trusted project folder and a `.cv` file.
 
 Requires VS Code 1.142 or newer. The extension starts `carven-lsp` from `PATH`;

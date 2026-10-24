@@ -1,9 +1,10 @@
 {
-  "name": "carven",
-  "displayName": "Carven",
+  "name": "carven-vscode",
+  "displayName": "Carven Language",
   "description": "Carven language support powered by the Carven LSP.",
   "version": "0.1.0",
   "publisher": "carven-lang",
+  "icon": "resources/icon.png",
   "private": true,
   "engines": {
     "vscode": "^1.142.0",
@@ -116,6 +117,7 @@
   "files": [
     "README.md",
     "LICENSE",
+    "resources/icon.png",
     "language-configuration.json",
     "syntaxes/**",
     "dist/extension.cjs",

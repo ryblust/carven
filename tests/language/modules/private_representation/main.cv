@@ -1,4 +1,4 @@
-import .api using { Box, Indirect, opaque }
+import .api using { Box, opaque }
 
 test "Classes: private representation supports operations across modules" {
     let box = Box::new(42);
