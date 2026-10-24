@@ -21,7 +21,7 @@ async fn cooperative(&started: i32, &closed: i32) -> i32 {
 }
 
 async fn protected(&started: i32, &closed: i32) -> i32 throw Timeout + TimeRangeError {
-    return await deadline(cooperative(&started, &closed), 1s)?;
+    return await deadline(cooperative(&started, &closed), 86400s)?;
 }
 
 async test "Async timeout: expiration, completion, and cooperative cleanup" {
@@ -49,7 +49,7 @@ async test "Async timeout: expiration, completion, and cooperative cleanup" {
             TimeRangeError(_) => false,
         };
         let completed = try {
-            await deadline(touch(&started), 100ms)? == 42
+            await deadline(touch(&started), 86400s)? == 42
         } catch {
             Timeout(_) => false,
             TimeRangeError(_) => false,

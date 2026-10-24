@@ -17,16 +17,21 @@ local function sorted_lines(value)
     return table.concat(lines, "\n")
 end
 
-local function check_stream(failures, label, actual, exact, contains, ordered, unordered)
+local function check_stream(failures, label, actual, exact, contains, ordered, unordered, patterns)
     if exact ~= nil then
         compare_output(failures, label, unordered and sorted_lines(actual) or actual,
             unordered and sorted_lines(exact) or exact)
-    elseif not contains and not ordered then
+    elseif not contains and not ordered and not patterns then
         compare_output(failures, label, actual, "")
     end
     for _, expected in ipairs(contains or {}) do
         if not actual:find(expected, 1, true) then
             table.insert(failures, label .. " does not contain: " .. expected)
+        end
+    end
+    for _, pattern in ipairs(patterns or {}) do
+        if not actual:find(pattern) then
+            table.insert(failures, label .. " does not match pattern: " .. pattern)
         end
     end
     local sequences = ordered and (type(ordered[1]) == "table" and ordered or {ordered}) or {}
@@ -128,13 +133,14 @@ function main(target, opt, case_spec, case_dir)
             table.insert(failures, prefix .. string.format(
                 "expected exit %s, got %s%s", expected_code, tostring(exit_code), context))
         end
-        local function expected_output(filename)
+        local function expected_output(filename, bytes)
+            if bytes ~= nil then return normalize_newlines(bytes) end
             return filename and normalize_newlines(io.readfile(case_path(filename), {encoding = "binary"})) or nil
         end
-        check_stream(failures, prefix .. "stdout", stdout, expected_output(step.stdout),
-            step.stdout_contains, step.stdout_ordered, step.stdout_unordered)
-        check_stream(failures, prefix .. "stderr", stderr, expected_output(step.stderr),
-            step.stderr_contains, step.stderr_ordered)
+        check_stream(failures, prefix .. "stdout", stdout, expected_output(step.stdout, step.stdout_bytes),
+            step.stdout_contains, step.stdout_ordered, step.stdout_unordered, step.stdout_patterns)
+        check_stream(failures, prefix .. "stderr", stderr, expected_output(step.stderr, step.stderr_bytes),
+            step.stderr_contains, step.stderr_ordered, nil, step.stderr_patterns)
         for stream, value in pairs({stdout = stdout, stderr = stderr}) do
             for _, fragment in ipairs(step[stream .. "_not_contains"] or {}) do
                 if value:find(fragment, 1, true) then

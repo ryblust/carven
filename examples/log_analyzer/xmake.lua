@@ -10,14 +10,6 @@ target("carven-example-log-analyzer")
         run_timeout = 30000, plain = true,
         pass_outputs = {output, (output:gsub("\n", "\r\n"))},
     })
-    add_tests("help", {
-        run_timeout = 30000, runargs = {"--help"}, pass_outputs = {".*Usage:.*"},
-    })
-    after_test(function (target, opt)
-        if opt.name:endswith("/help") then
-            assert(not opt.stderr or opt.stderr == "", opt.stderr)
-        end
-    end)
 target_end()
 
 target("carven-example-log-analyzer-tests")
@@ -31,17 +23,23 @@ target("carven-example-log-analyzer-checks")
     set_kind("phony")
     add_deps("carven-example-log-analyzer")
     add_tests("unknown", {run_timeout = 30000})
+    add_tests("help", {run_timeout = 30000})
     add_tests("record-recovery", {run_timeout = 30000})
     on_test(function (target, opt)
         if opt.name:endswith("/record-recovery") then
-            import("checks", {rootdir = path.join(os.projectdir(), "examples")})
-                .record_recovery(target)
-            return true
+            return import("process", {rootdir = path.join(os.projectdir(), "tests", "harness")})
+                .main(target:dep("carven-example-log-analyzer"), opt, {
+                    args = {"--stdin"}, run_timeout = 10000,
+                    stdin_bytes = "WARN 40  token=a  suffix \r\nINFO 1 " .. string.char(255) .. "\nERROR 41 final",
+                    stdout_bytes = '{"accepted":2,"rejected":1,"warnings":1,"errors":1,"slow":[" token=[redacted]  suffix ","final"]}\n',
+                }, target:scriptdir())
         end
+        local help = opt.name:endswith("/help")
         return import("process", {rootdir = path.join(os.projectdir(), "tests", "harness")})
             .main(target:dep("carven-example-log-analyzer"), opt, {
-                args = {"--unknown"}, exit_code = 1,
-                stderr_contains = {"Usage:", "escaped the program entry"},
+                args = {help and "--help" or "--unknown"}, exit_code = help and 0 or 1,
+                stdout_contains = help and {"Usage:"} or nil,
+                stderr_contains = not help and {"Usage:", "escaped the program entry"} or nil,
             }, target:scriptdir())
     end)
 target_end()

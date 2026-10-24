@@ -15,7 +15,7 @@ target("carven-test-language")
         add_files(directory .. "/*.cv")
     end
     add_files("modules/**.cv", "modules/staged_calls/provider.cpp")
-    add_files("testing/inline.cv", "testing/assertions.cv", "io/values.cv", "time/clock.cv")
+    add_files("testing/inline.cv", "testing/assertions.cv", "io/values.cv")
     add_files("async/*.cv", "time/sleep.cv", "time/timeout.cv")
 target_end()
 
@@ -34,8 +34,15 @@ target("carven-test-language-execution")
             plain = true, pass_outputs = {"ok\n", "ok\r\n"},
         })
     end
-    after_test(function (target, opt)
-        assert(not opt.stderr or opt.stderr == "", opt.stderr)
+    on_test(function (target, opt)
+        local name = opt.name:match("([^/]+)$")
+        local input = name:match("^input%-(.+)$")
+        return import("process", {rootdir = path.join(os.projectdir(), "tests", "harness")})
+            .main(target, opt, {
+                args = input and {input, "世界", ""} or {},
+                run_timeout = input and 10000 or 30000,
+                stdout_bytes = input and "ok\n" or "",
+            }, target:scriptdir())
     end)
 target_end()
 
@@ -50,7 +57,7 @@ target("carven-test-language-input")
     on_test(function (target, opt)
         local name = opt.name:match("([^/]+)$")
         return import("harness.input", {rootdir = language_dir})
-            .main(target:dep("carven-test-language-execution"), name)
+            .main(target:dep("carven-test-language-execution"), opt, name)
     end)
 target_end()
 

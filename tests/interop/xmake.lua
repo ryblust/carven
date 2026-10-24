@@ -122,27 +122,25 @@ target("carven-test-interop-native")
     for _, name in ipairs(cases) do
         add_tests(name, {run_timeout = 30000, runargs = {name}})
     end
-    after_test(function (target, opt)
+    on_test(function (target, opt)
         local name = opt.name:match("([^/]+)$")
-        local stderr = (opt.stderr or ""):gsub("\r\n", "\n")
-        local reports
+        -- Successful native probes may emit progress or diagnostic output.
+        local spec = {args = {name}, run_timeout = 30000, stdout_contains = {}, stderr_contains = {}}
         if name == "native-stop" then
-            reports = {"error: requirement failed", "name: test stop at a native boundary",
+            spec.stdout_bytes = ""
+            spec.stderr_contains = {"error: requirement failed", "name: test stop at a native boundary",
                 "native boundary stop", "note: test stopped",
                 "name: test stop at an explicit native boundary without declared failures",
                 "explicit native stop", "later case completed"}
-            assert(stderr:match("callback%.cv:%d+:%d+: error:"), stderr)
-            assert(not stderr:find("unreachable", 1, true), stderr)
+            spec.stderr_patterns = {"callback%.cv:%d+:%d+: error:"}
+            spec.stderr_not_contains = {"unreachable"}
         elseif name:startswith("invalidchar") then
-            reports = {"error: value is not a Unicode scalar value"}
-            assert(stderr:match("bridge%.cv:%d+:%d+: error:"), stderr)
-            assert(stderr:endswith("  note: execution aborted\n\n"), stderr)
-        else
-            return
+            spec.stdout_bytes = ""
+            spec.stderr_contains = {"error: value is not a Unicode scalar value"}
+            spec.stderr_patterns = {"bridge%.cv:%d+:%d+: error:", "  note: execution aborted\n\n$"}
         end
-        for _, fragment in ipairs(reports) do
-            assert(stderr:find(fragment, 1, true), "missing interop report: " .. fragment)
-        end
+        return import("process", {rootdir = path.join(os.projectdir(), "tests", "harness")})
+            .main(target, opt, spec, target:scriptdir())
     end)
 target_end()
 
@@ -152,16 +150,21 @@ target("carven-test-hosted-process")
     set_default(false)
     set_group("interop")
     set_kind("binary")
-    set_languages("c++26")
+    set_languages("c++23")
     add_deps("carven-hosting")
+    add_deps("carven-test-native-process", {inherit = false})
     add_files(path.join(interop_dir, "process", "main.cpp"))
+    on_load(function (target)
+        target:rule_enable("c++.build.modules", false)
+        target:rule_enable("c++.build.modules.scanner", false)
+        target:rule_enable("c++.build.modules.builder", false)
+    end)
     add_tests("roundtrip", {run_timeout = 30000})
     on_test(function (target, opt)
-        local find_tool = import("lib.detect.find_tool")
-        local python = assert(find_tool("python3") or find_tool("python"))
+        local child = path.absolute(target:dep("carven-test-native-process"):targetfile())
         local runenvs = import("private.action.run.runenvs")
         local addenvs, setenvs = runenvs.make(target)
-        local status, errors = os.execv(target:targetfile(), {python.program, "", "我😀"}, {
+        local status, errors = os.execv(target:targetfile(), {child, "", "我😀"}, {
             envs = runenvs.join(addenvs, setenvs), timeout = 15000, try = true,
         })
         if status ~= 0 then

@@ -14,6 +14,8 @@ and validation.
 | `cli` | Compiler processes and interpretation | Arguments, exit status, reports, source selection, emitted files, and execution |
 | `format` | Formatting and file operations | Preserved source, layout, batch results, and replacement |
 | `workspace` | Source snapshots and queries | Versioned locations, selection reuse, invalidation, and navigation |
+| `lsp` | Language-server protocol | Framing, byte lengths, and UTF-16 positions |
+| `examples` / `runtime` | Application workflows | Output, pipelines, native providers, and application state |
 
 Choose the group by the tested boundary, independently of implementation language
 or a `std::` module path. Keep application checks with their sources under `examples/`.
@@ -26,6 +28,9 @@ their Crafts targets; reserve CLI interpretation for their hosted execution.
 
 Use focused internal tests for algorithms and compiler results that program-level
 execution cannot expose.
+
+Check SDK results, budgets, and session state through structured APIs. Check public
+C++ compatibility by compiling header consumers.
 
 Reuse representative sources across static execution, interpretation, and native
 execution. Keep broad value and offset tables in native tests. Add a separate
@@ -52,13 +57,17 @@ observations that ordinary registrations cannot express. Keep dependent pipeline
 steps sequential. Check the specified exit status, output, and file effects.
 Bound process duration, including isolated termination checks.
 
-Pass built executable targets to the shared process checks. Use their Xmake
-runtime environment when checking exit status, ordered output, and file effects.
+Register compiler CLI checks on test-only targets that depend on the executable.
+Pass built executable targets to the shared process checks and use their runtime
+environment.
 
 Reuse the shared test entry and support modules for internal, formatter, and
-workspace executables. Xmake controls test concurrency. Choose partitions by
+workspace executables. Let Xmake schedule test concurrency. Choose partitions by
 execution cost; keep process startup and repeated fixture setup small relative
 to the work.
+
+Compile Hosting consumers as ordinary C++23 translation units against public
+headers and the static library. Use C++20 for baseline generated-code consumers.
 
 Use process isolation when termination itself is the contract under test.
 Distinguish the specified termination from unrelated crashes, sanitizer failures,
@@ -69,9 +78,6 @@ Use the internal termination module for isolated compiler cases. Let Xmake run
 native termination scenarios as separate processes and check their output.
 Construct internal fixtures in the child before observing the operation's
 termination. Use the generated entry for ordinary inline suites.
-
-Use the main project's built compiler, checkout Crafts, resolved rules, and native
-configuration for consumer tests.
 
 Check the same API contracts in portable and accelerated Crafts implementations.
 Select instruction-set options on consumer targets where supported. Run ordinary
@@ -135,6 +141,13 @@ edits and execute the resulting programs in incremental workloads.
 
 ## Fixtures
 
+Reuse built test executables for process child fixtures.
+
+Use the shared process checks for ordinary argument, input, output, and artifact
+observations. Use specialized harnesses for exact-byte filesystem workflows and
+pipelines. Feed consumers the producer's output bytes. Return observation failures
+as failed test results.
+
 Initialize observable state in each case. Give concurrent invocations independent
 temporary directories and streams. Retain failed artifacts and remove successful
 temporary state. Reuse a working directory only when later steps depend on earlier
@@ -155,26 +168,20 @@ whitespace in formatter fixtures. Format and parse repository programs in corpus
 Run commands from the repository root through `./xmakew`; use `.\xmakew.ps1` on
 Windows with the same arguments.
 
-The repository binds Carven-source targets to its own `carven` build output and
-`crafts/` directory. The process-test harness prepends the supplied executable's
-directory to the child environment's `PATH`, so nested `std::compiler` calls use
-the current build. Relocated-toolchain tests set their installed `bin` explicitly.
-The compiler target does not change the caller's runtime environment.
-Developer tests do not use the user's installed toolchain. Build the compiler first,
-then run the relevant groups or the full suite:
+Use the repository's built compiler, checkout Crafts, build rules, and native
+configuration. Use the configured C++ compiler for object-compilation tests.
+Select built tool paths explicitly for child processes. Set the installed `bin`
+explicitly in relocated-toolchain tests.
+
+Build the compiler before running the relevant groups or the full suite:
 
 ```sh
 ./xmakew build
 ./xmakew test
 ```
 
-Rebuild after compiler changes before rerunning tests. Installing the toolchain
-is a separate distribution and acceptance step, not a development-test prerequisite.
-
-The build loads its rules directly from `xmake/carven/`. Rule changes take effect
-on the next invocation.
-
-Select the relevant test groups or the full registered suite after building.
+Rebuild after compiler changes before rerunning tests. Validate installation
+separately in toolchain acceptance.
 
 | Command | Action |
 | --- | --- |
@@ -196,6 +203,5 @@ formatting changes sources.
 
 ## Editor tooling
 
-`./xmakew build` and `./xmakew test` need no Node or editor dependencies. Native
-LSP framing remains a Carven contract test. Node-based protocol and VS Code tests
-run separately in the [editor tests](../../editors/vscode/development.md#automated-checks).
+Run Node-based protocol and VS Code tests separately using the
+[editor test instructions](../../editors/vscode/development.md#automated-checks).

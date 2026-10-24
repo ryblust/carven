@@ -77,8 +77,8 @@ auto fetch(
 }
 
 auto pump(HostSession& session) noexcept -> HostSessionStatus {
-    auto status = HostSessionStatus::Runnable;
-    for (auto turn = 0; turn < 10000 && status == HostSessionStatus::Runnable; ++turn) {
+    auto status = session.poll(64);
+    while (status == HostSessionStatus::Runnable) {
         status = session.poll(64);
     }
     return status;

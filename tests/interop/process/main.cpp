@@ -1,12 +1,26 @@
-module;
-
 #include <carven/hosting/api.hpp>
 #include <carven/hosting/standard.hpp>
 #include <carven/std/process/native.hpp>
 
-module carven:test.interop.process.main;
-
-import std;
+#include <algorithm>
+#include <array>
+#include <chrono>
+#include <cstdint>
+#include <cstdlib>
+#include <expected>
+#include <filesystem>
+#include <format>
+#include <fstream>
+#include <iostream>
+#include <iterator>
+#include <optional>
+#include <print>
+#include <span>
+#include <string>
+#include <string_view>
+#include <thread>
+#include <utility>
+#include <variant>
 
 namespace {
 
@@ -66,7 +80,7 @@ auto call(
 } // namespace
 
 // NOLINTNEXTLINE(misc-const-correctness): Keep the standard C++ main signature.
-extern "C++" auto main(int argc, char** argv) noexcept -> int {
+auto main(int argc, char** argv) noexcept -> int {
     if (argc != 4) {
         return 1;
     }

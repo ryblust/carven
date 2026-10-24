@@ -26,6 +26,7 @@ auto analyzer_file_uri(std::string_view path) noexcept -> std::string {
     }
 #endif
     constexpr auto hex = std::string_view("0123456789ABCDEF");
+    // Match Node's file URLs, which encode '~' in Windows short-name paths too.
     for (const auto ch : normalized) {
         const auto byte = static_cast<unsigned char>(ch);
         if ((byte >= 'a' && byte <= 'z')
@@ -35,7 +36,6 @@ auto analyzer_file_uri(std::string_view path) noexcept -> std::string {
             || ch == '-'
             || ch == '_'
             || ch == '.'
-            || ch == '~'
             || ch == ':') {
             result += ch;
         } else {

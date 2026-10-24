@@ -16,7 +16,7 @@ jobs:
           - platform: macOS
             os: macos-latest
           - platform: Linux
-            os: ubuntu-latest
+            os: ubuntu-26.04
           - platform: Windows
             os: windows-latest
     runs-on: ${{ matrix.os }}
@@ -65,11 +65,11 @@ jobs:
           "LLVM_MINGW_ROOT=$llvmRoot" >> $env:GITHUB_ENV
           "AR=llvm-ar" >> $env:GITHUB_ENV
       - name: Set up Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: '24'
       - name: Set up pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: 11.25.0
           package_json_file: editors/vscode/package.json

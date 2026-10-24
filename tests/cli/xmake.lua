@@ -621,37 +621,21 @@ local help = {
     dump = {"carven dump [kind]", "tokens", "ast"},
 }
 
-target("carven")
-    for command in table.orderpairs(help) do
-        add_tests("invocation/help/" .. command, {
-            group = "cli", run_timeout = 30000,
-            runargs = command == "main" and {"--help"} or {command, "--help"},
-        })
-    end
-    add_tests("invocation/version", {
-        group = "cli", run_timeout = 30000, runargs = {"--version"}, plain = true,
-        pass_output_files = {path.join(os.scriptdir(), "invocation", "version", "stdout.txt")},
-    })
-    for name, sources in table.orderpairs({
-        math = {"input.cv"}, number_parse = {"input.cv"}, structural_display = {"input.cv", "helper.cv"},
-        default_initialization = {"input.cv"},
-    }) do
-        local directory = path.join(os.scriptdir(), "commands", name)
-        add_tests("commands/" .. name, {
-            group = "cli", run_timeout = 30000, rundir = directory,
-            runargs = table.join({"interpret"}, sources), plain = true,
-            pass_output_files = {path.join(directory, "stdout.txt")},
-        })
-    end
-    after_test(function (target, opt)
-        assert(not opt.stderr or opt.stderr == "", opt.stderr)
-        local command = opt.name:match("/help/(.+)$")
-        local stdout = opt.stdout or ""
-        for _, fragment in ipairs(help[command] or {}) do
-            assert(stdout:find(fragment, 1, true), "missing help text: " .. fragment)
-        end
-    end)
-target_end()
+for command, fragments in table.orderpairs(help) do
+    case_specs["invocation/help/" .. command] = {
+        args = command == "main" and {"--help"} or {command, "--help"},
+        stdout_contains = fragments,
+    }
+end
+case_specs["invocation/version"] = {args = {"--version"}, stdout = "stdout.txt"}
+for name, sources in table.orderpairs({
+    math = {"input.cv"}, number_parse = {"input.cv"}, structural_display = {"input.cv", "helper.cv"},
+    default_initialization = {"input.cv"},
+}) do
+    case_specs["commands/" .. name] = {
+        inputs = sources, args = table.join({"interpret"}, sources), stdout = "stdout.txt",
+    }
+end
 
 target("carven-test-cli")
     set_default(false)

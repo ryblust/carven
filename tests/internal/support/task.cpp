@@ -96,6 +96,27 @@ const TestSuite suite([] static noexcept {
         expect_equal(trace.exited, 0uz);
     };
 
+    "Continuation tasks: interrupted dependencies retain ordered cleanup"_test =
+        [] static noexcept {
+            constexpr auto depth = 32768uz;
+            auto trace = TaskTrace {.entered = 0uz, .exited = 0uz, .ordered = true};
+            {
+                auto task = dependency(depth, false, trace);
+                auto loop = ContinuationTaskLoop {.next = {}};
+                task.start(loop);
+                for (auto index = 0uz; index <= depth; ++index) {
+                    loop.resume_one();
+                }
+                expect_equal(trace.entered, depth + 1uz);
+                expect_equal(trace.exited, 1uz);
+                expect(!task.done());
+                // Moving the suspended root must transfer its frame's owner slot.
+                const auto interrupted = std::move(task);
+            }
+            expect_equal(trace.exited, trace.entered);
+            expect(trace.ordered);
+        };
+
     "Continuation tasks: forwarded results retain unique ownership"_test = [] static noexcept {
         auto pending = owned_value();
         auto transferred = std::move(pending);

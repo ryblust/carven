@@ -58,10 +58,19 @@ auto call(
     if (!task) {
         return std::unexpected(std::move(task.error()));
     }
-    while (!task->result()) {
-        session.poll(256);
+    while (!task->result() && session.poll(256) == HostSessionStatus::Runnable) {
     }
-    return *task->result();
+    if (const auto* result = task->result()) {
+        return *result;
+    }
+    return std::unexpected(
+        HostError {
+            .kind = HostErrorKind::Execution,
+            .message = "immediate enum service call is unexpectedly pending",
+            .location = std::nullopt,
+            .calls = {},
+        }
+    );
 }
 
 auto report_failure(
@@ -200,8 +209,12 @@ auto check_cold_reference(HostSession& session) noexcept -> bool {
         return false;
     }
     document.reset();
-    while (!reflected->result() || !pending->result()) {
-        session.poll(256);
+    while ((!reflected->result() || !pending->result())
+           && session.poll(256) == HostSessionStatus::Runnable) {
+    }
+    if (!reflected->result() || !pending->result()) {
+        std::println(std::cerr, "cold enum admission is unexpectedly pending");
+        return false;
     }
     const auto rejected = [](std::string_view name, const HostTask& task) noexcept {
         const auto& result = *task.result();

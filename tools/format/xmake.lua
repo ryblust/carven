@@ -11,16 +11,6 @@ target("carven-format")
     set_kind("binary")
     add_deps("carven-format-modules")
     add_files("src/main.cpp")
-    add_tests("help", {
-        group = "format", run_timeout = 10000, runargs = {"--help"}, pass_outputs = {".*Usage:.*"},
-    })
-    add_tests("help_topic", {
-        group = "format", run_timeout = 10000, runargs = {"help", "check"},
-        pass_outputs = {".*Usage: carven format check.*"},
-    })
-    after_test(function (target, opt)
-        assert(not opt.stderr or opt.stderr == "", opt.stderr)
-    end)
 target_end()
 
 target("carven-format-test-internal")
@@ -56,6 +46,8 @@ target("carven-format-test-cli")
         for _, case in ipairs(cases) do
             target:add("tests", case.name, {group = "format"})
         end
+        target:add("tests", "help", {group = "format"})
+        target:add("tests", "help_topic", {group = "format"})
     end)
 
     on_test(function (target, opt)

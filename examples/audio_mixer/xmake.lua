@@ -29,14 +29,6 @@ target("carven-example-audio-mixer")
         runargs = {"--logs", "--voice=0", "--music=0"},
         pass_outputs = {silent, (silent:gsub("\n", "\r\n"))},
     })
-    add_tests("help", {
-        run_timeout = 30000, runargs = {"--help"}, pass_outputs = {".*Usage:.*"},
-    })
-    after_test(function (target, opt)
-        if opt.name:endswith("/help") then
-            assert(not opt.stderr or opt.stderr == "", opt.stderr)
-        end
-    end)
 target_end()
 
 target("carven-example-audio-mixer-tests")
@@ -47,6 +39,7 @@ target("carven-example-audio-mixer-tests")
 target_end()
 
 local arguments = {
+    help = "--help",
     unknown = "--unknown",
     ["invalid-voice"] = "--voice=bad",
     ["negative-music"] = "--music=-1",
@@ -60,10 +53,12 @@ target("carven-example-audio-mixer-checks")
     end
     on_test(function (target, opt)
         local name = opt.name:match("([^/]+)$")
+        local help = name == "help"
         return import("process", {rootdir = path.join(os.projectdir(), "tests", "harness")})
             .main(target:dep("carven-example-audio-mixer"), opt, {
-                args = {arguments[name]}, exit_code = 1,
-                stderr_contains = {"Usage:", "escaped the program entry"},
+                args = {arguments[name]}, exit_code = help and 0 or 1,
+                stdout_contains = help and {"Usage:"} or nil,
+                stderr_contains = not help and {"Usage:", "escaped the program entry"} or nil,
             }, target:scriptdir())
     end)
 target_end()

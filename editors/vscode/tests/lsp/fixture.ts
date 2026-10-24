@@ -17,7 +17,7 @@ export async function temporary(
     name: string,
     work: (root: string) => Promise<void>,
 ): Promise<void> {
-    const root = realpathSync(mkdtempSync(join(tmpdir(), `carven-${name} 中文 `)));
+    const root = realpathSync(mkdtempSync(join(tmpdir(), `carven-${name}~ 中文 `)));
     try {
         await work(root);
     } catch (error) {

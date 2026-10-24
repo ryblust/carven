@@ -3,6 +3,26 @@ import("core.project.config")
 import("core.project.project")
 import("private.action.run.runenvs")
 
+local function run_files(program, args, files, opt)
+    -- Keep quoted batches below Windows' 32767-character process limit.
+    local prefix_size = #os.args({program}) + #os.args(args) + 2
+    local batch = table.clone(args)
+    local size = prefix_size
+    for _, file in ipairs(files) do
+        local file_size = #os.args({file}) + 1
+        if size + file_size > 24000 and #batch > #args then
+            os.vrunv(program, batch, opt)
+            batch = table.clone(args)
+            size = prefix_size
+        end
+        table.insert(batch, file)
+        size = size + file_size
+    end
+    if #batch > #args then
+        os.vrunv(program, batch, opt)
+    end
+end
+
 function main(check)
     config.load()
     local target = project.target("carven-format")
@@ -21,13 +41,11 @@ function main(check)
         end
     end
     table.sort(files)
-    local args = check and {"--dry-run", "--Werror"} or {"-i"}
-    for _, file in ipairs(files) do
-        table.insert(args, path.relative(file, os.projectdir()))
+    for index, file in ipairs(files) do
+        files[index] = path.relative(file, os.projectdir())
     end
-    if #files > 0 then
-        os.vrunv(tool.program, args, {curdir = os.projectdir()})
-    end
+    run_files(tool.program, check and {"--dry-run", "--Werror"} or {"-i"}, files,
+        {curdir = os.projectdir()})
     local sources = {}
     for _, root in ipairs({"crafts", "examples", "tests", "benchmarks", "tools/lsp"}) do
         for _, file in ipairs(os.files(path.join(os.projectdir(), root, "**.cv"))) do
@@ -43,8 +61,7 @@ function main(check)
         table.insert(sources, path.relative(file, os.projectdir()))
     end
     table.sort(sources)
-    local formatter_args = {check and "check" or "write"}
-    table.join2(formatter_args, sources)
-    os.vrunv(formatter, formatter_args, {curdir = os.projectdir(), addenvs = addenvs, setenvs = setenvs})
+    run_files(formatter, {check and "check" or "write"}, sources,
+        {curdir = os.projectdir(), addenvs = addenvs, setenvs = setenvs})
     print(check and "Formatting check passed." or "Formatting complete.")
 end

@@ -45,14 +45,16 @@ target("carven-test-native-process")
     add_rules("carven")
     add_files("process/bridge.cv")
     add_tests("roundtrip", {run_timeout = 30000})
-    on_test(function (target)
-        local find_tool = import("lib.detect.find_tool")
-        local python = assert(find_tool("python3") or find_tool("python"))
+    on_test(function (target, opt)
+        local child = path.absolute(target:targetfile())
         local runenvs = import("private.action.run.runenvs")
         local addenvs, setenvs = runenvs.make(target)
-        os.vrunv(target:targetfile(), {python.program, "", "我😀"}, {
-            envs = runenvs.join(addenvs, setenvs), timeout = 15000,
+        local status, errors = os.execv(target:targetfile(), {child, "", "我😀"}, {
+            envs = runenvs.join(addenvs, setenvs), timeout = 15000, try = true,
         })
-        return true
+        if status ~= 0 then
+            opt.errors = errors or string.format("native process exited with status %s", status)
+        end
+        return status == 0
     end)
 target_end()

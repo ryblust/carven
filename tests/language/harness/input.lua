@@ -1,4 +1,4 @@
-local runenvs = import("private.action.run.runenvs")
+local process = import("process", {rootdir = path.join(os.projectdir(), "tests", "harness")})
 
 local inputs = {
     ["utf-errors"] = io.readfile(path.join(os.projectdir(), "tests", "language", "io", "utf_errors.txt"), {encoding = "binary"}),
@@ -13,15 +13,9 @@ local inputs = {
     ["cold-fifo"] = "one\ntwo\nxy",
 }
 
-function main(target, name)
-    local input = os.tmpfile()
-    io.writefile(input, inputs[name], {encoding = "binary"})
-    local addenvs, setenvs = runenvs.make(target)
-    local output, errors = os.iorunv(target:targetfile(), {name, "世界", ""}, {
-        stdin = input, timeout = 10000, envs = runenvs.join(addenvs, setenvs),
-    })
-    os.tryrm(input)
-    assert(output:gsub("\r\n", "\n") == "ok\n" and errors == "",
-        "standard input " .. name .. ": " .. output .. errors)
-    return true
+function main(target, opt, name)
+    return process.main(target, opt, {
+        args = {name, "世界", ""}, run_timeout = 10000,
+        stdin_bytes = inputs[name], stdout_bytes = "ok\n",
+    }, target:scriptdir())
 end

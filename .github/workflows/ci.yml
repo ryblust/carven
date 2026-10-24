@@ -27,7 +27,7 @@ jobs:
             shell: bash
             xmake: ./xmakew
           - platform: Linux
-            os: ubuntu-latest
+            os: ubuntu-26.04
             shell: bash
             xmake: ./xmakew
           - platform: Windows
@@ -142,13 +142,13 @@ jobs:
 
       - name: Set up Node
         if: matrix.mode == 'release' && runner.os != 'Linux'
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: '24'
 
       - name: Set up pnpm
         if: matrix.mode == 'release' && runner.os != 'Linux'
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: 11.25.0
           package_json_file: editors/vscode/package.json

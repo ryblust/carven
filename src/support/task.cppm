@@ -11,6 +11,16 @@ struct ContinuationTaskLoop final {
     auto resume_one() noexcept -> void;
 };
 
+struct ContinuationTaskFrame final {
+    std::coroutine_handle<> handle;
+    ContinuationTaskFrame* parent;
+    ContinuationTaskFrame* child;
+    std::coroutine_handle<>* owner;
+
+    auto detach() noexcept -> void;
+    auto destroy() noexcept -> void;
+};
+
 template<typename Value>
 class [[nodiscard]] ContinuationTask final {
 public:
@@ -20,7 +30,11 @@ public:
 
     explicit ContinuationTask(Handle handle) noexcept
         : ready(false),
-          state(handle) {}
+          state(handle) {
+        auto& frame = promise().task_frame();
+        frame.handle = handle;
+        frame.owner = std::addressof(state.handle);
+    }
 
     // A completed operation needs neither a coroutine frame nor a scheduling turn.
     explicit ContinuationTask(Value&& result) noexcept
@@ -31,11 +45,14 @@ public:
 
     ContinuationTask(ContinuationTask&& other) noexcept
         : ready(other.ready),
-          state(Handle {}) {
+          state(std::coroutine_handle<> {}) {
         if (ready) {
             std::construct_at(std::addressof(state.value), std::move(other.state.value));
         } else {
             state.handle = std::exchange(other.state.handle, {});
+            if (state.handle) {
+                promise().task_frame().owner = std::addressof(state.handle);
+            }
         }
     }
 
@@ -46,7 +63,7 @@ public:
         if (ready) {
             std::destroy_at(std::addressof(state.value));
         } else if (state.handle) {
-            state.handle.destroy();
+            promise().task_frame().destroy();
         }
     }
 
@@ -59,15 +76,22 @@ public:
 
         template<typename Parent>
         auto await_suspend(std::coroutine_handle<Parent> parent) noexcept -> void {
-            const auto handle = task.state.handle;
-            auto& promise = handle.promise();
-            promise.attach(parent.promise().task_loop(), parent);
-            promise.task_loop().next = handle;
+            auto& promise = task.promise();
+            promise.attach(
+                parent.promise().task_loop(),
+                std::addressof(parent.promise().task_frame())
+            );
+            promise.task_loop().next = task.state.handle;
         }
 
         // The task owns the result through the consuming full expression.
         // Forwarding to another promise need not construct an intermediate value.
-        auto await_resume() noexcept -> Value&& { return task.result_value(); }
+        auto await_resume() noexcept -> Value&& {
+            if (!task.ready) {
+                task.promise().task_frame().detach();
+            }
+            return task.result_value();
+        }
 
     private:
         ContinuationTask& task;
@@ -78,7 +102,7 @@ public:
     auto start(ContinuationTaskLoop& loop) noexcept -> void {
         loop.next = {};
         if (!ready) {
-            state.handle.promise().attach(loop, {});
+            promise().attach(loop, nullptr);
             loop.next = state.handle;
         }
     }
@@ -86,7 +110,7 @@ public:
     auto done() const noexcept -> bool { return ready || state.handle.done(); }
 
     auto result() const noexcept -> const Value& {
-        return ready ? state.value : state.handle.promise().result_view();
+        return ready ? state.value : promise().result_view();
     }
 
     auto take_result() noexcept -> Value { return result_value(); }
@@ -103,6 +127,11 @@ public:
 
     class Promise final {
     public:
+        Promise() noexcept
+            : loop(nullptr),
+              frame {.handle = {}, .parent = nullptr, .child = nullptr, .owner = nullptr},
+              result(std::nullopt) {}
+
         auto get_return_object() noexcept -> ContinuationTask {
             return ContinuationTask(Handle::from_promise(*this));
         }
@@ -115,7 +144,9 @@ public:
 
             auto await_suspend(Handle self) const noexcept -> void {
                 auto& promise = self.promise();
-                promise.task_loop().next = promise.parent;
+                const auto* parent = promise.frame.parent;
+                promise.task_loop().next =
+                    parent != nullptr ? parent->handle : std::coroutine_handle<> {};
             }
 
             auto await_resume() const noexcept -> void {}
@@ -133,14 +164,22 @@ public:
 
         auto unhandled_exception() const noexcept -> void { std::terminate(); }
 
-        auto attach(ContinuationTaskLoop& scheduler, std::coroutine_handle<> continuation) noexcept
+        auto attach(ContinuationTaskLoop& scheduler, ContinuationTaskFrame* parent) noexcept
             -> void {
             if (loop != nullptr) {
                 invariant_violation("continuation task was started more than once");
             }
             loop = std::addressof(scheduler);
-            parent = continuation;
+            frame.parent = parent;
+            if (parent != nullptr) {
+                if (parent->child != nullptr) {
+                    invariant_violation("continuation task already has an active dependency");
+                }
+                parent->child = std::addressof(frame);
+            }
         }
+
+        auto task_frame() noexcept -> ContinuationTaskFrame& { return frame; }
 
         auto task_loop() const noexcept -> ContinuationTaskLoop& {
             if (loop == nullptr) {
@@ -164,19 +203,23 @@ public:
         }
 
     private:
-        ContinuationTaskLoop* loop = nullptr;
-        std::coroutine_handle<> parent;
+        ContinuationTaskLoop* loop;
+        ContinuationTaskFrame frame;
         std::optional<Value> result;
     };
 
 private:
+    auto promise() const noexcept -> Promise& {
+        return Handle::from_address(state.handle.address()).promise();
+    }
+
     auto result_value() noexcept -> Value&& {
-        return ready ? std::move(state.value) : state.handle.promise().take_result();
+        return ready ? std::move(state.value) : promise().take_result();
     }
 
     // The tag is fixed at construction. Only the selected member has a lifetime.
     union State {
-        explicit State(Handle handle) noexcept
+        explicit State(std::coroutine_handle<> handle) noexcept
             : handle(handle) {}
 
         explicit State(Value&& value) noexcept
@@ -184,7 +227,7 @@ private:
 
         ~State() noexcept {}
 
-        Handle handle;
+        std::coroutine_handle<> handle;
         Value value;
     };
 

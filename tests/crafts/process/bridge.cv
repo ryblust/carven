@@ -1,4 +1,6 @@
 import std::async using { yield_once, close }
+import std::fs using status;
+import std::io using { stdin, write_stdout, write_stdout_async }
 
 import std::process using {
     Process,
@@ -13,7 +15,72 @@ import std::process using {
     run,
 }
 
+import std::time using sleep;
+import <cstdlib> using std::exit as child_exit;
+
 fn host_platform() -> OperatingSystem => operating_system();
+
+private fn child_payload() -> Vector<u8> {
+    var bytes: Vector<u8> = [];
+    for index in 0..262144 {
+        bytes.push((index % 256) as u8);
+    }
+    return bytes;
+}
+
+private async fn run_child() {
+    // Entry return values are discarded; child modes select statuses with native exit.
+    let args = host_arguments()?;
+    assert(args.length() >= 2);
+    match args[1].as_str() {
+        "quoted" => {
+            assert(args.length() == 7);
+            assert(args[2].is_empty() && args[3] == "a b" && args[4] == "a\"b");
+            assert(args[5] == "tail\\" && args[6] == "我😀");
+            assert(status("bridge.cv")? == .File);
+            write_stdout("K")?;
+        },
+        "environment" => {
+            assert(args.length() == 3);
+            assert(environment("PATH")? == args[2]);
+            child_exit(9);
+        },
+        "exit" => {
+            assert(args.length() == 3);
+            let code: i32 = match args[2].as_str() {
+                "0" => 0,
+                "3" => 3,
+                "7" => 7,
+                _ => {
+                    assert(false, "unknown child exit status");
+                    1
+                },
+            };
+            child_exit(code);
+        },
+        "echo" => {
+            let bytes = await stdin().read_all(65536)?;
+            await write_stdout_async(&&bytes)?;
+            child_exit(7);
+        },
+        "transport" => {
+            let bytes = child_payload();
+            let copy = bytes;
+            await write_stdout_async(&&copy)?;
+            let received = await stdin().read_all(bytes.length())?;
+            assert(received.length() == bytes.length());
+            for index in 0..bytes.length() {
+                assert(received[index] == bytes[index]);
+            }
+        },
+        "stall" => {
+            let bytes = child_payload();
+            await write_stdout_async(&&bytes)?;
+            await sleep(30s)?;
+        },
+        _ => assert(false, "unknown process child operation"),
+    }
+}
 
 private async fn read_payload(child: Process) -> Vector<u8> throw ProcessError {
     var bytes: Vector<u8> = [];
@@ -30,15 +97,7 @@ private async fn read_payload(child: Process) -> Vector<u8> throw ProcessError {
 private async fn check_transport(&&program: String) throw ProcessError {
     let quoted = Process::spawn_in(
         program,
-        [
-            "-c",
-            r#"import os,sys; assert os.path.isfile('bridge.cv'); assert sys.argv[1:] == ['', 'a b', 'a\"b', 'tail\\', '我😀']; sys.stdout.buffer.write(b'K')"#,
-            "",
-            "a b",
-            "a\"b",
-            "tail\\",
-            "我😀"
-        ],
+        ["--child", "quoted", "", "a b", "a\"b", "tail\\", "我😀"],
         "tests/crafts/process"
     )?;
     match await quoted.read(1)? {
@@ -50,13 +109,7 @@ private async fn check_transport(&&program: String) throw ProcessError {
 
     // Transfer more than a pipe buffer in both directions. The child checks all
     // bytes, including NUL, CR/LF, and values that are not UTF-8.
-    let echo = Process::spawn(
-        program,
-        [
-            "-c",
-            "import sys; data=bytes(range(256))*1024; sys.stdout.buffer.write(data); sys.stdout.buffer.flush(); assert sys.stdin.buffer.read() == data"
-        ]
-    )?;
+    let echo = Process::spawn(program, ["--child", "transport"])?;
     let payload = await read_payload(echo)?;
     await echo.write_all(&&payload)?;
     echo.close_input()?;
@@ -64,13 +117,7 @@ private async fn check_transport(&&program: String) throw ProcessError {
 
     // A blocked write must leave the driver free to cancel it. Cancelling a wait
     // leaves the child alive; terminating it still yields a reusable exit status.
-    let stalled = Process::spawn(
-        program,
-        [
-            "-c",
-            "import sys,time; sys.stdout.buffer.write(bytes(range(256))*1024); sys.stdout.buffer.flush(); time.sleep(30)"
-        ]
-    )?;
+    let stalled = Process::spawn(program, ["--child", "stall"])?;
     let blocked_bytes = await read_payload(stalled)?;
     async let writing = stalled.write_all(&&blocked_bytes);
     async let waiting = stalled.wait();
@@ -96,14 +143,7 @@ async fn probe(&&program: String) -> i32 {
             "executable must round trip through find_executable"
         );
         let path = environment("PATH")?;
-        assert(run(
-            program,
-            [
-                "-c",
-                "import os,sys; assert os.environ.get('PATH','') == sys.argv[1]; sys.exit(9)",
-                path
-            ]
-        )? == 9);
+        assert(run(program, ["--child", "environment", path])? == 9);
         let missing = try {
             run("carven-test-missing-program", [])?;
             false
@@ -116,20 +156,14 @@ async fn probe(&&program: String) -> i32 {
         let group = ProcessGroup::new();
         var statuses: Vector<i32> = [3, 7];
         for status in statuses {
-            group.spawn_inherited(program, ["-c", f"import sys; sys.exit({status})"])?;
+            group.spawn_inherited(program, ["--child", "exit", f"{status}"])?;
         }
         while !statuses.is_empty() {
             let finished = group.wait()?;
             assert(finished.index < statuses.length());
             assert(finished.status == statuses.remove(finished.index));
         }
-        let child = Process::spawn(
-            program,
-            [
-                "-c",
-                "import sys; data=sys.stdin.buffer.read(); sys.stdout.buffer.write(data); sys.stdout.buffer.flush(); sys.exit(7)"
-            ]
-        )?;
+        let child = Process::spawn(program, ["--child", "echo"])?;
         let alias = child;
         async let pending = child.read(32);
         await yield_once();
@@ -149,7 +183,7 @@ async fn probe(&&program: String) -> i32 {
         assert(await alias.wait()? == status);
         child.close_input()?;
         // A child can exit before the parent half-closes its stdin.
-        let exited = Process::spawn(program, ["-c", "pass"])?;
+        let exited = Process::spawn(program, ["--child", "exit", "0"])?;
         match await exited.read(1)? {
             .End => {},
             .Data(_) => assert(false),
@@ -165,6 +199,14 @@ async fn probe(&&program: String) -> i32 {
 }
 
 async fn main(args) {
+    if !args.is_empty() && args[0] == "--child" {
+        try {
+            await run_child()?;
+        } catch {
+            _ => assert(false, "unexpected process child failure"),
+        }
+        return;
+    }
     assert(args.length() == 3);
     let program = args[0] as String;
     assert(await probe(&&program) == 7);

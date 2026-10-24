@@ -164,21 +164,25 @@ struct BorrowedReceiver final {
     }
 };
 
-inline auto borrowed_receiver = BorrowedReceiver {};
+// Accessors record into events first, so the receiver is destroyed before that log.
+inline auto borrowed_receiver() noexcept -> BorrowedReceiver& {
+    static auto receiver = BorrowedReceiver {};
+    return receiver;
+}
 
 inline auto receiver_reference() noexcept -> BorrowedReceiver& {
     mark(1);
-    return borrowed_receiver;
+    return borrowed_receiver();
 }
 
 inline auto receiver_const_reference() noexcept -> const BorrowedReceiver& {
     mark(1);
-    return borrowed_receiver;
+    return borrowed_receiver();
 }
 
 inline auto receiver_from_literal(const std::int32_t&) noexcept -> const BorrowedReceiver& {
     mark(3);
-    return borrowed_receiver;
+    return borrowed_receiver();
 }
 
 inline auto receiver_from_literal(std::int32_t&&) noexcept -> BorrowedReceiver {
@@ -189,7 +193,7 @@ inline auto receiver_from_literal(std::int32_t&&) noexcept -> BorrowedReceiver {
 inline auto receiver_from_literal(const std::int32_t&, const std::int32_t&) noexcept
     -> const BorrowedReceiver& {
     mark(3);
-    return borrowed_receiver;
+    return borrowed_receiver();
 }
 
 inline auto receiver_from_literal(std::int32_t&&, const std::int32_t&) noexcept

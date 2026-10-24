@@ -94,15 +94,14 @@ auto call(
     if (!task) {
         return std::unexpected(std::move(task.error()));
     }
-    for (auto turn = 0; turn < 10000 && task->result() == nullptr; ++turn) {
-        session.poll(64);
+    while (!task->result() && session.poll(64) == HostSessionStatus::Runnable) {
     }
     const auto* result = task->result();
     if (!result) {
         return std::unexpected(
             HostError {
                 .kind = HostErrorKind::Execution,
-                .message = "synchronous document call did not finish",
+                .message = "synchronous document call is unexpectedly pending",
                 .location = std::nullopt,
                 .calls = {}
             }
@@ -262,8 +261,8 @@ auto run_document_pair() noexcept -> bool {
             return event.post(arguments);
         };
     const auto pump = [&]() noexcept {
-        auto status = HostSessionStatus::Runnable;
-        for (auto turn = 0; turn < 10000 && status == HostSessionStatus::Runnable; ++turn) {
+        auto status = session->poll(64);
+        while (status == HostSessionStatus::Runnable) {
             status = session->poll(64);
         }
         return status;

@@ -41,18 +41,20 @@ target("carven-test-language-traps")
     for _, name in ipairs(table.orderkeys(reports)) do
         add_tests(name, {run_timeout = 30000, runargs = {name}, plain = true, pass_outputs = {""}})
     end
-    after_test(function (target, opt)
+    on_test(function (target, opt)
         local name = opt.name:match("([^/]+)$")
-        local stderr = (opt.stderr or ""):gsub("\r\n", "\n")
-        assert(stderr:endswith("  note: execution aborted\n\n"), stderr)
-        for _, fragment in ipairs(reports[name]) do
-            assert(stderr:find(fragment, 1, true), "missing trap report: " .. fragment)
-        end
-        assert(not stderr:find("unreachable", 1, true), stderr)
+        local forbidden = {"unreachable"}
         if name == "assertion-snapshot" then
-            assert(not stderr:find("99,", 1, true), stderr)
+            table.insert(forbidden, "99,")
         elseif name == "fatal-tests" then
-            assert(not stderr:find("carven: tests:", 1, true), stderr)
+            table.insert(forbidden, "carven: tests:")
         end
+        return import("process", {rootdir = path.join(os.projectdir(), "tests", "harness")})
+            .main(target, opt, {
+                args = {name}, run_timeout = 30000, stdout_bytes = "",
+                stderr_contains = reports[name],
+                stderr_patterns = {"  note: execution aborted\n\n$"},
+                stderr_not_contains = forbidden,
+            }, target:scriptdir())
     end)
 target_end()
