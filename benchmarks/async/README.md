@@ -89,6 +89,6 @@ own workloads.
 the main project. Each `.cv` file supplies a fixed workload. `workload.cpp` runs
 the C++ Task implementations, and `runtime_workload.cpp` supplies direct runtime
 orchestration. Each native profile shares one `measurement.cpp` object target.
-`--case` selects one workload group. The chain workload includes stack observation
-programs. `measurement.hpp` and `measurement.cpp` own configuration, measured
-intervals, allocation tracking and stack observations.
+`--case` selects one workload group. Only the chain workload reads the depth input
+and includes stack observations. `measurement.hpp` and `measurement.cpp` own
+configuration, measured intervals, allocation tracking and stack observations.

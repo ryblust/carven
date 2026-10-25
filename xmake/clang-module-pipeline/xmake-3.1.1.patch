@@ -1,3 +1,24 @@
+--- a/core/base/scheduler.lua
++++ b/core/base/scheduler.lua
+@@ -1047,10 +1047,14 @@
+         return 1, pollerdata.object_event
+     end
+
+-    -- insert poller object to poller for waiting process
+-    local ok, errors = poller:insert(obj, 0, self._poller_events_cb)
+-    if not ok then
+-        return -1, errors
++    -- Timed-out processes stay registered until close. Registering again can
++    -- leave duplicate handles in the Windows process poller's wait list.
++    if not pollerdata.process_registered then
++        local ok, errors = poller:insert(obj, 0, self._poller_events_cb)
++        if not ok then
++            return -1, errors
++        end
++        pollerdata.process_registered = true
+     end
+
+     -- register timeout task to timer
 --- /dev/null
 +++ b/modules/private/action/build/content_depend.lua
 @@ -0,0 +1,92 @@

@@ -66,6 +66,7 @@ jobs:
         run: |
           curl -fsSL https://apt.llvm.org/llvm.sh -o "$RUNNER_TEMP/llvm.sh"
           sudo bash "$RUNNER_TEMP/llvm.sh" 23 all
+          sudo apt-get install -y patchelf
           echo /usr/lib/llvm-23/bin >> "$GITHUB_PATH"
 
       - name: Install LLVM-MinGW on Windows
@@ -118,48 +119,34 @@ jobs:
       - name: Test all groups
         run: ${{ matrix.xmake }} test
 
-      - name: Build editor toolchain
-        if: matrix.mode == 'release' && runner.os != 'Linux'
+      - name: Build toolchain
+        if: matrix.mode == 'release'
         run: ${{ matrix.xmake }} build -g toolchain
 
-      - name: Locate editor toolchain
-        if: matrix.mode == 'release' && runner.os != 'Linux'
-        run: |
-          ${{ matrix.xmake }} lua -c '
-            import("core.project.config")
-            config.load()
-            import("core.project.project")
-            local environment = assert(io.open(os.getenv("GITHUB_ENV"), "a"))
-            environment:write("CARVEN_LSP=" .. path.absolute(project.target("carven-lsp"):targetfile()) .. "\n")
-            environment:write("CARVEN_TEST_COMPILER=" .. path.absolute(project.target("carven"):targetfile()) .. "\n")
-            environment:write("CARVEN_TEST_CRAFTS=" .. path.join(os.projectdir(), "crafts") .. "\n")
-            environment:close()
-          '
+      - name: Install toolchain
+        if: matrix.mode == 'release'
+        run: ${{ matrix.xmake }} install -o "${{ github.workspace }}/build/toolchain" -g toolchain
 
       - name: Check formatting
         if: matrix.mode == 'release' && runner.os == 'macOS'
         run: ./xmakew format-check
 
       - name: Set up Node
-        if: matrix.mode == 'release' && runner.os != 'Linux'
+        if: matrix.mode == 'release'
         uses: actions/setup-node@v7
         with:
           node-version: '24'
 
       - name: Set up pnpm
-        if: matrix.mode == 'release' && runner.os != 'Linux'
+        if: matrix.mode == 'release'
         uses: pnpm/action-setup@v6
         with:
           version: 11.25.0
           package_json_file: editors/vscode/package.json
 
       - name: Install editor test dependencies
-        if: matrix.mode == 'release' && runner.os != 'Linux'
+        if: matrix.mode == 'release'
         run: pnpm --dir editors/vscode install --frozen-lockfile
-
-      - name: Build VS Code extension
-        if: matrix.mode == 'release' && runner.os == 'macOS'
-        run: pnpm --dir editors/vscode run build
 
       - name: Check editor sources
         if: matrix.mode == 'release' && runner.os == 'macOS'
@@ -167,6 +154,43 @@ jobs:
           pnpm --dir editors/vscode run format-check
           pnpm --dir editors/vscode run check:tests
 
+      - name: Package toolchain
+        if: matrix.mode == 'release'
+        run: node tools/release/package.mjs "${{ github.workspace }}/build/toolchain"
+
+      - name: Check installed package
+        if: matrix.mode == 'release'
+        run: node tools/release/check.mjs
+
       - name: Test editor contracts
-        if: matrix.mode == 'release' && runner.os != 'Linux'
+        if: matrix.mode == 'release'
+        env:
+          CARVEN_LSP: ${{ github.workspace }}/build/installed/bin/carven-lsp${{ runner.os == 'Windows' && '.exe' || '' }}
+          CARVEN_TEST_COMPILER: ${{ github.workspace }}/build/installed/bin/carven${{ runner.os == 'Windows' && '.exe' || '' }}
+          CARVEN_TEST_CRAFTS: ${{ github.workspace }}/build/installed/crafts
         run: pnpm --dir editors/vscode test
+
+      - name: Upload toolchain
+        if: matrix.mode == 'release'
+        uses: actions/upload-artifact@v7
+        with:
+          name: carven-${{ runner.os }}-${{ runner.arch }}
+          if-no-files-found: error
+          path: |
+            build/packages/*.tar.gz
+            build/packages/*.sha256
+
+      - name: Package VS Code extension
+        if: matrix.mode == 'release' && runner.os == 'macOS'
+        run: pnpm --dir editors/vscode run package
+
+      - name: Upload editor and installers
+        if: matrix.mode == 'release' && runner.os == 'macOS'
+        uses: actions/upload-artifact@v7
+        with:
+          name: carven-editor-and-installers
+          if-no-files-found: error
+          path: |
+            build/packages/*.vsix
+            install.sh
+            install.ps1

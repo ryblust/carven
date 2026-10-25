@@ -4,9 +4,10 @@ Package the compiler, formatter, LSP, analyzer, Crafts, Xmake and CMake integrat
 hosting headers and static library, and required runtime libraries as one toolchain.
 The VS Code extension is a separate universal VSIX.
 
-These scripts run on the publisher's machine or CI after `xmake install` stages
-the files. They assemble the archive and checksum; `install.sh` and `install.ps1`
-download and install that finished archive without Node or build tools.
+CI builds, packages, checks, and uploads the Release toolchains. Distribution
+collects those artifacts from a successful CI run for the selected commit.
+`install.sh` and `install.ps1` install the published archive without Node or build
+tools. The commands below also support local packaging.
 
 ## Build
 
@@ -30,8 +31,8 @@ pnpm --dir editors/vscode run package
 ```
 
 `build/packages` contains `carven-<platform>-<arch>.tar.gz`, its
-`.sha256` sidecar, and `carven-vscode-<extension-version>.vsix`. Packaging checks the
-toolchain files and includes Linux/Windows runtime libraries and license notices.
+`.sha256` sidecar, and `carven-vscode-<extension-version>.vsix`. Packaging includes
+Linux/Windows runtime libraries and license notices.
 macOS uses its system C++ runtime.
 
 ## Validate
@@ -39,29 +40,36 @@ macOS uses its system C++ runtime.
 Install CMake 3.21 or newer and Ninja for the external CMake project check.
 
 ```sh
-pnpm --dir editors/vscode run check:tests
-node editors/vscode/tests/installation.ts
+node tools/release/check.mjs
 ```
 
-The package check extracts the archive into a temporary directory and runs a
-real build, project query, Xmake and CMake incremental builds, and an LSP session
-with its `bin` on `PATH`. Both external projects explicitly load the installed
-adapters and check unchanged builds and edits to imported sources.
-It also compiles a C++23 host against the installed SDK to check embedding and reload.
-Query and LSP startup use only the package and system utilities; native builds
-also use the development C++ toolchain.
+The package check extracts the archive to `build/installed`, builds and runs one
+program through Carven, Xmake, and CMake, and links a C++23 consumer against the
+installed SDK. Formatting uses only the package and system utilities on `PATH`;
+native builds also use the development C++ toolchain.
 
-Run the [editor contracts](../../editors/vscode/development.md#automated-checks) separately
-against the built or staged toolchain.
+CI runs the editor protocol tests once against the extracted package. To run them
+locally, follow the [editor test instructions](../../editors/vscode/development.md#automated-checks)
+with `CARVEN_LSP`, `CARVEN_TEST_COMPILER`, and `CARVEN_TEST_CRAFTS` set to the
+corresponding paths under `build/installed`.
 
-Set `CARVEN_TEST_VSCODE=1` to include the packaged VSIX in a temporary VS Code
-profile. On Windows, also set `VSCODE_EXECUTABLE` to the absolute `Code.exe` path.
+To check the VSIX in a temporary VS Code profile, set `CARVEN_VSIX` to the
+package, select the installed LSP with `CARVEN_LSP`, and run
+`pnpm --dir editors/vscode run test:vscode`. On Windows, also set
+`VSCODE_EXECUTABLE` to the absolute `Code.exe` path.
 
 ## Publish
 
-The manually triggered distribution workflow builds and validates native
-macOS, Linux and Windows packages, then uploads GitHub Actions artifacts.
+CI uploads one toolchain artifact per Release platform and one artifact containing
+the universal VSIX and installers. Source checks and editor tests run in CI;
+Distribution does not rebuild or rerun them.
+
+Trigger Distribution on the branch or tag to publish. It selects the latest
+successful CI run for that exact commit, downloads its `carven-*` artifacts, and
+uploads them together as `carven-distribution`. A missing successful run or
+expired artifacts require a new CI run.
+
 Create the GitHub Release for the compiler's `vX.Y.Z` tag manually and attach
-the validated platform archives, their checksums, one universal VSIX,
-`install.sh` and `install.ps1`. The installers download those release assets;
-the workflow does not publish a release or Marketplace extension.
+the platform archives, their checksums, the universal VSIX, `install.sh`, and
+`install.ps1` from that collection. The workflow does not create a Release or
+publish to the VS Code Marketplace.

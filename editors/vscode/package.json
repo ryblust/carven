@@ -119,7 +119,7 @@
     "LICENSE",
     "resources/icon.png",
     "language-configuration.json",
-    "syntaxes/**",
+    "syntaxes",
     "dist/extension.cjs",
     "dist/THIRD_PARTY_NOTICES.txt"
   ],

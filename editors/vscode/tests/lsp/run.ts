@@ -3,6 +3,7 @@ import { test } from 'node:test';
 for (const name of [
     'protocol',
     'project',
+    'documents',
     'navigation',
     'recovery',
     'refactor',

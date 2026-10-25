@@ -35,3 +35,4 @@ Xmake owns native compilation, target settings, linking, and incremental builds.
 Unchanged analysis and generated C++ are reused. Targets share checked Craft
 build scripts; queries run on each build to observe current configuration.
 `xmake build --verbose` includes compiler stage timings.
+Compiler diagnostics are forwarded to stderr on successful and failed builds.

@@ -180,8 +180,9 @@ Build the compiler before running the relevant groups or the full suite:
 ./xmakew test
 ```
 
-Rebuild after compiler changes before rerunning tests. Validate installation
-separately in toolchain acceptance.
+Rebuild after compiler changes before rerunning tests. Release CI runs
+`tools/release/check.mjs` to check the installed package, runs editor protocol
+tests against its extraction, and uploads the resulting artifacts.
 
 | Command | Action |
 | --- | --- |

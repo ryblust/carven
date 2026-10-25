@@ -154,7 +154,7 @@ async fn main(
     hello.set("method", &&JSONValue::string("hello"))?;
     let greeting = await request(analyzer, &&hello)?;
     let protocol = greeting.get("protocol")?;
-    if protocol.as_i64()? != 8 => throw ProtocolError::Analyzer;
+    if protocol.as_i64()? != 9 => throw ProtocolError::Analyzer;
     let events = ByteChannel::new(16);
     let jobs = ByteChannel::new(1);
     let output = ByteChannel::new(16);

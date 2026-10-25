@@ -72,46 +72,37 @@ auto Yield::await_suspend(std::coroutine_handle<> continuation) noexcept -> void
     queue.push(*this);
 }
 
-[[maybe_unused]] auto leaf(std::uint64_t value, bool deferred) noexcept -> Task {
-    async_benchmark::observe_stack();
-    if (deferred) {
-        co_await Yield {.handle = {}, .next = nullptr};
-    }
-    co_return value + 1;
-}
-
-[[maybe_unused]] auto ready_leaf(std::uint64_t value) noexcept -> Task {
-    async_benchmark::observe_stack();
-    co_return value + 1;
-}
-
-[[maybe_unused]] auto yielding_leaf(std::uint64_t value) noexcept -> Task {
-    async_benchmark::observe_stack();
-    co_await Yield {.handle = {}, .next = nullptr};
-    co_return value + 1;
-}
-
-template<bool Deferred>
-[[maybe_unused]] auto static_leaf(std::uint64_t value) noexcept -> Task {
-    if constexpr (Deferred) {
-        return yielding_leaf(value);
-    } else {
-        return ready_leaf(value);
-    }
-}
-
-[[maybe_unused]] auto chain(std::uint64_t value, std::uint64_t depth) noexcept -> Task {
+#if CARVEN_ASYNC_BENCH_CHAIN
+auto chain(std::uint64_t value, std::uint64_t depth) noexcept -> Task {
     async_benchmark::observe_stack();
     if (depth == 0) {
         co_return value;
     }
     co_return co_await chain(value + 1, depth - 1);
 }
+#elif CARVEN_ASYNC_BENCH_STATIC
+template<bool Deferred>
+auto static_leaf(std::uint64_t value) noexcept -> Task {
+    if constexpr (Deferred) {
+        co_await Yield {.handle = {}, .next = nullptr};
+    }
+    co_return value + 1;
+}
+#else
+auto leaf(std::uint64_t value, bool deferred) noexcept -> Task {
+    if (deferred) {
+        co_await Yield {.handle = {}, .next = nullptr};
+    }
+    co_return value + 1;
+}
+#endif
 
 auto run_workload() noexcept -> Task {
     const auto iterations = async_benchmark::iterations();
     const auto seed = async_benchmark::seed();
-    [[maybe_unused]] const auto depth = async_benchmark::depth();
+#if CARVEN_ASYNC_BENCH_CHAIN
+    const auto depth = async_benchmark::depth();
+#endif
     auto checksum = 0ull;
     async_benchmark::begin();
     for (auto index = 0ull; index < iterations; ++index) {

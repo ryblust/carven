@@ -28,7 +28,7 @@ const fn copy_cstring() {
     var current = c"old";
     let snapshot = current;
     current = c"new";
-    let taken = &&current;
+    let _ = &&current;
     current = snapshot;
     return current;
 }

@@ -1,7 +1,7 @@
 # Clang module build pipeline
 
 This document describes the repository wrapper's Xmake overlay, module build
-rules, incremental checks, and build-state recovery.
+rules, incremental checks, process waits, and build-state recovery.
 
 ## Pipeline
 
@@ -171,6 +171,12 @@ checks that Xmake actually selects it. Installations that ignore
 `XMAKE_PROGRAM_DIR`, including self-contained bundles, cannot use this pipeline.
 A patch application or overlay selection failure stops the wrapper. Reusing a
 cached overlay does not repeat the selection check.
+
+The overlay registers each child process with the scheduler once until close.
+Xmake retains the registration after a wait times out; waiting again to reap a
+killed child must reuse it. Duplicate registrations can leave invalid handles
+in the Windows process poller and abort the scheduler with
+`wait events in poller failed!`. Test timeouts continue to report failures.
 
 The overlay uses GNU-driver sanitizer linking for LLVM-MinGW on Windows.
 Other Windows toolchains use Xmake's MD/MT runtime handling. The project enables

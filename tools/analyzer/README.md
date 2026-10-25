@@ -23,8 +23,24 @@ It follows imports through Workspace's retained syntax and loads missing helpers
 on demand. Each target's explicit roots and import closure define its semantic
 inputs. Other Craft candidates remain available for import queries.
 
-One disk-source model owns standard and project documents; target membership
-refers to those identities. Open editor text overlays disk content until close.
+One disk-source model owns standard and project documents. The document registry
+resolves file URIs to physical paths and binds each open URI until close.
+Filesystem links and Windows short names use the resolved file identity;
+non-file URIs retain their own identity. Module paths come from the project model
+or the compiler's source-path rules within workspace roots. Other buffers receive
+private module identities.
+
+Each open URI has its own text and client version. Stale changes are ignored;
+reopening starts a new version sequence. Workspace versions use a separate source
+counter. Closing one alias preserves the others. Closing the last reloads project
+disk content or removes a standalone or deleted document.
+
+Differing alias contents publish `CV-DOCUMENT-CONFLICT` for each buffer. Queries
+use the requested buffer's text and reject conflicts in other selected files.
+Rename and code actions reject any conflict in their selection. Document symbols,
+folding, and formatting use the requested buffer. The conflict clears when the
+remaining open buffers have matching contents.
+
 Project mappings take precedence over loose-file module identities. Standard
 classification preserves package identity and limits refactoring to project files.
 Workspace receives source values; this process owns filesystem loading.
@@ -49,7 +65,8 @@ enum-order changes require updating both endpoints and that version.
 
 Source-bearing responses include captured text for position conversion. Locations
 refer to document identities and half-open byte ranges; compiler construction IDs
-stay inside the analyzer. Open-document URI spellings are preserved for the client.
+stay inside the analyzer. Open-document locations use a client URI; diagnostics
+carry each open buffer's URI and version.
 Workspace retains semantic analysis and recovery owners across related queries.
 
 Workspace captures static output and denies host environment effects during

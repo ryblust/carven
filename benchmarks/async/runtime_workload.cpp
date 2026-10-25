@@ -12,7 +12,6 @@ namespace async = carven::runtime::execution;
 #if CARVEN_ASYNC_BENCH_STORED
 // A saved cold operation keeps its activation across the statement boundary.
 auto leaf(std::uint64_t value) noexcept -> async::AsyncOperation<std::uint64_t> {
-    async_benchmark::observe_stack();
     co_return async::Completion<std::uint64_t>::success(value + 1);
 }
 #endif
@@ -22,7 +21,9 @@ auto leaf(std::uint64_t value) noexcept -> async::AsyncOperation<std::uint64_t> 
 auto root() noexcept -> async::AsyncOperation<void> {
     const auto count = async_benchmark::iterations();
     const auto initial = async_benchmark::seed();
-    [[maybe_unused]] const auto nesting = async_benchmark::depth();
+#if CARVEN_ASYNC_BENCH_CHAIN
+    const auto nesting = async_benchmark::depth();
+#endif
     std::uint64_t checksum = 0;
     async_benchmark::begin();
     for (std::uint64_t index = 0; index < count; ++index) {
@@ -44,7 +45,6 @@ auto root() noexcept -> async::AsyncOperation<void> {
         checksum += result;
 #else
         const auto before = checksum;
-        async_benchmark::observe_stack();
 #if CARVEN_ASYNC_BENCH_YIELD
         co_await async::await_yield_once();
 #endif

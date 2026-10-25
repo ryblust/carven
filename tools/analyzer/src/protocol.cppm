@@ -55,13 +55,13 @@ struct AnalyzerRequest final {
     AnalyzerMethod method;
     std::uint64_t revision;
     std::string uri;
-    std::string module_path;
     std::string text;
     std::string target;
     std::string query;
     std::string new_name;
     std::string context;
     std::int64_t version;
+    bool open;
     std::uint32_t offset;
     std::optional<std::uint32_t> start;
     std::optional<std::uint32_t> end;
@@ -177,7 +177,7 @@ struct AnalyzerHover final {
     std::string documentation;
 };
 
-enum class AnalyzerQueryError { InvalidName, BindingChange, IncompleteSyntax };
+enum class AnalyzerQueryError { InvalidName, BindingChange, IncompleteSyntax, DocumentConflict };
 
 struct AnalyzerQueryFailure final {
     AnalyzerQueryError code;

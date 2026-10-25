@@ -41,8 +41,14 @@ participate in diagnostics and cross-file queries. Untitled buffers and files
 outside selected targets use standalone inputs with the same standard library.
 
 Editor text overlays disk content until `didClose`. Incremental edits use UTF-16
-ranges; stale versions are ignored. Dynamic watchers cover project roots, scripts,
-and source directories. Clients without dynamic watching supply file events.
+ranges; stale versions are ignored within each open URI. Aliases of the same file
+retain independent text and versions. Differing contents produce
+`CV-DOCUMENT-CONFLICT`; affected queries return `RequestFailed`. Document symbols,
+folding, and formatting use the requested buffer. The conflict clears when the
+remaining open buffers have matching contents.
+
+Dynamic watchers cover project roots, scripts, and source directories. Clients
+without dynamic watching supply file events.
 `carven.reload` refreshes the project. Clients opting into `carven/projectStatus`
 receive loading, ready, and error states.
 

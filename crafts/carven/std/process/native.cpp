@@ -118,12 +118,11 @@ auto windows_text(std::wstring_view value) noexcept -> TextResult {
     if (value.size() > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
         return {.code = E2BIG, .text = {}};
     }
-    const auto length = static_cast<int>(value.size());
     const auto count = WideCharToMultiByte(
         CP_UTF8,
         WC_ERR_INVALID_CHARS,
         value.data(),
-        length,
+        static_cast<int>(value.size()),
         nullptr,
         0,
         nullptr,
@@ -137,7 +136,7 @@ auto windows_text(std::wstring_view value) noexcept -> TextResult {
             CP_UTF8,
             WC_ERR_INVALID_CHARS,
             value.data(),
-            length,
+            static_cast<int>(value.size()),
             text.data(),
             count,
             nullptr,
@@ -454,7 +453,7 @@ auto spawn_impl(
     const auto quote = [&](std::string_view value) noexcept {
         command += '"';
         auto slashes = std::size_t();
-        for (auto character : value) {
+        for (const auto character : value) {
             if (character == '\\') {
                 ++slashes;
                 continue;
@@ -507,7 +506,7 @@ auto spawn_impl(
     auto state = std::make_shared<State>();
     auto child_input = OwnedHandle();
     auto child_output = OwnedHandle();
-    auto child_error = inherited_handle(STD_ERROR_HANDLE);
+    const auto child_error = inherited_handle(STD_ERROR_HANDLE);
     if (!child_error) {
         return {.process = {}, .code = static_cast<std::int32_t>(GetLastError())};
     }
@@ -587,7 +586,7 @@ auto spawn_impl(
             0,
             PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
             handles.data(),
-            sizeof(handles),
+            handles.size() * sizeof(HANDLE),
             nullptr,
             nullptr
         )) {

@@ -4,6 +4,8 @@
 the C++23 headers under `carven/hosting/` and link the static library using a
 compatible C++ toolchain and standard library. The archive contains the required
 compiler implementation; consumers do not need compiler module imports or BMIs.
+Release archives contain native object code and do not require LLVM LTO support
+in the consumer's linker.
 
 The toolchain installs the platform's static-library filename under `lib/`, public
 headers under `include/carven/hosting/`, and runtime header dependencies under

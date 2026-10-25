@@ -127,7 +127,7 @@ fn fail_construction() -> bool throw ConstructionFailure {
 test "C++ construction: scalar delivery cannot bypass a failing argument" {
     reset();
     let caught = try {
-        let result = pair {
+        let _ = pair {
             Byte { (fail_construction()? && false) as u8 },
             record(5)
         };

@@ -118,14 +118,14 @@ function main(options)
         },
     })
     local snapshot_root
-    benchmark.run(session, selected, function (session, record, scenario, root)
+    benchmark.run(session, selected, function (session, record, scenario)
         local inputs = workloads.inputs()
         local fixtures = path.join(snapshot_root, "benchmarks/incremental")
         record.inputs = inputs
         record.baseline, record.edits = scenario.baseline or {}, scenario.edits or {}
         record.expected_stdout = scenario.stdout
         local name = "benchmarks::incremental::workload"
-        root = assert(project.target(name)):rundir()
+        local root = assert(project.target(name)):rundir()
         record.workspace = root
         record.native_mode, record.language = import("core.project.config").mode(), "c++20"
         record.crafts_directory = session.results.metadata.crafts_root

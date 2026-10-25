@@ -3,34 +3,14 @@ import "measurement.hpp";
 
 import(cpp) fn cv_async_bench_iterations() -> u64 = ::cv_async_bench_iterations;
 import(cpp) fn cv_async_bench_seed() -> u64 = ::cv_async_bench_seed;
-import(cpp) fn cv_async_bench_depth() -> u64 = ::cv_async_bench_depth;
 import(cpp) fn cv_async_bench_begin() = ::cv_async_bench_begin;
 import(cpp) fn cv_async_bench_finish(checksum: u64) = ::cv_async_bench_finish;
-import(cpp) fn cv_async_bench_observe_stack() = ::cv_async_bench_observe_stack;
-
-async fn leaf(value: u64, deferred: bool) -> u64 {
-    cv_async_bench_observe_stack();
-    if deferred {
-        await yield_once();
-    }
-    return value + 1;
-}
-
-async fn chain(value: u64, remaining: u64) -> u64 {
-    cv_async_bench_observe_stack();
-    if remaining == 0 {
-        return value;
-    }
-    return await chain(value + 1, remaining - 1);
-}
 
 async fn ready_leaf(value: u64) -> u64 {
-    cv_async_bench_observe_stack();
     return value + 1;
 }
 
 async fn yielding_leaf(value: u64) -> u64 {
-    cv_async_bench_observe_stack();
     await yield_once();
     return value + 1;
 }
@@ -46,7 +26,6 @@ private fn static_leaf(value: u64, const deferred: bool) {
 async fn main() {
     let count = cv_async_bench_iterations();
     let initial = cv_async_bench_seed();
-    let nesting = cv_async_bench_depth();
     var checksum: u64 = 0;
     cv_async_bench_begin();
     for index in 0..count {

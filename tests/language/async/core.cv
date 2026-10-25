@@ -125,8 +125,7 @@ fn replace_argument(&trace: i32, &backing: i32) -> i32 {
 
 async fn arguments(snapshot: i32, first: i32, second: i32) => snapshot * 100 + first * 10 + second;
 
-fn argument_factory(snapshot: i32, unused: i32, second: i32) =>
-    arguments(second, snapshot, snapshot);
+fn argument_factory(snapshot: i32, _: i32, second: i32) => arguments(second, snapshot, snapshot);
 
 async fn fresh_capture() -> i32 {
     var trace: i32 = 0;

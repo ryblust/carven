@@ -2,6 +2,8 @@ target("carven-hosting")
     set_default(false)
     set_group("toolchain")
     set_kind("static")
+    -- External hosts link this archive without LLVM LTO support.
+    set_policy("build.optimization.lto", false)
     add_deps("carven-modules")
     add_files("src/**.cppm", {public = true, install = false})
     add_files("src/**.cpp")

@@ -1,10 +1,14 @@
-import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
+import { existsSync } from 'node:fs';
+import { readFile, readdir, writeFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-process.chdir(fileURLToPath(new URL('.', import.meta.url)));
+const root = fileURLToPath(new URL('.', import.meta.url));
 
 await build({
-    absWorkingDir: process.cwd(),
+    absWorkingDir: root,
     entryPoints: ['src/extension.cjs'],
     bundle: true,
     platform: 'node',
@@ -15,7 +19,7 @@ await build({
 
 if (process.argv.includes('--tests')) {
     await build({
-        absWorkingDir: process.cwd(),
+        absWorkingDir: root,
         entryPoints: ['tests/integration.ts'],
         bundle: true,
         platform: 'node',
@@ -26,10 +30,6 @@ if (process.argv.includes('--tests')) {
     });
 }
 
-const { readFile, readdir, writeFile } = await import('node:fs/promises');
-const { existsSync } = await import('node:fs');
-const { createRequire } = await import('node:module');
-const { dirname, join } = await import('node:path');
 const require = createRequire(import.meta.url);
 
 const notices = [];
@@ -63,4 +63,4 @@ async function collectLicenses(name, resolver) {
 }
 
 await collectLicenses('vscode-languageclient', require);
-await writeFile('dist/THIRD_PARTY_NOTICES.txt', notices.join('\n\n---\n\n'));
+await writeFile(join(root, 'dist/THIRD_PARTY_NOTICES.txt'), notices.join('\n\n---\n\n'));

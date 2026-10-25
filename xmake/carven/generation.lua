@@ -110,22 +110,20 @@ function refresh_dependencies(target)
     end
 end
 
-function run(program, argv, timings, label, curdir)
-    local stderr_file = timings and os.tmpfile() or nil
+function run(program, argv, label, curdir)
+    local stderr_file = os.tmpfile()
     try {
         function ()
             os.vrunv(program, argv, {curdir = curdir or os.projectdir(), stderr = stderr_file})
         end,
         finally {
             function (ok, errors)
-                if stderr_file then
-                    local output = io.readfile(stderr_file) or ""
-                    if output ~= "" then
-                        io.stderr:write("\ncarven target: " .. label .. "\n" .. output:gsub("^\r?\n", ""))
-                        io.stderr:flush()
-                    end
-                    os.tryrm(stderr_file)
+                local output = io.readfile(stderr_file) or ""
+                if output ~= "" then
+                    io.stderr:write("\ncarven target: " .. label .. "\n" .. output:gsub("^\r?\n", ""))
+                    io.stderr:flush()
                 end
+                os.tryrm(stderr_file)
                 if not ok then raise(errors) end
             end
         }
@@ -184,7 +182,7 @@ function generate(target, request, opt)
             function ()
                 os.tryrm(request.staging)
                 os.mkdir(request.staging)
-                run(request.program, request.argv, request.timings, label, request.curdir)
+                run(request.program, request.argv, label, request.curdir)
                 facts = read_manifest(path.join(request.staging, "carven", "manifest.json"))
                 local paths = {}
                 for _, artifact in ipairs(facts.artifacts) do table.insert(paths, artifact.path) end

@@ -27,7 +27,6 @@ struct AnalyzerProject final {
 
 auto analyzer_file_uri(std::string_view path) noexcept -> std::string;
 auto analyzer_file_path(std::string_view uri) noexcept -> std::optional<std::string>;
-auto analyzer_document_uri(std::string_view document) noexcept -> std::string;
 auto read_analyzer_project_source(std::string_view path) noexcept -> std::optional<std::string>;
 
 auto discover_analyzer_projects(std::span<const std::string> roots) noexcept

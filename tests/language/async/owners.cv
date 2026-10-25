@@ -1,6 +1,6 @@
 import std::async using { Operation, cancel_point, yield_once, wait_ready, close }
 
-const fn inspect(&pending: Operation<void>) {}
+const fn inspect(&_: Operation<void>) {}
 
 const fn replace(&pending: Operation<void>) {
     pending = cancel_point();

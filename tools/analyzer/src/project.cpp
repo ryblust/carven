@@ -101,16 +101,6 @@ auto analyzer_file_path(std::string_view uri) noexcept -> std::optional<std::str
     return result;
 }
 
-auto analyzer_document_uri(std::string_view document) noexcept -> std::string {
-    if (const auto path = analyzer_file_path(document)) {
-        return analyzer_file_uri(*path);
-    }
-    if (path_from_utf8(document).is_absolute()) {
-        return analyzer_file_uri(document);
-    }
-    return std::string(document);
-}
-
 auto read_analyzer_project_source(std::string_view path) noexcept -> std::optional<std::string> {
     auto file = std::ifstream(path_from_utf8(path), std::ios::binary);
     if (!file) {

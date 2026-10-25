@@ -363,13 +363,13 @@ auto decode_analyzer_request(std::span<const std::uint8_t> bytes) noexcept
         .method = static_cast<AnalyzerMethod>(method),
         .revision = 0,
         .uri = {},
-        .module_path = {},
         .text = {},
         .target = {},
         .query = {},
         .new_name = {},
         .context = {},
         .version = 0,
+        .open = false,
         .offset = 0,
         .start = std::nullopt,
         .end = std::nullopt,
@@ -417,8 +417,8 @@ auto decode_analyzer_request(std::span<const std::uint8_t> bytes) noexcept
         }
         case AnalyzerMethod::Update:
             result.uri = input.text();
-            result.module_path = input.text();
             result.version = static_cast<std::int64_t>(input.number(8));
+            result.open = input.byte() != 0;
             result.text = input.text();
             break;
         case AnalyzerMethod::Close: result.uri = input.text(); break;

@@ -301,11 +301,11 @@ auto run(
         command += L' ';
         append_argument(command, path_from_utf8(argument).native());
     }
-    auto input = standard_handle(STD_INPUT_HANDLE, capture);
+    const auto input = standard_handle(STD_INPUT_HANDLE, capture);
     if (!input) {
         return std::unexpected(last_system_error());
     }
-    auto diagnostic = standard_handle(STD_ERROR_HANDLE, false);
+    const auto diagnostic = standard_handle(STD_ERROR_HANDLE, false);
     if (!diagnostic) {
         return std::unexpected(last_system_error());
     }
@@ -358,7 +358,7 @@ auto run(
             0,
             PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
             handles.data(),
-            sizeof(handles),
+            handles.size() * sizeof(HANDLE),
             nullptr,
             nullptr
         )) {

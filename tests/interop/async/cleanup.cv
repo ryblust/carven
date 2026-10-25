@@ -73,7 +73,7 @@ export(cpp) async fn caught_failure() -> i32 {
             throw Failure::Rejected;
         }
     } catch {
-        Failure(error) => { return 9; },
+        Failure(_) => { return 9; },
     }
     return 0;
 }
@@ -112,7 +112,7 @@ export(cpp) async fn nested_continue() -> i32 {
 }
 
 private async fn wait_for_release() {
-    for index in 0usize..8 {
+    for _ in 0usize..8 {
         if resource_released() {
             record('c', 2);
             return;
@@ -134,7 +134,7 @@ export(cpp) async fn release_before_wait() -> i32 {
 
 export(cpp) async fn initializer_break() -> i32 {
     var count: i32 = 0;
-    for index in 0usize..2 {
+    for _ in 0usize..2 {
         for async let pending = child(); true;
         {
             cancel pending;

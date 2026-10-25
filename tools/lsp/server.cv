@@ -5,13 +5,12 @@ import .folding using folding_ranges;
 import .protocol using { ProtocolError, byte_offset, range, Outbox, apply_change }
 import .symbols using symbols;
 import std::json using { JSONValue, JSONValueKind, JSONValueError }
-import std::utf using { starts_with, ends_with }
+import std::utf using starts_with;
 
 struct Document {
     uri: String,
     text: String,
     version: i64,
-    module_path: String,
 }
 
 private fn text_field(value: JSONValue, key: str) -> String throw JSONValueError {
@@ -71,35 +70,6 @@ private fn object_capability(value: JSONValue, path: [str]) -> bool throw JSONVa
     return current.kind() == JSONValueKind::Object;
 }
 
-private fn module_path(uri: str, root: str, identity: usize) -> String {
-    let bytes = uri.bytes;
-    if !starts_with(uri, "file://") => return f"editor.buffer_{identity}";
-    var start: usize = 0;
-    if !root.is_empty()
-        && bytes.length() > root.byte_length()
-        && starts_with(uri, root)
-        && bytes[root.byte_length()] == 47 {
-        start = root.byte_length() + 1;
-    } else {
-        for index in 0..bytes.length() {
-            if bytes[index] == 47 => start = index + 1;
-        }
-    }
-    var end = bytes.length();
-    if end >= start + 3 && ends_with(uri, ".cv") => end -= 3;
-    var path = String {};
-    for byte in bytes.slice(start, end) {
-        if byte == 47 {
-            path.push('.');
-        } else if byte == 45 {
-            path.push('_');
-        } else {
-            path.push(char::from_u32_unchecked(byte as u32));
-        }
-    }
-    return path;
-}
-
 struct Job {
     request: JSONValue,
     id: JSONValue,
@@ -124,13 +94,11 @@ struct Server {
     pending: Vector<Job>,
     active: Vector<Job>,
     generation: i64,
-    root: String,
     roots: JSONValue,
     xmake: String,
     target: String,
     published: Vector<String>,
     revision: i64,
-    next_document_id: usize,
     document_changes: bool,
     quick_fixes: bool,
     related_diagnostics: bool,
@@ -154,13 +122,11 @@ fn new_server() -> Server => {
     pending: [],
     active: [],
     generation: 0,
-    root: "",
     roots: JSONValue::array(),
     xmake: "xmake",
     target: "",
     published: [],
     revision: 0,
-    next_document_id: 0,
     document_changes: false,
     quick_fixes: false,
     related_diagnostics: false,
@@ -181,6 +147,7 @@ fn new_server() -> Server => {
 // Only live queries and state transitions preserve an observation boundary.
 // Requeueing after cancellation joins adjacent update runs by the same rule.
 private fn queue_job(&self: Server, job: Job) throw JSONValueError {
+    var queued = job;
     if !job.query && text_field(job.request, "method")? == "update" {
         var scan = self.pending.length();
         while scan > 0 {
@@ -190,12 +157,14 @@ private fn queue_job(&self: Server, job: Job) throw JSONValueError {
                 break;
             }
             if self.pending[scan].uri == job.uri {
+                let open = self.pending[scan].request.get("open")?;
+                if open.as_bool()? => queued.request.set("open", &&JSONValue::boolean(true))?;
                 self.pending.remove(scan);
                 break;
             }
         }
     }
-    self.pending.push(job);
+    self.pending.push(queued);
 }
 
 private fn find(self: Server, uri: str) -> usize {
@@ -217,8 +186,7 @@ private fn publish(&self: Server, result: JSONValue) throw JSONValueError + Prot
             sources.push(&&Document {
                 uri: uri,
                 text: text_field(source, "text")?,
-                version: 0,
-                module_path: ""
+                version: 0
             });
         }
     }
@@ -358,13 +326,6 @@ fn handle(&self: Server, &&message: JSONValue) -> bool throw JSONValueError + Pr
         let method = text_field(message, "method")?;
         if method == "exit" => return true;
         if method == "initialize" && !self.initialized {
-            if message.has("params")? {
-                let params = message.get("params")?;
-                if params.kind() == JSONValueKind::Object && params.has("rootUri")? {
-                    let root = params.get("rootUri")?;
-                    if root.kind() == JSONValueKind::String => self.root = root.as_str()? as String;
-                }
-            }
             let params = message.get("params")?;
             if params.has("workspaceFolders")? {
                 let folders = params.get("workspaceFolders")?;
@@ -375,12 +336,11 @@ fn handle(&self: Server, &&message: JSONValue) -> bool throw JSONValueError + Pr
                     }
                 }
             }
-            if self.roots.length()? == 0 && !self.root.is_empty() {
-                self.roots.push(&&JSONValue::string(self.root.as_str()))?;
-            }
-            if self.root.is_empty() && self.roots.length()? != 0 {
-                let first = self.roots.at(0)?;
-                self.root = first.as_str()? as String;
+            if self.roots.length()? == 0 && params.has("rootUri")? {
+                let root = params.get("rootUri")?;
+                if root.kind() == JSONValueKind::String && !root.as_str()?.is_empty() {
+                    self.roots.push(&&root)?;
+                }
             }
             if params.has("initializationOptions")? {
                 let options = params.get("initializationOptions")?;
@@ -625,26 +585,19 @@ fn handle(&self: Server, &&message: JSONValue) -> bool throw JSONValueError + Pr
                     text = apply_change(text.as_str(), change)?;
                 }
             }
-            let module = if index == self.documents.length() {
-                module_path(uri.as_str(), self.root.as_str(), self.next_document_id)
-            } else {
-                self.documents[index].module_path
-            };
             var request = JSONValue::object();
             request.set("method", &&JSONValue::string("update"))?;
             request.set("uri", &&JSONValue::string(uri.as_str()))?;
-            request.set("module", &&JSONValue::string(module.as_str()))?;
             request.set("version", &&JSONValue::integer(version))?;
+            request.set("open", &&JSONValue::boolean(method == "textDocument/didOpen"))?;
             request.set("text", &&JSONValue::string(text.as_str()))?;
 
             if index == self.documents.length() {
                 self.documents.push(&&Document {
                     uri: uri,
                     text: text,
-                    version: version,
-                    module_path: module
+                    version: version
                 });
-                ++self.next_document_id;
             } else {
                 self.documents[index].text = text;
                 self.documents[index].version = version;

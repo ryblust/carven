@@ -39,7 +39,7 @@ function cases()
             table.insert(declarations, string.format("struct N%d { left: N%d, right: N%d }",
                 index, index - 1, index - 1))
         end
-        table.insert(declarations, string.format("fn inspect(value: N%d) {}", depth))
+        table.insert(declarations, string.format("fn inspect(_: N%d) {}", depth))
         table.insert(cases, {group = group, id = "shared_nominal_" .. depth, label = "Nominal fields", size = "depth " .. depth,
             source = table.concat(declarations, "\n")})
     end
@@ -147,7 +147,7 @@ fn read(row: usize, column: usize) -> i32 {
         table.insert(cases, {group = group, id = "ownership_locals_" .. count, label = "Mutable loop state",
             size = count .. " locals",
             source = "fn update_locals(&value: i32) {\n" .. table.concat(declarations, "\n")
-                .. "\n    for iteration in 0usize..8 {\n" .. table.concat(updates, "\n")
+                .. "\n    for _ in 0usize..8 {\n" .. table.concat(updates, "\n")
                 .. "\n    }\n" .. table.concat(reads, "\n") .. "\n}\n"})
     end
     do
@@ -162,8 +162,11 @@ fn read(row: usize, column: usize) -> i32 {
         for _, form in ipairs({{"wide_reads", "Argument reads", reads}, {"wide_effects", "Argument side effects", effects}}) do
             table.insert(cases, {group = group, id = form[1] .. "_" .. count, label = form[2], size = count .. " arguments",
                 source = "fn collect(" .. table.concat(parameters, ", ") .. ") {}\n"
-                    .. "fn step(&value: i32) -> i32 { value += 1; return value; }\n"
-                    .. "fn main() { var value = 1; collect(" .. table.concat(form[3], ", ") .. "); }\n"})
+                    .. (form[1] == "wide_effects"
+                        and "fn step(&value: i32) -> i32 { value += 1; return value; }\n"
+                        or "")
+                    .. "fn main() { " .. (form[1] == "wide_effects" and "var" or "let")
+                    .. " value = 1; collect(" .. table.concat(form[3], ", ") .. "); }\n"})
         end
         table.insert(cases, {group = group, id = "fallible_roots_" .. count, label = "Error propagation", size = count .. " calls",
             source = "enum Error { Failed, }\n"

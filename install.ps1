@@ -57,17 +57,23 @@ try {
     }
 
     $tar = Join-Path $env:SystemRoot 'System32\tar.exe'
-    $entries = & $tar -tzf $archive
-    if ($LASTEXITCODE -ne 0) { throw 'Cannot read toolchain archive' }
-    foreach ($entry in $entries) {
-        if ($entry -match '^[\\/]|^[A-Za-z]:|(^|[\\/])\.\.([\\/]|$)') {
-            throw "Unsafe archive path: $entry"
-        }
-    }
     $staged = Join-Path $work 'toolchain'
     New-Item -ItemType Directory -Path $staged | Out-Null
-    & $tar -xzf $archive -C $staged
-    if ($LASTEXITCODE -ne 0) { throw 'Cannot extract toolchain archive' }
+    # Windows tar narrows path arguments; use relative names inside the working directory.
+    Push-Location -LiteralPath $work
+    try {
+        $entries = & $tar -tzf $name
+        if ($LASTEXITCODE -ne 0) { throw 'Cannot read toolchain archive' }
+        foreach ($entry in $entries) {
+            if ($entry -match '^[\\/]|^[A-Za-z]:|(^|[\\/])\.\.([\\/]|$)') {
+                throw "Unsafe archive path: $entry"
+            }
+        }
+        & $tar -xzf $name -C toolchain
+        if ($LASTEXITCODE -ne 0) { throw 'Cannot extract toolchain archive' }
+    } finally {
+        Pop-Location
+    }
     if (-not (Test-Path -LiteralPath (Join-Path $staged '.carven-toolchain') -PathType Leaf)) {
         throw 'Not a Carven toolchain archive'
     }

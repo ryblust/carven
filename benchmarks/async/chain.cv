@@ -1,4 +1,3 @@
-import std::async using yield_once;
 import "measurement.hpp";
 
 import(cpp) fn cv_async_bench_iterations() -> u64 = ::cv_async_bench_iterations;
@@ -7,14 +6,6 @@ import(cpp) fn cv_async_bench_depth() -> u64 = ::cv_async_bench_depth;
 import(cpp) fn cv_async_bench_begin() = ::cv_async_bench_begin;
 import(cpp) fn cv_async_bench_finish(checksum: u64) = ::cv_async_bench_finish;
 import(cpp) fn cv_async_bench_observe_stack() = ::cv_async_bench_observe_stack;
-
-async fn leaf(value: u64, deferred: bool) -> u64 {
-    cv_async_bench_observe_stack();
-    if deferred {
-        await yield_once();
-    }
-    return value + 1;
-}
 
 async fn chain(value: u64, remaining: u64) -> u64 {
     cv_async_bench_observe_stack();

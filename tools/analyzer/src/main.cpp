@@ -8,6 +8,7 @@ module;
 
 module carven:analyzer.main.impl;
 
+import :analyzer.documents;
 import :analyzer.project;
 import :analyzer.protocol;
 import :diagnostics.code;
@@ -72,22 +73,15 @@ public:
     auto execute(const AnalyzerRequest& request) noexcept -> AnalyzerResult;
     auto current_revision() const noexcept -> std::uint64_t;
 
-    auto client_document_uris() const noexcept
-        -> const std::map<std::string, std::string, std::less<>>&;
+    auto client_document_uris(const AnalyzerRequest& request) const noexcept
+        -> std::map<std::string, std::string, std::less<>>;
 
 private:
     WorkspaceAnalysisHost host {16uz};
     std::map<std::string, WorkspaceProjectModule, std::less<>> modules;
 
-    struct Overlay final {
-        std::int64_t version;
-        std::string text;
-        CanonicalModulePath module_path;
-    };
-
     AnalyzerProject model {.sources = {}, .targets = {}, .warnings = {}};
-    std::map<std::string, Overlay, std::less<>> overlays;
-    std::map<std::string, std::string, std::less<>> client_uris;
+    AnalyzerDocuments documents;
     std::vector<AnalyzerProjectInput> project_models;
     std::vector<std::string> workspace_roots;
     std::string preferred_target;
@@ -100,8 +94,12 @@ private:
         -> std::vector<WorkspaceProjectModule>;
 
     auto synchronize() noexcept -> void;
+    auto publish_source(std::string_view document, std::string_view context) noexcept -> void;
+    auto prepare_context(std::string_view context) noexcept -> void;
+
     auto resolve_target(AnalyzerProjectTarget& target) noexcept
         -> std::vector<WorkspaceProjectModule>;
+
     auto diagnostics() noexcept -> AnalyzerWorkspace;
     auto symbol_documents() const noexcept -> std::set<std::string, std::less<>>;
     auto watchers() const noexcept -> std::vector<AnalyzerWatch>;
@@ -111,9 +109,14 @@ auto Analyzer::current_revision() const noexcept -> std::uint64_t {
     return revision;
 }
 
-auto Analyzer::client_document_uris() const noexcept
-    -> const std::map<std::string, std::string, std::less<>>& {
-    return client_uris;
+auto Analyzer::client_document_uris(const AnalyzerRequest& request) const noexcept
+    -> std::map<std::string, std::string, std::less<>> {
+    if (request.method == AnalyzerMethod::Workspace
+        || request.method == AnalyzerMethod::Update
+        || request.method == AnalyzerMethod::Close) {
+        return {};
+    }
+    return documents.client_uris(request.context.empty() ? request.uri : request.context);
 }
 
 auto Analyzer::initialize() noexcept -> std::optional<std::string> {
@@ -164,7 +167,7 @@ auto Analyzer::project(std::string_view document) const noexcept
     for (const auto& [key, entry] : modules) {
         const auto source = model.sources.find(key);
         if ((source != model.sources.end() && source->second.standard)
-            || (overlays.contains(key) && source == model.sources.end())) {
+            || (documents.contains(key) && source == model.sources.end())) {
             result.push_back(entry);
         }
     }
@@ -173,43 +176,67 @@ auto Analyzer::project(std::string_view document) const noexcept
 
 auto Analyzer::synchronize() noexcept -> void {
     for (auto it = modules.begin(); it != modules.end();) {
-        if (!model.sources.contains(it->first) && !overlays.contains(it->first)) {
+        if (!model.sources.contains(it->first) && !documents.contains(it->first)) {
             host.remove(it->first);
             it = modules.erase(it);
         } else {
             ++it;
         }
     }
-    auto updates = std::vector<WorkspaceDocumentUpdate>();
     for (const auto& [uri, source] : model.sources) {
-        const auto overlay = overlays.find(uri);
-        updates.push_back(
-            {.document = uri,
-             .version = ++source_version,
-             .text = overlay == overlays.end() ? source.text : overlay->second.text}
-        );
-        modules.insert_or_assign(
-            uri,
-            WorkspaceProjectModule {.document = uri, .module_path = source.module_path}
-        );
+        publish_source(uri, {});
     }
-    for (const auto& [uri, overlay] : overlays) {
+    for (const auto& [uri, state] : documents.entries()) {
         if (model.sources.contains(uri)) {
             continue;
         }
-        updates.push_back({.document = uri, .version = ++source_version, .text = overlay.text});
-        modules.insert_or_assign(
-            uri,
-            WorkspaceProjectModule {.document = uri, .module_path = overlay.module_path}
-        );
+        publish_source(uri, {});
     }
-    if (!host.update(std::move(updates))) {
+}
+
+auto Analyzer::publish_source(std::string_view document, std::string_view context) noexcept
+    -> void {
+    const auto key = std::string(document);
+    const auto* disk = disk_source(document);
+    const auto state = documents.entries().find(document);
+    if (!disk && state == documents.entries().end()) {
+        host.remove(document);
+        modules.erase(key);
+        return;
+    }
+    const auto* buffer = documents.view(document, context);
+    const auto text = buffer ? std::string_view(buffer->text)
+        : disk               ? std::string_view(disk->text)
+                             : std::string_view();
+    if (!host.update(key, ++source_version, std::string(text))) {
         std::terminate();
+    }
+    modules.insert_or_assign(
+        key,
+        WorkspaceProjectModule {
+            .document = key,
+            .module_path = disk ? disk->module_path : state->second.module_path
+        }
+    );
+}
+
+auto Analyzer::prepare_context(std::string_view context) noexcept -> void {
+    auto changed = false;
+    for (const auto& [document, state] : documents.entries()) {
+        if (documents.conflicted(document)) {
+            publish_source(document, context);
+            changed = true;
+        }
+    }
+    if (changed && !context.empty()) {
+        for (auto& target : model.targets) {
+            static_cast<void>(resolve_target(target));
+        }
     }
 }
 
 auto Analyzer::symbol_documents() const noexcept -> std::set<std::string, std::less<>> {
-    auto documents = std::set<std::string, std::less<>>();
+    auto result = std::set<std::string, std::less<>>();
     for (const auto& target : model.targets) {
         if (!preferred_target.empty() && target.name != preferred_target) {
             continue;
@@ -217,16 +244,16 @@ auto Analyzer::symbol_documents() const noexcept -> std::set<std::string, std::l
         for (const auto& uri : target.documents) {
             const auto source = model.sources.find(uri);
             if (source != model.sources.end() && !source->second.standard) {
-                documents.insert(uri);
+                result.insert(uri);
             }
         }
     }
-    for (const auto& [uri, overlay] : overlays) {
+    for (const auto& [uri, state] : documents.entries()) {
         if (!model.sources.contains(uri)) {
-            documents.insert(uri);
+            result.insert(uri);
         }
     }
-    return documents;
+    return result;
 }
 
 auto Analyzer::watchers() const noexcept -> std::vector<AnalyzerWatch> {
@@ -303,7 +330,7 @@ auto Analyzer::resolve_target(AnalyzerProjectTarget& target) noexcept
     for (const auto& uri : target.documents) {
         if (const auto found = modules.find(uri); found != modules.end()) {
             available[found->second.module_path].push_back(uri);
-            if (overlays.contains(uri)) {
+            if (documents.contains(uri)) {
                 roots.push_back(found->second.module_path);
             }
         }
@@ -331,18 +358,7 @@ auto Analyzer::resolve_target(AnalyzerProjectTarget& target) noexcept
                         .standard = false
                     }
                 );
-                const auto overlay = overlays.find(uri);
-                if (!host.update(
-                        uri,
-                        ++source_version,
-                        overlay == overlays.end() ? *text : overlay->second.text
-                    )) {
-                    std::terminate();
-                }
-                modules.insert_or_assign(
-                    uri,
-                    WorkspaceProjectModule {.document = uri, .module_path = path}
-                );
+                publish_source(uri, {});
             }
             target.documents.push_back(uri);
             found = available.emplace(path, std::vector<std::string> {uri}).first;
@@ -362,6 +378,7 @@ auto Analyzer::resolve_target(AnalyzerProjectTarget& target) noexcept
 }
 
 auto Analyzer::diagnostics() noexcept -> AnalyzerWorkspace {
+    prepare_context({});
     auto resolved = std::map<const AnalyzerProjectTarget*, std::vector<WorkspaceProjectModule>>();
     for (auto& target : model.targets) {
         resolved.emplace(&target, resolve_target(target));
@@ -375,7 +392,7 @@ auto Analyzer::diagnostics() noexcept -> AnalyzerWorkspace {
         }
     }
     auto loose = false;
-    for (const auto& [uri, overlay] : overlays) {
+    for (const auto& [uri, state] : documents.entries()) {
         if (const auto* target = target_for(uri)) {
             selected.insert(target);
         } else {
@@ -404,22 +421,48 @@ auto Analyzer::diagnostics() noexcept -> AnalyzerWorkspace {
         std::string,
         DiagnosticSeverity>>();
     auto seen_documents = std::set<std::string>();
+    const auto client_uris = documents.client_uris({});
     for (const auto& selection : selections) {
-        const auto result = host.snapshot().semantic(selection);
+        const auto conflict = std::ranges::any_of(selection, [&](const auto& input) noexcept {
+            return documents.conflicted(input.document);
+        });
+        const auto result = conflict ? WorkspaceSemanticQuery {.result = {}, .documents = {}}
+                                     : host.snapshot().semantic(selection);
         for (const auto& input : selection) {
-            const auto overlay = overlays.find(input.document);
+            const auto state = documents.entries().find(input.document);
             const auto disk = model.sources.find(input.document);
-            const auto open = overlay != overlays.end();
+            const auto open = state != documents.entries().end();
             if ((!open && disk != model.sources.end() && disk->second.standard)
                 || !seen_documents.insert(input.document).second) {
                 continue;
             }
-            reply.documents.push_back(
-                {.uri = input.document,
-                 .text = open ? overlay->second.text : disk->second.text,
-                 .version = open ? overlay->second.version : 0,
-                 .open = open}
-            );
+            if (open) {
+                for (const auto& [uri, buffer] : state->second.buffers) {
+                    reply.documents.push_back(
+                        {.uri = uri, .text = buffer.text, .version = buffer.version, .open = true}
+                    );
+                    if (documents.conflicted(input.document)) {
+                        reply.diagnostics.push_back(
+                            {.uri = uri,
+                             .version = buffer.version,
+                             .range = {.start = 0, .end = 0},
+                             .message =
+                                 "Open aliases of this file have different contents. Close or reconcile the aliases to restore cross-file analysis.",
+                             .code = "CV-DOCUMENT-CONFLICT",
+                             .severity = DiagnosticSeverity::Error,
+                             .related = {},
+                             .notes = {}}
+                        );
+                    }
+                }
+            } else {
+                reply.documents.push_back(
+                    {.uri = input.document, .text = disk->second.text, .version = 0, .open = false}
+                );
+            }
+        }
+        if (!result.result) {
+            continue;
         }
         for (const auto& diagnostic : result.result->diagnostics()) {
             if (!diagnostic.attachment.primary) {
@@ -430,10 +473,9 @@ auto Analyzer::diagnostics() noexcept -> AnalyzerWorkspace {
             if (!source || !seen_documents.contains(std::string(source->origin))) {
                 continue;
             }
-            const auto overlay = overlays.find(source->origin);
             auto item = AnalyzerDiagnostic {
                 .uri = std::string(source->origin),
-                .version = overlay == overlays.end() ? 0 : overlay->second.version,
+                .version = 0,
                 .range = range(location.span),
                 .message = diagnostic.finding.message,
                 .code = std::string(diagnostic_code_info(diagnostic.finding.code).name),
@@ -448,7 +490,10 @@ auto Analyzer::diagnostics() noexcept -> AnalyzerWorkspace {
             const auto related = [&](SourceSpan span, std::string_view message) noexcept {
                 if (const auto source = result.result->sources().try_view(span.source_id)) {
                     const auto origin = source->origin;
-                    auto uri = analyzer_document_uri(origin);
+                    auto uri = std::string(origin);
+                    if (const auto found = client_uris.find(uri); found != client_uris.end()) {
+                        uri = found->second;
+                    }
                     if (!seen_documents.contains(uri) && !reply.diagnostic_texts.contains(uri)) {
                         reply.diagnostic_texts.emplace(uri, source->text);
                     }
@@ -483,7 +528,17 @@ auto Analyzer::diagnostics() noexcept -> AnalyzerWorkspace {
                         item.severity
                     )
                     .second) {
-                reply.diagnostics.push_back(std::move(item));
+                if (const auto state = documents.entries().find(item.uri);
+                    state != documents.entries().end()) {
+                    for (const auto& [uri, buffer] : state->second.buffers) {
+                        auto projected = item;
+                        projected.uri = uri;
+                        projected.version = buffer.version;
+                        reply.diagnostics.push_back(std::move(projected));
+                    }
+                } else {
+                    reply.diagnostics.push_back(std::move(item));
+                }
             }
         }
     }
@@ -509,7 +564,7 @@ auto Analyzer::diagnostics() noexcept -> AnalyzerWorkspace {
 auto Analyzer::execute(const AnalyzerRequest& request) noexcept -> AnalyzerResult {
     const auto method = request.method;
     if (method == AnalyzerMethod::Hello) {
-        return AnalyzerHello {.version = 8};
+        return AnalyzerHello {.version = 9};
     }
     if (method == AnalyzerMethod::Shutdown) {
         return std::monostate {};
@@ -548,58 +603,46 @@ auto Analyzer::execute(const AnalyzerRequest& request) noexcept -> AnalyzerResul
         reply.watchers = watchers();
         return reply;
     }
-    const auto uri = analyzer_document_uri(request.uri);
+    const auto uri = documents.resolve(request.uri);
     if (uri.empty() && method != AnalyzerMethod::WorkspaceSymbols) {
         return error("invalid document");
     }
     if (method == AnalyzerMethod::Update) {
         const auto* disk = disk_source(uri);
-        const auto path = CanonicalModulePath::from_value(
-            disk ? disk->module_path.value() : std::string_view(request.module_path)
-        );
-        if (!path) {
-            return error("invalid module path");
+        const auto path = disk ? disk->module_path : documents.module_path(uri, workspace_roots);
+        const auto changed = request.open
+            ? documents.open(request.uri, uri, path, request.version, request.text)
+            : documents.change(request.uri, request.version, request.text);
+        if (!changed) {
+            return diagnostics();
         }
-        const auto old = overlays.find(uri);
-        if (old != overlays.end() && request.version <= old->second.version) {
-            return error("stale document update");
-        }
-        overlays.insert_or_assign(
-            uri,
-            Overlay {.version = request.version, .text = request.text, .module_path = *path}
-        );
-        if (!host.update(uri, ++source_version, request.text)) {
-            return error("invalid document update");
-        }
-        modules.insert_or_assign(
-            uri,
-            WorkspaceProjectModule {.document = uri, .module_path = *path}
-        );
-        client_uris.insert_or_assign(uri, request.uri);
+        publish_source(uri, {});
         ++revision;
         return diagnostics();
     }
     if (method == AnalyzerMethod::Close) {
-        overlays.erase(uri);
-        client_uris.erase(uri);
-        if (auto* disk = disk_source(uri)) {
-            if (const auto text = read_analyzer_project_source(disk->path)) {
-                disk->text = *text;
-                host.update(uri, ++source_version, *text);
-            } else {
-                host.remove(uri);
-                modules.erase(uri);
-            }
-        } else {
-            host.remove(uri);
-            modules.erase(uri);
+        const auto closed = documents.close(request.uri);
+        if (!closed) {
+            return diagnostics();
         }
+        if (!documents.contains(*closed)) {
+            if (auto* disk = disk_source(*closed)) {
+                if (const auto text = read_analyzer_project_source(disk->path)) {
+                    disk->text = *text;
+                } else {
+                    model.sources.erase(*closed);
+                }
+            }
+        }
+        publish_source(*closed, {});
         ++revision;
         return diagnostics();
     }
     if (request.revision != revision) {
         return error("invalid query revision");
     }
+    const auto context = request.context.empty() ? request.uri : request.context;
+    prepare_context(context);
     const auto snapshot = host.snapshot();
     if (method == AnalyzerMethod::FoldingRanges) {
         auto reply = AnalyzerTextItems<WorkspaceFold> {.text = {}, .items = {}};
@@ -610,7 +653,29 @@ auto Analyzer::execute(const AnalyzerRequest& request) noexcept -> AnalyzerResul
         return reply;
     }
     const auto selection =
-        project(request.context.empty() ? uri : analyzer_document_uri(request.context));
+        project(request.context.empty() ? uri : documents.resolve(request.context));
+    const auto syntax_only =
+        method == AnalyzerMethod::Formatting || method == AnalyzerMethod::DocumentSymbols;
+    const auto changing = method == AnalyzerMethod::Rename
+        || method == AnalyzerMethod::PrepareRename
+        || method == AnalyzerMethod::CodeActions;
+    const auto symbol_conflict = method == AnalyzerMethod::WorkspaceSymbols
+        && std::ranges::any_of(symbol_documents(), [&](const auto& document) noexcept {
+                                     return documents.conflicted(document);
+                                 });
+    if (symbol_conflict
+        || (!syntax_only && std::ranges::any_of(selection, [&](const auto& input) noexcept {
+               return documents.conflicted(input.document)
+                   && (changing || documents.view(input.document, context) == nullptr);
+           }))) {
+        return std::unexpected(AnalyzerFailure(
+            AnalyzerQueryFailure {
+                .code = AnalyzerQueryError::DocumentConflict,
+                .message =
+                    "Open aliases have different contents; reconcile or close the aliases before querying dependent files or applying cross-file edits"
+            }
+        ));
+    }
     if (method == AnalyzerMethod::PrepareCallHierarchy
         || method == AnalyzerMethod::IncomingCalls
         || method == AnalyzerMethod::OutgoingCalls) {
@@ -622,9 +687,8 @@ auto Analyzer::execute(const AnalyzerRequest& request) noexcept -> AnalyzerResul
             : snapshot.outgoing_calls(selection, uri, request.offset);
         auto seen = std::set<std::string>();
         const auto locate = [&](WorkspaceCallable& callable) noexcept {
-            auto& document = callable.location.document;
+            const auto& document = callable.location.document;
             const auto source = query.analysis.result->source(document);
-            document = analyzer_document_uri(document);
             if (seen.insert(document).second && source) {
                 reply.documents.push_back(
                     {.uri = document,
@@ -740,7 +804,7 @@ auto Analyzer::execute(const AnalyzerRequest& request) noexcept -> AnalyzerResul
                 for (auto& [document, changes] : edits) {
                     const auto source = query.analysis.result->source(document);
                     item.documents.push_back(
-                        {.uri = analyzer_document_uri(document),
+                        {.uri = document,
                          .text = std::string(source->text),
                          .edits = std::move(changes)}
                     );
@@ -876,7 +940,7 @@ auto Analyzer::execute(const AnalyzerRequest& request) noexcept -> AnalyzerResul
             for (auto& [document, changes] : edits) {
                 const auto source = query.analysis.result->source(document);
                 reply->documents.push_back(
-                    {.uri = analyzer_document_uri(document),
+                    {.uri = document,
                      .text = std::string(source->text),
                      .edits = std::move(changes)}
                 );
@@ -918,7 +982,7 @@ auto Analyzer::execute(const AnalyzerRequest& request) noexcept -> AnalyzerResul
         const auto locate =
             [&](const WorkspaceSemanticAnalysis& analysis,
                 const WorkspaceVersionedLocation& value) noexcept -> AnalyzerLocation {
-            auto uri = analyzer_document_uri(value.document);
+            auto uri = value.document;
             if (seen_documents.insert(uri).second) {
                 const auto source = analysis.source(value.document);
                 reply.documents.push_back(
@@ -954,7 +1018,7 @@ auto Analyzer::execute(const AnalyzerRequest& request) noexcept -> AnalyzerResul
         if (query.result && !query.result->description.empty()) {
             reply = AnalyzerHover {
                 .text = query.result->description,
-                .uri = analyzer_document_uri(query.result->location.document),
+                .uri = query.result->location.document,
                 .range = range(query.result->location.range),
                 .documentation = query.result->documentation
             };
@@ -1009,7 +1073,7 @@ extern "C++" auto main(int argc, char**) noexcept -> int {
         auto result = analyzer.execute(*request);
         const auto reply =
             AnalyzerReply {.revision = analyzer.current_revision(), .result = std::move(result)};
-        const auto output = encode_analyzer_reply(reply, analyzer.client_document_uris());
+        const auto output = encode_analyzer_reply(reply, analyzer.client_document_uris(*request));
         if (output.empty() || output.size() > message_limit) {
             return 2;
         }

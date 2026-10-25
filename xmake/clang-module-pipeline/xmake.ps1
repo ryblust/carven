@@ -20,6 +20,7 @@ $sourceProgramDir = $sourceInfo[0]
 $sourceVersion = $sourceInfo[1]
 
 $patchedPaths = @(
+    "core/base/scheduler.lua"
     "modules/private/action/build/object.lua"
     "modules/private/action/build/link_objects.lua"
     "modules/private/action/build/target.lua"

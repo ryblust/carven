@@ -55,8 +55,9 @@ VS Code integration in a temporary profile. Failed fixtures retain their files
 and logs. On Windows, select the `.exe` paths and set `VSCODE_EXECUTABLE` to
 `Code.exe`. Set `CARVEN_XMAKE` to select a specific Xmake executable.
 
-These checks run separately from `./xmakew test`. CI builds and tests the editor
-toolchain in its own job; compiler jobs need no Node or pnpm.
+Protocol tests run separately from `./xmakew test`. CI runs them in each platform's
+Release job against the extracted toolchain package. VS Code host integration
+checks use a local VS Code installation. Sanitizer jobs need no Node or pnpm.
 
 ```sh
 pnpm --dir editors/vscode run check:tests
@@ -65,8 +66,9 @@ pnpm --dir editors/vscode run format
 
 Prettier preserves blank lines between logical groups.
 
-Distribution acceptance runs `tests/installation.ts` against the packaged
-toolchain, external build adapters, and optional VSIX.
+CI runs `tools/release/check.mjs` once per Release package to check installed
+commands, build adapters, and the SDK. Editor protocol tests use that extraction
+under `build/installed`. Distribution collects the successful CI run's artifacts.
 
 ## Package
 

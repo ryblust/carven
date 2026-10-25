@@ -54,16 +54,16 @@ for await (const chunk of process.stdin) {
         const request: {
             uri?: string;
             version?: number;
+            open?: number;
             revision?: number;
             offset?: number;
-            module?: string;
             text?: string;
         } = {};
         if (method === 4) {
             Object.assign(request, {
                 uri: string(),
-                module: string(),
                 version: number(8),
+                open: number(1),
                 text: string(),
             });
         }
@@ -75,7 +75,7 @@ for await (const chunk of process.stdin) {
 
         let payload = Buffer.alloc(0);
         if (method === 0) {
-            payload = u32(8);
+            payload = u32(9);
         } else if (method === 2) {
             payload = u32(0);
         } else if ([3, 4, 5].includes(method)) {

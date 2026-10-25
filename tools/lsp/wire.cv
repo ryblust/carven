@@ -172,9 +172,10 @@ fn encode_request(value: JSONValue) -> Vector<u8> throw JSONValueError + Protoco
         }
     } else if method == 4 {
         writer.field(value, "uri")?;
-        writer.field(value, "module")?;
         let version = value.get("version")?;
         writer.number(version.as_i64()? as u64, 8);
+        let open = value.get("open")?;
+        writer.flag(open.as_bool()?);
         writer.field(value, "text")?;
     } else if method == 5 {
         writer.field(value, "uri")?;
@@ -437,7 +438,7 @@ fn decode_reply(
     value.set("revision", &&reader.integer(8)?)?;
     if reader.flag()? {
         let reason = reader.number(1)?;
-        if reason > 2 => throw ProtocolError::Analyzer;
+        if reason > 3 => throw ProtocolError::Analyzer;
         value.set(
             "queryErrorCode",
             &&JSONValue::integer(if reason == 0 { -32602 } else { -32803 })
